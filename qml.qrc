@@ -1,5 +1,15 @@
 <RCC>
     <qresource prefix="/">
         <file>main.qml</file>
+        <file>fonts/AlibabaPuHuiTi-3-55-Regular.ttf</file>
+        <file>fonts/AlibabaPuHuiTi-3-65-Medium.ttf</file>
+        <file>fonts/AlibabaPuHuiTi-3-85-Bold.ttf</file>
+        <file>images/add-square.png</file>
+        <file>images/close.png</file>
+        <file>images/minus.png</file>
+        <file>components/ImageButton.qml</file>
+        <file>images/sidebarMinimalistic.png</file>
+        <file>images/titleIcon.png</file>
+        <file>fonts/AlimamaShuHeiTi-Bold.ttf</file>
     </qresource>
 </RCC>
