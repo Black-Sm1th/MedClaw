@@ -131,8 +131,11 @@ ApplicationWindow {
                 id: newTaskRec
                 anchors.fill: parent
                 Column{
+                    id: titleCol
                     width: 840
                     spacing: 11
+                    anchors.topMargin: 100
+                    anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
                     Label{
                         text: "MedClaw"
@@ -144,6 +147,30 @@ ApplicationWindow {
                         text: "7×24 小时在线的专属智能伙伴"
                         font.pixelSize: 16
                         anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                }
+                Rectangle{
+                    anchors.top: titleCol.bottom
+                    anchors.topMargin: 76
+                    border.color: "#40000000"
+                    border.width: 1
+                    radius: 20
+                    height: 142
+                    width: 840
+                    Column{
+                        anchors.fill: parent
+                        padding: 12
+                        spacing: 12
+                        MultiLineTextInput{
+                            focusedBorderColor: "transparent"
+                            backgroundColor: "transparent"
+                            placeholderText: "分配一个任务或提问任何问题"
+                            width: parent.width - 24
+                            height: 66
+                        }
+                        Rectangle{
+
+                        }
                     }
                 }
             }

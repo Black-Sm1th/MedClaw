@@ -11,5 +11,9 @@
         <file>images/sidebarMinimalistic.png</file>
         <file>images/titleIcon.png</file>
         <file>fonts/AlimamaShuHeiTi-Bold.ttf</file>
+        <file>components/MultiLineTextInput.qml</file>
+        <file>images/category.png</file>
+        <file>images/paperclip.png</file>
+        <file>images/send.png</file>
     </qresource>
 </RCC>
