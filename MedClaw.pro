@@ -8,12 +8,15 @@ msvc: QMAKE_CXXFLAGS += /utf-8
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000
 
 HEADERS += \
+    mainviewcontroller.h \
     openclawclient.h \
     chatmodel.h \
-    ed25519_local.h
+    ed25519_local.h \
+    CommonFunc.h
 
 SOURCES += \
     main.cpp \
+    mainviewcontroller.cpp \
     openclawclient.cpp \
     chatmodel.cpp \
     ed25519_local.cpp

@@ -283,6 +283,12 @@ ApplicationWindow {
                                         anchors.centerIn: parent
                                         source: "qrc:/images/send.png"
                                     }
+                                    MouseArea{
+                                        anchors.fill: parent
+                                        onClicked: {
+                                            $MainViewController.sendMessage()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -487,7 +493,7 @@ ApplicationWindow {
 
             Rectangle {
                 id: dialogCard
-                width: 520
+                width: 600
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 height: dialogContent.implicitHeight + 48
@@ -505,28 +511,28 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.top: parent.top
                     anchors.margins: 24
-                    spacing: 20
+                    spacing: 16
 
                     Item {
                         width: parent.width
-                        height: 24
+                        height: 48
                         Label {
                             text: qsTr("新建任务")
                             font.pixelSize: 20
                             font.weight: Font.Bold
                             color: "#D9000000"
                             anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
                         }
                         ImageButton {
                             source: "qrc:/images/close.png"
                             anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
                             onClicked: newTaskDialog.close()
                         }
                         Rectangle{
                             height: 1
                             width: parent.width
+                            color: "#14000000"
+                            anchors.bottom: parent.bottom
                         }
                     }
 
@@ -535,7 +541,7 @@ ApplicationWindow {
                         spacing: 8
                         Label {
                             text: qsTr("标题")
-                            font.pixelSize: 16
+                            font.pixelSize: 14
                             color: "#D9000000"
                         }
                         SingleLineTextInput {
@@ -546,7 +552,7 @@ ApplicationWindow {
                             focusedBorderColor: "#006BFF"
                             backgroundColor: "#FFFFFF"
                             placeholderText: qsTr("请输入任务标题")
-                            fontSize: 16
+                            fontSize: 14
                         }
                     }
 
@@ -555,7 +561,7 @@ ApplicationWindow {
                         spacing: 8
                         Label {
                             text: qsTr("提示词")
-                            font.pixelSize: 16
+                            font.pixelSize: 14
                             color: "#D9000000"
                         }
                         MultiLineTextInput {
@@ -566,7 +572,7 @@ ApplicationWindow {
                             focusedBorderColor: "#006BFF"
                             backgroundColor: "#FFFFFF"
                             placeholderText: qsTr("请输入要执行的提示词")
-                            fontSize: 16
+                            fontSize: 14
                         }
                     }
 
@@ -601,26 +607,64 @@ ApplicationWindow {
                         }
                     }
 
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        Label {
+                            text: qsTr("工作目录")
+                            font.pixelSize: 14
+                            color: "#D9000000"
+                        }
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            SingleLineTextInput {
+                                width: parent.width - 88
+                                inputHeight: 40
+                                inputRadius: 8
+                                borderColor: "#E6E7EB"
+                                focusedBorderColor: "#006BFF"
+                                backgroundColor: "#FFFFFF"
+                                placeholderText: ""
+                                readOnly: true
+                                fontSize: 14
+                            }
+                            CustomButton {
+                                width: 80
+                                height: 40
+                                backgroundColor: "#F7F9FA"
+                                textColor: "#A6000000"
+                                borderColor: "#E6E7EB"
+                                borderWidth: 1
+                                text: qsTr("浏览")
+                                fontSize: 14
+                                onClicked: {
+
+                                }
+                            }
+                        }
+                    }
+
                     Row {
                         width: parent.width
                         spacing: 12
                         layoutDirection: Qt.RightToLeft
                         CustomButton {
-                            width: 80
-                            height: 36
+                            width: 96
+                            height: 40
                             backgroundColor: "#006BFF"
                             textColor: "#FFFFFF"
                             borderWidth: 0
-                            text: qsTr("创建")
+                            text: qsTr("重新生成")
                             fontSize: 14
                             onClicked: newTaskDialog.close()
                         }
                         CustomButton {
-                            width: 80
-                            height: 36
-                            backgroundColor: "#FFFFFF"
-                            textColor: "#D9000000"
-                            borderColor: "#20000000"
+                            width: 96
+                            height: 40
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
