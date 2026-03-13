@@ -80,3 +80,7 @@ CMakeLists.txt.user*
 .rcc/
 .uic/
 /build*/
+
+# 忽略不需要上传的文件
+main.cpp
+main.qml
