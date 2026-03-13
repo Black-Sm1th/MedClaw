@@ -22,5 +22,8 @@
         <file>images/setting.png</file>
         <file>components/CustomButton.qml</file>
         <file>images/more.png</file>
+        <file>components/SingleLineTextInput.qml</file>
+        <file>components/DatePicker.qml</file>
+        <file>components/TimePicker.qml</file>
     </qresource>
 </RCC>

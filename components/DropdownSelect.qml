@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Window 2.15
 
 Item {
     id: root
@@ -16,6 +17,9 @@ Item {
     property int fontSize: 14
     property int dropdownRadius: 8
     property int itemHeight: 36
+    property color borderColor: "transparent"
+    property int borderWidth: 0
+    property int alignment: Qt.AlignHCenter
 
     signal selected(int index, string text)
 
@@ -29,14 +33,20 @@ Item {
         color: mouseArea.pressed ? root.pressedColor
              : mouseArea.containsMouse ? root.hoverColor
              : "transparent"
+        border.color: root.borderColor
+        border.width: root.borderWidth
 
         Behavior on color {
             ColorAnimation { duration: 100 }
         }
 
-        Row {
-            anchors.centerIn: parent
-            spacing: 4
+        Item {
+            anchors.left: parent.left
+            anchors.leftMargin: 12
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            height: displayText.height
 
             Text {
                 id: displayText
@@ -45,12 +55,16 @@ Item {
                 font.family: "Alibaba PuHuiTi 3.0"
                 color: root.textColor
                 anchors.verticalCenter: parent.verticalCenter
+                anchors.left: root.alignment === Qt.AlignLeft ? parent.left : undefined
+                anchors.horizontalCenter: root.alignment === Qt.AlignHCenter ? parent.horizontalCenter : undefined
+                anchors.horizontalCenterOffset: root.alignment === Qt.AlignHCenter ? -chevron.width / 2 - 2 : 0
             }
 
             Canvas {
                 id: chevron
                 width: 16
                 height: 16
+                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 rotation: popup.visible ? 180 : 0
 
@@ -104,12 +118,23 @@ Item {
 
     Popup {
         id: popup
-        y: root.height + 4
         x: 0
         width: Math.max(root.width, maxItemWidth + 16)
         padding: 4
 
         property real maxItemWidth: 0
+
+        function calcY() {
+            var globalPos = root.mapToItem(null, 0, 0)
+            var windowH = root.Window.height || 800
+            var popupH = root.model.length * root.itemHeight + 12
+            if (globalPos.y + root.height + 4 + popupH > windowH)
+                return -popupH - 4
+            return root.height + 4
+        }
+
+        y: calcY()
+        onAboutToShow: y = calcY()
 
         background: Rectangle {
             radius: root.dropdownRadius
