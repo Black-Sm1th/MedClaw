@@ -7,12 +7,12 @@ Rectangle {
     // 可配置属性
     property int inputWidth: 300
     property int inputHeight: 120
-    property color borderColor: "transparent"
+    property color borderColor: "#E6E7EB"
     property color focusedBorderColor: "#006BFF"
-    property color backgroundColor: "#F5F5F5"
-    property color textColor: "#D9000000"
+    property color backgroundColor: "#FFFFFF"
+    property color textColor: "#A6000000"
     property color placeholderColor: "#40000000"
-    property int fontSize: 16
+    property int fontSize: 14
     property string placeholderText: qsTr("请输入...")
     property int borderWidth: 1
     property int inputRadius: 8

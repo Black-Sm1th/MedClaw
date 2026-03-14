@@ -17,13 +17,18 @@
         <file>images/send.png</file>
         <file>components/DropdownSelect.qml</file>
         <file>components/TabBarView.qml</file>
-        <file>images/leftSelection.png</file>
-        <file>images/leftSelectionSelected.png</file>
         <file>images/setting.png</file>
         <file>components/CustomButton.qml</file>
         <file>images/more.png</file>
         <file>components/SingleLineTextInput.qml</file>
         <file>components/DatePicker.qml</file>
         <file>components/TimePicker.qml</file>
+        <file>images/ai.png</file>
+        <file>images/chatNew.png</file>
+        <file>images/clock.png</file>
+        <file>images/folder.png</file>
+        <file>images/puzzle.png</file>
+        <file>images/search.png</file>
+        <file>images/skillIcon.png</file>
     </qresource>
 </RCC>

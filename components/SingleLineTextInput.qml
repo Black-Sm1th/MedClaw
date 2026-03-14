@@ -7,15 +7,17 @@ Rectangle {
     // 可配置属性
     property int inputWidth: 300
     property int inputHeight: 30
-    property color borderColor: "transparent"
-    property color focusedBorderColor: "#3C7EFF"
-    property color backgroundColor: "#383838"
-    property color textColor: "#E5FFFFFF"
-    property color placeholderColor: "#c3c3c3"
-    property int fontSize: 16
+    property color borderColor: "#E6E7EB"
+    property color focusedBorderColor: "#006BFF"
+    property color backgroundColor: "#FFFFFF"
+    property color textColor: "#A6000000"
+    property color placeholderColor: "#40000000"
+    property int fontSize: 14
     property string placeholderText: qsTr("请输入...")
     property int borderWidth: 1
     property int inputRadius: 8
+    property string icon: ""
+    property int iconSize: 16
     
     // 文本属性
     property alias text: textField.text
@@ -40,9 +42,26 @@ Rectangle {
     border.width: borderWidth
     radius: inputRadius
     
+    Image {
+        id: iconImage
+        source: singleLineTextInput.icon
+        width: singleLineTextInput.iconSize
+        height: singleLineTextInput.iconSize
+        visible: singleLineTextInput.icon !== ""
+        fillMode: Image.PreserveAspectFit
+        sourceSize: Qt.size(singleLineTextInput.iconSize, singleLineTextInput.iconSize)
+        anchors.left: parent.left
+        anchors.leftMargin: 8
+        anchors.verticalCenter: parent.verticalCenter
+    }
+
     TextField {
         id: textField
-        anchors.fill: parent
+        anchors.left: iconImage.visible ? iconImage.right : parent.left
+        anchors.leftMargin: iconImage.visible ? 4 : 0
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
         font.pixelSize: fontSize
         font.family: "Alibaba PuHuiTi 3.0"
         color: textColor
@@ -55,7 +74,6 @@ Rectangle {
             color: "transparent"
         }
         
-        // 信号连接
         onAccepted: singleLineTextInput.accepted()
         onEditingFinished: singleLineTextInput.editingFinished()
         onActiveFocusChanged: singleLineTextInput.focusChanged(activeFocus)

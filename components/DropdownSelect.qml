@@ -20,6 +20,8 @@ Item {
     property color borderColor: "transparent"
     property int borderWidth: 0
     property int alignment: Qt.AlignHCenter
+    property string icon: ""
+    property int iconSize: 16
 
     signal selected(int index, string text)
 
@@ -48,16 +50,33 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             height: displayText.height
 
-            Text {
-                id: displayText
-                text: root.currentText
-                font.pixelSize: root.fontSize
-                font.family: "Alibaba PuHuiTi 3.0"
-                color: root.textColor
+            Row {
+                id: displayRow
+                spacing: 6
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: root.alignment === Qt.AlignLeft ? parent.left : undefined
                 anchors.horizontalCenter: root.alignment === Qt.AlignHCenter ? parent.horizontalCenter : undefined
                 anchors.horizontalCenterOffset: root.alignment === Qt.AlignHCenter ? -chevron.width / 2 - 2 : 0
+
+                Image {
+                    id: displayIcon
+                    source: root.icon
+                    width: root.iconSize
+                    height: root.iconSize
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.icon !== ""
+                    fillMode: Image.PreserveAspectFit
+                    sourceSize: Qt.size(root.iconSize, root.iconSize)
+                }
+
+                Text {
+                    id: displayText
+                    text: root.currentText
+                    font.pixelSize: root.fontSize
+                    font.family: "Alibaba PuHuiTi 3.0"
+                    color: root.textColor
+                    anchors.verticalCenter: parent.verticalCenter
+                }
             }
 
             Canvas {
@@ -162,14 +181,29 @@ Item {
                         ColorAnimation { duration: 100 }
                     }
 
-                    Text {
-                        text: modelData
-                        font.pixelSize: root.fontSize
-                        font.family: "Alibaba PuHuiTi 3.0"
-                        color: root.textColor
+                    Row {
+                        spacing: 6
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.left: parent.left
                         anchors.leftMargin: 8
+
+                        Image {
+                            source: root.icon
+                            width: root.iconSize
+                            height: root.iconSize
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: root.icon !== ""
+                            fillMode: Image.PreserveAspectFit
+                            sourceSize: Qt.size(root.iconSize, root.iconSize)
+                        }
+
+                        Text {
+                            text: modelData
+                            font.pixelSize: root.fontSize
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            color: root.textColor
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
 
                     MouseArea {

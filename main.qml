@@ -70,8 +70,19 @@ ApplicationWindow {
                                     rightPadding: 8
                                     Image{
                                         anchors.verticalCenter: parent.verticalCenter
-                                        source: isSelected ? "qrc:/images/leftSelectionSelected.png"
-                                                           : "qrc:/images/leftSelection.png"
+                                        width: 16
+                                        height: 16
+                                        source: {
+                                            if(modelData === "新建任务"){
+                                                return "qrc:/images/chatNew.png"
+                                            }else if(modelData === "定时任务"){
+                                                return "qrc:/images/clock.png"
+                                            }else if(modelData === "技能"){
+                                                return "qrc:/images/category.png"
+                                            }else if(modelData === "MCP"){
+                                                return "qrc:/images/puzzle.png"
+                                            }
+                                        }
                                     }
                                     Label{
                                         anchors.verticalCenter: parent.verticalCenter
@@ -240,6 +251,7 @@ ApplicationWindow {
                         MultiLineTextInput{
                             focusedBorderColor: "transparent"
                             backgroundColor: "transparent"
+                            borderWidth: 0
                             placeholderText: "分配一个任务或提问任何问题"
                             width: parent.width - 24
                             height: 66
@@ -249,44 +261,75 @@ ApplicationWindow {
                             width: parent.width - 24
                             Row {
                                 anchors.fill: parent
-                                spacing: 10
+                                spacing: 4
                                 DropdownSelect {
-                                    id: dropdownSelection
+                                    id: dropdownSelectionWorkSpace
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 144
-                                    height: 40
-                                    model: ["DeepSeek", "ChatGPT", "Claude"]
+                                    width: 137
+                                    height: 36
+                                    model: ["workspace"]
+                                    icon: "qrc:/images/folder.png"
+                                    iconSize: 20
                                     currentIndex: 0
                                 }
-                                ImageButton{
-                                    id: paperclipBtn
+                                DropdownSelect {
+                                    id: dropdownSelectionSkill
                                     anchors.verticalCenter: parent.verticalCenter
-                                    source: "qrc:/images/paperclip.png"
+                                    width: 96
+                                    height: 36
+                                    model: ["技能"]
+                                    icon: "qrc:/images/category.png"
+                                    iconSize: 20
+                                    currentIndex: 0
                                 }
-                                ImageButton{
-                                    id: categoryBtn
+                                DropdownSelect {
+                                    id: dropdownSelectionModel
                                     anchors.verticalCenter: parent.verticalCenter
-                                    source: "qrc:/images/category.png"
+                                    width: 137
+                                    height: 36
+                                    model: ["DeepSeek", "ChatGPT", "Gemini"]
+                                    icon: "qrc:/images/ai.png"
+                                    iconSize: 20
+                                    currentIndex: 0
                                 }
                                 Rectangle{
-                                    width: parent.width - dropdownSelection.width - paperclipBtn.width - categoryBtn.width - sendBtnRec.width - 4 * 10
+                                    width: parent.width - dropdownSelectionWorkSpace.width - dropdownSelectionSkill.width - dropdownSelectionModel.width - inputLeftRow.width - 4 * 4
                                     height: 1
                                 }
-                                Rectangle{
-                                    id: sendBtnRec
-                                    width: 40
-                                    height: 40
-                                    radius: 12
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    color: "#1F000000"
-                                    Image{
-                                        anchors.centerIn: parent
-                                        source: "qrc:/images/send.png"
-                                    }
-                                    MouseArea{
-                                        anchors.fill: parent
+                                Row{
+                                    id: inputLeftRow
+                                    height: parent.height
+                                    spacing: 24
+                                    ImageButton{
+                                        id: uploadBtn
+                                        source: "qrc:/images/paperclip.png"
+                                        anchors.verticalCenter: parent.verticalCenter
                                         onClicked: {
-                                            $MainViewController.sendMessage()
+
+                                        }
+                                    }
+                                    Rectangle{
+                                        width: 1
+                                        height: 16
+                                        color: "#1F000000"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Rectangle{
+                                        id: sendBtnRec
+                                        width: 40
+                                        height: 40
+                                        radius: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: "#1F000000"
+                                        Image{
+                                            anchors.centerIn: parent
+                                            source: "qrc:/images/send.png"
+                                        }
+                                        MouseArea{
+                                            anchors.fill: parent
+                                            onClicked: {
+                                                $MainViewController.sendMessage()
+                                            }
                                         }
                                     }
                                 }
@@ -321,7 +364,7 @@ ApplicationWindow {
                             }
                             Label{
                                 text: qsTr("创建定时任务，让 AI 按计划自动执行")
-                                font.pixelSize: 16
+                                font.pixelSize: 12
                                 color: "#A6000000"
                             }
                         }
@@ -452,6 +495,180 @@ ApplicationWindow {
                     }
                 }
             }
+            Rectangle{
+                id: skillSettingRec
+                anchors.fill: parent
+                visible: window.leftSelectedIndex === 2
+                Column{
+                    anchors.fill: parent
+                    leftPadding: 60
+                    topPadding: 24
+                    rightPadding: 60
+                    spacing: 16
+                    Rectangle{
+                        id: skillSettingTitleRec
+                        height: skillSettingTitle.height
+                        width: parent.width - 120
+                        Column{
+                            id: skillSettingTitle
+                            spacing: 8
+                            anchors.left: parent.left
+                            Label{
+                                text: qsTr("技能")
+                                font.pixelSize: 20
+                                font.weight: Font.Bold
+                                color: "#D9000000"
+                            }
+                            Label{
+                                text: qsTr("为您的智能体提供预封装且可重复的最佳实践与工具")
+                                font.pixelSize: 14
+                                color: "#A6000000"
+                            }
+                            SingleLineTextInput {
+                                inputHeight: 36
+                                inputWidth: skillSettingTitleRec.width
+                                icon: "qrc:/images/search.png"
+                                iconSize: 16
+                                placeholderText: "搜索技能"
+                            }
+                        }
+                        CustomButton{
+                            width: 80
+                            height: 36
+                            backgroundColor: "#0F006BFF"
+                            textColor: "#006BFF"
+                            borderWidth: 0
+                            text: "+ 添加"
+                            fontSize: 14
+                            anchors.right: parent.right
+                            onClicked: {
+
+                            }
+                        }
+                    }
+                    TabBarView{
+                        id: skillSettingTaskTab
+                        lineWidth: parent.width - 120
+                        tabs: [ { text: "已安装", badge: 12}, { text: "技能市场" }]
+                    }
+                    ScrollView {
+                        id: skillScrollView
+                        width: parent.width - 120
+                        height: skillSettingRec.height - 24 - skillSettingTitleRec.height - skillSettingTaskTab.height - 32
+                        clip: true
+                        visible: skillSettingTaskTab.currentIndex === 0
+
+                        Grid {
+                            id: skillGrid
+                            columns: 2
+                            spacing: 12
+                            width: skillScrollView.width
+
+                            property real cellWidth: (width - spacing) / 2
+
+                            Repeater {
+                                model: ListModel {
+                                    ListElement { title: "深度问数"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "生信分析"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "pdf"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "note-taker"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "docx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "file-organizer"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "pptx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                }
+
+                                delegate: Rectangle {
+                                    width: skillGrid.cellWidth
+                                    height: 100
+                                    radius: 8
+                                    border.color: "#E6E7EB"
+                                    border.width: 1
+                                    color: "#FFFFFF"
+
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        spacing: 12
+
+                                        Row{
+                                            spacing: 12
+                                            height: 28
+                                            Image {
+                                                width: 28
+                                                height: 28
+                                                source: model.icon
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                            Label {
+                                                text: model.title
+                                                font.pixelSize: 16
+                                                font.weight: Font.Bold
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+                                        Label {
+                                            text: model.desc
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                        }
+                                    }
+
+                                    Switch {
+                                        id: skillSwitch
+                                        checked: model.enabled
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: skillSwitch.toggle()
+                                        }
+
+                                        indicator: Rectangle {
+                                            implicitWidth: 44
+                                            implicitHeight: 22
+                                            x: skillSwitch.leftPadding
+                                            y: parent.height / 2 - height / 2
+                                            radius: 12
+                                            color: skillSwitch.checked ? "#006BFF" : "#1F000000"
+
+                                            Behavior on color {
+                                                ColorAnimation { duration: 150 }
+                                            }
+
+                                            Rectangle {
+                                                x: skillSwitch.checked ? parent.width - width - 3 : 3
+                                                y: parent.height / 2 - height / 2
+                                                width: 18
+                                                height: 18
+                                                radius: 9
+                                                color: "#FFFFFF"
+
+                                                Behavior on x {
+                                                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -548,9 +765,6 @@ ApplicationWindow {
                             width: parent.width
                             inputHeight: 40
                             inputRadius: 8
-                            borderColor: "#E6E7EB"
-                            focusedBorderColor: "#006BFF"
-                            backgroundColor: "#FFFFFF"
                             placeholderText: qsTr("请输入任务标题")
                             fontSize: 14
                         }
@@ -567,12 +781,7 @@ ApplicationWindow {
                         MultiLineTextInput {
                             width: parent.width
                             inputHeight: 120
-                            inputRadius: 8
-                            borderColor: "#E6E7EB"
-                            focusedBorderColor: "#006BFF"
-                            backgroundColor: "#FFFFFF"
                             placeholderText: qsTr("请输入要执行的提示词")
-                            fontSize: 14
                         }
                     }
 
@@ -622,9 +831,6 @@ ApplicationWindow {
                                 width: parent.width - 88
                                 inputHeight: 40
                                 inputRadius: 8
-                                borderColor: "#E6E7EB"
-                                focusedBorderColor: "#006BFF"
-                                backgroundColor: "#FFFFFF"
                                 placeholderText: ""
                                 readOnly: true
                                 fontSize: 14
