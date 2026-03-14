@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>main.qml</file>
+        <file>TestChatClient.qml</file>
         <file>fonts/AlibabaPuHuiTi-3-55-Regular.ttf</file>
         <file>fonts/AlibabaPuHuiTi-3-65-Medium.ttf</file>
         <file>fonts/AlibabaPuHuiTi-3-85-Bold.ttf</file>

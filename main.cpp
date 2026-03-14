@@ -65,7 +65,10 @@ int main(int argc, char *argv[])
     int fontId3 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-85-Regular.ttf");
     int fontId4 = QFontDatabase::addApplicationFont(":/fonts/AlimamaShuHeiTi-Bold.ttf");
 
-    const QUrl url(QStringLiteral("qrc:/main.qml"));
+    // --test 参数启动测试界面，否则加载正式界面
+    const bool testMode = app.arguments().contains(QStringLiteral("--test"));
+    const QUrl url(testMode ? QStringLiteral("qrc:/TestChatClient.qml")
+                            : QStringLiteral("qrc:/main.qml"));
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreated,
