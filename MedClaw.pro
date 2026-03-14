@@ -9,17 +9,25 @@ msvc: QMAKE_CXXFLAGS += /utf-8
 
 HEADERS += \
     mainviewcontroller.h \
-    openclawclient.h \
+    CommonFunc.h \
+    gateway_client.h \
     chatmodel.h \
     ed25519_local.h \
-    CommonFunc.h
+    ws_config.h \
+    ws_session.h \
+    ws_skill.h \
+    ws_scheduled_task.h
 
 SOURCES += \
     main.cpp \
     mainviewcontroller.cpp \
-    openclawclient.cpp \
+    gateway_client.cpp \
     chatmodel.cpp \
-    ed25519_local.cpp
+    ed25519_local.cpp \
+    ws_config.cpp \
+    ws_session.cpp \
+    ws_skill.cpp \
+    ws_scheduled_task.cpp
 
 RESOURCES += qml.qrc
 
