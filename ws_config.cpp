@@ -16,11 +16,27 @@
 WsConfig::WsConfig()
     // ── 服务器默认配置 ──
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
+    // ── Token：Linux ARM 部署使用独立 Token ──
+#if defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM)
+    , m_token(QStringLiteral("25e30855b27e123e31731de3769e4149380b8a5f89f3f5b5"))
+#else
     , m_token(QStringLiteral("81Rfv9HOnc6uqLVT7GrZ42j5tbBpgQahCKWiAYyEmUFekJSld03IowsxMDPNXz"))
+#endif
     // ── 客户端身份（需与 Gateway 白名单中的 client.id 匹配） ──
     , m_clientId(QStringLiteral("clawdbot-control-ui"))
     , m_clientVersion(QStringLiteral("dev"))
+    // ── 平台标识：编译期自动检测 ──
+#if defined(Q_OS_WIN)
     , m_clientPlatform(QStringLiteral("Win32"))
+#elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM)
+    , m_clientPlatform(QStringLiteral("LinuxARM"))
+#elif defined(Q_OS_LINUX)
+    , m_clientPlatform(QStringLiteral("Linux"))
+#elif defined(Q_OS_MACOS)
+    , m_clientPlatform(QStringLiteral("MacIntel"))
+#else
+    , m_clientPlatform(QStringLiteral("Unknown"))
+#endif
     , m_clientMode(QStringLiteral("webchat"))
     // ── 协议版本 & 角色 ──
     , m_minProtocol(3)
