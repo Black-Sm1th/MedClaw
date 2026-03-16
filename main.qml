@@ -253,8 +253,18 @@ ApplicationWindow {
                 id: newTaskRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 0
+                property bool hasMessages: chatModel.count > 0
+
+                function doSendMessage() {
+                    var msg = textInputArea.text.trim()
+                    if (msg === "") return
+                    textInputArea.text = ""
+                    $MainViewController.sendMessage(msg)
+                }
+
                 Column{
                     id: titleCol
+                    visible: !newTaskRec.hasMessages
                     width: 840
                     spacing: 11
                     anchors.topMargin: 100
@@ -272,15 +282,171 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
+                ListView {
+                    id: chatListView
+                    visible: newTaskRec.hasMessages
+                    anchors.top: parent.top
+                    anchors.topMargin: 16
+                    anchors.bottom: chatInputContainer.top
+                    anchors.bottomMargin: 8
+                    width: 840
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    clip: true
+                    model: chatModel
+                    spacing: 12
+
+                    onCountChanged: {
+                        if (count > 0)
+                            Qt.callLater(positionViewAtEnd)
+                    }
+
+                    delegate: Item {
+                        width: chatListView.width
+                        height: {
+                            if (msgType === "toolCall") return toolCallCard.height
+                            if (msgType === "toolResult") return toolResCard.height
+                            return chatBubble.height
+                        }
+
+                        Rectangle {
+                            id: chatBubble
+                            visible: msgType !== "toolCall" && msgType !== "toolResult"
+                            width: parent.width
+                            height: visible ? bubbleInner.height + 4 : 0
+                            color: "transparent"
+                            readonly property bool isUser: msgRole === "user"
+
+                            Rectangle {
+                                id: bubbleInner
+                                anchors.left: chatBubble.isUser ? undefined : parent.left
+                                anchors.right: chatBubble.isUser ? parent.right : undefined
+                                anchors.top: parent.top
+                                width: Math.min(bubbleCol.implicitWidth + 32, chatBubble.width * 0.75)
+                                height: bubbleCol.implicitHeight + 24
+                                radius: 16
+                                color: chatBubble.isUser ? "#006BFF" : "#F5F5F5"
+
+                                Column {
+                                    id: bubbleCol
+                                    anchors.fill: parent
+                                    anchors.margins: 14
+                                    spacing: 4
+
+                                    Text {
+                                        width: parent.width
+                                        text: content
+                                        wrapMode: Text.Wrap
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        color: chatBubble.isUser ? "#FFFFFF" : "#333333"
+                                        textFormat: Text.PlainText
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: toolCallCard
+                            visible: msgType === "toolCall"
+                            width: parent.width
+                            height: visible ? toolCallInner.height + 8 : 0
+                            color: "transparent"
+
+                            Rectangle {
+                                id: toolCallInner
+                                width: parent.width
+                                anchors.top: parent.top
+                                height: toolCallCol.implicitHeight + 16
+                                radius: 10
+                                color: "#FFF8E1"
+                                border.color: "#FFE082"
+                                border.width: 1
+
+                                Column {
+                                    id: toolCallCol
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 4
+
+                                    Row {
+                                        spacing: 6
+                                        Text { text: "\u2699"; font.pixelSize: 14 }
+                                        Text {
+                                            text: qsTr("工具调用: ") + toolName
+                                            font.pixelSize: 13
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.bold: true
+                                            color: "#F57F17"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: toolResCard
+                            visible: msgType === "toolResult"
+                            width: parent.width
+                            height: visible ? toolResInner.height + 8 : 0
+                            color: "transparent"
+
+                            Rectangle {
+                                id: toolResInner
+                                width: parent.width
+                                anchors.top: parent.top
+                                height: toolResCol.implicitHeight + 16
+                                radius: 10
+                                color: isError ? "#FFEBEE" : "#E8F5E9"
+                                border.color: isError ? "#EF9A9A" : "#A5D6A7"
+                                border.width: 1
+
+                                Column {
+                                    id: toolResCol
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 4
+
+                                    Row {
+                                        spacing: 6
+                                        Text { text: isError ? "\u274C" : "\u2705"; font.pixelSize: 14 }
+                                        Text {
+                                            text: (isError ? qsTr("错误: ") : qsTr("结果: ")) + toolName
+                                            font.pixelSize: 13
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.bold: true
+                                            color: isError ? "#C62828" : "#2E7D32"
+                                        }
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: content || ""
+                                        wrapMode: Text.Wrap
+                                        font.pixelSize: 12
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        color: isError ? "#B71C1C" : "#33691E"
+                                        maximumLineCount: 3
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Rectangle{
-                    anchors.top: titleCol.bottom
-                    anchors.topMargin: 76
+                    id: chatInputContainer
                     border.color: "#40000000"
                     border.width: 1
                     radius: 20
                     height: 142
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
+                    y: newTaskRec.hasMessages
+                       ? newTaskRec.height - height - 24
+                       : titleCol.y + titleCol.height + 76
+                    Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+
                     Column{
                         anchors.fill: parent
                         padding: 12
@@ -293,11 +459,7 @@ ApplicationWindow {
                             placeholderText: "分配一个任务或提问任何问题"
                             width: parent.width - 24
                             height: 66
-                            onEnterPressed: {
-                                if(textInputArea.text !== ""){
-                                    $MainViewController.sendMessage()
-                                }
-                            }
+                            onEnterPressed: newTaskRec.doSendMessage()
                         }
                         Rectangle{
                             height: 40
@@ -829,9 +991,7 @@ ApplicationWindow {
                                         enabled: textInputArea.text !== ""
                                         backgroundColor: "#006BFF"
                                         iconSource: "qrc:/images/send.png"
-                                        onClicked: {
-                                            $MainViewController.sendMessage()
-                                        }
+                                        onClicked: newTaskRec.doSendMessage()
                                     }
                                 }
                             }

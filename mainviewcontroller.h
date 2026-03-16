@@ -4,12 +4,21 @@
 #include "CommonFunc.h"
 #include <QObject>
 
+class ChatModel;
+class GatewayClient;
+
 class MainViewController : public QObject
 {
     Q_OBJECT
     SINGLETON_CLASS(MainViewController)
 public:
-    Q_INVOKABLE void sendMessage();
+    void init(ChatModel *chatModel, GatewayClient *wsClient);
+
+    Q_INVOKABLE void sendMessage(const QString &text);
+
+private:
+    ChatModel      *m_chatModel  = nullptr;
+    GatewayClient  *m_wsClient   = nullptr;
 };
 
 #endif // MAINVIEWCONTROLLER_H

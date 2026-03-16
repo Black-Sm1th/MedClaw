@@ -88,6 +88,8 @@ int main(int argc, char *argv[])
     // ── 本地会话历史读取器 ──
     SessionReader sessionReader;
 
+    GET_SINGLETON(MainViewController)->init(&chatModel, &wsClient);
+
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("$MainViewController", GET_SINGLETON(MainViewController));
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);
