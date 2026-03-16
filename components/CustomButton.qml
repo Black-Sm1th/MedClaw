@@ -17,6 +17,7 @@ Rectangle {
     property int borderWidth: 0
     property int buttonRadius: 8
     property bool containsMouse: mouseArea.containsMouse
+    property bool enabled: true
     // 渐变相关属性
     property bool useGradient: false  // 是否使用渐变背景
     property color gradientStartColor: "#3C7EFF"
@@ -41,26 +42,20 @@ Rectangle {
     
     // 背景样式
     color: {
-        if (mouseArea.pressed) {
-            return pressedBackgroundColor
-        } else if (mouseArea.containsMouse) {
-            return hoverBackgroundColor
-        } else {
-            return backgroundColor
-        }
+        if (!enabled) return "#EBEDF0"
+        if (mouseArea.pressed) return pressedBackgroundColor
+        if (mouseArea.containsMouse) return hoverBackgroundColor
+        return backgroundColor
     }
     
     border.color: {
-        if (mouseArea.pressed) {
-            return pressedBorderColor
-        } else if (mouseArea.containsMouse) {
-            return hoverBorderColor
-        } else {
-            return borderColor
-        }
+        if (!enabled) return "transparent"
+        if (mouseArea.pressed) return pressedBorderColor
+        if (mouseArea.containsMouse) return hoverBorderColor
+        return borderColor
     }
     
-    border.width: borderWidth
+    border.width: enabled ? borderWidth : 0
     radius: buttonRadius
     
     // 渐变背景层
@@ -142,13 +137,10 @@ Rectangle {
             text: customButton.text
             font.pixelSize: fontSize
             color: {
-                if (mouseArea.pressed) {
-                    return pressedTextColor
-                } else if (mouseArea.containsMouse) {
-                    return hoverTextColor
-                } else {
-                    return textColor
-                }
+                if (!customButton.enabled) return "#73000000"
+                if (mouseArea.pressed) return pressedTextColor
+                if (mouseArea.containsMouse) return hoverTextColor
+                return textColor
             }
             anchors.verticalCenter: parent.verticalCenter
             font.family: "Alibaba PuHuiTi 3.0"
@@ -159,19 +151,19 @@ Rectangle {
     MouseArea {
         id: mouseArea
         anchors.fill: parent
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        hoverEnabled: customButton.enabled
+        cursorShape: customButton.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         
         onClicked: {
-            customButton.clicked()
+            if (customButton.enabled) customButton.clicked()
         }
         
         onPressed: {
-            customButton.pressed()
+            if (customButton.enabled) customButton.pressed()
         }
         
         onReleased: {
-            customButton.released()
+            if (customButton.enabled) customButton.released()
         }
     }
     
@@ -201,7 +193,7 @@ Rectangle {
     states: [
         State {
             name: "pressed"
-            when: mouseArea.pressed
+            when: mouseArea.pressed && customButton.enabled
             PropertyChanges {
                 target: customButton
                 scale: 0.98

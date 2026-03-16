@@ -24,12 +24,18 @@
         <file>components/SingleLineTextInput.qml</file>
         <file>components/DatePicker.qml</file>
         <file>components/TimePicker.qml</file>
-        <file>images/ai.png</file>
         <file>images/chatNew.png</file>
         <file>images/clock.png</file>
         <file>images/folder.png</file>
         <file>images/puzzle.png</file>
         <file>images/search.png</file>
         <file>images/skillIcon.png</file>
+        <file>images/download.png</file>
+        <file>images/link.png</file>
+        <file>images/upload.png</file>
+        <file>images/delete.png</file>
+        <file>images/edit.png</file>
+        <file>images/chatLine.png</file>
+        <file>images/ai.png</file>
     </qresource>
 </RCC>

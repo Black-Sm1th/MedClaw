@@ -1,6 +1,8 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Window 2.2
+import QtQuick.Dialogs 1.3
+import QtGraphicalEffects 1.0
 import "./components"
 ApplicationWindow {
     id: window
@@ -13,13 +15,19 @@ ApplicationWindow {
     font.pixelSize: 14
     property bool isNewTask: true
     property int leftSelectedIndex: 0
+    property bool sidebarCollapsed: false
     Rectangle{
         id: leftContainer
-        width: 280
+        width: window.sidebarCollapsed ? 0 : 280
         height: parent.height
         anchors.left: parent.left
         anchors.top: parent.top
         color: "#F7F9FA"
+        clip: true
+
+        Behavior on width {
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        }
         Column{
             height: parent.height
             width: parent.width
@@ -38,6 +46,7 @@ ApplicationWindow {
                     source: "qrc:/images/sidebarMinimalistic.png"
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.right: parent.right
+                    onClicked: window.sidebarCollapsed = !window.sidebarCollapsed
                 }
             }
             Rectangle{
@@ -144,6 +153,36 @@ ApplicationWindow {
                 }
             }
 
+            Row {
+                leftPadding: 16
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 16
+                visible: window.sidebarCollapsed
+
+                opacity: window.sidebarCollapsed ? 1 : 0
+                Behavior on opacity {
+                    NumberAnimation { duration: 150 }
+                }
+
+                Image {
+                    source: "qrc:/images/titleIcon.png"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                ImageButton {
+                    source: "qrc:/images/sidebarMinimalistic.png"
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: window.sidebarCollapsed = false
+                }
+                ImageButton {
+                    source: "qrc:/images/chatLine.png"
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: {
+                        window.leftSelectedIndex = 0
+                    }
+                }
+            }
+
             Row{
                 rightPadding: 16
                 anchors.right: parent.right
@@ -151,9 +190,7 @@ ApplicationWindow {
                 ImageButton{
                     id: settingBtn
                     source: "qrc:/images/setting.png"
-                    onClicked: {
-
-                    }
+                    onClicked: settingsDialog.open()
                 }
                 Rectangle{
                     width: 20
@@ -390,7 +427,7 @@ ApplicationWindow {
                         width: parent.width
                         height: parent.height - 32 - scheduledTaskTitleRec.height - scheduledTaskTab.height - 24
                         clip: true
-                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         Column{
                             spacing: 12
                             width: parent.width
@@ -532,17 +569,115 @@ ApplicationWindow {
                                 placeholderText: "搜索技能"
                             }
                         }
-                        CustomButton{
+                        Item {
                             width: 80
                             height: 36
-                            backgroundColor: "#0F006BFF"
-                            textColor: "#006BFF"
-                            borderWidth: 0
-                            text: "+ 添加"
-                            fontSize: 14
                             anchors.right: parent.right
-                            onClicked: {
 
+                            CustomButton{
+                                id: addSkillBtn
+                                anchors.fill: parent
+                                backgroundColor: "#0F006BFF"
+                                textColor: "#006BFF"
+                                borderWidth: 0
+                                text: "+ 添加"
+                                fontSize: 14
+                                onClicked: addSkillMenu.visible ? addSkillMenu.close() : addSkillMenu.open()
+                            }
+
+                            Popup {
+                                id: addSkillMenu
+                                y: addSkillBtn.height + 4
+                                x: parent.width - width
+                                width: 180
+                                padding: 4
+
+                                background: Rectangle {
+                                    radius: 8
+                                    color: "#FFFFFF"
+                                    border.color: "#14000000"
+                                    border.width: 1
+                                    layer.enabled: true
+                                    layer.effect: DropShadow {
+                                        transparentBorder: true
+                                        radius: 12
+                                        samples: 25
+                                        color: "#1A000000"
+                                    }
+                                }
+
+                                contentItem: Column {
+                                    spacing: 2
+
+                                    Repeater {
+                                        model: [
+                                            { text: "上传 .ZIP", icon: "qrc:/images/upload.png" },
+                                            { text: "上传文件夹", icon: "qrc:/images/folder.png" },
+                                            { text: "从 GitHub 导入", icon: "qrc:/images/link.png" }
+                                        ]
+
+                                        delegate: Rectangle {
+                                            width: 172
+                                            height: 36
+                                            radius: 6
+                                            color: menuItemMouse.pressed ? "#14000000"
+                                                 : menuItemMouse.containsMouse ? "#0A000000"
+                                                 : "transparent"
+
+                                            Behavior on color {
+                                                ColorAnimation { duration: 100 }
+                                            }
+
+                                            Row {
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 10
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 8
+
+                                                Image {
+                                                    width: 16
+                                                    height: 16
+                                                    source: modelData.icon
+                                                    sourceSize: Qt.size(16, 16)
+                                                    fillMode: Image.PreserveAspectFit
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                }
+
+                                                Label {
+                                                    text: modelData.text
+                                                    font.pixelSize: 14
+                                                    color: "#D9000000"
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: menuItemMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    addSkillMenu.close()
+                                                    if (index === 0) {
+                                                        zipFileDialog.open()
+                                                    } else if (index === 1) {
+                                                        folderDialog.open()
+                                                    } else if (index === 2) {
+                                                        githubImportDialog.open()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                enter: Transition {
+                                    NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                                    NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                                }
+                                exit: Transition {
+                                    NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                                }
                             }
                         }
                     }
@@ -557,7 +692,7 @@ ApplicationWindow {
                         height: skillSettingRec.height - 24 - skillSettingTitleRec.height - skillSettingTaskTab.height - 32
                         clip: true
                         visible: skillSettingTaskTab.currentIndex === 0
-
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         Grid {
                             id: skillGrid
                             columns: 2
@@ -667,6 +802,369 @@ ApplicationWindow {
                             }
                         }
                     }
+                    ScrollView {
+                        id: skillMarketScrollView
+                        width: parent.width - 120
+                        height: skillSettingRec.height - 24 - skillSettingTitleRec.height - skillSettingTaskTab.height - 32
+                        clip: true
+                        visible: skillSettingTaskTab.currentIndex === 1
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+
+                        Grid {
+                            id: skillMarketGrid
+                            columns: 2
+                            spacing: 12
+                            width: skillMarketScrollView.width
+
+                            property real cellWidth: (width - spacing) / 2
+
+                            Repeater {
+                                model: ListModel {
+                                    ListElement { title: "深度问数"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "生信分析"; desc: "单细胞数据分析，空间转录数据分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "pdf"; desc: "PDF 文本提取、表单填写与文档处理"; icon: "qrc:/images/skillIcon.png"; installed: true }
+                                    ListElement { title: "note-taker"; desc: "自动笔记整理与知识沉淀"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "docx"; desc: "Word 文档创建、编辑与格式分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "file-organizer"; desc: "本地文件智能分类与整理"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "pptx"; desc: "演示文稿编辑与内容生成"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "xlsx"; desc: "电子表格创建、公式计算与可视化"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                }
+
+                                delegate: Rectangle {
+                                    width: skillMarketGrid.cellWidth
+                                    height: 100
+                                    radius: 8
+                                    border.color: "#E6E7EB"
+                                    border.width: 1
+                                    color: "#FFFFFF"
+
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        spacing: 12
+
+                                        Row {
+                                            spacing: 12
+                                            height: 28
+                                            Image {
+                                                width: 28
+                                                height: 28
+                                                source: model.icon
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                            Label {
+                                                text: model.title
+                                                font.pixelSize: 16
+                                                font.weight: Font.Bold
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+                                        Label {
+                                            text: model.desc
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                        }
+                                    }
+
+                                    CustomButton {
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        width: 80
+                                        height: 36
+                                        buttonRadius: 8
+                                        fontSize: 14
+                                        iconSource: model.installed ? "" : "qrc:/images/download.png"
+                                        text: model.installed ? "已安装" : "安装"
+                                        backgroundColor: "#006BFF"
+                                        textColor: "#FFFFFF"
+                                        borderWidth: 0
+                                        enabled: !model.installed
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                id: mcpSettingRec
+                anchors.fill: parent
+                visible: window.leftSelectedIndex === 3
+                Column {
+                    anchors.fill: parent
+                    leftPadding: 60
+                    topPadding: 24
+                    rightPadding: 60
+                    spacing: 16
+                    Rectangle {
+                        id: mcpTitleRec
+                        height: mcpTitle.height
+                        width: parent.width - 120
+                        Column {
+                            id: mcpTitle
+                            spacing: 8
+                            anchors.left: parent.left
+                            Label {
+                                text: qsTr("MCP")
+                                font.pixelSize: 20
+                                font.weight: Font.Bold
+                                color: "#D9000000"
+                            }
+                            Label {
+                                text: qsTr("配置和管理 MCP（Model Context Protocol）服务器，为您的智能体扩展工具能力")
+                                font.pixelSize: 14
+                                color: "#A6000000"
+                            }
+                            SingleLineTextInput {
+                                inputHeight: 36
+                                inputWidth: mcpTitleRec.width
+                                icon: "qrc:/images/search.png"
+                                iconSize: 16
+                                placeholderText: "搜索技能"
+                            }
+                        }
+                        CustomButton {
+                            width: 80
+                            height: 36
+                            backgroundColor: "#0F006BFF"
+                            textColor: "#006BFF"
+                            borderWidth: 0
+                            text: "+ 添加"
+                            fontSize: 14
+                            anchors.right: parent.right
+                            onClicked: {
+                                mcpServiceDialog.isEdit = false
+                                mcpServiceDialog.open()
+                            }
+                        }
+                    }
+                    TabBarView {
+                        id: mcpTab
+                        lineWidth: parent.width - 120
+                        tabs: [{ text: "已安装", badge: 12 }, { text: "MCP市场" }]
+                    }
+
+                    ScrollView {
+                        id: mcpInstalledScrollView
+                        width: parent.width - 120
+                        height: mcpSettingRec.height - 24 - mcpTitleRec.height - mcpTab.height - 32
+                        clip: true
+                        visible: mcpTab.currentIndex === 0
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+
+                        Grid {
+                            id: mcpInstalledGrid
+                            columns: 2
+                            spacing: 12
+                            width: mcpInstalledScrollView.width
+                            property real cellWidth: (width - spacing) / 2
+
+                            Repeater {
+                                model: ListModel {
+                                    ListElement { title: "Tavily"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "GitHub"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "GitLab"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Context7"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
+                                }
+
+                                delegate: Rectangle {
+                                    width: mcpInstalledGrid.cellWidth
+                                    height: 100
+                                    radius: 8
+                                    border.color: "#E6E7EB"
+                                    border.width: 1
+                                    color: "#FFFFFF"
+
+                                    HoverHandler {
+                                        id: mcpCardHover
+                                    }
+
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        spacing: 12
+                                        Row {
+                                            spacing: 12
+                                            height: 28
+                                            Image {
+                                                width: 28; height: 28
+                                                source: model.icon
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                            Label {
+                                                text: model.title
+                                                font.pixelSize: 16
+                                                font.weight: Font.Bold
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+                                        Label {
+                                            text: model.desc
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                        }
+                                    }
+
+                                    Row {
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        spacing: 8
+                                        height: 28
+
+                                        ImageButton {
+                                            source: "qrc:/images/edit.png"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: mcpCardHover.hovered
+                                            onClicked: {
+                                                mcpServiceDialog.isEdit = true
+                                                mcpServiceDialog.open()
+                                            }
+                                        }
+                                        ImageButton {
+                                            source: "qrc:/images/delete.png"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: mcpCardHover.hovered
+                                        }
+                                        Rectangle {
+                                            height: 16
+                                            width: 1
+                                            color: "#1F000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: mcpCardHover.hovered
+                                        }
+                                        Switch {
+                                            id: mcpSwitch
+                                            checked: model.enabled
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: mcpSwitch.toggle()
+                                            }
+                                            indicator: Rectangle {
+                                                implicitWidth: 44
+                                                implicitHeight: 22
+                                                x: mcpSwitch.leftPadding
+                                                y: parent.height / 2 - height / 2
+                                                radius: 12
+                                                color: mcpSwitch.checked ? "#006BFF" : "#1F000000"
+                                                Behavior on color { ColorAnimation { duration: 150 } }
+                                                Rectangle {
+                                                    x: mcpSwitch.checked ? parent.width - width - 3 : 3
+                                                    y: parent.height / 2 - height / 2
+                                                    width: 18; height: 18; radius: 9
+                                                    color: "#FFFFFF"
+                                                    Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ScrollView {
+                        id: mcpMarketScrollView
+                        width: parent.width - 120
+                        height: mcpSettingRec.height - 24 - mcpTitleRec.height - mcpTab.height - 32
+                        clip: true
+                        visible: mcpTab.currentIndex === 1
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+
+                        Grid {
+                            id: mcpMarketGrid
+                            columns: 2
+                            spacing: 12
+                            width: mcpMarketScrollView.width
+                            property real cellWidth: (width - spacing) / 2
+
+                            Repeater {
+                                model: ListModel {
+                                    ListElement { title: "Tavily"; desc: "AI 驱动的实时网络搜索引擎"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "GitHub"; desc: "GitHub 仓库管理与代码协作"; icon: "qrc:/images/skillIcon.png"; installed: true }
+                                    ListElement { title: "Notion"; desc: "知识库与文档自动化管理"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "Slack"; desc: "团队消息通知与工作流集成"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "Figma"; desc: "设计稿读取与自动化标注"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                    ListElement { title: "PostgreSQL"; desc: "数据库查询与数据分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
+                                }
+
+                                delegate: Rectangle {
+                                    width: mcpMarketGrid.cellWidth
+                                    height: 100
+                                    radius: 8
+                                    border.color: "#E6E7EB"
+                                    border.width: 1
+                                    color: "#FFFFFF"
+
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        spacing: 12
+                                        Row {
+                                            spacing: 12
+                                            height: 28
+                                            Image {
+                                                width: 28; height: 28
+                                                source: model.icon
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                            Label {
+                                                text: model.title
+                                                font.pixelSize: 16
+                                                font.weight: Font.Bold
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+                                        Label {
+                                            text: model.desc
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                        }
+                                    }
+
+                                    CustomButton {
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        width: 80
+                                        height: 36
+                                        buttonRadius: 8
+                                        fontSize: 14
+                                        iconSource: model.installed ? "" : "qrc:/images/download.png"
+                                        text: model.installed ? "已安装" : "安装"
+                                        backgroundColor: "#006BFF"
+                                        textColor: "#FFFFFF"
+                                        borderWidth: 0
+                                        enabled: !model.installed
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -713,7 +1211,7 @@ ApplicationWindow {
                 width: 600
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                height: dialogContent.implicitHeight + 48
+                height: dialogTitleBar.height + dialogContent.implicitHeight + 24 + 16
                 radius: 16
                 color: "#FFFFFF"
 
@@ -722,36 +1220,43 @@ ApplicationWindow {
                     onClicked: {} // 阻止点击穿透关闭
                 }
 
+                Item {
+                    id: dialogTitleBar
+                    width: parent.width
+                    height: 64
+
+                    Label {
+                        text: qsTr("新建任务")
+                        font.pixelSize: 20
+                        font.weight: Font.Bold
+                        color: "#D9000000"
+                        anchors.left: parent.left
+                        anchors.leftMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    ImageButton {
+                        source: "qrc:/images/close.png"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: newTaskDialog.close()
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.bottom: parent.bottom
+                    }
+                }
+
                 Column {
                     id: dialogContent
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.top: parent.top
+                    anchors.top: dialogTitleBar.bottom
                     anchors.margins: 24
+                    anchors.topMargin: 16
                     spacing: 16
-
-                    Item {
-                        width: parent.width
-                        height: 48
-                        Label {
-                            text: qsTr("新建任务")
-                            font.pixelSize: 20
-                            font.weight: Font.Bold
-                            color: "#D9000000"
-                            anchors.left: parent.left
-                        }
-                        ImageButton {
-                            source: "qrc:/images/close.png"
-                            anchors.right: parent.right
-                            onClicked: newTaskDialog.close()
-                        }
-                        Rectangle{
-                            height: 1
-                            width: parent.width
-                            color: "#14000000"
-                            anchors.bottom: parent.bottom
-                        }
-                    }
 
                     Column {
                         width: parent.width
@@ -875,6 +1380,1174 @@ ApplicationWindow {
                             text: qsTr("取消")
                             fontSize: 14
                             onClicked: newTaskDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    FileDialog {
+        id: zipFileDialog
+        title: qsTr("选择 ZIP 文件")
+        nameFilters: ["ZIP files (*.zip)"]
+        selectMultiple: false
+        onAccepted: {
+        }
+    }
+
+    FileDialog {
+        id: folderDialog
+        title: qsTr("选择文件夹")
+        selectFolder: true
+        onAccepted: {
+        }
+    }
+
+    Popup {
+        id: githubImportDialog
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 0
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
+        }
+
+        Overlay.modal: Rectangle {
+            color: "#40000000"
+        }
+
+        background: Rectangle {
+            color: "transparent"
+        }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: githubImportDialog.close()
+            }
+
+            Rectangle {
+                width: 600
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                height: githubTitleBar.height + githubDialogContent.implicitHeight + 24 + 16
+                radius: 16
+                color: "#FFFFFF"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {}
+                }
+
+                Item {
+                    id: githubTitleBar
+                    width: parent.width
+                    height: 64
+
+                    Label {
+                        text: qsTr("从 GitHub 导入")
+                        font.pixelSize: 20
+                        font.weight: Font.Bold
+                        color: "#D9000000"
+                        anchors.left: parent.left
+                        anchors.leftMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    ImageButton {
+                        source: "qrc:/images/close.png"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: githubImportDialog.close()
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.bottom: parent.bottom
+                    }
+                }
+
+                Column {
+                    id: githubDialogContent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: githubTitleBar.bottom
+                    anchors.margins: 24
+                    anchors.topMargin: 16
+                    spacing: 20
+
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        Label {
+                            text: "URL"
+                            font.pixelSize: 14
+                            color: "#D9000000"
+                        }
+                        SingleLineTextInput {
+                            id: githubUrlInput
+                            width: parent.width
+                            inputHeight: 36
+                            inputRadius: 8
+                            fontSize: 14
+                            placeholderText: "https://github.com/owner/repo/tree/main/SKILLs/my-skil"
+                        }
+                    }
+                    Label {
+                        text: qsTr("支持仓库链接与子目录链接，owner/repo 或 GitHub tree/blob 链接；\n若仓库内有多个技能，将自动全部导入。")
+                        font.pixelSize: 14
+                        color: "#73000000"
+                        lineHeight: 1.5
+                    }
+                    Row {
+                        width: parent.width
+                        spacing: 12
+                        layoutDirection: Qt.RightToLeft
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: qsTr("导入")
+                            fontSize: 14
+                            onClicked: {
+                                githubImportDialog.close()
+                            }
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
+                            borderWidth: 1
+                            text: qsTr("取消")
+                            fontSize: 14
+                            onClicked: githubImportDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: mcpServiceDialog
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 0
+
+        property bool isEdit: false
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
+        }
+
+        Overlay.modal: Rectangle {
+            color: "#40000000"
+        }
+
+        background: Rectangle {
+            color: "transparent"
+        }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: mcpServiceDialog.close()
+            }
+
+            Rectangle {
+                width: 560
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                height: mcpDialogTitleBar.height + mcpDialogScrollView.height + mcpDialogFooter.height
+                radius: 16
+                color: "#FFFFFF"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {}
+                }
+
+                Item {
+                    id: mcpDialogTitleBar
+                    width: parent.width
+                    height: 64
+
+                    Label {
+                        text: mcpServiceDialog.isEdit ? qsTr("编辑 MCP 服务") : qsTr("添加 MCP 服务")
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                        color: "#D9000000"
+                        anchors.left: parent.left
+                        anchors.leftMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    ImageButton {
+                        source: "qrc:/images/close.png"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: mcpServiceDialog.close()
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.bottom: parent.bottom
+                    }
+                }
+
+                ScrollView {
+                    id: mcpDialogScrollView
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: mcpDialogTitleBar.bottom
+                    height: Math.min(mcpDialogContentCol.implicitHeight, window.height - 280)
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    Column {
+                        id: mcpDialogContentCol
+                        width: mcpDialogScrollView.width
+                        leftPadding: 24
+                        rightPadding: 24
+                        topPadding: 16
+                        bottomPadding: 16
+                        spacing: 16
+
+                        Column {
+                            width: parent.width - 48
+                            spacing: 8
+                            Row {
+                                spacing: 2
+                                Label {
+                                    text: qsTr("服务名称")
+                                    font.pixelSize: 14
+                                    color: "#D9000000"
+                                }
+                                Label {
+                                    text: "*"
+                                    font.pixelSize: 14
+                                    color: "#FF4D4F"
+                                }
+                            }
+                            SingleLineTextInput {
+                                id: mcpNameInput
+                                width: parent.width
+                                inputHeight: 40
+                                inputRadius: 8
+                                fontSize: 14
+                                placeholderText: qsTr("请输入")
+                            }
+                        }
+
+                        Column {
+                            width: parent.width - 48
+                            spacing: 8
+                            Label {
+                                text: qsTr("描述")
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                            }
+                            SingleLineTextInput {
+                                id: mcpDescInput
+                                width: parent.width
+                                inputHeight: 40
+                                inputRadius: 8
+                                fontSize: 14
+                                placeholderText: qsTr("描述此 MCP 服务的用途")
+                            }
+                        }
+
+                        Column {
+                            width: parent.width - 48
+                            spacing: 8
+                            Row {
+                                spacing: 2
+                                Label {
+                                    text: qsTr("传输类型")
+                                    font.pixelSize: 14
+                                    color: "#D9000000"
+                                }
+                                Label {
+                                    text: "*"
+                                    font.pixelSize: 14
+                                    color: "#FF4D4F"
+                                }
+                            }
+                            DropdownSelect {
+                                id: mcpTransportSelect
+                                width: parent.width
+                                height: 40
+                                model: ["标准输入输出（stdio）", "HTTP (SSE)"]
+                                currentIndex: 0
+                                borderColor: "#E6E7EB"
+                                borderWidth: 1
+                                alignment: Qt.AlignLeft
+                            }
+                        }
+
+                        Column {
+                            width: parent.width - 48
+                            spacing: 8
+                            Row {
+                                spacing: 2
+                                Label {
+                                    text: qsTr("命令")
+                                    font.pixelSize: 14
+                                    color: "#D9000000"
+                                }
+                                Label {
+                                    text: "*"
+                                    font.pixelSize: 14
+                                    color: "#FF4D4F"
+                                }
+                            }
+                            DropdownSelect {
+                                id: mcpCommandSelect
+                                width: parent.width
+                                height: 40
+                                model: ["node", "npx", "uvx", "python"]
+                                currentIndex: 0
+                                borderColor: "#E6E7EB"
+                                borderWidth: 1
+                                alignment: Qt.AlignLeft
+                            }
+                        }
+
+                        Column {
+                            width: parent.width - 48
+                            spacing: 8
+                            Label {
+                                text: qsTr("参数")
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                            }
+                            MultiLineTextInput {
+                                id: mcpArgsInput
+                                width: parent.width
+                                inputHeight: 80
+                                placeholderText: qsTr("每行一个参数")
+                            }
+                        }
+
+                        Column {
+                            width: parent.width - 48
+                            spacing: 8
+                            Label {
+                                text: qsTr("环境变量")
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                            }
+
+                            Column {
+                                width: parent.width
+                                spacing: 8
+
+                                Repeater {
+                                    id: envVarRepeater
+                                    model: ListModel {
+                                        id: envVarModel
+                                        ListElement { key: ""; value: "" }
+                                    }
+
+                                    delegate: Row {
+                                        width: parent.width
+                                        spacing: 8
+
+                                        property bool isLast: index === envVarModel.count - 1
+
+                                        SingleLineTextInput {
+                                            width: (parent.width - 96) / 2
+                                            inputHeight: 40
+                                            inputRadius: 8
+                                            fontSize: 14
+                                            placeholderText: qsTr("键")
+                                        }
+                                        SingleLineTextInput {
+                                            width: (parent.width - 96) / 2
+                                            inputHeight: 40
+                                            inputRadius: 8
+                                            fontSize: 14
+                                            placeholderText: qsTr("值")
+                                        }
+                                        CustomButton{
+                                            width: 36
+                                            height: 36
+                                            borderColor: "#E6E7EB"
+                                            borderWidth: 1
+                                            buttonRadius: 8
+                                            backgroundColor: "#FFFFFF"
+                                            textColor: "#73000000"
+                                            text: "-"
+                                            visible: envVarModel.count !== 1
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            onClicked: {
+                                                envVarModel.remove(index)
+                                            }
+                                        }
+                                        CustomButton{
+                                            width: 36
+                                            height: 36
+                                            borderColor: "#E6E7EB"
+                                            borderWidth: 1
+                                            buttonRadius: 8
+                                            backgroundColor: "#FFFFFF"
+                                            text: "+"
+                                            textColor: "#73000000"
+                                            visible: isLast
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            onClicked: {
+                                                envVarModel.append({ key: "", value: "" })
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    id: mcpDialogFooter
+                    width: parent.width
+                    height: 64
+                    anchors.top: mcpDialogScrollView.bottom
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.top: parent.top
+                    }
+
+                    Row {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 12
+                        layoutDirection: Qt.RightToLeft
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: qsTr("保存")
+                            fontSize: 14
+                            onClicked: mcpServiceDialog.close()
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
+                            borderWidth: 1
+                            text: qsTr("取消")
+                            fontSize: 14
+                            onClicked: mcpServiceDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: settingsDialog
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 0
+
+        property int settingsTabIndex: 0
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
+        }
+
+        Overlay.modal: Rectangle {
+            color: "#40000000"
+        }
+
+        background: Rectangle {
+            color: "transparent"
+        }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: settingsDialog.close()
+            }
+
+            Rectangle {
+                width: 720
+                height: Math.min(600, window.height - 100)
+                anchors.centerIn: parent
+                radius: 16
+                color: "#FFFFFF"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {}
+                }
+
+                Item {
+                    id: settingsTitleBar
+                    width: parent.width
+                    height: 64
+
+                    Label {
+                        text: qsTr("设置")
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                        color: "#D9000000"
+                        anchors.left: parent.left
+                        anchors.leftMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    ImageButton {
+                        source: "qrc:/images/close.png"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: settingsDialog.close()
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.bottom: parent.bottom
+                    }
+                }
+
+                Row {
+                    anchors.top: settingsTitleBar.bottom
+                    anchors.bottom: settingsFooter.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+
+                    Rectangle {
+                        id: settingsLeftNav
+                        width: 180
+                        height: parent.height
+                        color: "#FFFFFF"
+
+                        Column {
+                            anchors.fill: parent
+                            padding: 16
+                            spacing: 8
+
+                            Repeater {
+                                model: [
+                                    { text: "模型", icon: "qrc:/images/category.png" },
+                                    { text: "记忆", icon: "qrc:/images/category.png" },
+                                    { text: "沙箱", icon: "qrc:/images/category.png" }
+                                ]
+
+                                delegate: Rectangle {
+                                    width: settingsLeftNav.width - 32
+                                    height: 36
+                                    radius: 8
+                                    color: index === settingsDialog.settingsTabIndex ? "#E6E7EB"
+                                         : settingsNavMouse.containsMouse ? "#E6E7EB"
+                                         : "transparent"
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 8
+
+                                        Image {
+                                            width: 16; height: 16
+                                            source: modelData.icon
+                                            sourceSize: Qt.size(16, 16)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Label {
+                                            text: modelData.text
+                                            font.pixelSize: 14
+                                            color: "#D9000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: settingsNavMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: settingsDialog.settingsTabIndex = index
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 1
+                        height: parent.height
+                        color: "#14000000"
+                    }
+
+                    ScrollView {
+                        id: settingsContentScroll1
+                        width: parent.width - settingsLeftNav.width - 1
+                        height: parent.height
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        visible: settingsDialog.settingsTabIndex === 0
+                        Column {
+                            width: settingsContentScroll1.width
+                            padding: 16
+                            spacing: 12
+                            Label {
+                                text: qsTr("模型")
+                                font.pixelSize: 18
+                                font.weight: Font.Bold
+                                color: "#D9000000"
+                            }
+
+                            Column {
+                                width: parent.width - 32
+                                spacing: 4
+
+                                Repeater {
+                                    model: ListModel {
+                                        id: modelListModel
+                                        ListElement { name: "DeepSeek"; enabled: true }
+                                        ListElement { name: "DeepSeek"; enabled: true }
+                                        ListElement { name: "DeepSeek"; enabled: false }
+                                        ListElement { name: "DeepSeek"; enabled: true }
+                                        ListElement { name: "DeepSeek"; enabled: true }
+                                        ListElement { name: "DeepSeek"; enabled: true }
+                                    }
+
+                                    delegate: Rectangle {
+                                        width: parent.width
+                                        height: 56
+                                        radius: 8
+                                        color: "transparent"
+
+                                        Row {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 8
+
+                                            Image {
+                                                width: 28; height: 28
+                                                source: "qrc:/images/ai.png"
+                                                sourceSize: Qt.size(28, 28)
+                                                fillMode: Image.PreserveAspectFit
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                            Label {
+                                                text: model.name
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+
+                                        Switch {
+                                            id: modelItemSwitch
+                                            checked: model.enabled
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: modelItemSwitch.toggle()
+                                            }
+                                            indicator: Rectangle {
+                                                implicitWidth: 44
+                                                implicitHeight: 22
+                                                x: modelItemSwitch.leftPadding
+                                                y: parent.height / 2 - height / 2
+                                                radius: 12
+                                                color: modelItemSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                                Behavior on color { ColorAnimation { duration: 150 } }
+                                                Rectangle {
+                                                    x: modelItemSwitch.checked ? parent.width - width - 3 : 3
+                                                    y: parent.height / 2 - height / 2
+                                                    width: 18; height: 18; radius: 9
+                                                    color: "#FFFFFF"
+                                                    Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        id: settingsContentScroll2
+                        width: parent.width - settingsLeftNav.width - 1
+                        height: parent.height
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        visible: settingsDialog.settingsTabIndex === 1
+                        Column {
+                            width: settingsContentScroll2.width
+                            padding: 16
+                            spacing: 20
+                            Label {
+                                text: qsTr("记忆")
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                                color: "#D9000000"
+                            }
+                            Row {
+                                width: parent.width - 32
+                                Item {
+                                    width: parent.width - 60
+                                    height: memoryToggleCol1.height
+                                    Column {
+                                        id: memoryToggleCol1
+                                        spacing: 4
+                                        Label {
+                                            text: qsTr("启用用户记忆")
+                                            font.pixelSize: 16
+                                            color: "#D9000000"
+                                        }
+                                        Label {
+                                            text: qsTr("将稳定事实注入到系统提示词中的 <userMemories> 区块。\n建议开启后直接使用下方“记忆条目管理”，无需额外配置。")
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                            lineHeight: 1.4
+                                        }
+                                    }
+                                }
+                                Switch {
+                                    id: memorySwitch
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: memorySwitch.toggle()
+                                    }
+                                    indicator: Rectangle {
+                                        implicitWidth: 44
+                                        implicitHeight: 22
+                                        x: memorySwitch.leftPadding
+                                        y: parent.height / 2 - height / 2
+                                        radius: 12
+                                        color: memorySwitch.checked ? "#006BFF" : "#D9D9D9"
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                        Rectangle {
+                                            x: memorySwitch.checked ? parent.width - width - 3 : 3
+                                            y: parent.height / 2 - height / 2
+                                            width: 18; height: 18; radius: 9
+                                            color: "#FFFFFF"
+                                            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                        }
+                                    }
+                                }
+                            }
+                            Row {
+                                width: parent.width - 32
+                                Item {
+                                    width: parent.width - 60
+                                    height: memoryToggleCol2.height
+                                    Column {
+                                        id: memoryToggleCol2
+                                        spacing: 4
+                                        Label {
+                                            text: qsTr("启用 LLM 二级判定")
+                                            font.pixelSize: 16
+                                            color: "#D9000000"
+                                        }
+                                        Label {
+                                            text: qsTr("仅对规则边界样本调用模型复核，提升准确率（会增加少量 API 调用）")
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                            lineHeight: 1.4
+                                        }
+                                    }
+                                }
+                                Switch {
+                                    id: llmSwitch
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: llmSwitch.toggle()
+                                    }
+                                    indicator: Rectangle {
+                                        implicitWidth: 44
+                                        implicitHeight: 22
+                                        x: llmSwitch.leftPadding
+                                        y: parent.height / 2 - height / 2
+                                        radius: 12
+                                        color: llmSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                        Rectangle {
+                                            x: llmSwitch.checked ? parent.width - width - 3 : 3
+                                            y: parent.height / 2 - height / 2
+                                            width: 18; height: 18; radius: 9
+                                            color: "#FFFFFF"
+                                            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: parent.width - 32
+                                height: 1
+                                color: "#14000000"
+                            }
+
+                            Item {
+                                width: parent.width - 32
+                                height: memoryMgmtTitle.height
+
+                                Column {
+                                    id: memoryMgmtTitle
+                                    spacing: 4
+                                    Label {
+                                        text: qsTr("记忆条目管理")
+                                        font.pixelSize: 16
+                                        font.weight: Font.Bold
+                                        color: "#D9000000"
+                                    }
+                                    Label {
+                                        text: qsTr("你可以在这里查看、搜索、新增、编辑或删除记忆内容。")
+                                        font.pixelSize: 14
+                                        color: "#73000000"
+                                    }
+                                }
+
+                                CustomButton {
+                                    width: 80
+                                    height: 32
+                                    backgroundColor: "#0F006BFF"
+                                    textColor: "#006BFF"
+                                    borderWidth: 0
+                                    text: "+ 新增"
+                                    fontSize: 14
+                                    anchors.right: parent.right
+                                }
+                            }
+
+                            Column {
+                                width: parent.width - 32
+                                spacing: 4
+                                SingleLineTextInput {
+                                    width: parent.width
+                                    inputHeight: 36
+                                    inputRadius: 8
+                                    icon: "qrc:/images/search.png"
+                                    iconSize: 16
+                                    fontSize: 14
+                                    placeholderText: qsTr("搜索记忆内容/来源")
+                                }
+                                Repeater {
+                                    model: ListModel {
+                                        id: memoryListModel
+                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
+                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
+                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
+                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
+                                    }
+
+                                    delegate: Rectangle {
+                                        width: parent.width
+                                        height: 48
+                                        color: memoryItemHover.hovered ? "#F7F9FA" : "transparent"
+                                        radius: 8
+                                        HoverHandler {
+                                            id: memoryItemHover
+                                        }
+
+                                        Row {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 12
+                                            Label {
+                                                text: model.memTitle
+                                                font.pixelSize: 16
+                                                color: "#D9000000"
+                                            }
+                                            Label {
+                                                text: model.memDate
+                                                font.pixelSize: 16
+                                                color: "#73000000"
+                                                anchors.baseline: parent.children[0].baseline
+                                            }
+                                        }
+
+                                        Row {
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 4
+                                            visible: memoryItemHover.hovered
+
+                                            ImageButton {
+                                                source: "qrc:/images/edit.png"
+                                            }
+                                            ImageButton {
+                                                source: "qrc:/images/delete.png"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        id: settingsContentScroll3
+                        width: parent.width - settingsLeftNav.width - 1
+                        height: parent.height
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        visible: settingsDialog.settingsTabIndex === 2
+                        Column {
+                            id: sandboxPage
+                            width: settingsContentScroll3.width
+                            padding: 16
+                            spacing: 12
+
+                            property int sandboxMode: 0
+
+                            Label {
+                                text: qsTr("沙箱")
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                                color: "#D9000000"
+                            }
+
+                            Label {
+                                text: qsTr("执行模式")
+                                font.pixelSize: 14
+                                color: "#73000000"
+                            }
+
+                            Column {
+                                width: parent.width - 32
+                                spacing: 16
+
+                                Column {
+                                    width: parent.width
+                                    spacing: 2
+                                    Row {
+                                        spacing: 4
+                                        Rectangle {
+                                            width: 20; height: 20
+                                            radius: 10
+                                            border.color: sandboxPage.sandboxMode === 0 ? "#006BFF" : "#D9D9D9"
+                                            border.width: 2
+                                            color: "transparent"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            Rectangle {
+                                                width: 10; height: 10; radius: 5
+                                                color: "#006BFF"
+                                                anchors.centerIn: parent
+                                                visible: sandboxPage.sandboxMode === 0
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: sandboxPage.sandboxMode = 0
+                                            }
+                                        }
+                                        Label {
+                                            text: qsTr("自动（优先沙箱）")
+                                            font.pixelSize: 16
+                                            color: "#D9000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                    }
+                                    Label {
+                                        text: qsTr("优先使用内置 VM 沙箱，不可用时回退本地")
+                                        font.pixelSize: 16
+                                        color: "#73000000"
+                                        leftPadding: 24
+                                    }
+                                }
+
+                                Column {
+                                    width: parent.width
+                                    spacing: 2
+                                    Row {
+                                        spacing: 4
+                                        Rectangle {
+                                            width: 20; height: 20
+                                            radius: 10
+                                            border.color: sandboxPage.sandboxMode === 1 ? "#006BFF" : "#D9D9D9"
+                                            border.width: 2
+                                            color: "transparent"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            Rectangle {
+                                                width: 10; height: 10; radius: 5
+                                                color: "#006BFF"
+                                                anchors.centerIn: parent
+                                                visible: sandboxPage.sandboxMode === 1
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: sandboxPage.sandboxMode = 1
+                                            }
+                                        }
+                                        Label {
+                                            text: qsTr("本地运行")
+                                            font.pixelSize: 16
+                                            color: "#D9000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                    }
+                                    Label {
+                                        text: qsTr("始终在本机运行")
+                                        font.pixelSize: 16
+                                        color: "#73000000"
+                                        leftPadding: 24
+                                    }
+                                }
+
+                                Column {
+                                    width: parent.width
+                                    spacing: 2
+                                    Row {
+                                        spacing: 4
+                                        Rectangle {
+                                            width: 20; height: 20
+                                            radius: 10
+                                            border.color: sandboxPage.sandboxMode === 2 ? "#006BFF" : "#D9D9D9"
+                                            border.width: 2
+                                            color: "transparent"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            Rectangle {
+                                                width: 10; height: 10; radius: 5
+                                                color: "#006BFF"
+                                                anchors.centerIn: parent
+                                                visible: sandboxPage.sandboxMode === 2
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: sandboxPage.sandboxMode = 2
+                                            }
+                                        }
+                                        Label {
+                                            text: qsTr("仅沙箱（内置VM）")
+                                            font.pixelSize: 16
+                                            color: "#D9000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                    }
+                                    Label {
+                                        text: qsTr("要求内置 VM 沙箱可用，否则报错")
+                                        font.pixelSize: 16
+                                        color: "#73000000"
+                                        leftPadding: 24
+                                    }
+                                    Rectangle{
+                                        width: parent.width
+                                        height: 2
+                                    }
+                                    Row {
+                                        leftPadding: 24
+                                        spacing: 4
+                                        Label {
+                                            text: qsTr("未检测到沙箱VM，")
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                        }
+                                        Label {
+                                            text: qsTr("立即安装")
+                                            font.pixelSize: 14
+                                            font.underline: true
+                                            color: "#006BFF"
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    id: settingsFooter
+                    width: parent.width
+                    height: 64
+                    anchors.bottom: parent.bottom
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.top: parent.top
+                    }
+
+                    Row {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 12
+                        layoutDirection: Qt.RightToLeft
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: qsTr("保存")
+                            fontSize: 14
+                            onClicked: settingsDialog.close()
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
+                            borderWidth: 1
+                            text: qsTr("取消")
+                            fontSize: 14
+                            onClicked: settingsDialog.close()
                         }
                     }
                 }
