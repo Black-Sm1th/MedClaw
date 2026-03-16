@@ -16,6 +16,38 @@ ApplicationWindow {
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
+    property int selectedTaskIndex: -1
+
+    function addTaskRecord(title) {
+        var now = new Date()
+        var timeStr = Qt.formatTime(now, "HH:mm")
+        for (var i = 0; i < taskRecordModel.count; i++)
+            taskRecordModel.setProperty(i, "selected", false)
+        taskRecordModel.insert(0, {
+            title: title,
+            time: timeStr,
+            status: "running",
+            selected: true
+        })
+        window.selectedTaskIndex = 0
+        window.leftSelectedIndex = 0
+    }
+
+    function selectTaskRecord(idx) {
+        for (var i = 0; i < taskRecordModel.count; i++)
+            taskRecordModel.setProperty(i, "selected", false)
+        taskRecordModel.setProperty(idx, "selected", true)
+        window.selectedTaskIndex = idx
+        window.leftSelectedIndex = 0
+    }
+
+    Connections {
+        target: $MainViewController
+        function onConversationStarted(title) {
+            addTaskRecord(title)
+        }
+    }
+
     Rectangle{
         id: leftContainer
         width: window.sidebarCollapsed ? 0 : 280
@@ -57,6 +89,7 @@ ApplicationWindow {
                 Column{
                     spacing: 12
                     width: parent.width
+                    height: parent.height
                     Column{
                         spacing: 4
                         width: parent.width
@@ -110,6 +143,84 @@ ApplicationWindow {
                         }
                     }
 
+                    Label {
+                        text: qsTr("任务记录")
+                        font.pixelSize: 12
+                        color: "#80000000"
+                        leftPadding: 8
+                        visible: taskRecordModel.count > 0
+                    }
+
+                    ListView {
+                        id: taskRecordListView
+                        width: parent.width
+                        height: parent.height - 200
+                        clip: true
+                        spacing: 2
+                        visible: taskRecordModel.count > 0
+                        model: ListModel { id: taskRecordModel }
+
+                        delegate: Rectangle {
+                            width: taskRecordListView.width
+                            height: 52
+                            radius: 8
+                            color: taskRecordMouse.pressed ? "#14000000"
+                                 : model.selected ? "#E6E7EB"
+                                 : taskRecordMouse.containsMouse ? "#0A000000"
+                                 : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.right: taskMoreBtn.left
+                                anchors.rightMargin: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4
+
+                                Label {
+                                    text: model.title
+                                    font.pixelSize: 14
+                                    color: "#D9000000"
+                                    elide: Text.ElideRight
+                                    width: parent.width
+                                }
+                                Row {
+                                    spacing: 6
+                                    Rectangle {
+                                        width: 6; height: 6; radius: 3
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: model.status === "running" ? "#4CAF50" : "#FF9800"
+                                    }
+                                    Label {
+                                        text: model.time
+                                        font.pixelSize: 12
+                                        color: "#80000000"
+                                    }
+                                }
+                            }
+
+                            ImageButton {
+                                id: taskMoreBtn
+                                source: "qrc:/images/more.png"
+                                anchors.right: parent.right
+                                anchors.rightMargin: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: taskRecordMouse.containsMouse || model.selected
+                                onClicked: {}
+                            }
+
+                            MouseArea {
+                                id: taskRecordMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    selectTaskRecord(index)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -255,6 +366,7 @@ ApplicationWindow {
                 visible: window.leftSelectedIndex === 0
                 Column{
                     id: titleCol
+                    visible: !$MainViewController.hasConversation
                     width: 840
                     spacing: 11
                     anchors.topMargin: 100
@@ -272,20 +384,73 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
+                ListView {
+                    id: chatListView
+                    visible: $MainViewController.hasConversation
+                    width: 840
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: 16
+                    height: chatInputContainer.y - 24
+                    clip: true
+                    model: chatModel
+                    spacing: 12
+
+                    onCountChanged: {
+                        if (count > 0) positionViewAtEnd()
+                    }
+
+                    delegate: Item {
+                        width: chatListView.width
+                        height: msgBubbleBg.height + 8
+
+                        readonly property bool isUser: msgRole === "user"
+                        readonly property bool isSystem: msgRole === "system"
+
+                        Rectangle {
+                            id: msgBubbleBg
+                            anchors.right: parent.isUser ? parent.right : undefined
+                            anchors.left: parent.isUser ? undefined : parent.left
+                            width: Math.min(msgContent.implicitWidth + 32, parent.width * 0.75)
+                            height: msgContent.implicitHeight + 24
+                            radius: 12
+                            color: parent.isUser ? "#006BFF"
+                                 : parent.isSystem ? "#FFF3E0"
+                                 : "#F5F6FA"
+
+                            Label {
+                                id: msgContent
+                                anchors.fill: parent
+                                anchors.margins: 16
+                                text: content
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 14
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                color: parent.parent.isUser ? "#FFFFFF" : "#333333"
+                                textFormat: Text.PlainText
+                            }
+                        }
+                    }
+                }
+
                 Rectangle{
-                    anchors.top: titleCol.bottom
-                    anchors.topMargin: 76
+                    id: chatInputContainer
                     border.color: "#40000000"
                     border.width: 1
                     radius: 20
                     height: 142
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
+                    y: $MainViewController.hasConversation
+                       ? (newTaskRec.height - height - 24)
+                       : (titleCol.y + titleCol.height + 76)
+                    Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+
                     Column{
                         anchors.fill: parent
                         padding: 12
                         spacing: 12
                         MultiLineTextInput{
+                            id: chatInput
                             focusedBorderColor: "transparent"
                             backgroundColor: "transparent"
                             borderWidth: 0
@@ -770,8 +935,12 @@ ApplicationWindow {
                                         }
                                         MouseArea{
                                             anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
                                             onClicked: {
-                                                $MainViewController.sendMessage()
+                                                if (chatInput.text.trim().length > 0) {
+                                                    $MainViewController.sendMessage(chatInput.text)
+                                                    chatInput.text = ""
+                                                }
                                             }
                                         }
                                     }
