@@ -895,7 +895,7 @@ ApplicationWindow {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 137
                                     height: 36
-                                    model: ["DeepSeek", "ChatGPT", "Gemini"]
+                                    model: ["Qwen3-32B"]
                                     icon: "qrc:/images/ai.png"
                                     iconSize: 20
                                     currentIndex: 0
@@ -2621,12 +2621,7 @@ ApplicationWindow {
                                 Repeater {
                                     model: ListModel {
                                         id: modelListModel
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: false }
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: true }
+                                        ListElement { name: "Qwen3-32B"; enabled: true }
                                     }
 
                                     delegate: Rectangle {
