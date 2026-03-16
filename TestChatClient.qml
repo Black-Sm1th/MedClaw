@@ -150,13 +150,180 @@ ApplicationWindow {
     }
 
     /**
-     * @brief 测试加载历史消息
+     * @brief 测试加载历史消息（通过 WebSocket）
      *
      * maincontrol 调用：wsClient.loadHistory()
      */
     function testLoadHistory() {
-        testAddLog("▶ testLoadHistory() → 加载历史消息")
+        testAddLog("▶ testLoadHistory() → 加载历史消息（WebSocket）")
         wsClient.loadHistory()
+    }
+
+    /**
+     * @brief 测试扫描本地会话文件
+     *
+     * maincontrol 调用：sessionReader.scanSessions()
+     * 扫描 ~/.openclaw/agents/main/sessions/ 目录
+     */
+    function testScanLocalSessions() {
+        testAddLog("▶ testScanLocalSessions() → 扫描本地会话目录")
+        testAddLog("  路径: " + sessionReader.sessionsDir)
+        sessionReader.scanSessions()
+        var list = sessionReader.sessionList
+        testAddLog("  发现 " + list.length + " 个会话文件")
+        for (var i = 0; i < list.length; i++) {
+            testAddLog("  [" + i + "] " + list[i].displayName
+                       + " | " + list[i].modelId
+                       + " | active=" + list[i].isActive)
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  技能管理测试函数
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * @brief 测试获取技能列表
+     *
+     * maincontrol 调用：wsClient.refreshSkills()
+     * 发送 skills.status RPC，响应后更新 wsClient.skillList
+     */
+    function testRefreshSkills() {
+        testAddLog("\u25b6 testRefreshSkills() \u2192 \u83b7\u53d6\u6280\u80fd\u5217\u8868")
+        wsClient.refreshSkills()
+    }
+
+    /**
+     * @brief 测试启用/禁用技能
+     * @param skillKey 技能标识
+     * @param enabled  true=启用, false=禁用
+     *
+     * maincontrol 调用：wsClient.setSkillEnabled(skillKey, enabled)
+     */
+    function testToggleSkill(skillKey, enabled) {
+        var action = enabled ? "\u542f\u7528" : "\u7981\u7528"
+        testAddLog("\u25b6 testToggleSkill() \u2192 " + action + " [" + skillKey + "]")
+        wsClient.setSkillEnabled(skillKey, enabled)
+    }
+
+    /**
+     * @brief 测试加载本地会话的聊天消息
+     * @param filePath .jsonl 文件路径
+     * @param displayName 会话显示名（用于日志）
+     *
+     * 从本地文件系统直接读取 .jsonl，不需要 WebSocket 连接
+     */
+    function testLoadLocalMessages(filePath, displayName) {
+        testAddLog("▶ testLoadLocalMessages() → " + displayName)
+        var msgs = sessionReader.readSessionMessages(filePath)
+        testAddLog("  解析到 " + msgs.length + " 条条目")
+
+        chatModel.clear()
+        chatModel.addMessage("system", "本地历史: " + displayName)
+        for (var i = 0; i < msgs.length; i++) {
+            var m = msgs[i]
+            var mt = m.msgType || "text"
+            if (mt === "toolCall") {
+                chatModel.addToolCall(m.toolName || "", m.toolArgs || "", m.toolCallId || "")
+            } else if (mt === "toolResult") {
+                chatModel.addToolResult(m.toolName || "", m.content || "",
+                                        m.toolCallId || "", m.isError || false)
+            } else {
+                chatModel.addMessage(m.role, m.content)
+            }
+        }
+    }
+
+    /**
+     * @brief 加载 WebSocket 抓包文件（messages.list 响应格式）
+     *
+     * 直接使用桌面上的抓包文件测试工具调用显示
+     * maincontrol 调用：sessionReader.parseResponseFile()
+     */
+    function testLoadCaptureFile() {
+        // 自动检测文件路径（桌面上的抓包文件）
+        var homePath = sessionReader.sessionsDir.replace(
+            "/.openclaw/agents/main/sessions", "")
+        var capturePath = homePath + "/Desktop/接受的流式数据.txt"
+
+        testAddLog("▶ testLoadCaptureFile() → " + capturePath)
+        var msgs = sessionReader.parseResponseFile(capturePath)
+        testAddLog("  解析到 " + msgs.length + " 条条目")
+
+        // 统计各类型数量
+        var textCount = 0, toolCallCount = 0, toolResultCount = 0
+        for (var i = 0; i < msgs.length; i++) {
+            var mt = msgs[i].msgType || "text"
+            if (mt === "toolCall") toolCallCount++
+            else if (mt === "toolResult") toolResultCount++
+            else textCount++
+        }
+        testAddLog("  文本:" + textCount + " 工具调用:" + toolCallCount
+                   + " 工具结果:" + toolResultCount)
+
+        chatModel.clear()
+        chatModel.addMessage("system", "抓包数据: " + capturePath)
+        for (var j = 0; j < msgs.length; j++) {
+            var m = msgs[j]
+            var type = m.msgType || "text"
+            if (type === "toolCall") {
+                chatModel.addToolCall(m.toolName || "", m.toolArgs || "",
+                                      m.toolCallId || "")
+            } else if (type === "toolResult") {
+                chatModel.addToolResult(m.toolName || "", m.content || "",
+                                        m.toolCallId || "", m.isError || false)
+            } else {
+                chatModel.addMessage(m.role || "system", m.content || "")
+            }
+        }
+        testAddLog("  ✓ 已加载到聊天区域")
+    }
+
+    /**
+     * @brief 测试读取 sessions.json 完整内容
+     *
+     * maincontrol 调用：sessionReader.readSessionsJson()
+     * 在日志面板输出关键字段
+     */
+    function testReadSessionsJson() {
+        testAddLog("▶ testReadSessionsJson() → 读取 sessions.json")
+        var data = sessionReader.readSessionsJson()
+        var keys = Object.keys(data)
+        for (var i = 0; i < keys.length; i++) {
+            var sk = keys[i]
+            var session = data[sk]
+            testAddLog("  sessionKey: " + sk)
+            testAddLog("  sessionId: " + (session.sessionId || "N/A"))
+            testAddLog("  updatedAt: " + new Date(session.updatedAt || 0).toLocaleString())
+            testAddLog("  chatType: " + (session.chatType || "N/A"))
+            testAddLog("  model: " + (session.modelProvider || "") + "/" + (session.model || ""))
+            testAddLog("  inputTokens: " + (session.inputTokens || 0)
+                       + " outputTokens: " + (session.outputTokens || 0))
+            testAddLog("  contextTokens: " + (session.contextTokens || 0))
+            testAddLog("  compactionCount: " + (session.compactionCount || 0))
+            testAddLog("  sessionFile: " + (session.sessionFile || "N/A"))
+            testAddLog("  authProfile: " + (session.authProfileOverride || "N/A"))
+            testAddLog("  lastChannel: " + (session.lastChannel || "N/A"))
+        }
+    }
+
+    /**
+     * @brief 测试读取指定会话的摘要信息
+     * @param filePath .jsonl 文件路径
+     */
+    function testReadSessionSummary(filePath) {
+        testAddLog("▶ testReadSessionSummary()")
+        var s = sessionReader.readSessionSummary(filePath)
+        testAddLog("  sessionId: " + (s.sessionId || "N/A"))
+        testAddLog("  createdAt: " + (s.createdAt || "N/A"))
+        testAddLog("  model: " + (s.modelProvider || "") + "/" + (s.modelId || ""))
+        testAddLog("  thinkingLevel: " + (s.thinkingLevel || "N/A"))
+        testAddLog("  cwd: " + (s.cwd || "N/A"))
+        testAddLog("  消息数: " + (s.messageCount || 0)
+                   + " (用户:" + (s.userMsgCount || 0)
+                   + " 助手:" + (s.assistantMsgCount || 0)
+                   + " 工具:" + (s.toolCallCount || 0) + ")")
+        testAddLog("  预览: " + (s.firstUserMsg || "(无)"))
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -207,6 +374,30 @@ ApplicationWindow {
         /// 历史消息加载完成
         function onHistoryLoaded(messages) {
             testAddLog("◆ historyLoaded → 加载了 " + messages.length + " 条历史消息")
+        }
+
+        /// 工具调用
+        function onToolCallReceived(toolName, toolArgs, toolCallId) {
+            testAddLog("◆ toolCall → " + toolName + " (id:" + toolCallId.substring(0, 12) + "...)")
+        }
+
+        /// 工具结果
+        function onToolResultReceived(toolName, content, toolCallId, isError) {
+            var tag = isError ? "ERROR" : "OK"
+            testAddLog("◆ toolResult → " + toolName + " [" + tag + "] "
+                       + content.substring(0, 60))
+        }
+
+        /// 技能列表更新
+        function onSkillListChanged() {
+            var count = wsClient.skillList.length
+            testAddLog("\u25c6 skillListChanged \u2192 \u5171 " + count + " \u4e2a\u6280\u80fd")
+        }
+
+        /// 技能状态变更
+        function onSkillUpdated(skillKey, enabled) {
+            var action = enabled ? "\u5df2\u542f\u7528" : "\u5df2\u7981\u7528"
+            testAddLog("\u25c6 skillUpdated \u2192 [" + skillKey + "] " + action)
         }
     }
 
@@ -404,9 +595,9 @@ ApplicationWindow {
                         implicitWidth: 100
                     }
 
-                    /// 加载历史 → testLoadHistory()
+                    /// 加载历史（WebSocket） → testLoadHistory()
                     Button {
-                        text: "加载历史"
+                        text: "WS历史"
                         enabled: wsClient.connectionState === 3
                         onClicked: testLoadHistory()
                         background: Rectangle {
@@ -423,7 +614,67 @@ ApplicationWindow {
                             verticalAlignment: Text.AlignVCenter
                         }
                         implicitHeight: 34
-                        implicitWidth: 100
+                        implicitWidth: 80
+                    }
+
+                    /// 扫描本地会话 → testScanLocalSessions()
+                    Button {
+                        text: "扫描本地"
+                        onClicked: testScanLocalSessions()
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.down ? "#00695C" : "#00897B"
+                        }
+                        contentItem: Label {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        implicitHeight: 34
+                        implicitWidth: 90
+                    }
+
+                    /// 刷新技能列表 → testRefreshSkills()
+                    Button {
+                        text: "\u6280\u80fd\u5217\u8868"
+                        enabled: wsClient.connectionState === 3
+                        onClicked: testRefreshSkills()
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.enabled
+                                   ? (parent.down ? "#BF360C" : "#E65100")
+                                   : "#BDBDBD"
+                        }
+                        contentItem: Label {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        implicitHeight: 34
+                        implicitWidth: 80
+                    }
+
+                    /// 加载 WebSocket 抓包文件 → testLoadCaptureFile()
+                    Button {
+                        text: "\u52a0\u8f7d\u6293\u5305"
+                        onClicked: testLoadCaptureFile()
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.down ? "#BF360C" : "#E64A19"
+                        }
+                        contentItem: Label {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        implicitHeight: 34
+                        implicitWidth: 90
                     }
 
                     Item { Layout.fillWidth: true }
@@ -441,22 +692,90 @@ ApplicationWindow {
 
             // ── 会话列表（左侧窄栏） ──
             Rectangle {
-                Layout.preferredWidth: 180
+                Layout.preferredWidth: 220
                 Layout.fillHeight: true
                 radius: 10
                 color: "#FFFFFF"
 
                 ColumnLayout {
+                    id: testSessionPanel
                     anchors.fill: parent
                     anchors.margins: 8
                     spacing: 4
 
-                    Label {
-                        text: "会话列表"
-                        font.pixelSize: 13
-                        font.bold: true
-                        color: "#333333"
-                        Layout.leftMargin: 4
+                    // ── 标签页切换：在线 / 本地 / 技能 ──
+                    property int testTabIndex: 0  // 0=在线, 1=本地, 2=技能
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+
+                        // 在线会话标签
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 28
+                            radius: 6
+                            color: testSessionPanel.testTabIndex === 0 ? "#1976D2" : "#F0F0F0"
+                            Label {
+                                anchors.centerIn: parent
+                                text: "\u5728\u7ebf"
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: testSessionPanel.testTabIndex === 0 ? "#FFFFFF" : "#666666"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: testSessionPanel.testTabIndex = 0
+                            }
+                        }
+
+                        // 本地历史标签
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 28
+                            radius: 6
+                            color: testSessionPanel.testTabIndex === 1 ? "#388E3C" : "#F0F0F0"
+                            Label {
+                                anchors.centerIn: parent
+                                text: "\u672c\u5730"
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: testSessionPanel.testTabIndex === 1 ? "#FFFFFF" : "#666666"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    testSessionPanel.testTabIndex = 1
+                                    testScanLocalSessions()
+                                }
+                            }
+                        }
+
+                        // 技能标签
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 28
+                            radius: 6
+                            color: testSessionPanel.testTabIndex === 2 ? "#E65100" : "#F0F0F0"
+                            Label {
+                                anchors.centerIn: parent
+                                text: "\u6280\u80fd"
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: testSessionPanel.testTabIndex === 2 ? "#FFFFFF" : "#666666"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    testSessionPanel.testTabIndex = 2
+                                    if (wsClient.connectionState === 3)
+                                        testRefreshSkills()
+                                }
+                            }
+                        }
                     }
 
                     Rectangle {
@@ -465,11 +784,13 @@ ApplicationWindow {
                         color: "#E0E0E0"
                     }
 
+                    // ── 在线会话列表（通过 WebSocket 获取） ──
                     ListView {
                         id: testSessionList
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
+                        visible: testSessionPanel.testTabIndex === 0
                         model: wsClient.sessions
                         spacing: 2
 
@@ -481,7 +802,7 @@ ApplicationWindow {
                                 var key = modelData.sessionKey || ""
                                 if (key === wsClient.currentSessionKey)
                                     return "#E3F2FD"
-                                return testSessionDelegateArea.containsMouse
+                                return testOnlineDelegateArea.containsMouse
                                        ? "#F5F5F5" : "transparent"
                             }
 
@@ -497,17 +818,323 @@ ApplicationWindow {
                             }
 
                             MouseArea {
-                                id: testSessionDelegateArea
+                                id: testOnlineDelegateArea
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     var key = modelData.sessionKey || ""
                                     if (key !== wsClient.currentSessionKey) {
-                                        testAddLog("▶ 切换会话 → " + key)
+                                        testAddLog("▶ 切换在线会话 → " + key)
                                         wsClient.currentSessionKey = key
                                         wsClient.loadHistory()
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 本地历史会话列表（从文件系统读取） ──
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        visible: testSessionPanel.testTabIndex === 1
+                        spacing: 4
+
+                        // 操作按钮
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Button {
+                                text: "刷新"
+                                implicitHeight: 26
+                                implicitWidth: 50
+                                font.pixelSize: 11
+                                onClicked: testScanLocalSessions()
+                                background: Rectangle {
+                                    radius: 4
+                                    color: parent.down ? "#2E7D32" : "#43A047"
+                                }
+                                contentItem: Label {
+                                    text: parent.text
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 11
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            Button {
+                                text: "sessions.json"
+                                implicitHeight: 26
+                                font.pixelSize: 11
+                                onClicked: testReadSessionsJson()
+                                background: Rectangle {
+                                    radius: 4
+                                    color: parent.down ? "#4527A0" : "#5E35B1"
+                                }
+                                contentItem: Label {
+                                    text: parent.text
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 11
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        // 路径显示
+                        Label {
+                            text: sessionReader.sessionsDir
+                            font.pixelSize: 9
+                            color: "#999999"
+                            elide: Text.ElideMiddle
+                            Layout.fillWidth: true
+                        }
+
+                        // 本地会话列表
+                        ListView {
+                            id: testLocalSessionList
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            model: sessionReader.sessionList
+                            spacing: 2
+
+                            // 当前选中的本地会话文件路径
+                            property string testSelectedFilePath: ""
+
+                            delegate: Rectangle {
+                                width: testLocalSessionList.width
+                                height: 52
+                                radius: 6
+                                color: {
+                                    if (modelData.filePath === testLocalSessionList.testSelectedFilePath)
+                                        return "#E8F5E9"
+                                    return testLocalDelegateArea.containsMouse
+                                           ? "#F5F5F5" : "transparent"
+                                }
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    anchors.topMargin: 4
+                                    anchors.bottomMargin: 4
+                                    spacing: 2
+
+                                    // 第一行：活跃/归档标记 + 预览
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: {
+                                            var tag = modelData.isActive ? "[活跃]" : "[归档]"
+                                            var preview = modelData.preview || modelData.sessionId.substring(0, 8)
+                                            return tag + " " + preview
+                                        }
+                                        font.pixelSize: 11
+                                        font.bold: modelData.isActive
+                                        color: modelData.isActive ? "#1B5E20" : "#333333"
+                                        elide: Text.ElideRight
+                                    }
+
+                                    // 第二行：模型 + 消息数 + 时间
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: {
+                                            var info = (modelData.modelId || "unknown")
+                                            info += " | " + (modelData.messageCount || 0) + "条"
+                                            if (modelData.resetTime)
+                                                info += " | " + modelData.resetTime.substring(5, 16)
+                                            else if (modelData.timestamp)
+                                                info += " | " + modelData.timestamp.substring(0, 16)
+                                            return info
+                                        }
+                                        font.pixelSize: 9
+                                        color: "#888888"
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: testLocalDelegateArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        testLocalSessionList.testSelectedFilePath = modelData.filePath
+                                        testLoadLocalMessages(modelData.filePath, modelData.displayName)
+                                    }
+                                    onDoubleClicked: {
+                                        testReadSessionSummary(modelData.filePath)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 技能管理面板 ──
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        visible: testSessionPanel.testTabIndex === 2
+                        spacing: 4
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Button {
+                                text: "\u5237\u65b0\u6280\u80fd"
+                                implicitHeight: 26
+                                implicitWidth: 70
+                                font.pixelSize: 11
+                                enabled: wsClient.connectionState === 3
+                                onClicked: testRefreshSkills()
+                                background: Rectangle {
+                                    radius: 4
+                                    color: parent.enabled
+                                           ? (parent.down ? "#BF360C" : "#E65100")
+                                           : "#BDBDBD"
+                                }
+                                contentItem: Label {
+                                    text: parent.text
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 11
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Label {
+                                text: wsClient.skillList.length + " \u4e2a"
+                                font.pixelSize: 10
+                                color: "#999999"
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#E0E0E0"
+                        }
+
+                        // 技能列表
+                        ListView {
+                            id: testSkillListView
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            model: wsClient.skillList
+                            spacing: 2
+
+                            delegate: Rectangle {
+                                width: testSkillListView.width
+                                height: testSkillDelegateCol.implicitHeight + 12
+                                radius: 6
+                                color: testSkillHoverArea.containsMouse
+                                       ? "#FFF3E0" : "transparent"
+
+                                ColumnLayout {
+                                    id: testSkillDelegateCol
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    anchors.topMargin: 6
+                                    spacing: 2
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        // 启用/禁用开关
+                                        Rectangle {
+                                            width: 36
+                                            height: 18
+                                            radius: 9
+                                            color: modelData.enabled ? "#4CAF50" : "#BDBDBD"
+
+                                            Rectangle {
+                                                width: 14
+                                                height: 14
+                                                radius: 7
+                                                y: 2
+                                                x: modelData.enabled ? 20 : 2
+                                                color: "#FFFFFF"
+
+                                                Behavior on x {
+                                                    NumberAnimation { duration: 150 }
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    testToggleSkill(
+                                                        modelData.skillKey,
+                                                        !modelData.enabled)
+                                                }
+                                            }
+                                        }
+
+                                        // 技能名称
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: modelData.name || modelData.skillKey
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            color: modelData.enabled ? "#333333" : "#999999"
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    // 技能描述
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: modelData.description || ""
+                                        font.pixelSize: 10
+                                        color: "#777777"
+                                        wrapMode: Text.Wrap
+                                        maximumLineCount: 2
+                                        elide: Text.ElideRight
+                                        visible: (modelData.description || "").length > 0
+                                    }
+
+                                    // 来源 + 主页链接
+                                    RowLayout {
+                                        spacing: 8
+                                        Label {
+                                            text: modelData.source || ""
+                                            font.pixelSize: 9
+                                            color: "#AAAAAA"
+                                        }
+                                        Label {
+                                            text: modelData.always ? "[\u59cb\u7ec8\u542f\u7528]" : ""
+                                            font.pixelSize: 9
+                                            color: "#FF8F00"
+                                            visible: modelData.always === true
+                                        }
+                                        Label {
+                                            text: !modelData.eligible ? "[\u4e0d\u53ef\u7528]" : ""
+                                            font.pixelSize: 9
+                                            color: "#EF5350"
+                                            visible: modelData.eligible === false
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: testSkillHoverArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
                                 }
                             }
                         }
@@ -550,70 +1177,220 @@ ApplicationWindow {
                         model: chatModel
                         spacing: 6
 
-                        // 新消息到达时自动滚动到底部
                         onCountChanged: {
                             if (count > 0)
                                 positionViewAtEnd()
                         }
 
-                        delegate: Rectangle {
-                            id: testMsgBubble
+                        delegate: Item {
                             width: testChatListView.width
+                            height: {
+                                if (msgType === "toolCall") return testToolCallBox.height
+                                if (msgType === "toolResult") return testToolResBox.height
+                                return testTextBox.height
+                            }
 
-                            // 根据角色计算气泡高度
-                            readonly property bool testIsUser: msgRole === "user"
-                            readonly property bool testIsSystem: msgRole === "system"
-
-                            height: testMsgContent.implicitHeight + 24
-                            color: "transparent"
-
-                            // 气泡背景
+                            // ═══ 普通文本气泡 ═══
                             Rectangle {
-                                id: testBubbleBg
-                                anchors {
-                                    left: testMsgBubble.testIsUser ? undefined : parent.left
-                                    right: testMsgBubble.testIsUser ? parent.right : undefined
-                                    top: parent.top
-                                    leftMargin: testMsgBubble.testIsSystem ? 0 : 8
-                                    rightMargin: 8
-                                }
-                                width: Math.min(
-                                    testMsgContent.implicitWidth + 28,
-                                    testMsgBubble.width * 0.75)
-                                height: testMsgContent.implicitHeight + 20
-                                radius: 10
-                                color: {
-                                    if (testMsgBubble.testIsSystem) return "#FFF3E0"
-                                    if (testMsgBubble.testIsUser)   return "#1976D2"
-                                    return "#F0F0F0"
-                                }
+                                id: testTextBox
+                                visible: msgType !== "toolCall" && msgType !== "toolResult"
+                                width: parent.width
+                                height: visible ? (testBubbleInner.height + 4) : 0
 
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    spacing: 2
+                                readonly property bool testIsUser: msgRole === "user"
+                                readonly property bool testIsSystem: msgRole === "system"
+                                color: "transparent"
 
-                                    // 角色标签
-                                    Label {
-                                        text: {
-                                            if (testMsgBubble.testIsUser) return "You"
-                                            if (testMsgBubble.testIsSystem) return "System"
-                                            return "Assistant"
-                                        }
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        color: testMsgBubble.testIsUser ? "#B3FFFFFF" : "#999999"
+                                Rectangle {
+                                    id: testBubbleInner
+                                    anchors {
+                                        left: testTextBox.testIsUser ? undefined : parent.left
+                                        right: testTextBox.testIsUser ? parent.right : undefined
+                                        top: parent.top
+                                        leftMargin: testTextBox.testIsSystem ? 0 : 8
+                                        rightMargin: 8
                                     }
+                                    width: Math.min(testBubbleCol.implicitWidth + 28,
+                                                    testTextBox.width * 0.75)
+                                    height: testBubbleCol.implicitHeight + 20
+                                    radius: 10
+                                    color: testTextBox.testIsSystem ? "#FFF3E0"
+                                         : testTextBox.testIsUser   ? "#1976D2"
+                                                                    : "#F0F0F0"
 
-                                    // 消息正文
-                                    Label {
-                                        id: testMsgContent
-                                        Layout.fillWidth: true
-                                        text: content
-                                        wrapMode: Text.Wrap
-                                        font.pixelSize: 13
-                                        color: testMsgBubble.testIsUser ? "#FFFFFF" : "#1A1A1A"
-                                        textFormat: Text.PlainText
+                                    ColumnLayout {
+                                        id: testBubbleCol
+                                        anchors.fill: parent
+                                        anchors.margins: 10
+                                        spacing: 2
+
+                                        Label {
+                                            text: testTextBox.testIsUser ? "You"
+                                                : testTextBox.testIsSystem ? "System"
+                                                : "Assistant"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            color: testTextBox.testIsUser ? "#B3FFFFFF" : "#999999"
+                                        }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: content
+                                            wrapMode: Text.Wrap
+                                            font.pixelSize: 13
+                                            color: testTextBox.testIsUser ? "#FFFFFF" : "#1A1A1A"
+                                            textFormat: Text.PlainText
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ═══ 工具调用卡片（黄色） ═══
+                            Rectangle {
+                                id: testToolCallBox
+                                visible: msgType === "toolCall"
+                                width: parent.width
+                                height: visible ? (testToolCallInner.height + 8) : 0
+                                color: "transparent"
+
+                                Rectangle {
+                                    id: testToolCallInner
+                                    anchors {
+                                        left: parent.left; right: parent.right
+                                        top: parent.top
+                                        leftMargin: 24; rightMargin: 24
+                                    }
+                                    height: testToolCallCol.implicitHeight + 16
+                                    radius: 8
+                                    color: "#FFF8E1"
+                                    border.color: "#FFD54F"
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        id: testToolCallCol
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 4
+
+                                        RowLayout {
+                                            spacing: 6
+                                            Label { text: "\u2699"; font.pixelSize: 14 }
+                                            Label {
+                                                text: "Tool: " + toolName
+                                                font.pixelSize: 12; font.bold: true
+                                                color: "#F57F17"
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Label {
+                                                id: testToolToggle
+                                                property bool expanded: false
+                                                text: expanded ? "\u6536\u8D77 \u25B2" : "\u5C55\u5F00 \u25BC"
+                                                font.pixelSize: 10; color: "#9E9E9E"
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: testToolToggle.expanded = !testToolToggle.expanded
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: testToolToggle.expanded
+                                            Layout.fillWidth: true
+                                            implicitHeight: testArgsText.implicitHeight + 12
+                                            radius: 4; color: "#FFFDE7"
+
+                                            Label {
+                                                id: testArgsText
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                text: toolArgs || "{}"
+                                                wrapMode: Text.Wrap
+                                                font.pixelSize: 11
+                                                font.family: "Consolas"
+                                                color: "#5D4037"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ═══ 工具结果卡片（绿色/红色） ═══
+                            Rectangle {
+                                id: testToolResBox
+                                visible: msgType === "toolResult"
+                                width: parent.width
+                                height: visible ? (testToolResInner.height + 8) : 0
+                                color: "transparent"
+
+                                Rectangle {
+                                    id: testToolResInner
+                                    anchors {
+                                        left: parent.left; right: parent.right
+                                        top: parent.top
+                                        leftMargin: 24; rightMargin: 24
+                                    }
+                                    height: testToolResCol.implicitHeight + 16
+                                    radius: 8
+                                    color: isError ? "#FFEBEE" : "#E8F5E9"
+                                    border.color: isError ? "#EF9A9A" : "#A5D6A7"
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        id: testToolResCol
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 4
+
+                                        RowLayout {
+                                            spacing: 6
+                                            Label {
+                                                text: isError ? "\u274C" : "\u2705"
+                                                font.pixelSize: 14
+                                            }
+                                            Label {
+                                                text: (isError ? "Error: " : "Result: ") + toolName
+                                                font.pixelSize: 12; font.bold: true
+                                                color: isError ? "#C62828" : "#2E7D32"
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Label {
+                                                id: testResToggle
+                                                property bool expanded: false
+                                                text: expanded ? "\u6536\u8D77 \u25B2" : "\u5C55\u5F00 \u25BC"
+                                                font.pixelSize: 10; color: "#9E9E9E"
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: testResToggle.expanded = !testResToggle.expanded
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: testResToggle.expanded
+                                            Layout.fillWidth: true
+                                            implicitHeight: Math.min(testResText.implicitHeight + 12, 300)
+                                            radius: 4; clip: true
+                                            color: isError ? "#FFF5F5" : "#F1F8E9"
+
+                                            Flickable {
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                contentHeight: testResText.implicitHeight
+                                                clip: true
+
+                                                Label {
+                                                    id: testResText
+                                                    width: parent.width
+                                                    text: content || "(\u7A7A)"
+                                                    wrapMode: Text.Wrap
+                                                    font.pixelSize: 11
+                                                    font.family: "Consolas"
+                                                    color: isError ? "#B71C1C" : "#33691E"
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -760,7 +1537,11 @@ ApplicationWindow {
         testAddLog("服务器地址: " + testServerUrl)
         testAddLog("当前会话: " + wsClient.currentSessionKey)
         testAddLog("连接状态: " + wsClient.statusText)
+        testAddLog("本地 sessions 目录: " + sessionReader.sessionsDir)
         testAddLog("───────────────────────────────────")
-        testAddLog("操作指引: 点击「连接服务器」开始测试")
+        testAddLog("操作指引:")
+        testAddLog("  在线功能 → 点击「连接服务器」")
+        testAddLog("  本地历史 → 点击「扫描本地」或切换左侧「本地历史」标签")
+        testAddLog("  双击本地会话条目可查看会话摘要详情")
     }
 }

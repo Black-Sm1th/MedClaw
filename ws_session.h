@@ -33,12 +33,19 @@
  */
 struct WsEventResult
 {
-    QString content;    ///< 提取到的文本内容（delta 增量或完整内容）
-    QString role;       ///< 消息角色（user / assistant / system）
-    bool isStart;       ///< 是否为流式输出的「开始」事件
-    bool isDelta;       ///< 是否为流式输出的「增量内容」事件
-    bool isComplete;    ///< 是否为流式输出的「完成」事件
-    bool ignore;        ///< 是否应忽略此事件（如空的 chat 状态更新）
+    QString content;      ///< 提取到的文本内容（delta 增量或完整内容）
+    QString role;         ///< 消息角色（user / assistant / system）
+    bool isStart;         ///< 是否为流式输出的「开始」事件
+    bool isDelta;         ///< 是否为流式输出的「增量内容」事件
+    bool isComplete;      ///< 是否为流式输出的「完成」事件
+    bool ignore;          ///< 是否应忽略此事件（如空的 chat 状态更新）
+    // ── 工具调用相关 ──
+    bool isToolCall;      ///< 事件中包含工具调用
+    bool isToolResult;    ///< 事件中包含工具结果
+    QString toolName;     ///< 工具名称
+    QString toolArgs;     ///< 工具参数（JSON 字符串）
+    QString toolCallId;   ///< 工具调用 ID
+    bool toolIsError;     ///< 工具结果是否为错误
 };
 
 class WsSession

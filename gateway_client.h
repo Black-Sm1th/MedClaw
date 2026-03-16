@@ -66,6 +66,8 @@ class GatewayClient : public QObject
                NOTIFY sessionsChanged)
     Q_PROPERTY(QString currentSessionKey READ currentSessionKey
                WRITE setCurrentSessionKey NOTIFY currentSessionChanged)
+    Q_PROPERTY(QVariantList skillList READ skillList
+               NOTIFY skillListChanged)
 
 public:
     /**
@@ -100,6 +102,8 @@ public:
     QVariantList sessions() const;
     /// 获取当前活跃会话 key（委托给 WsSession）
     QString currentSessionKey() const;
+    /// 获取技能列表（委托给 WsSkill）
+    QVariantList skillList() const;
 
     // ═══════════════════════════════════════════════════════════════
     //  QML 可调用方法（Q_INVOKABLE）
@@ -144,6 +148,12 @@ public:
     /// 加载当前会话的历史消息（发送 messages.list RPC）
     Q_INVOKABLE void loadHistory();
 
+    /// 获取所有技能状态（发送 skills.status RPC）
+    Q_INVOKABLE void refreshSkills();
+
+    /// 启用/禁用指定技能（发送 skills.update RPC）
+    Q_INVOKABLE void setSkillEnabled(const QString &skillKey, bool enabled);
+
 signals:
     // ── 连接状态 ──
     void connectionStateChanged();  ///< 连接状态发生变化
@@ -155,6 +165,15 @@ signals:
     void streamingStarted();                     ///< 流式输出开始
     void streamingFinished();                    ///< 流式输出结束
 
+    // ── 工具调用 ──
+    void toolCallReceived(const QString &toolName,
+                          const QString &toolArgs,
+                          const QString &toolCallId);    ///< Agent 发起工具调用
+    void toolResultReceived(const QString &toolName,
+                            const QString &content,
+                            const QString &toolCallId,
+                            bool isError);               ///< 工具执行结果返回
+
     // ── 错误 ──
     void errorOccurred(const QString &message);  ///< 发生错误
 
@@ -163,6 +182,10 @@ signals:
     void currentSessionChanged();    ///< 当前活跃会话切换
     void sessionCreated();           ///< 新会话创建成功
     void historyLoaded(const QVariantList &messages); ///< 历史消息加载完成
+
+    // ── 技能管理 ──
+    void skillListChanged();         ///< 技能列表更新
+    void skillUpdated(const QString &skillKey, bool enabled); ///< 技能状态变更
 
 private slots:
     // ── WebSocket 事件槽函数 ──
@@ -195,6 +218,18 @@ private:
      *      根据返回的 WsEventResult 发射对应信号
      */
     void handleEvent(const QJsonObject &msg);
+
+    /**
+     * @brief 解析 chat 事件中的结构化消息
+     * @param payload chat 事件的 payload 对象
+     * @return true 表示已处理（含 toolCall / toolResult），false 表示需走常规流程
+     *
+     * OpenClaw chat 事件的 payload.data 可能包含完整消息对象：
+     *   - role: "assistant" + content 数组含 toolCall → 发射 toolCallReceived
+     *   - role: "toolResult" → 发射 toolResultReceived
+     *   - content 数组含 text → 发射 chatMessageReceived（非 delta）
+     */
+    bool handleStructuredChatEvent(const QJsonObject &payload);
 
     /**
      * @brief 处理入站响应帧（type: "res"）

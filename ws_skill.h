@@ -1,66 +1,78 @@
 /**
  * @file ws_skill.h
- * @brief WebSocket 技能管理类（技能类 / 子类之一）【预留】
+ * @brief WebSocket 技能管理类
  *
- * 预留类结构，用于后续扩展 WebSocket 关联的业务技能逻辑。
+ * 负责 OpenClaw 技能（Skills）的查询与配置：
+ *   ① 发送 skills.status RPC 获取所有可用技能
+ *   ② 解析响应，缓存技能列表供 QML 绑定
+ *   ③ 发送 skills.update RPC 启用/禁用指定技能
  *
- * 可能的应用场景：
- *   - 自定义工具调用（Tool Call）的注册与执行
- *   - Agent 技能/插件管理（安装、启用、禁用、配置）
- *   - 外部服务集成（如搜索引擎、数据库查询、文件操作等）
- *   - 技能执行结果的解析与回传
- *
- * 预期 RPC 方法（待确认）：
- *   - skills.list        获取可用技能列表
- *   - skill.invoke       调用指定技能
- *   - skill.configure    配置技能参数
- *   - tool.result        回传工具执行结果
- *
- * 设计说明：
- *   本类为纯逻辑类，不继承 QObject。
- *   由 WebSocket 主类（GatewayClient）持有。
- *   当前无具体实现，仅保留类结构和注释。
+ * 技能数据字段（来自 skills.status 响应）：
+ *   - name          : 技能显示名称（如 "GitHub"、"天气查询"）
+ *   - description   : 技能描述
+ *   - skillKey      : 技能唯一标识（用于 skills.update）
+ *   - source        : 来源（openclaw-bundled / user / community）
+ *   - bundled       : 是否为内置技能
+ *   - homepage      : 官方主页链接
+ *   - always        : 是否始终启用
+ *   - disabled      : 是否被禁用
+ *   - eligible      : 当前环境是否满足需求
+ *   - filePath      : SKILL.md 文件路径
  */
 #ifndef WS_SKILL_H
 #define WS_SKILL_H
 
 #include <QString>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QVariantList>
+#include <QVariantMap>
 
 class WsSkill
 {
 public:
     WsSkill();
 
-    // ═══════════════════════════════════════════════════════════════
-    //  技能列表管理（预留）
-    // ═══════════════════════════════════════════════════════════════
+    /// 获取缓存的技能列表（每项为 QVariantMap）
+    QVariantList skillList() const;
 
-    /// 【预留】获取当前可用的技能列表
-    // QVariantList availableSkills() const;
+    /// 技能总数
+    int skillCount() const;
 
-    /// 【预留】解析 skills.list 响应
-    // int parseSkillsResponse(const QJsonObject &payload);
+    /**
+     * @brief 解析 skills.status RPC 响应
+     * @param payload 响应 payload 对象
+     * @return 解析到的技能数量
+     *
+     * payload 结构：
+     *   {
+     *     workspaceDir: "...",
+     *     managedSkillsDir: "...",
+     *     skills: [ { name, description, skillKey, disabled, ... }, ... ]
+     *   }
+     */
+    int parseSkillsStatusResponse(const QJsonObject &payload);
 
-    // ═══════════════════════════════════════════════════════════════
-    //  技能调用（预留）
-    // ═══════════════════════════════════════════════════════════════
+    /**
+     * @brief 解析 skills.update RPC 响应
+     * @param payload 响应 payload
+     * @return 被操作的 skillKey（空表示解析失败）
+     *
+     * 成功后更新本地缓存中对应技能的 disabled 状态
+     */
+    QString parseSkillUpdateResponse(const QJsonObject &payload);
 
-    /// 【预留】构建技能调用请求参数
-    // QJsonObject buildInvokeParams(const QString &skillId,
-    //                               const QJsonObject &args) const;
+    /// 构建 skills.status 请求参数（空对象）
+    QJsonObject buildSkillsStatusParams() const;
 
-    /// 【预留】解析技能调用结果
-    // QVariantMap parseInvokeResult(const QJsonObject &payload) const;
+    /// 构建 skills.update 请求参数
+    QJsonObject buildSkillUpdateParams(const QString &skillKey,
+                                        bool enabled) const;
 
-    // ═══════════════════════════════════════════════════════════════
-    //  工具结果回传（预留）
-    // ═══════════════════════════════════════════════════════════════
-
-    /// 【预留】构建 tool.result 回传参数
-    // QJsonObject buildToolResultParams(const QString &toolCallId,
-    //                                   const QJsonObject &result) const;
+private:
+    QVariantList m_skills;          ///< 缓存的技能列表
+    QString      m_workspaceDir;    ///< 工作空间目录
+    QString      m_managedSkillsDir;///< 托管技能目录
 };
 
 #endif // WS_SKILL_H

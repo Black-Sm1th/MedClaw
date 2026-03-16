@@ -100,6 +100,12 @@ QString GatewayClient::currentSessionKey() const
     return m_session.currentSessionKey();
 }
 
+/// 委托给 WsSkill 获取技能列表
+QVariantList GatewayClient::skillList() const
+{
+    return m_skill.skillList();
+}
+
 /// 设置连接状态并通知 QML 属性绑定系统
 void GatewayClient::setState(ConnectionState state)
 {
@@ -273,7 +279,7 @@ void GatewayClient::onTextMessageReceived(const QString &message)
 {
     // ── 1. JSON 解析 ──
     QJsonParseError err;
-    const QJsonDocument doc =
+     const QJsonDocument doc =
         QJsonDocument::fromJson(message.toUtf8(), &err);
     if (err.error != QJsonParseError::NoError || !doc.isObject()) {
         qWarning() << "[Gateway] bad JSON:" << err.errorString();
@@ -332,9 +338,9 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         return;
     }
 
-    // ── 调试日志（前 15 条 agent/chat 事件） ──
+    // ── 调试日志（前 50 条 agent/chat 事件） ──
     static int debugCount = 0;
-    if (debugCount < 15
+    if (debugCount < 50
         && (event == QLatin1String("agent")
             || event == QLatin1String("chat"))) {
         ++debugCount;
@@ -343,22 +349,46 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         const QString subEvent =
             payload.value(QStringLiteral("event")).toString();
         qDebug().noquote()
-            << "[Gateway] EVT" << event << "|" << subEvent
+            << "[Gateway] EVT#" << debugCount << event << "|" << subEvent
             << "data:" << QString::fromUtf8(
                    QJsonDocument(data).toJson(QJsonDocument::Compact))
-                   .left(300);
+                   .left(500);
     }
 
-    // ── ③ 委托 WsSession 解析事件语义 ──
+    // ══════════════════════════════════════════════════════════════
+    //  chat 事件优先做结构化消息解析
+    //  OpenClaw 的 chat 事件 payload.data 可能是一条完整消息对象，
+    //  其 content 字段为数组，内含 text / toolCall / toolResult
+    // ══════════════════════════════════════════════════════════════
+    if (event == QLatin1String("chat")) {
+        if (handleStructuredChatEvent(payload))
+            return;
+    }
+
+    // ── ③ 委托 WsSession 解析事件语义（流式 delta / phase） ──
     const WsEventResult r = m_session.parseEvent(event, payload);
 
     if (r.ignore)
         return;
 
+    // ── 工具调用事件（由 parseEvent 从 data.type 检测到） ──
+    if (r.isToolCall) {
+        qDebug().noquote() << "[Gateway] tool call:" << r.toolName
+                           << "id:" << r.toolCallId;
+        emit toolCallReceived(r.toolName, r.toolArgs, r.toolCallId);
+        return;
+    }
+    if (r.isToolResult) {
+        qDebug().noquote() << "[Gateway] tool result:" << r.toolName
+                           << "error:" << r.toolIsError;
+        emit toolResultReceived(r.toolName, r.content,
+                                r.toolCallId, r.toolIsError);
+        return;
+    }
+
     // ── 根据解析结果处理 agent 事件 ──
     if (event == QLatin1String("agent")) {
         if (r.isStart) {
-            // 流式输出开始
             if (!m_session.isStreaming()) {
                 m_session.setStreaming(true);
                 emit streamingStarted();
@@ -366,7 +396,6 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             return;
         }
         if (r.isDelta && !r.content.isEmpty()) {
-            // 流式增量内容
             if (!m_session.isStreaming()) {
                 m_session.setStreaming(true);
                 emit streamingStarted();
@@ -376,7 +405,6 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             return;
         }
         if (r.isComplete) {
-            // 流式输出完成
             if (m_session.isStreaming()) {
                 m_session.setStreaming(false);
                 emit streamingFinished();
@@ -385,7 +413,6 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             return;
         }
-        // 非 delta/start/complete 但有内容 → 视为流式增量
         if (!r.content.isEmpty()) {
             if (!m_session.isStreaming()) {
                 m_session.setStreaming(true);
@@ -397,7 +424,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         return;
     }
 
-    // ── 根据解析结果处理 chat 事件 ──
+    // ── 处理 chat 事件（parseEvent 检测到的 delta/complete） ──
     if (event == QLatin1String("chat")) {
         if (r.isDelta && !r.content.isEmpty()) {
             if (!m_session.isStreaming()) {
@@ -417,7 +444,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             return;
         }
-        return; // 空的 chat 状态更新，忽略
+        return;
     }
 
     // ── ④ 其他事件：如有内容，作为完整消息发射 ──
@@ -517,6 +544,148 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         emit historyLoaded(history);
         return;
     }
+
+    // skills.status 响应 → 委托 WsSkill 解析
+    if (method == QLatin1String("skills.status")) {
+        m_skill.parseSkillsStatusResponse(payload);
+        emit skillListChanged();
+        return;
+    }
+
+    // skills.update 响应 → 更新本地缓存并通知
+    if (method == QLatin1String("skills.update")) {
+        const QString key = m_skill.parseSkillUpdateResponse(payload);
+        if (!key.isEmpty()) {
+            emit skillListChanged();
+            // 查找更新后的状态
+            const QVariantList skills = m_skill.skillList();
+            for (const QVariant &v : skills) {
+                const QVariantMap s = v.toMap();
+                if (s.value(QStringLiteral("skillKey")).toString() == key) {
+                    emit skillUpdated(key,
+                        s.value(QStringLiteral("enabled")).toBool());
+                    break;
+                }
+            }
+        }
+        return;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  5.5 结构化 chat 消息解析
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief 解析 chat 事件中的结构化消息（含 toolCall / toolResult）
+ *
+ * OpenClaw 在实时会话中，chat 事件的 payload.data 可能是：
+ *
+ *  情况A — 助手消息（可能含工具调用）:
+ *    data.message.role = "assistant"
+ *    data.message.content = [{type:"text", text:"..."}, {type:"toolCall", ...}]
+ *  或直接：
+ *    data.role = "assistant"
+ *    data.content = [...]
+ *
+ *  情况B — 工具结果：
+ *    data.message.role = "toolResult"
+ *    data.message.toolCallId / toolName / content
+ *  或直接：
+ *    data.role = "toolResult"
+ *
+ * @return true 如果检测到并处理了结构化内容（toolCall 或 toolResult）
+ */
+bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
+{
+    const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
+
+    // 尝试从 data.message 或 data 本身获取消息结构
+    QJsonObject msg = data.value(QStringLiteral("message")).toObject();
+    if (msg.isEmpty()) msg = data;
+
+    const QString role = msg.value(QStringLiteral("role")).toString();
+    if (role.isEmpty()) return false;
+
+    // ── toolResult 消息 ──
+    if (role == QLatin1String("toolResult")) {
+        const QString tcId  = msg.value(QStringLiteral("toolCallId")).toString();
+        const QString tName = msg.value(QStringLiteral("toolName")).toString();
+        const bool isErr    = msg.value(QStringLiteral("isError")).toBool(false);
+
+        QString resultText;
+        const QJsonValue contentVal = msg.value(QStringLiteral("content"));
+        if (contentVal.isArray()) {
+            const QJsonArray cArr = contentVal.toArray();
+            for (const QJsonValue &cv : cArr) {
+                const QJsonObject co = cv.toObject();
+                if (co.value(QStringLiteral("type")).toString() == QLatin1String("text")) {
+                    if (!resultText.isEmpty()) resultText += QLatin1Char('\n');
+                    resultText += co.value(QStringLiteral("text")).toString();
+                }
+            }
+        } else {
+            resultText = contentVal.toString();
+        }
+        if (resultText.length() > 2000)
+            resultText = resultText.left(2000) + QStringLiteral("\n...(truncated)");
+
+        qDebug().noquote() << "[Gateway] chat → toolResult:" << tName
+                           << "error:" << isErr
+                           << "len:" << resultText.length();
+
+        // 如果之前在 streaming，先结束
+        if (m_session.isStreaming()) {
+            m_session.setStreaming(false);
+            emit streamingFinished();
+        }
+        emit toolResultReceived(tName, resultText, tcId, isErr);
+        return true;
+    }
+
+    // ── 检查 content 数组是否包含 toolCall ──
+    const QJsonValue contentVal = msg.value(QStringLiteral("content"));
+    if (!contentVal.isArray()) return false;
+
+    const QJsonArray cArr = contentVal.toArray();
+    bool hasToolCall = false;
+
+    for (const QJsonValue &cv : cArr) {
+        const QJsonObject co = cv.toObject();
+        if (co.value(QStringLiteral("type")).toString() == QLatin1String("toolCall"))
+            hasToolCall = true;
+    }
+
+    // 如果没有 toolCall，让常规流程处理（可能是纯文本 chat 事件）
+    if (!hasToolCall) return false;
+
+    // ── 有 toolCall：结束 streaming 并逐项发射信号 ──
+    if (m_session.isStreaming()) {
+        m_session.setStreaming(false);
+        emit streamingFinished();
+    }
+
+    for (const QJsonValue &cv : cArr) {
+        const QJsonObject co = cv.toObject();
+        const QString ctype = co.value(QStringLiteral("type")).toString();
+
+        if (ctype == QLatin1String("toolCall")) {
+            const QString tcId  = co.value(QStringLiteral("id")).toString();
+            const QString tName = co.value(QStringLiteral("name")).toString();
+            QJsonObject args = co.value(QStringLiteral("arguments")).toObject();
+            QString argsStr = QString::fromUtf8(
+                QJsonDocument(args).toJson(QJsonDocument::Compact));
+            if (argsStr.length() > 1000)
+                argsStr = argsStr.left(1000) + QStringLiteral("...");
+
+            qDebug().noquote() << "[Gateway] chat → toolCall:" << tName
+                               << "id:" << tcId;
+            emit toolCallReceived(tName, argsStr, tcId);
+        }
+        // text 条目不在这里重复发射，因为流式 delta 已经推送过了
+    }
+
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -622,6 +791,38 @@ void GatewayClient::deleteSession(const QString &sessionKey)
     }
     sendRequest(QStringLiteral("session.delete"),
                 m_session.buildDeleteSessionParams(sessionKey));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  7. 技能管理
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief 获取所有技能状态
+ *
+ * 发送 skills.status RPC，响应在 handleResponse() 中由 WsSkill 解析。
+ */
+void GatewayClient::refreshSkills()
+{
+    if (m_state != Connected) return;
+    sendRequest(QStringLiteral("skills.status"),
+                m_skill.buildSkillsStatusParams());
+}
+
+/**
+ * @brief 启用或禁用指定技能
+ * @param skillKey 技能标识
+ * @param enabled  true=启用, false=禁用
+ */
+void GatewayClient::setSkillEnabled(const QString &skillKey, bool enabled)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    sendRequest(QStringLiteral("skills.update"),
+                m_skill.buildSkillUpdateParams(skillKey, enabled));
 }
 
 /**

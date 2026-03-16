@@ -16,7 +16,8 @@ HEADERS += \
     ws_config.h \
     ws_session.h \
     ws_skill.h \
-    ws_scheduled_task.h
+    ws_scheduled_task.h \
+    session_reader.h
 
 SOURCES += \
     main.cpp \
@@ -27,7 +28,8 @@ SOURCES += \
     ws_config.cpp \
     ws_session.cpp \
     ws_skill.cpp \
-    ws_scheduled_task.cpp
+    ws_scheduled_task.cpp \
+    session_reader.cpp
 
 RESOURCES += qml.qrc
 

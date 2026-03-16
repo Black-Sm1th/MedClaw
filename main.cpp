@@ -6,6 +6,7 @@
 #include "mainviewcontroller.h"
 #include "gateway_client.h"
 #include "chatmodel.h"
+#include "session_reader.h"
 
 int main(int argc, char *argv[])
 {
@@ -36,6 +37,20 @@ int main(int argc, char *argv[])
     QObject::connect(&wsClient, &GatewayClient::streamingFinished,
                      [&chatModel]() { chatModel.endStreaming(); });
 
+    // 工具调用：在 ChatModel 中插入工具卡片
+    QObject::connect(&wsClient, &GatewayClient::toolCallReceived,
+                     [&chatModel](const QString &name, const QString &args,
+                                  const QString &id) {
+        chatModel.addToolCall(name, args, id);
+    });
+
+    // 工具结果：在 ChatModel 中插入工具结果块
+    QObject::connect(&wsClient, &GatewayClient::toolResultReceived,
+                     [&chatModel](const QString &name, const QString &content,
+                                  const QString &id, bool isError) {
+        chatModel.addToolResult(name, content, id, isError);
+    });
+
     // 新会话创建成功：清空聊天记录并显示系统提示
     QObject::connect(&wsClient, &GatewayClient::sessionCreated,
                      [&chatModel]() {
@@ -50,15 +65,34 @@ int main(int argc, char *argv[])
         chatModel.clear();
         for (const QVariant &v : messages) {
             const QVariantMap m = v.toMap();
-            chatModel.addMessage(m.value(QStringLiteral("role")).toString(),
-                                 m.value(QStringLiteral("content")).toString());
+            const QString mtype = m.value(QStringLiteral("msgType")).toString();
+            if (mtype == QLatin1String("toolCall")) {
+                chatModel.addToolCall(
+                    m.value(QStringLiteral("toolName")).toString(),
+                    m.value(QStringLiteral("toolArgs")).toString(),
+                    m.value(QStringLiteral("toolCallId")).toString());
+            } else if (mtype == QLatin1String("toolResult")) {
+                chatModel.addToolResult(
+                    m.value(QStringLiteral("toolName")).toString(),
+                    m.value(QStringLiteral("content")).toString(),
+                    m.value(QStringLiteral("toolCallId")).toString(),
+                    m.value(QStringLiteral("isError")).toBool());
+            } else {
+                chatModel.addMessage(
+                    m.value(QStringLiteral("role")).toString(),
+                    m.value(QStringLiteral("content")).toString());
+            }
         }
     });
+
+    // ── 本地会话历史读取器 ──
+    SessionReader sessionReader;
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("$MainViewController", GET_SINGLETON(MainViewController));
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
 
     int fontId1 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     int fontId2 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");

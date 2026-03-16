@@ -17,9 +17,14 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
 
     const ChatMessage &msg = m_messages[index.row()];
     switch (role) {
-    case RoleRole:      return msg.role;
-    case ContentRole:   return msg.content;
-    case TimestampRole: return msg.timestamp.toString(QStringLiteral("hh:mm:ss"));
+    case RoleRole:       return msg.role;
+    case ContentRole:    return msg.content;
+    case TimestampRole:  return msg.timestamp.toString(QStringLiteral("hh:mm:ss"));
+    case MsgTypeRole:    return msg.msgType;
+    case ToolNameRole:   return msg.toolName;
+    case ToolArgsRole:   return msg.toolArgs;
+    case ToolCallIdRole: return msg.toolCallId;
+    case IsErrorRole:    return msg.isError;
     }
     return QVariant();
 }
@@ -27,22 +32,79 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
 QHash<int, QByteArray> ChatModel::roleNames() const
 {
     return {
-        { RoleRole,      "msgRole"    },
-        { ContentRole,   "content"    },
-        { TimestampRole, "timestamp"  }
+        { RoleRole,       "msgRole"    },
+        { ContentRole,    "content"    },
+        { TimestampRole,  "timestamp"  },
+        { MsgTypeRole,    "msgType"    },
+        { ToolNameRole,   "toolName"   },
+        { ToolArgsRole,   "toolArgs"   },
+        { ToolCallIdRole, "toolCallId" },
+        { IsErrorRole,    "isError"    }
     };
 }
 
-// ── Public API ────────────────────────────────────────────────────────
+// ── 文本消息 ─────────────────────────────────────────────────────────
 
 void ChatModel::addMessage(const QString &role, const QString &content)
 {
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
-    m_messages.append({ role, content, QDateTime::currentDateTime() });
+    ChatMessage msg;
+    msg.role      = role;
+    msg.content   = content;
+    msg.timestamp = QDateTime::currentDateTime();
+    msg.msgType   = QStringLiteral("text");
+    msg.isError   = false;
+    m_messages.append(msg);
     endInsertRows();
     emit countChanged();
 }
+
+// ── 工具调用 ─────────────────────────────────────────────────────────
+
+void ChatModel::addToolCall(const QString &toolName,
+                             const QString &toolArgs,
+                             const QString &toolCallId)
+{
+    const int idx = m_messages.count();
+    beginInsertRows(QModelIndex(), idx, idx);
+    ChatMessage msg;
+    msg.role       = QStringLiteral("assistant");
+    msg.content    = QString();
+    msg.timestamp  = QDateTime::currentDateTime();
+    msg.msgType    = QStringLiteral("toolCall");
+    msg.toolName   = toolName;
+    msg.toolArgs   = toolArgs;
+    msg.toolCallId = toolCallId;
+    msg.isError    = false;
+    m_messages.append(msg);
+    endInsertRows();
+    emit countChanged();
+}
+
+// ── 工具结果 ─────────────────────────────────────────────────────────
+
+void ChatModel::addToolResult(const QString &toolName,
+                               const QString &content,
+                               const QString &toolCallId,
+                               bool isError)
+{
+    const int idx = m_messages.count();
+    beginInsertRows(QModelIndex(), idx, idx);
+    ChatMessage msg;
+    msg.role       = QStringLiteral("tool");
+    msg.content    = content;
+    msg.timestamp  = QDateTime::currentDateTime();
+    msg.msgType    = QStringLiteral("toolResult");
+    msg.toolName   = toolName;
+    msg.toolCallId = toolCallId;
+    msg.isError    = isError;
+    m_messages.append(msg);
+    endInsertRows();
+    emit countChanged();
+}
+
+// ── 追加/修改 ────────────────────────────────────────────────────────
 
 void ChatModel::appendToLastMessage(const QString &text)
 {
@@ -61,7 +123,7 @@ void ChatModel::clear()
     emit countChanged();
 }
 
-// ── Streaming helpers ─────────────────────────────────────────────────
+// ── Streaming ────────────────────────────────────────────────────────
 
 void ChatModel::beginStreaming()
 {
@@ -76,7 +138,8 @@ void ChatModel::appendStreamChunk(const QString &chunk)
     if (!m_streaming)
         beginStreaming();
     if (m_messages.isEmpty()
-        || m_messages.last().role != QLatin1String("assistant")) {
+        || m_messages.last().role != QLatin1String("assistant")
+        || m_messages.last().msgType != QLatin1String("text")) {
         addMessage(QStringLiteral("assistant"), QString());
     }
     appendToLastMessage(chunk);
