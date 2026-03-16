@@ -14,6 +14,7 @@
 #include "gateway_client.h"
 #include <QDebug>
 #include <QUuid>
+#include <QNetworkRequest>
 
 /// 帧类型常量：事件帧
 static const QLatin1String T_EVENT("event");
@@ -139,7 +140,21 @@ void GatewayClient::connectToServer(const QString &url)
     m_pendingRequests.clear();
     setState(Connecting);
 
-    m_socket->open(QUrl(url));
+    // ── 构造带 Origin 头的请求 ──
+    // Gateway 会校验 Origin 是否在 controlUi.allowedOrigins 白名单中。
+    // 将 ws:// → http://、wss:// → https://，拼接为 Origin 值。
+    QUrl wsUrl(url);
+    const QString scheme = (wsUrl.scheme() == QStringLiteral("wss"))
+                           ? QStringLiteral("https") : QStringLiteral("http");
+    const QString origin = QStringLiteral("%1://%2:%3")
+                           .arg(scheme, wsUrl.host())
+                           .arg(wsUrl.port(18789));
+
+    QNetworkRequest request(wsUrl);
+    request.setRawHeader("Origin", origin.toUtf8());
+
+    qDebug() << "[Gateway] Origin:" << origin;
+    m_socket->open(request);
 }
 
 /**
