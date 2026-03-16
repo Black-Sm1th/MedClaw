@@ -299,32 +299,438 @@ ApplicationWindow {
                             Row {
                                 anchors.fill: parent
                                 spacing: 4
-                                DropdownSelect {
+                                Item {
                                     id: dropdownSelectionWorkSpace
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 137
                                     height: 36
-                                    model: ["workspace"]
-                                    icon: "qrc:/images/folder.png"
-                                    iconSize: 20
-                                    currentIndex: 0
+
+                                    property string currentText: "workspace"
+                                    property var recentFolders: ["project1", "project122"]
+
+                                    Rectangle {
+                                        id: wsButton
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: wsMouseArea.pressed ? "#14000000"
+                                             : wsMouseArea.containsMouse ? "#0A000000"
+                                             : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                                        Row {
+                                            spacing: 6
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            anchors.horizontalCenterOffset: -wsChevron.width / 2 - 2
+
+                                            Image {
+                                                source: "qrc:/images/folder.png"
+                                                width: 20; height: 20
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(20, 20)
+                                            }
+                                            Text {
+                                                text: dropdownSelectionWorkSpace.currentText
+                                                font.pixelSize: 14
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+
+                                        Canvas {
+                                            id: wsChevron
+                                            width: 16; height: 16
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 12
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            rotation: wsPopup.visible ? 180 : 0
+                                            Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.reset()
+                                                ctx.strokeStyle = "#80000000"
+                                                ctx.lineWidth = 1.5
+                                                ctx.lineCap = "round"
+                                                ctx.lineJoin = "round"
+                                                ctx.beginPath()
+                                                ctx.moveTo(4, 6)
+                                                ctx.lineTo(8, 10)
+                                                ctx.lineTo(12, 6)
+                                                ctx.stroke()
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: wsMouseArea
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: wsPopup.visible ? wsPopup.close() : wsPopup.open()
+                                        }
+                                    }
+
+                                    Popup {
+                                        id: wsPopup
+                                        x: 0
+                                        y: dropdownSelectionWorkSpace.height + 4
+                                        width: 200
+                                        padding: 8
+
+                                        background: Rectangle {
+                                            radius: 8
+                                            color: "#FFFFFF"
+                                            border.color: "#14000000"
+                                            border.width: 1
+                                            layer.enabled: true
+                                            layer.effect: DropShadow {
+                                                transparentBorder: true
+                                                radius: 12
+                                                samples: 25
+                                                color: "#1A000000"
+                                            }
+                                        }
+
+                                        contentItem: Column {
+                                            spacing: 0
+
+                                            Rectangle {
+                                                width: wsPopup.width - 16
+                                                height: 36
+                                                radius: 6
+                                                color: wsOpenMouse.pressed ? "#14000000"
+                                                     : wsOpenMouse.containsMouse ? "#0A000000"
+                                                     : "transparent"
+                                                Behavior on color { ColorAnimation { duration: 100 } }
+
+                                                Row {
+                                                    spacing: 8
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    anchors.left: parent.left
+                                                    anchors.leftMargin: 12
+
+                                                    Image {
+                                                        source: "qrc:/images/folder.png"
+                                                        width: 18; height: 18
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        fillMode: Image.PreserveAspectFit
+                                                        sourceSize: Qt.size(18, 18)
+                                                    }
+                                                    Text {
+                                                        text: qsTr("打开文件夹")
+                                                        font.pixelSize: 14
+                                                        font.family: "Alibaba PuHuiTi 3.0"
+                                                        color: "#D9000000"
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: wsOpenMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        wsPopup.close()
+                                                        folderDialogWorkSpace.open()
+                                                    }
+                                                }
+                                            }
+                                            Item { width: 1; height: 8 }
+                                            Rectangle {
+                                                width: wsPopup.width - 16
+                                                height: 1
+                                                color: "#EBEDF0"
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                            }
+
+                                            Item { width: 1; height: 8 }
+
+                                            Text {
+                                                text: qsTr("最近")
+                                                font.pixelSize: 12
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#73000000"
+                                                leftPadding: 12
+                                            }
+
+                                            Item { width: 1; height: 8 }
+
+                                            Repeater {
+                                                model: dropdownSelectionWorkSpace.recentFolders
+                                                delegate: Rectangle {
+                                                    width: wsPopup.width - 8
+                                                    height: 36
+                                                    radius: 6
+                                                    color: recentMouse.pressed ? "#14000000"
+                                                         : recentMouse.containsMouse ? "#0A000000"
+                                                         : "transparent"
+                                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                                    Row {
+                                                        spacing: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 12
+
+                                                        Image {
+                                                            source: "qrc:/images/folder.png"
+                                                            width: 18; height: 18
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                            fillMode: Image.PreserveAspectFit
+                                                            sourceSize: Qt.size(18, 18)
+                                                        }
+                                                        Text {
+                                                            text: modelData
+                                                            font.pixelSize: 14
+                                                            font.family: "Alibaba PuHuiTi 3.0"
+                                                            color: "#D9000000"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: recentMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            dropdownSelectionWorkSpace.currentText = modelData
+                                                            wsPopup.close()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        enter: Transition {
+                                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                                            NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                                        }
+                                        exit: Transition {
+                                            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                                        }
+                                    }
+
+                                    FileDialog {
+                                        id: folderDialogWorkSpace
+                                        title: qsTr("选择文件夹")
+                                        selectFolder: true
+                                        onAccepted: {
+                                            var path = folderDialogWorkSpace.fileUrl.toString()
+                                            path = path.replace(/^file:\/\/\//, "")
+                                            var parts = path.split("/")
+                                            dropdownSelectionWorkSpace.currentText = parts[parts.length - 1] || path
+                                        }
+                                    }
                                 }
-                                DropdownSelect {
+                                Item {
                                     id: dropdownSelectionSkill
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 96
                                     height: 36
-                                    model: ["技能"]
-                                    icon: "qrc:/images/category.png"
-                                    iconSize: 20
-                                    currentIndex: 0
+
+                                    property string currentText: "技能"
+                                    property var skillList: [
+                                        { name: "深度问数", icon: "qrc:/images/skillIcon.png" },
+                                        { name: "生信分析", icon: "qrc:/images/skillIcon.png" },
+                                        { name: "soap-note", icon: "qrc:/images/skillIcon.png" },
+                                        { name: "emr-query", icon: "qrc:/images/skillIcon.png" },
+                                        { name: "drug-safety", icon: "qrc:/images/skillIcon.png" },
+                                        { name: "acmg-classify", icon: "qrc:/images/skillIcon.png" }
+                                    ]
+                                    property string searchText: ""
+
+                                    function filteredSkills() {
+                                        if (!searchText) return skillList
+                                        var result = []
+                                        for (var i = 0; i < skillList.length; i++) {
+                                            if (skillList[i].name.toLowerCase().indexOf(searchText.toLowerCase()) >= 0)
+                                                result.push(skillList[i])
+                                        }
+                                        return result
+                                    }
+
+                                    Rectangle {
+                                        id: skillButton
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: skillMouseArea.pressed ? "#14000000"
+                                             : skillMouseArea.containsMouse ? "#0A000000"
+                                             : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                                        Row {
+                                            spacing: 6
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            anchors.horizontalCenterOffset: -skillChevron.width / 2 - 2
+
+                                            Image {
+                                                source: "qrc:/images/category.png"
+                                                width: 20; height: 20
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(20, 20)
+                                            }
+                                            Text {
+                                                text: dropdownSelectionSkill.currentText
+                                                font.pixelSize: 14
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+
+                                        Canvas {
+                                            id: skillChevron
+                                            width: 16; height: 16
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 12
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            rotation: skillPopup.visible ? 180 : 0
+                                            Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.reset()
+                                                ctx.strokeStyle = "#80000000"
+                                                ctx.lineWidth = 1.5
+                                                ctx.lineCap = "round"
+                                                ctx.lineJoin = "round"
+                                                ctx.beginPath()
+                                                ctx.moveTo(4, 6)
+                                                ctx.lineTo(8, 10)
+                                                ctx.lineTo(12, 6)
+                                                ctx.stroke()
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: skillMouseArea
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: skillPopup.visible ? skillPopup.close() : skillPopup.open()
+                                        }
+                                    }
+
+                                    Popup {
+                                        id: skillPopup
+                                        x: 0
+                                        y: dropdownSelectionSkill.height + 4
+                                        width: 220
+                                        padding: 8
+
+                                        onAboutToShow: skillSearchInput.text = ""
+
+                                        background: Rectangle {
+                                            radius: 8
+                                            color: "#FFFFFF"
+                                            border.color: "#14000000"
+                                            border.width: 1
+                                            layer.enabled: true
+                                            layer.effect: DropShadow {
+                                                transparentBorder: true
+                                                radius: 12
+                                                samples: 25
+                                                color: "#1A000000"
+                                            }
+                                        }
+
+                                        contentItem: Column {
+                                            spacing: 6
+
+                                            Row {
+                                                width: parent.width
+                                                spacing: 6
+
+                                                SingleLineTextInput {
+                                                    id: skillSearchInput
+                                                    inputWidth: parent.width - skillSettingPopBtn.width - 6
+                                                    inputHeight: 32
+                                                    inputRadius: 6
+                                                    icon: "qrc:/images/search.png"
+                                                    iconSize: 14
+                                                    fontSize: 13
+                                                    placeholderText: qsTr("搜索技能")
+                                                    onTextChanged: dropdownSelectionSkill.searchText = text
+                                                }
+
+                                                ImageButton {
+                                                    id: skillSettingPopBtn
+                                                    source: "qrc:/images/setting.png"
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    onClicked: {
+                                                        skillPopup.close()
+                                                        window.leftSelectedIndex = 2
+                                                    }
+                                                }
+                                            }
+
+                                            Repeater {
+                                                model: dropdownSelectionSkill.filteredSkills()
+
+                                                delegate: Rectangle {
+                                                    width: skillPopup.width - 16
+                                                    height: 36
+                                                    radius: 6
+                                                    color: skillItemMouse.pressed ? "#14000000"
+                                                         : skillItemMouse.containsMouse ? "#0A000000"
+                                                         : "transparent"
+                                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                                    Row {
+                                                        spacing: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 8
+
+                                                        Image {
+                                                            source: modelData.icon
+                                                            width: 20; height: 20
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                            fillMode: Image.PreserveAspectFit
+                                                            sourceSize: Qt.size(20, 20)
+                                                        }
+                                                        Text {
+                                                            text: modelData.name
+                                                            font.pixelSize: 14
+                                                            font.family: "Alibaba PuHuiTi 3.0"
+                                                            color: "#D9000000"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: skillItemMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            dropdownSelectionSkill.currentText = modelData.name
+                                                            skillPopup.close()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        enter: Transition {
+                                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                                            NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                                        }
+                                        exit: Transition {
+                                            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                                        }
+                                    }
                                 }
                                 DropdownSelect {
                                     id: dropdownSelectionModel
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 137
                                     height: 36
-                                    model: ["DeepSeek", "ChatGPT", "Gemini"]
+                                    model: ["Qwen3-32B"]
                                     icon: "qrc:/images/ai.png"
                                     iconSize: 20
                                     currentIndex: 0
@@ -2046,12 +2452,7 @@ ApplicationWindow {
                                 Repeater {
                                     model: ListModel {
                                         id: modelListModel
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: false }
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: true }
-                                        ListElement { name: "DeepSeek"; enabled: true }
+                                        ListElement { name: "Qwen3-32B"; enabled: true }
                                     }
 
                                     delegate: Rectangle {
