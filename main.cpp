@@ -55,12 +55,8 @@ int main(int argc, char *argv[])
         }
     });
 
-    auto *mainVC = GET_SINGLETON(MainViewController);
-    mainVC->setWsClient(&wsClient);
-    mainVC->setChatModel(&chatModel);
-
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("$MainViewController", mainVC);
+    engine.rootContext()->setContextProperty("$MainViewController", GET_SINGLETON(MainViewController));
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
 
