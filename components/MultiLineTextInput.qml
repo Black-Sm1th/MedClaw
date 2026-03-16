@@ -20,7 +20,7 @@ Rectangle {
     // 文本属性
     property alias text: textArea.text
     property alias readOnly: textArea.readOnly
-    
+    signal enterPressed()
     // 设置尺寸
     width: inputWidth
     height: inputHeight
@@ -51,6 +51,16 @@ Rectangle {
             
             background: Rectangle {
                 color: "transparent"
+            }
+            Keys.onPressed: {
+                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+                    if (event.modifiers === Qt.ShiftModifier) {
+                        return
+                    } else if (event.modifiers === Qt.NoModifier) {
+                        multiLineTextInput.enterPressed()
+                        event.accepted = true
+                    }
+                }
             }
         }
     }

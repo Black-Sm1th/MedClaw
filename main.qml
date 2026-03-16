@@ -286,12 +286,18 @@ ApplicationWindow {
                         padding: 12
                         spacing: 12
                         MultiLineTextInput{
+                            id: textInputArea
                             focusedBorderColor: "transparent"
                             backgroundColor: "transparent"
                             borderWidth: 0
                             placeholderText: "分配一个任务或提问任何问题"
                             width: parent.width - 24
                             height: 66
+                            onEnterPressed: {
+                                if(textInputArea.text !== ""){
+                                    $MainViewController.sendMessage()
+                                }
+                            }
                         }
                         Rectangle{
                             height: 40
@@ -528,10 +534,9 @@ ApplicationWindow {
                                 Item {
                                     id: dropdownSelectionSkill
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 96
+                                    width: skillBtnRow.width + 12 + skillChevron.width + 12
                                     height: 36
 
-                                    property string currentText: "技能"
                                     property var skillList: [
                                         { name: "深度问数", icon: "qrc:/images/skillIcon.png" },
                                         { name: "生信分析", icon: "qrc:/images/skillIcon.png" },
@@ -540,7 +545,26 @@ ApplicationWindow {
                                         { name: "drug-safety", icon: "qrc:/images/skillIcon.png" },
                                         { name: "acmg-classify", icon: "qrc:/images/skillIcon.png" }
                                     ]
+                                    property var selectedSkills: []
                                     property string searchText: ""
+
+                                    function isSelected(name) {
+                                        for (var i = 0; i < selectedSkills.length; i++) {
+                                            if (selectedSkills[i] === name) return true
+                                        }
+                                        return false
+                                    }
+
+                                    function toggleSkill(name) {
+                                        var arr = selectedSkills.slice()
+                                        var idx = -1
+                                        for (var i = 0; i < arr.length; i++) {
+                                            if (arr[i] === name) { idx = i; break }
+                                        }
+                                        if (idx >= 0) arr.splice(idx, 1)
+                                        else arr.push(name)
+                                        selectedSkills = arr
+                                    }
 
                                     function filteredSkills() {
                                         if (!searchText) return skillList
@@ -562,10 +586,11 @@ ApplicationWindow {
                                         Behavior on color { ColorAnimation { duration: 100 } }
 
                                         Row {
+                                            id: skillBtnRow
                                             spacing: 6
                                             anchors.verticalCenter: parent.verticalCenter
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.horizontalCenterOffset: -skillChevron.width / 2 - 2
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 12
 
                                             Image {
                                                 source: "qrc:/images/category.png"
@@ -575,11 +600,28 @@ ApplicationWindow {
                                                 sourceSize: Qt.size(20, 20)
                                             }
                                             Text {
-                                                text: dropdownSelectionSkill.currentText
+                                                text: "技能"
                                                 font.pixelSize: 14
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#D9000000"
                                                 anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                            Rectangle {
+                                                visible: dropdownSelectionSkill.selectedSkills.length > 0
+                                                width: 20
+                                                height: 20
+                                                radius: 10
+                                                color: "#14000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                Text {
+                                                    id: badgeText
+                                                    text: dropdownSelectionSkill.selectedSkills.length
+                                                    font.pixelSize: 12
+                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                    color: "#73000000"
+                                                    anchors.centerIn: parent
+                                                }
                                             }
                                         }
 
@@ -621,6 +663,7 @@ ApplicationWindow {
                                         y: dropdownSelectionSkill.height + 4
                                         width: 220
                                         padding: 8
+                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
 
                                         onAboutToShow: skillSearchInput.text = ""
 
@@ -702,15 +745,34 @@ ApplicationWindow {
                                                         }
                                                     }
 
+                                                    Canvas {
+                                                        visible: dropdownSelectionSkill.isSelected(modelData.name)
+                                                        width: 16; height: 16
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        onVisibleChanged: requestPaint()
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#006BFF"
+                                                            ctx.lineWidth = 2
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(3, 8)
+                                                            ctx.lineTo(6.5, 11.5)
+                                                            ctx.lineTo(13, 4.5)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+
                                                     MouseArea {
                                                         id: skillItemMouse
                                                         anchors.fill: parent
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            dropdownSelectionSkill.currentText = modelData.name
-                                                            skillPopup.close()
-                                                        }
+                                                        onClicked: dropdownSelectionSkill.toggleSkill(modelData.name)
                                                     }
                                                 }
                                             }
@@ -757,22 +819,18 @@ ApplicationWindow {
                                         color: "#1F000000"
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
-                                    Rectangle{
+                                    CustomButton{
                                         id: sendBtnRec
-                                        width: 40
-                                        height: 40
-                                        radius: 12
+                                        buttonWidth: 40
+                                        buttonHeight: 40
+                                        buttonRadius: 12
+                                        text: ""
                                         anchors.verticalCenter: parent.verticalCenter
-                                        color: "#1F000000"
-                                        Image{
-                                            anchors.centerIn: parent
-                                            source: "qrc:/images/send.png"
-                                        }
-                                        MouseArea{
-                                            anchors.fill: parent
-                                            onClicked: {
-                                                $MainViewController.sendMessage()
-                                            }
+                                        enabled: textInputArea.text !== ""
+                                        backgroundColor: "#006BFF"
+                                        iconSource: "qrc:/images/send.png"
+                                        onClicked: {
+                                            $MainViewController.sendMessage()
                                         }
                                     }
                                 }
