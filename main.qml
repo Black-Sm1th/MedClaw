@@ -16,6 +16,13 @@ ApplicationWindow {
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
+    // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
+    property string wsServerUrl: "ws://127.0.0.1:18789"
+
+    // 启动时自动连接 WebSocket 服务器
+    Component.onCompleted: {
+        wsClient.connectToServer(wsServerUrl)
+    }
     Rectangle{
         id: leftContainer
         width: window.sidebarCollapsed ? 0 : 280
@@ -187,6 +194,38 @@ ApplicationWindow {
                 rightPadding: 16
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
+                // 连接状态指示灯 + 文本
+                Rectangle {
+                    width: 10
+                    height: 10
+                    radius: 5
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: {
+                        switch (wsClient.connectionState) {
+                        case 0: return "#D32F2F"  // Disconnected
+                        case 1: return "#FF9800"  // Connecting
+                        case 2: return "#FF9800"  // Handshaking
+                        case 3: return "#4CAF50"  // Connected
+                        default: return "#9E9E9E"
+                        }
+                    }
+                }
+                Rectangle{
+                    width: 8
+                    height: 1
+                    color: "transparent"
+                }
+                Label {
+                    text: wsClient.statusText
+                    font.pixelSize: 12
+                    color: "#555555"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Rectangle{
+                    width: 24
+                    height: 1
+                    color: "transparent"
+                }
                 ImageButton{
                     id: settingBtn
                     source: "qrc:/images/setting.png"
@@ -258,6 +297,9 @@ ApplicationWindow {
                 function doSendMessage() {
                     var msg = textInputArea.text.trim()
                     if (msg === "") return
+                    // 未连接时不发送，防止消息丢失
+                    if (wsClient.connectionState !== 3)
+                        return
                     textInputArea.text = ""
                     $MainViewController.sendMessage(msg)
                 }
@@ -456,9 +498,12 @@ ApplicationWindow {
                             focusedBorderColor: "transparent"
                             backgroundColor: "transparent"
                             borderWidth: 0
-                            placeholderText: "分配一个任务或提问任何问题"
+                            placeholderText: wsClient.connectionState === 3
+                                             ? "分配一个任务或提问任何问题"
+                                             : "正在连接服务器，请稍候..."
                             width: parent.width - 24
                             height: 66
+                            readOnly: wsClient.connectionState !== 3
                             onEnterPressed: newTaskRec.doSendMessage()
                         }
                         Rectangle{
@@ -542,9 +587,21 @@ ApplicationWindow {
                                     Popup {
                                         id: wsPopup
                                         x: 0
-                                        y: dropdownSelectionWorkSpace.height + 4
                                         width: 200
                                         padding: 8
+
+                                        function calcY() {
+                                            var globalPos = dropdownSelectionWorkSpace.mapToItem(null, 0, 0)
+                                            var windowH = window.height
+                                            var popupH = contentItem.implicitHeight + padding * 2
+                                            // 如果底部空间不足，则显示在上方
+                                            if (globalPos.y + dropdownSelectionWorkSpace.height + 4 + popupH > windowH)
+                                                return -popupH - 4
+                                            return dropdownSelectionWorkSpace.height + 4
+                                        }
+
+                                        y: calcY()
+                                        onAboutToShow: y = calcY()
 
                                         background: Rectangle {
                                             radius: 8
@@ -822,12 +879,26 @@ ApplicationWindow {
                                     Popup {
                                         id: skillPopup
                                         x: 0
-                                        y: dropdownSelectionSkill.height + 4
                                         width: 220
                                         padding: 8
                                         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
 
-                                        onAboutToShow: skillSearchInput.text = ""
+                                        function calcY() {
+                                            var globalPos = dropdownSelectionSkill.mapToItem(null, 0, 0)
+                                            var windowH = window.height
+                                            var popupH = contentItem.implicitHeight + padding * 2
+                                            // 如果底部空间不足，则显示在上方
+                                            if (globalPos.y + dropdownSelectionSkill.height + 4 + popupH > windowH)
+                                                return -popupH - 4
+                                            return dropdownSelectionSkill.height + 4
+                                        }
+
+                                        y: calcY()
+
+                                        onAboutToShow: {
+                                            skillSearchInput.text = ""
+                                            y = calcY()
+                                        }
 
                                         background: Rectangle {
                                             radius: 8
