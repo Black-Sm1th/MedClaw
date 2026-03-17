@@ -1404,22 +1404,8 @@ ApplicationWindow {
                             property real cellWidth: (width - spacing) / 2
 
                             Repeater {
-                                model: ListModel {
-                                    ListElement { title: "深度问数"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "生信分析"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "pdf"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "note-taker"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "docx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "file-organizer"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "pptx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "xlsx"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                }
+                                // 直接使用 wsClient.skillList，结构参考 TestChatClient.qml
+                                model: wsClient.skillList
 
                                 delegate: Rectangle {
                                     width: skillGrid.cellWidth
@@ -1442,11 +1428,11 @@ ApplicationWindow {
                                             Image {
                                                 width: 28
                                                 height: 28
-                                                source: model.icon
+                                                source: modelData.icon || "qrc:/images/skillIcon.png"
                                                 fillMode: Image.PreserveAspectFit
                                             }
                                             Label {
-                                                text: model.title
+                                                text: modelData.name || modelData.skillKey
                                                 font.pixelSize: 16
                                                 font.weight: Font.Bold
                                                 color: "#D9000000"
@@ -1454,15 +1440,16 @@ ApplicationWindow {
                                             }
                                         }
                                         Label {
-                                            text: model.desc
+                                            text: modelData.description || ""
                                             font.pixelSize: 14
                                             color: "#73000000"
+                                            visible: (modelData.description || "").length > 0
                                         }
                                     }
 
                                     Switch {
                                         id: skillSwitch
-                                        checked: model.enabled
+                                        checked: modelData.enabled
                                         anchors.right: parent.right
                                         anchors.rightMargin: 20
                                         anchors.top: parent.top
@@ -1471,7 +1458,12 @@ ApplicationWindow {
                                         MouseArea {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: skillSwitch.toggle()
+                                            onClicked: {
+                                                var key = modelData.skillKey || modelData.name
+                                                if (!key)
+                                                    return
+                                                wsClient.setSkillEnabled(key, !skillSwitch.checked)
+                                            }
                                         }
 
                                         indicator: Rectangle {
