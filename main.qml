@@ -166,6 +166,8 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.leftMargin: 16
+                radius: 8
+                visible: !window.sidebarCollapsed
                 Row{
                     id: statusRow
                     height: parent.height
@@ -175,9 +177,9 @@ ApplicationWindow {
                     bottomPadding: 5
                     // 连接状态指示灯 + 文本
                     Rectangle {
-                        width: 12
-                        height: 12
-                        radius: 6
+                        width: 6
+                        height: 6
+                        radius: 3
                         anchors.verticalCenter: parent.verticalCenter
                         color: {
                             switch (wsClient.connectionState) {
@@ -323,7 +325,7 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
                     Label{
-                        text: "MedClaw"
+                        text: "汇智灵曦 ·MedClaw Desk"
                         font.family: "Alimama ShuHeiTi"
                         font.pixelSize: 36
                         anchors.horizontalCenter: parent.horizontalCenter
