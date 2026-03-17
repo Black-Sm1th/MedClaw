@@ -159,7 +159,49 @@ ApplicationWindow {
                     }
                 }
             }
-
+            Rectangle{
+                color: "#F7F9FA"
+                width: statusRow.width
+                height: 31
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: 16
+                Row{
+                    id: statusRow
+                    height: parent.height
+                    leftPadding: 8
+                    rightPadding: 8
+                    topPadding: 5
+                    bottomPadding: 5
+                    // 连接状态指示灯 + 文本
+                    Rectangle {
+                        width: 12
+                        height: 12
+                        radius: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: {
+                            switch (wsClient.connectionState) {
+                            case 0: return "#D32F2F"  // Disconnected
+                            case 1: return "#FF9800"  // Connecting
+                            case 2: return "#FF9800"  // Handshaking
+                            case 3: return "#006BFF"  // Connected
+                            default: return "#9E9E9E"
+                            }
+                        }
+                    }
+                    Rectangle{
+                        width: 8
+                        height: 1
+                        color: "transparent"
+                    }
+                    Label {
+                        text: wsClient.statusText
+                        font.pixelSize: 14
+                        color: "#A6000000"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+            }
             Row {
                 leftPadding: 16
                 anchors.left: parent.left
@@ -194,38 +236,6 @@ ApplicationWindow {
                 rightPadding: 16
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                // 连接状态指示灯 + 文本
-                Rectangle {
-                    width: 10
-                    height: 10
-                    radius: 5
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: {
-                        switch (wsClient.connectionState) {
-                        case 0: return "#D32F2F"  // Disconnected
-                        case 1: return "#FF9800"  // Connecting
-                        case 2: return "#FF9800"  // Handshaking
-                        case 3: return "#4CAF50"  // Connected
-                        default: return "#9E9E9E"
-                        }
-                    }
-                }
-                Rectangle{
-                    width: 8
-                    height: 1
-                    color: "transparent"
-                }
-                Label {
-                    text: wsClient.statusText
-                    font.pixelSize: 12
-                    color: "#555555"
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Rectangle{
-                    width: 24
-                    height: 1
-                    color: "transparent"
-                }
                 ImageButton{
                     id: settingBtn
                     source: "qrc:/images/setting.png"
@@ -363,26 +373,21 @@ ApplicationWindow {
                                 anchors.left: chatBubble.isUser ? undefined : parent.left
                                 anchors.right: chatBubble.isUser ? parent.right : undefined
                                 anchors.top: parent.top
-                                width: Math.min(bubbleCol.implicitWidth + 32, chatBubble.width * 0.75)
-                                height: bubbleCol.implicitHeight + 24
-                                radius: 16
-                                color: chatBubble.isUser ? "#006BFF" : "#F5F5F5"
+                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.width * 0.75)
+                                height: bubbleText.implicitHeight + 24
+                                radius: 12
+                                color: chatBubble.isUser ? "#EBEDF0" : "transparent"
 
-                                Column {
-                                    id: bubbleCol
-                                    anchors.fill: parent
-                                    anchors.margins: 14
-                                    spacing: 4
-
-                                    Text {
-                                        width: parent.width
-                                        text: content
-                                        wrapMode: Text.Wrap
-                                        font.pixelSize: 14
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        color: chatBubble.isUser ? "#FFFFFF" : "#333333"
-                                        textFormat: Text.PlainText
-                                    }
+                                Text {
+                                    id: bubbleText
+                                    text: content
+                                    width: Math.min(implicitWidth, chatBubble.width * 0.75 - 32)
+                                    wrapMode: Text.Wrap
+                                    font.pixelSize: 16
+                                    anchors.centerIn: parent
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    color: chatBubble.isUser ? "#E5000000" : "#D9000000"
+                                    textFormat: Text.MarkdownText
                                 }
                             }
                         }
