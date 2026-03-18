@@ -81,6 +81,7 @@ WsConfig::WsConfig()
     // ── 客户端身份（需与 Gateway 白名单中的 client.id 匹配） ──
     // Windows 部署的 OpenClaw-CN 使用 clawdbot-control-ui
     // Linux 部署的标准 OpenClaw 使用 openclaw-control-ui
+#if defined(Q_OS_LINUX)
     , m_clientId(QStringLiteral("openclaw-control-ui"))
 #else
     , m_clientId(QStringLiteral("openclaw-control-ui"))
