@@ -37,5 +37,6 @@
         <file>images/edit.png</file>
         <file>images/chatLine.png</file>
         <file>images/ai.png</file>
+        <file>images/filePicture.png</file>
     </qresource>
 </RCC>

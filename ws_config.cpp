@@ -20,7 +20,7 @@ WsConfig::WsConfig()
 #if defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM)
     , m_token(QStringLiteral("25e30855b27e123e31731de3769e4149380b8a5f89f3f5b5"))
 #else
-    , m_token(QStringLiteral("81Rfv9HOnc6uqLVT7GrZ42j5tbBpgQahCKWiAYyEmUFekJSld03IowsxMDPNXz"))
+    , m_token(QStringLiteral("25e30855b27e123e31731de3769e4149380b8a5f89f3f5b5"))
 #endif
     // ── 客户端身份（需与 Gateway 白名单中的 client.id 匹配） ──
     // Windows 部署的 OpenClaw-CN 使用 clawdbot-control-ui
@@ -28,7 +28,7 @@ WsConfig::WsConfig()
 #if defined(Q_OS_LINUX)
     , m_clientId(QStringLiteral("openclaw-control-ui"))
 #else
-    , m_clientId(QStringLiteral("clawdbot-control-ui"))
+    , m_clientId(QStringLiteral("openclaw-control-ui"))
 #endif
     , m_clientVersion(QStringLiteral("dev"))
     // ── 平台标识：编译期自动检测 ──

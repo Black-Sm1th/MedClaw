@@ -17,11 +17,19 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://127.0.0.1:18789"
+    property string wsServerUrl: "ws://192.168.124.58:18789"
 
     // 启动时自动连接 WebSocket 服务器
     Component.onCompleted: {
         wsClient.connectToServer(wsServerUrl)
+    }
+    Connections{
+        target: wsClient
+        function onConnectionStateChanged(){
+            if(wsClient.connectionState === 3){
+                wsClient.refreshSkills()
+            }
+        }
     }
     Rectangle{
         id: leftContainer
@@ -483,23 +491,139 @@ ApplicationWindow {
                     }
                 }
 
+                ListModel {
+                    id: attachmentModel
+                }
+
                 Rectangle{
                     id: chatInputContainer
                     border.color: "#40000000"
                     border.width: 1
                     radius: 20
-                    height: 142
+                    height: attachmentModel.count > 0 ? 142 + 60 : 142
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: newTaskRec.hasMessages
                        ? newTaskRec.height - height - 24
                        : titleCol.y + titleCol.height + 76
                     Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                    Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
                     Column{
                         anchors.fill: parent
                         padding: 12
-                        spacing: 12
+                        spacing: 8
+
+                        Row {
+                            id: attachmentRow
+                            visible: attachmentModel.count > 0
+                            width: parent.width - 24
+                            height: visible ? 48 : 0
+                            clip: true
+                            spacing: 8
+
+                            Repeater {
+                                model: attachmentModel
+
+                                delegate: Rectangle {
+                                    width: 148
+                                    height: 48
+                                    radius: 12
+                                    color: "#F7F9FA"
+
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.margins: 4
+                                        spacing: 4
+
+                                        Rectangle {
+                                            width: 36
+                                            height: 36
+                                            radius: 6
+                                            color: "transparent"
+                                            clip: true
+
+                                            Image {
+                                                anchors.fill: parent
+                                                source: model.filePath || ""
+                                                fillMode: Image.PreserveAspectCrop
+                                                visible: model.isImage || false
+                                            }
+
+                                            Image {
+                                                anchors.centerIn: parent
+                                                source: "qrc:/images/filePicture.png"
+                                                fillMode: Image.PreserveAspectCrop
+                                                visible: !(model.isImage || false)
+                                            }
+
+                                        }
+
+                                        Column {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width - 36 - 20 - 8
+                                            spacing: 2
+
+                                            Text {
+                                                id:fileNameText
+                                                width: parent.width
+                                                text: model.fileName || ""
+                                                font.pixelSize: 14
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#D9000000"
+                                                elide: Text.ElideRight
+                                                ToolTip {
+                                                    visible: fileNameHover.containsMouse && fileNameText.truncated
+                                                    text: fileNameText.text
+                                                    delay: 500
+                                                    x: 0
+                                                    y: fileNameText.height + 4
+                                                    width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
+                                                    background: Rectangle {
+                                                        color: "#A6000000"
+                                                        radius: 4
+                                                    }
+                                                    contentItem: Text {
+                                                        text: fileNameText.text
+                                                        font.pixelSize: 14
+                                                        color: "#FFFFFF"
+                                                        font.family: "Alibaba PuHuiTi 3.0"
+                                                        wrapMode: Text.Wrap
+                                                    }
+                                                }
+                                                MouseArea {
+                                                    id: fileNameHover
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    acceptedButtons: Qt.NoButton
+                                                }
+                                            }
+                                            Text {
+                                                text: model.fileSize || ""
+                                                font.pixelSize: 12
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#40000000"
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "\u2715"
+                                            font.pixelSize: 12
+                                            color: "#80000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                anchors.margins: -4
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: attachmentModel.remove(index)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         MultiLineTextInput{
                             id: textInputArea
                             focusedBorderColor: "transparent"
@@ -763,16 +887,25 @@ ApplicationWindow {
                                     width: skillBtnRow.width + 12 + skillChevron.width + 12
                                     height: 36
 
-                                    property var skillList: [
-                                        { name: "深度问数", icon: "qrc:/images/skillIcon.png" },
-                                        { name: "生信分析", icon: "qrc:/images/skillIcon.png" },
-                                        { name: "soap-note", icon: "qrc:/images/skillIcon.png" },
-                                        { name: "emr-query", icon: "qrc:/images/skillIcon.png" },
-                                        { name: "drug-safety", icon: "qrc:/images/skillIcon.png" },
-                                        { name: "acmg-classify", icon: "qrc:/images/skillIcon.png" }
-                                    ]
                                     property var selectedSkills: []
                                     property string searchText: ""
+
+                                    function syncFromWsClient() {
+                                        var arr = []
+                                        var list = wsClient.skillList
+                                        for (var i = 0; i < list.length; i++) {
+                                            if (list[i].enabled)
+                                                arr.push(list[i].name || list[i].skillKey)
+                                        }
+                                        selectedSkills = arr
+                                    }
+
+                                    Connections {
+                                        target: wsClient
+                                        function onSkillListChanged() {
+                                            dropdownSelectionSkill.syncFromWsClient()
+                                        }
+                                    }
 
                                     function isSelected(name) {
                                         for (var i = 0; i < selectedSkills.length; i++) {
@@ -790,14 +923,25 @@ ApplicationWindow {
                                         if (idx >= 0) arr.splice(idx, 1)
                                         else arr.push(name)
                                         selectedSkills = arr
+
+                                        var list = wsClient.skillList
+                                        for (var j = 0; j < list.length; j++) {
+                                            var key = list[j].skillKey || list[j].name
+                                            if ((list[j].name || key) === name) {
+                                                wsClient.setSkillEnabled(key, idx < 0)
+                                                break
+                                            }
+                                        }
                                     }
 
                                     function filteredSkills() {
-                                        if (!searchText) return skillList
+                                        var list = wsClient.skillList
+                                        if (!searchText) return list
                                         var result = []
-                                        for (var i = 0; i < skillList.length; i++) {
-                                            if (skillList[i].name.toLowerCase().indexOf(searchText.toLowerCase()) >= 0)
-                                                result.push(skillList[i])
+                                        for (var i = 0; i < list.length; i++) {
+                                            var n = (list[i].name || list[i].skillKey || "").toLowerCase()
+                                            if (n.indexOf(searchText.toLowerCase()) >= 0)
+                                                result.push(list[i])
                                         }
                                         return result
                                     }
@@ -834,7 +978,7 @@ ApplicationWindow {
                                             }
                                             Rectangle {
                                                 visible: dropdownSelectionSkill.selectedSkills.length > 0
-                                                width: 20
+                                                width: badgeText.width + 8
                                                 height: 20
                                                 radius: 10
                                                 color: "#14000000"
@@ -951,68 +1095,116 @@ ApplicationWindow {
                                                 }
                                             }
 
-                                            Repeater {
-                                                model: dropdownSelectionSkill.filteredSkills()
+                                            Flickable {
+                                                id: skillListFlick
+                                                width: parent.width
+                                                height: Math.min(skillListCol.height, 300)
+                                                contentHeight: skillListCol.height
+                                                clip: true
+                                                boundsBehavior: Flickable.StopAtBounds
 
-                                                delegate: Rectangle {
-                                                    width: skillPopup.width - 16
-                                                    height: 36
-                                                    radius: 6
-                                                    color: skillItemMouse.pressed ? "#14000000"
-                                                         : skillItemMouse.containsMouse ? "#0A000000"
-                                                         : "transparent"
-                                                    Behavior on color { ColorAnimation { duration: 100 } }
+                                                Column {
+                                                    id: skillListCol
+                                                    width: parent.width
+                                                    spacing: 2
 
-                                                    Row {
-                                                        spacing: 8
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        anchors.left: parent.left
-                                                        anchors.leftMargin: 8
+                                                    Repeater {
+                                                        model: dropdownSelectionSkill.filteredSkills()
 
-                                                        Image {
-                                                            source: modelData.icon
-                                                            width: 20; height: 20
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                            fillMode: Image.PreserveAspectFit
-                                                            sourceSize: Qt.size(20, 20)
-                                                        }
-                                                        Text {
-                                                            text: modelData.name
-                                                            font.pixelSize: 14
-                                                            font.family: "Alibaba PuHuiTi 3.0"
-                                                            color: "#D9000000"
-                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        delegate: Rectangle {
+                                                            width: skillPopup.width - 16
+                                                            height: 36
+                                                            radius: 6
+                                                            color: skillItemMouse.pressed ? "#14000000"
+                                                                 : skillItemMouse.containsMouse ? "#0A000000"
+                                                                 : "transparent"
+                                                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                                                            Row {
+                                                                spacing: 8
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                anchors.left: parent.left
+                                                                anchors.leftMargin: 8
+
+                                                                Image {
+                                                                    source: modelData.icon || "qrc:/images/skillIcon.png"
+                                                                    width: 20; height: 20
+                                                                    anchors.verticalCenter: parent.verticalCenter
+                                                                    fillMode: Image.PreserveAspectFit
+                                                                    sourceSize: Qt.size(20, 20)
+                                                                }
+                                                                Text {
+                                                                    id: skilPopNameLabel
+                                                                    width: skillPopup.width - 16 - 16 - 20 - 16 - 16
+                                                                    text: modelData.name || modelData.skillKey || ""
+                                                                    font.pixelSize: 14
+                                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                                    color: "#D9000000"
+                                                                    anchors.verticalCenter: parent.verticalCenter
+                                                                    elide: Text.ElideRight
+                                                                    ToolTip {
+                                                                        visible: skillItemMouse.containsMouse && skilPopNameLabel.truncated
+                                                                        text: skilPopNameLabel.text
+                                                                        delay: 500
+                                                                        x: 0
+                                                                        y: skilPopNameLabel.height + 4
+                                                                        width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
+                                                                        background: Rectangle {
+                                                                            color: "#A6000000"
+                                                                            radius: 4
+                                                                        }
+                                                                        contentItem: Text {
+                                                                            text: skilPopNameLabel.text
+                                                                            font.pixelSize: 14
+                                                                            color: "#FFFFFF"
+                                                                            font.family: "Alibaba PuHuiTi 3.0"
+                                                                            wrapMode: Text.Wrap
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Canvas {
+                                                                visible: dropdownSelectionSkill.isSelected(modelData.name || modelData.skillKey)
+                                                                width: 16; height: 16
+                                                                anchors.right: parent.right
+                                                                anchors.rightMargin: 8
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                onVisibleChanged: requestPaint()
+                                                                onPaint: {
+                                                                    var ctx = getContext("2d")
+                                                                    ctx.reset()
+                                                                    ctx.strokeStyle = "#006BFF"
+                                                                    ctx.lineWidth = 2
+                                                                    ctx.lineCap = "round"
+                                                                    ctx.lineJoin = "round"
+                                                                    ctx.beginPath()
+                                                                    ctx.moveTo(3, 8)
+                                                                    ctx.lineTo(6.5, 11.5)
+                                                                    ctx.lineTo(13, 4.5)
+                                                                    ctx.stroke()
+                                                                }
+                                                            }
+
+                                                            MouseArea {
+                                                                id: skillItemMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: dropdownSelectionSkill.toggleSkill(modelData.name || modelData.skillKey)
+                                                            }
                                                         }
                                                     }
+                                                }
 
-                                                    Canvas {
-                                                        visible: dropdownSelectionSkill.isSelected(modelData.name)
-                                                        width: 16; height: 16
-                                                        anchors.right: parent.right
-                                                        anchors.rightMargin: 8
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        onVisibleChanged: requestPaint()
-                                                        onPaint: {
-                                                            var ctx = getContext("2d")
-                                                            ctx.reset()
-                                                            ctx.strokeStyle = "#006BFF"
-                                                            ctx.lineWidth = 2
-                                                            ctx.lineCap = "round"
-                                                            ctx.lineJoin = "round"
-                                                            ctx.beginPath()
-                                                            ctx.moveTo(3, 8)
-                                                            ctx.lineTo(6.5, 11.5)
-                                                            ctx.lineTo(13, 4.5)
-                                                            ctx.stroke()
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: skillItemMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: dropdownSelectionSkill.toggleSkill(modelData.name)
+                                                ScrollBar.vertical: ScrollBar {
+                                                    policy: skillListFlick.contentHeight > skillListFlick.height
+                                                            ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                                                    width: 4
+                                                    contentItem: Rectangle {
+                                                        implicitWidth: 4
+                                                        radius: 2
+                                                        color: "#40000000"
                                                     }
                                                 }
                                             }
@@ -1049,8 +1241,31 @@ ApplicationWindow {
                                         id: uploadBtn
                                         source: "qrc:/images/paperclip.png"
                                         anchors.verticalCenter: parent.verticalCenter
-                                        onClicked: {
+                                        onClicked: attachFileDialog.open()
+                                    }
 
+                                    FileDialog {
+                                        id: attachFileDialog
+                                        title: qsTr("选择文件")
+                                        selectMultiple: true
+                                        onAccepted: {
+                                            for (var i = 0; i < fileUrls.length; i++) {
+                                                var url = fileUrls[i].toString()
+                                                var path = url.replace(/^file:\/\/\//, "")
+                                                var parts = path.split("/")
+                                                var name = parts[parts.length - 1] || ""
+                                                var dotIdx = name.lastIndexOf(".")
+                                                var ext = dotIdx >= 0 ? name.substring(dotIdx + 1).toUpperCase() : ""
+                                                var imgExts = ["JPG", "JPEG", "PNG", "GIF", "BMP", "WEBP"]
+                                                var isImg = imgExts.indexOf(ext) >= 0
+                                                attachmentModel.append({
+                                                    fileName: name,
+                                                    filePath: isImg ? url : "",
+                                                    fileSize: "",
+                                                    ext: ext,
+                                                    isImage: isImg
+                                                })
+                                            }
                                         }
                                     }
                                     Rectangle{
@@ -1238,6 +1453,21 @@ ApplicationWindow {
                 id: skillSettingRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 2
+                property string skillSearchText: ""
+
+                function filteredSkillList() {
+                    var list = wsClient.skillList
+                    if (!skillSearchText) return list
+                    var kw = skillSearchText.toLowerCase()
+                    var result = []
+                    for (var i = 0; i < list.length; i++) {
+                        var name = (list[i].name || list[i].skillKey || "").toLowerCase()
+                        var desc = (list[i].description || "").toLowerCase()
+                        if (name.indexOf(kw) >= 0 || desc.indexOf(kw) >= 0)
+                            result.push(list[i])
+                    }
+                    return result
+                }
                 Column{
                     anchors.fill: parent
                     leftPadding: 60
@@ -1264,11 +1494,13 @@ ApplicationWindow {
                                 color: "#A6000000"
                             }
                             SingleLineTextInput {
+                                id: skillSettingSearchInput
                                 inputHeight: 36
                                 inputWidth: skillSettingTitleRec.width
                                 icon: "qrc:/images/search.png"
                                 iconSize: 16
                                 placeholderText: "搜索技能"
+                                onTextChanged: skillSettingRec.skillSearchText = text
                             }
                         }
                         Item {
@@ -1386,7 +1618,7 @@ ApplicationWindow {
                     TabBarView{
                         id: skillSettingTaskTab
                         lineWidth: parent.width - 120
-                        tabs: [ { text: "已安装", badge: 12}, { text: "技能市场" }]
+                        tabs: [ { text: "已安装", badge: wsClient.skillList.length }, { text: "技能市场" }]
                     }
                     ScrollView {
                         id: skillScrollView
@@ -1404,8 +1636,7 @@ ApplicationWindow {
                             property real cellWidth: (width - spacing) / 2
 
                             Repeater {
-                                // 直接使用 wsClient.skillList，结构参考 TestChatClient.qml
-                                model: wsClient.skillList
+                                model: skillSettingRec.filteredSkillList()
 
                                 delegate: Rectangle {
                                     width: skillGrid.cellWidth
@@ -1416,14 +1647,13 @@ ApplicationWindow {
                                     color: "#FFFFFF"
 
                                     Column {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
+                                        anchors.fill: parent
+                                        padding: 20
                                         spacing: 12
 
                                         Row{
-                                            spacing: 12
+                                            spacing: 8
+                                            width: parent.width - 40
                                             height: 28
                                             Image {
                                                 width: 28
@@ -1432,66 +1662,121 @@ ApplicationWindow {
                                                 fillMode: Image.PreserveAspectFit
                                             }
                                             Label {
-                                                text: modelData.name || modelData.skillKey
+                                                id: skillNameLabel
+                                                width: parent.width - 36
+                                                text: modelData.name ? modelData.name : ""
                                                 font.pixelSize: 16
                                                 font.weight: Font.Bold
                                                 color: "#D9000000"
                                                 anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                        }
-                                        Label {
-                                            text: modelData.description || ""
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                            visible: (modelData.description || "").length > 0
-                                        }
-                                    }
+                                                elide: Text.ElideRight
 
-                                    Switch {
-                                        id: skillSwitch
-                                        checked: modelData.enabled
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                var key = modelData.skillKey || modelData.name
-                                                if (!key)
-                                                    return
-                                                wsClient.setSkillEnabled(key, !skillSwitch.checked)
-                                            }
-                                        }
-
-                                        indicator: Rectangle {
-                                            implicitWidth: 44
-                                            implicitHeight: 22
-                                            x: skillSwitch.leftPadding
-                                            y: parent.height / 2 - height / 2
-                                            radius: 12
-                                            color: skillSwitch.checked ? "#006BFF" : "#1F000000"
-
-                                            Behavior on color {
-                                                ColorAnimation { duration: 150 }
-                                            }
-
-                                            Rectangle {
-                                                x: skillSwitch.checked ? parent.width - width - 3 : 3
-                                                y: parent.height / 2 - height / 2
-                                                width: 18
-                                                height: 18
-                                                radius: 9
-                                                color: "#FFFFFF"
-
-                                                Behavior on x {
-                                                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                                ToolTip {
+                                                    visible: skillNameHover.containsMouse && skillNameLabel.truncated
+                                                    text: skillNameLabel.text
+                                                    delay: 500
+                                                    x: 0
+                                                    y: skillNameLabel.height + 4
+                                                    width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
+                                                    background: Rectangle {
+                                                        color: "#A6000000"
+                                                        radius: 4
+                                                    }
+                                                    contentItem: Text {
+                                                        text: skillNameLabel.text
+                                                        font.pixelSize: 14
+                                                        color: "#FFFFFF"
+                                                        font.family: "Alibaba PuHuiTi 3.0"
+                                                        wrapMode: Text.Wrap
+                                                    }
+                                                }
+                                                MouseArea {
+                                                    id: skillNameHover
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    acceptedButtons: Qt.NoButton
                                                 }
                                             }
                                         }
+                                        Label {
+                                            id: skillDescLabel
+                                            text: modelData.description || ""
+                                            width: parent.width - 40
+                                            height: parent.height - 40 - 28 - 12
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                            visible: (modelData.description || "").length > 0
+                                            elide: Text.ElideRight
+
+                                            ToolTip {
+                                                visible: skillDescHover.containsMouse && skillDescLabel.truncated
+                                                text: skillDescLabel.text
+                                                delay: 500
+                                                x: 0
+                                                y: -height - 4
+                                                width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
+                                                background: Rectangle {
+                                                    color: "#A6000000"
+                                                    radius: 4
+                                                }
+                                                contentItem: Text {
+                                                    text: skillDescLabel.text
+                                                    font.pixelSize: 14
+                                                    color: "#FFFFFF"
+                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                    wrapMode: Text.Wrap
+                                                }
+                                            }
+                                            MouseArea {
+                                                id: skillDescHover
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                acceptedButtons: Qt.NoButton
+                                            }
+                                        }
                                     }
+
+                                    // Switch {
+                                    //     id: skillSwitch
+                                    //     checked: modelData.enabled
+                                    //     anchors.right: parent.right
+                                    //     anchors.rightMargin: 20
+                                    //     anchors.top: parent.top
+                                    //     anchors.topMargin: 20
+
+                                    //     MouseArea {
+                                    //         anchors.fill: parent
+                                    //         cursorShape: Qt.PointingHandCursor
+                                    //         onClicked: {
+                                    //         }
+                                    //     }
+
+                                    //     indicator: Rectangle {
+                                    //         implicitWidth: 44
+                                    //         implicitHeight: 22
+                                    //         x: skillSwitch.leftPadding
+                                    //         y: parent.height / 2 - height / 2
+                                    //         radius: 12
+                                    //         color: skillSwitch.checked ? "#006BFF" : "#1F000000"
+
+                                    //         Behavior on color {
+                                    //             ColorAnimation { duration: 150 }
+                                    //         }
+
+                                    //         Rectangle {
+                                    //             x: skillSwitch.checked ? parent.width - width - 3 : 3
+                                    //             y: parent.height / 2 - height / 2
+                                    //             width: 18
+                                    //             height: 18
+                                    //             radius: 9
+                                    //             color: "#FFFFFF"
+
+                                    //             Behavior on x {
+                                    //                 NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                    //             }
+                                    //         }
+                                    //     }
+                                    // }
                                 }
                             }
                         }
@@ -1516,7 +1801,7 @@ ApplicationWindow {
                                 model: ListModel {
                                     ListElement { title: "深度问数"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; installed: false }
                                     ListElement { title: "生信分析"; desc: "单细胞数据分析，空间转录数据分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "pdf"; desc: "PDF 文本提取、表单填写与文档处理"; icon: "qrc:/images/skillIcon.png"; installed: true }
+                                    ListElement { title: "pdf"; desc: "PDF 文本提取、表单填写与文档处理"; icon: "qrc:/images/skillIcon.png"; installed: false }
                                     ListElement { title: "note-taker"; desc: "自动笔记整理与知识沉淀"; icon: "qrc:/images/skillIcon.png"; installed: false }
                                     ListElement { title: "docx"; desc: "Word 文档创建、编辑与格式分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
                                     ListElement { title: "file-organizer"; desc: "本地文件智能分类与整理"; icon: "qrc:/images/skillIcon.png"; installed: false }
@@ -1640,7 +1925,7 @@ ApplicationWindow {
                     TabBarView {
                         id: mcpTab
                         lineWidth: parent.width - 120
-                        tabs: [{ text: "已安装", badge: 12 }, { text: "MCP市场" }]
+                        tabs: [{ text: "已安装", badge: 13 }]
                     }
 
                     ScrollView {
@@ -1771,89 +2056,6 @@ ApplicationWindow {
                                                 }
                                             }
                                         }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    ScrollView {
-                        id: mcpMarketScrollView
-                        width: parent.width - 120
-                        height: mcpSettingRec.height - 24 - mcpTitleRec.height - mcpTab.height - 32
-                        clip: true
-                        visible: mcpTab.currentIndex === 1
-                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-
-                        Grid {
-                            id: mcpMarketGrid
-                            columns: 2
-                            spacing: 12
-                            width: mcpMarketScrollView.width
-                            property real cellWidth: (width - spacing) / 2
-
-                            Repeater {
-                                model: ListModel {
-                                    ListElement { title: "Tavily"; desc: "AI 驱动的实时网络搜索引擎"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "GitHub"; desc: "GitHub 仓库管理与代码协作"; icon: "qrc:/images/skillIcon.png"; installed: true }
-                                    ListElement { title: "Notion"; desc: "知识库与文档自动化管理"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "Slack"; desc: "团队消息通知与工作流集成"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "Figma"; desc: "设计稿读取与自动化标注"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "PostgreSQL"; desc: "数据库查询与数据分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                }
-
-                                delegate: Rectangle {
-                                    width: mcpMarketGrid.cellWidth
-                                    height: 100
-                                    radius: 8
-                                    border.color: "#E6E7EB"
-                                    border.width: 1
-                                    color: "#FFFFFF"
-
-                                    Column {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-                                        spacing: 12
-                                        Row {
-                                            spacing: 12
-                                            height: 28
-                                            Image {
-                                                width: 28; height: 28
-                                                source: model.icon
-                                                fillMode: Image.PreserveAspectFit
-                                            }
-                                            Label {
-                                                text: model.title
-                                                font.pixelSize: 16
-                                                font.weight: Font.Bold
-                                                color: "#D9000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                        }
-                                        Label {
-                                            text: model.desc
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                        }
-                                    }
-
-                                    CustomButton {
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-                                        width: 80
-                                        height: 36
-                                        buttonRadius: 8
-                                        fontSize: 14
-                                        iconSource: model.installed ? "" : "qrc:/images/download.png"
-                                        text: model.installed ? "已安装" : "安装"
-                                        backgroundColor: "#006BFF"
-                                        textColor: "#FFFFFF"
-                                        borderWidth: 0
-                                        enabled: !model.installed
                                     }
                                 }
                             }
