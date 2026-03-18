@@ -170,22 +170,13 @@ ApplicationWindow {
 
                 }
 
-                Rectangle {
-                    id: taskSeparator
-                    anchors.top: menuColumn.bottom
-                    anchors.topMargin: 16
-                    width: parent.width
-                    height: 1
-                    color: "#14000000"
-                }
-
                 Label {
                     id: taskRecordTitle
-                    anchors.top: taskSeparator.bottom
+                    anchors.top: menuColumn.bottom
                     anchors.topMargin: 12
                     text: "任务记录"
                     font.pixelSize: 12
-                    color: "#80000000"
+                    color: "#73000000"
                 }
 
                 ListView {
@@ -216,8 +207,8 @@ ApplicationWindow {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 4
-                            anchors.rightMargin: 4
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
                             spacing: 4
 
                             Label {
@@ -226,8 +217,6 @@ ApplicationWindow {
                                     var name = modelData.preview
                                               || modelData.displayName
                                               || "未命名任务"
-                                    if (modelData.isActive)
-                                        return "[定时] " + name
                                     return name
                                 }
                                 font.pixelSize: 14
@@ -238,12 +227,12 @@ ApplicationWindow {
                             Row {
                                 spacing: 6
 
-                                Rectangle {
-                                    width: 6; height: 6; radius: 3
-                                    color: "#006BFF"
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    visible: modelData.isActive
-                                }
+                                // Rectangle {
+                                //     width: 6; height: 6; radius: 3
+                                //     color: "#006BFF"
+                                //     anchors.verticalCenter: parent.verticalCenter
+                                //     visible: modelData.isActive
+                                // }
 
                                 Label {
                                     text: {
@@ -254,7 +243,7 @@ ApplicationWindow {
                                         return Qt.formatTime(new Date(), "HH:mm")
                                     }
                                     font.pixelSize: 12
-                                    color: "#80000000"
+                                    color: "#73000000"
                                 }
                             }
                         }
@@ -529,7 +518,7 @@ ApplicationWindow {
                                 anchors.left: chatBubble.isUser ? undefined : parent.left
                                 anchors.right: chatBubble.isUser ? parent.right : undefined
                                 anchors.top: parent.top
-                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.width)
+                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.width * 0.75)
                                 height: bubbleText.implicitHeight + 24
                                 radius: 12
                                 color: chatBubble.isUser ? "#EBEDF0" : "transparent"
