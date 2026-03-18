@@ -20,8 +20,26 @@ ApplicationWindow {
     property string wsServerUrl: "ws://127.0.0.1:18789"
 
     // 启动时自动连接 WebSocket 服务器
+    function loadLocalMessages(filePath, displayName) {
+        var msgs = sessionReader.readSessionMessages(filePath)
+        chatModel.clear()
+        for (var i = 0; i < msgs.length; i++) {
+            var m = msgs[i]
+            var mt = m.msgType || "text"
+            if (mt === "toolCall") {
+                chatModel.addToolCall(m.toolName || "", m.toolArgs || "", m.toolCallId || "")
+            } else if (mt === "toolResult") {
+                chatModel.addToolResult(m.toolName || "", m.content || "",
+                                        m.toolCallId || "", m.isError || false)
+            } else {
+                chatModel.addMessage(m.role, m.content)
+            }
+        }
+    }
+
     Component.onCompleted: {
         wsClient.connectToServer(wsServerUrl)
+        sessionReader.scanSessions()
     }
     Connections{
         target: wsClient
@@ -154,14 +172,20 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     clip: true
-                    model: wsClient.sessions
+                    model: sessionReader.sessionList
                     spacing: 0
+
+                    property string selectedFilePath: ""
 
                     delegate: Rectangle {
                         width: taskRecordListView.width
                         height: taskItemCol.implicitHeight + 20
                         radius: 8
-                        color: taskItemMouse.containsMouse ? "#0A000000" : "transparent"
+                        color: {
+                            if (modelData.filePath === taskRecordListView.selectedFilePath)
+                                return "#E6E7EB"
+                            return taskItemMouse.containsMouse ? "#0A000000" : "transparent"
+                        }
 
                         Column {
                             id: taskItemCol
@@ -175,9 +199,10 @@ ApplicationWindow {
                             Label {
                                 width: parent.width
                                 text: {
-                                    var name = modelData.displayName || "未命名任务"
-                                    var type = modelData.chatType || ""
-                                    if (type === "scheduled" || type === "定时")
+                                    var name = modelData.preview
+                                              || modelData.displayName
+                                              || "未命名任务"
+                                    if (modelData.isActive)
                                         return "[定时] " + name
                                     return name
                                 }
@@ -193,19 +218,14 @@ ApplicationWindow {
                                     width: 6; height: 6; radius: 3
                                     color: "#006BFF"
                                     anchors.verticalCenter: parent.verticalCenter
-                                    visible: {
-                                        var key = modelData.sessionKey || ""
-                                        return key === wsClient.currentSessionKey
-                                    }
+                                    visible: modelData.isActive
                                 }
 
                                 Label {
                                     text: {
-                                        var ts = modelData.updatedAt || ""
-                                        if (ts) {
-                                            var d = new Date(ts)
-                                            if (!isNaN(d.getTime()))
-                                                return Qt.formatTime(d, "HH:mm")
+                                        var ts = modelData.resetTime || modelData.timestamp || ""
+                                        if (ts && ts.length >= 16) {
+                                            return ts.substring(11, 16)
                                         }
                                         return Qt.formatTime(new Date(), "HH:mm")
                                     }
@@ -221,11 +241,8 @@ ApplicationWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                var key = modelData.sessionKey || ""
-                                if (key !== wsClient.currentSessionKey) {
-                                    wsClient.currentSessionKey = key
-                                    wsClient.loadHistory()
-                                }
+                                taskRecordListView.selectedFilePath = modelData.filePath
+                                loadLocalMessages(modelData.filePath, modelData.displayName)
                                 window.leftSelectedIndex = 0
                             }
                         }
