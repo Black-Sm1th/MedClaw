@@ -281,14 +281,15 @@ void GatewayClient::sendConnectRequest()
     request[QStringLiteral("method")] = QStringLiteral("connect");
     request[QStringLiteral("params")] = params;
 
+    // 为了调试方便，使用缩进格式打印
+    const QByteArray debugJson =
+        QJsonDocument(request).toJson(QJsonDocument::Indented);
+    qDebug().noquote() << "=== 发送握手请求 (CONNECT) ===";
+    qDebug().noquote() << QString::fromUtf8(debugJson);
+
+    // 发送时使用压缩格式以节省带宽
     const QByteArray json =
         QJsonDocument(request).toJson(QJsonDocument::Compact);
-    qDebug().noquote() << "[Gateway][TRACE][SEND]"
-                       << "socket=" << QString::number(reinterpret_cast<quintptr>(m_socket))
-                       << "id=" << m_connectRequestId
-                       << "method=connect"
-                       << "pending=" << m_pendingRequests.size()
-                       << "payload=" << QString::fromUtf8(json).left(500);
     m_socket->sendTextMessage(QString::fromUtf8(json));
 }
 
@@ -814,14 +815,15 @@ QString GatewayClient::sendRequest(const QString &method,
     request[QStringLiteral("method")] = method;
     request[QStringLiteral("params")] = params;
 
+    // 为了调试方便，使用缩进格式打印
+    const QByteArray debugJson =
+        QJsonDocument(request).toJson(QJsonDocument::Indented);
+    qDebug().noquote() << "=== 发送请求 (" << method << ") ===";
+    qDebug().noquote() << QString::fromUtf8(debugJson);
+
+    // 发送时使用压缩格式以节省带宽
     const QByteArray json =
         QJsonDocument(request).toJson(QJsonDocument::Compact);
-    qDebug().noquote() << "[Gateway][TRACE][SEND]"
-                       << "socket=" << QString::number(reinterpret_cast<quintptr>(m_socket))
-                       << "id=" << reqId
-                       << "method=" << method
-                       << "pending=" << m_pendingRequests.size()
-                       << "payload=" << QString::fromUtf8(json).left(500);
     m_socket->sendTextMessage(QString::fromUtf8(json));
 
     return reqId;
