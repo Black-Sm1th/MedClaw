@@ -70,6 +70,7 @@ ApplicationWindow {
                 height: parent.height - 56
                 color: "transparent"
                 Column{
+                    id: menuColumn
                     spacing: 12
                     width: parent.width
                     Column{
@@ -125,6 +126,110 @@ ApplicationWindow {
                         }
                     }
 
+                }
+
+                Rectangle {
+                    id: taskSeparator
+                    anchors.top: menuColumn.bottom
+                    anchors.topMargin: 16
+                    width: parent.width
+                    height: 1
+                    color: "#14000000"
+                }
+
+                Label {
+                    id: taskRecordTitle
+                    anchors.top: taskSeparator.bottom
+                    anchors.topMargin: 12
+                    text: "任务记录"
+                    font.pixelSize: 12
+                    color: "#80000000"
+                }
+
+                ListView {
+                    id: taskRecordListView
+                    anchors.top: taskRecordTitle.bottom
+                    anchors.topMargin: 8
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    clip: true
+                    model: wsClient.sessions
+                    spacing: 0
+
+                    delegate: Rectangle {
+                        width: taskRecordListView.width
+                        height: taskItemCol.implicitHeight + 20
+                        radius: 8
+                        color: taskItemMouse.containsMouse ? "#0A000000" : "transparent"
+
+                        Column {
+                            id: taskItemCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.leftMargin: 4
+                            anchors.rightMargin: 4
+                            spacing: 4
+
+                            Label {
+                                width: parent.width
+                                text: {
+                                    var name = modelData.displayName || "未命名任务"
+                                    var type = modelData.chatType || ""
+                                    if (type === "scheduled" || type === "定时")
+                                        return "[定时] " + name
+                                    return name
+                                }
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                                elide: Text.ElideRight
+                            }
+
+                            Row {
+                                spacing: 6
+
+                                Rectangle {
+                                    width: 6; height: 6; radius: 3
+                                    color: "#006BFF"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: {
+                                        var key = modelData.sessionKey || ""
+                                        return key === wsClient.currentSessionKey
+                                    }
+                                }
+
+                                Label {
+                                    text: {
+                                        var ts = modelData.updatedAt || ""
+                                        if (ts) {
+                                            var d = new Date(ts)
+                                            if (!isNaN(d.getTime()))
+                                                return Qt.formatTime(d, "HH:mm")
+                                        }
+                                        return Qt.formatTime(new Date(), "HH:mm")
+                                    }
+                                    font.pixelSize: 12
+                                    color: "#80000000"
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            id: taskItemMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                var key = modelData.sessionKey || ""
+                                if (key !== wsClient.currentSessionKey) {
+                                    wsClient.currentSessionKey = key
+                                    wsClient.loadHistory()
+                                }
+                                window.leftSelectedIndex = 0
+                            }
+                        }
+                    }
                 }
             }
         }
