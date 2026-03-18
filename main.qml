@@ -9,7 +9,7 @@ ApplicationWindow {
     width: 1440
     height: 800
     visible: true
-    title: qsTr("MedClaw")
+    title: qsTr("AetherMedClaw_Desk")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
@@ -17,7 +17,7 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://192.168.124.58:18789"
+    property string wsServerUrl: "ws://127.0.0.1:18789"
 
     // 启动时自动连接 WebSocket 服务器
     Component.onCompleted: {
@@ -333,7 +333,7 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
                     Label{
-                        text: "汇智灵曦 ·MedClaw Desk"
+                        text: "AetherMedClaw_Desk"
                         font.family: "Alimama ShuHeiTi"
                         font.pixelSize: 36
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -383,7 +383,7 @@ ApplicationWindow {
                                 anchors.left: chatBubble.isUser ? undefined : parent.left
                                 anchors.right: chatBubble.isUser ? parent.right : undefined
                                 anchors.top: parent.top
-                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.width * 0.75)
+                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.width)
                                 height: bubbleText.implicitHeight + 24
                                 radius: 12
                                 color: chatBubble.isUser ? "#EBEDF0" : "transparent"
@@ -650,7 +650,7 @@ ApplicationWindow {
                                     height: 36
 
                                     property string currentText: "workspace"
-                                    property var recentFolders: ["project1", "project122"]
+                                    property var recentFolders: []
 
                                     Rectangle {
                                         id: wsButton
