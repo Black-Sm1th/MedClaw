@@ -20,9 +20,10 @@ ApplicationWindow {
     property string wsServerUrl: "ws://127.0.0.1:18789"
 
     // 启动时自动连接 WebSocket 服务器
-    function loadLocalMessages(filePath, displayName) {
+    function loadLocalMessages(filePath, displayName, sessionId) {
         var msgs = sessionReader.readSessionMessages(filePath)
         chatModel.clear()
+        window.isNewTask = false
         for (var i = 0; i < msgs.length; i++) {
             var m = msgs[i]
             var mt = m.msgType || "text"
@@ -35,11 +36,22 @@ ApplicationWindow {
                 chatModel.addMessage(m.role, m.content)
             }
         }
+        if (sessionId && wsClient.connectionState === 3) {
+            wsClient.setCurrentSessionKey(sessionId)
+        }
     }
 
     Component.onCompleted: {
         wsClient.connectToServer(wsServerUrl)
         sessionReader.scanSessions()
+        var list = sessionReader.sessionList
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].isActive) {
+                taskRecordListView.selectedFilePath = list[i].filePath
+                loadLocalMessages(list[i].filePath, list[i].displayName, list[i].sessionId || "")
+                break
+            }
+        }
     }
     Connections{
         target: wsClient
@@ -47,6 +59,9 @@ ApplicationWindow {
             if(wsClient.connectionState === 3){
                 wsClient.refreshSkills()
             }
+        }
+        function onSessionCreated(){
+            sessionReader.scanSessions()
         }
     }
     Rectangle{
@@ -138,7 +153,16 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: window.leftSelectedIndex = index
+                                    onClicked: {
+                                        window.leftSelectedIndex = index
+                                        if (index === 0) {
+                                            chatModel.clear()
+                                            taskRecordListView.selectedFilePath = ""
+                                            window.isNewTask = true
+                                            if (wsClient.connectionState === 3)
+                                                wsClient.createNewSession()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -242,7 +266,7 @@ ApplicationWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 taskRecordListView.selectedFilePath = modelData.filePath
-                                loadLocalMessages(modelData.filePath, modelData.displayName)
+                                loadLocalMessages(modelData.filePath, modelData.displayName, modelData.sessionId || "")
                                 window.leftSelectedIndex = 0
                             }
                         }
