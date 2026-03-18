@@ -15,6 +15,7 @@
 #include <QDebug>
 #include <QUuid>
 #include <QNetworkRequest>
+#include <limits>
 
 /// 帧类型常量：事件帧
 static const QLatin1String T_EVENT("event");
@@ -47,6 +48,9 @@ GatewayClient::GatewayClient(QObject *parent)
     , m_state(Disconnected)
     // m_config、m_session、m_skill、m_scheduledTask 由各自默认构造函数初始化
 {
+    m_socket->setMaxAllowedIncomingFrameSize(std::numeric_limits<quint64>::max());
+    m_socket->setMaxAllowedIncomingMessageSize(std::numeric_limits<quint64>::max());
+
     // ── 连接 QWebSocket 信号到本类槽函数 ──
     connect(m_socket, &QWebSocket::connected,
             this, &GatewayClient::onConnected);
@@ -57,6 +61,16 @@ GatewayClient::GatewayClient(QObject *parent)
     connect(m_socket,
             QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
             this, &GatewayClient::onSocketError);
+    connect(m_socket, &QWebSocket::binaryMessageReceived, this, [=](const QByteArray &data) {
+        QString json = QString::fromUtf8(data);
+        qDebug() << "收到完整二进制消息，字节数：" << data.size();
+    });
+    connect(m_socket, &QWebSocket::textFrameReceived, this, [=](const QString &frame, bool isLastFrame) {
+        qDebug() << "收到文本分片，长度：" << frame.size() << "是否最后一片：" << isLastFrame;
+    });
+    connect(m_socket, &QWebSocket::binaryFrameReceived, this, [=](const QByteArray &frame, bool isLastFrame) {
+        qDebug() << "收到二进制分片，长度：" << frame.size() << "是否最后一片：" << isLastFrame;
+    });
 }
 
 /**
@@ -159,7 +173,11 @@ void GatewayClient::connectToServer(const QString &url)
     QNetworkRequest request(wsUrl);
     request.setRawHeader("Origin", origin.toUtf8());
 
-    qDebug() << "[Gateway] Origin:" << origin;
+    qDebug() << "[Gateway][TRACE][OPEN]"
+             << "socket=" << reinterpret_cast<quintptr>(m_socket)
+             << "url=" << url
+             << "origin=" << origin
+             << "pendingBeforeOpen=" << m_pendingRequests.size();
     m_socket->open(request);
 }
 
@@ -183,7 +201,9 @@ void GatewayClient::disconnectFromServer()
  */
 void GatewayClient::onConnected()
 {
-    qDebug() << "[Gateway] WebSocket transport open, waiting for challenge...";
+    qDebug() << "[Gateway][TRACE][CONNECTED]"
+             << "socket=" << reinterpret_cast<quintptr>(m_socket)
+             << "pending=" << m_pendingRequests.size();
     setState(Handshaking);
 }
 
@@ -197,7 +217,9 @@ void GatewayClient::onConnected()
  */
 void GatewayClient::onDisconnected()
 {
-    qDebug() << "[Gateway] WebSocket disconnected";
+    qDebug() << "[Gateway][TRACE][DISCONNECTED]"
+             << "socket=" << reinterpret_cast<quintptr>(m_socket)
+             << "pendingBeforeClear=" << m_pendingRequests.size();
     m_session.setStreaming(false);
     m_pendingRequests.clear();
     setState(Disconnected);
@@ -215,7 +237,10 @@ void GatewayClient::onDisconnected()
 void GatewayClient::onSocketError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error)
-    qWarning() << "[Gateway] Socket error:" << m_socket->errorString();
+    qWarning() << "[Gateway][TRACE][SOCKET_ERROR]"
+               << "socket=" << reinterpret_cast<quintptr>(m_socket)
+               << "pending=" << m_pendingRequests.size()
+               << "error=" << m_socket->errorString();
     emit errorOccurred(m_socket->errorString());
     setState(Disconnected);
 }
@@ -245,6 +270,7 @@ void GatewayClient::onSocketError(QAbstractSocket::SocketError error)
 void GatewayClient::sendConnectRequest()
 {
     m_connectRequestId = nextRequestId();
+    m_pendingRequests.insert(m_connectRequestId, QStringLiteral("connect"));
 
     // 由配置类构建包含设备签名的完整握手参数
     const QJsonObject params = m_config.buildConnectParams(m_challengeNonce);
@@ -257,8 +283,12 @@ void GatewayClient::sendConnectRequest()
 
     const QByteArray json =
         QJsonDocument(request).toJson(QJsonDocument::Compact);
-    qDebug().noquote() << "[Gateway] >> connect"
-                       << QString::fromUtf8(json);
+    qDebug().noquote() << "[Gateway][TRACE][SEND]"
+                       << "socket=" << QString::number(reinterpret_cast<quintptr>(m_socket))
+                       << "id=" << m_connectRequestId
+                       << "method=connect"
+                       << "pending=" << m_pendingRequests.size()
+                       << "payload=" << QString::fromUtf8(json).left(500);
     m_socket->sendTextMessage(QString::fromUtf8(json));
 }
 
@@ -277,6 +307,10 @@ void GatewayClient::sendConnectRequest()
  */
 void GatewayClient::onTextMessageReceived(const QString &message)
 {
+
+    qDebug() << "=== 收到文本消息 ===";
+    qDebug() << "长度 (字符数):" << message.length();
+    qDebug() << "前 200 字符预览:" << message.left(20000);
     // ── 1. JSON 解析 ──
     QJsonParseError err;
      const QJsonDocument doc =
@@ -340,27 +374,43 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
 
     // ── 调试日志（前 50 条 agent/chat 事件） ──
     static int debugCount = 0;
-    if (debugCount < 50
-        && (event == QLatin1String("agent")
-            || event == QLatin1String("chat"))) {
+    if (event == QLatin1String("agent")
+        || event == QLatin1String("chat")) {
         ++debugCount;
         const QJsonObject data =
             payload.value(QStringLiteral("data")).toObject();
+        const bool hasPayloadMessage =
+            payload.value(QStringLiteral("message")).isObject();
         const QString subEvent =
             payload.value(QStringLiteral("event")).toString();
-        qDebug().noquote()
-            << "[Gateway] EVT#" << debugCount << event << "|" << subEvent
-            << "data:" << QString::fromUtf8(
-                   QJsonDocument(data).toJson(QJsonDocument::Compact))
-                   .left(500);
+        const QString dataType =
+            data.value(QStringLiteral("type")).toString();
+        const bool toolRelated =
+            subEvent.contains(QLatin1String("tool"), Qt::CaseInsensitive)
+            || dataType.contains(QLatin1String("tool"), Qt::CaseInsensitive);
+        if (debugCount <= 50 || toolRelated) {
+            qDebug().noquote()
+                << "[Gateway] EVT#" << debugCount << event << "|" << subEvent
+                << "hasPayloadMessage=" << hasPayloadMessage
+                << "data:" << QString::fromUtf8(
+                       QJsonDocument(data).toJson(QJsonDocument::Compact))
+                       .left(500);
+        } else if (debugCount % 100 == 0) {
+            qDebug().noquote()
+                << "[Gateway] EVT#" << debugCount << event << "|" << subEvent
+                << "hasPayloadMessage=" << hasPayloadMessage
+                << "data: <suppressed>";
+        }
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  chat 事件优先做结构化消息解析
-    //  OpenClaw 的 chat 事件 payload.data 可能是一条完整消息对象，
-    //  其 content 字段为数组，内含 text / toolCall / toolResult
+    //  agent/chat 事件优先做结构化消息解析
+    //  有些模型 / 网关会在 agent 事件里直接附带完整 message 对象，
+    //  其中 content 数组包含 text / toolCall / toolResult。
+    //  为了兼容这两种情况，agent / chat 都先走一遍结构化解析，
+    //  如果检测到工具调用/结果则直接返回，不再走流式 delta 逻辑。
     // ══════════════════════════════════════════════════════════════
-    if (event == QLatin1String("chat")) {
+    if (event == QLatin1String("chat") || event == QLatin1String("agent")) {
         if (handleStructuredChatEvent(payload))
             return;
     }
@@ -466,9 +516,22 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     const bool        ok      = msg.value(QStringLiteral("ok")).toBool(false);
     const QJsonObject payload = msg.value(QStringLiteral("payload")).toObject();
     const QJsonValue  errVal  = msg.value(QStringLiteral("error"));
+    const int pendingBeforeTake = m_pendingRequests.size();
+    const QString methodInMap = m_pendingRequests.value(id);
 
     // 从 pending 映射中取出并移除此请求的方法名
     const QString method = m_pendingRequests.take(id);
+    qDebug() << "[Gateway][TRACE][RECV]"
+             << "socket=" << reinterpret_cast<quintptr>(m_socket)
+             << "id=" << id
+             << "ok=" << ok
+             << "methodMatched=" << (methodInMap.isEmpty() ? QStringLiteral("<MISS>") : methodInMap)
+             << "pendingBefore=" << pendingBeforeTake
+             << "pendingAfter=" << m_pendingRequests.size();
+    if (method.isEmpty()) {
+        qWarning() << "[Gateway] response id not found in pending map:" << id
+                   << "payload size:" << QJsonDocument(payload).toJson(QJsonDocument::Compact).size();
+    }
 
     // ── 非 connect 请求的错误处理 ──
     if (!ok && id != m_connectRequestId) {
@@ -539,6 +602,16 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
     // messages.list 响应 → 委托 WsSession 解析 + 发射历史加载信号
     if (method == QLatin1String("messages.list")) {
+        int messageCount = payload.value(QStringLiteral("messages")).toArray().size();
+        if (messageCount == 0)
+            messageCount = payload.value(QStringLiteral("items")).toArray().size();
+        if (messageCount == 0)
+            messageCount = payload.value(QStringLiteral("data")).toArray().size();
+        qDebug() << "[Gateway][TRACE][HISTORY]"
+                 << "sessionKey=" << payload.value(QStringLiteral("sessionKey")).toString()
+                 << "messages=" << messageCount
+                 << "hasMore=" << payload.value(QStringLiteral("hasMore")).toBool(false)
+                 << "nextCursor=" << payload.value(QStringLiteral("nextCursor")).toString();
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
         emit historyLoaded(history);
@@ -600,15 +673,22 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
 {
     const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
 
-    // 尝试从 data.message 或 data 本身获取消息结构
     QJsonObject msg = data.value(QStringLiteral("message")).toObject();
     if (msg.isEmpty()) msg = data;
+    if (msg.isEmpty()) msg = payload.value(QStringLiteral("message")).toObject();
+    if (msg.isEmpty()) {
+        const QJsonArray messages = payload.value(QStringLiteral("messages")).toArray();
+        if (!messages.isEmpty())
+            msg = messages.last().toObject();
+    }
 
-    const QString role = msg.value(QStringLiteral("role")).toString();
-    if (role.isEmpty()) return false;
+    QString role = msg.value(QStringLiteral("role")).toString();
+    const QString roleNorm = role.trimmed().toLower();
+    if (roleNorm.isEmpty()) return false;
 
     // ── toolResult 消息 ──
-    if (role == QLatin1String("toolResult")) {
+    if (roleNorm == QLatin1String("toolresult")
+        || roleNorm == QLatin1String("tool_result")) {
         const QString tcId  = msg.value(QStringLiteral("toolCallId")).toString();
         const QString tName = msg.value(QStringLiteral("toolName")).toString();
         const bool isErr    = msg.value(QStringLiteral("isError")).toBool(false);
@@ -652,7 +732,11 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
 
     for (const QJsonValue &cv : cArr) {
         const QJsonObject co = cv.toObject();
-        if (co.value(QStringLiteral("type")).toString() == QLatin1String("toolCall"))
+        const QString ctype = co.value(QStringLiteral("type")).toString().trimmed().toLower();
+        if (ctype == QLatin1String("toolcall")
+            || ctype == QLatin1String("tool_call")
+            || ctype == QLatin1String("tool-use")
+            || ctype == QLatin1String("tool_use"))
             hasToolCall = true;
     }
 
@@ -667,14 +751,22 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
 
     for (const QJsonValue &cv : cArr) {
         const QJsonObject co = cv.toObject();
-        const QString ctype = co.value(QStringLiteral("type")).toString();
+        const QString ctype = co.value(QStringLiteral("type")).toString().trimmed().toLower();
 
-        if (ctype == QLatin1String("toolCall")) {
+        if (ctype == QLatin1String("toolcall")
+            || ctype == QLatin1String("tool_call")
+            || ctype == QLatin1String("tool-use")
+            || ctype == QLatin1String("tool_use")) {
             const QString tcId  = co.value(QStringLiteral("id")).toString();
             const QString tName = co.value(QStringLiteral("name")).toString();
             QJsonObject args = co.value(QStringLiteral("arguments")).toObject();
-            QString argsStr = QString::fromUtf8(
-                QJsonDocument(args).toJson(QJsonDocument::Compact));
+            QString argsStr;
+            if (!args.isEmpty()) {
+                argsStr = QString::fromUtf8(
+                    QJsonDocument(args).toJson(QJsonDocument::Compact));
+            } else if (co.value(QStringLiteral("arguments")).isString()) {
+                argsStr = co.value(QStringLiteral("arguments")).toString();
+            }
             if (argsStr.length() > 1000)
                 argsStr = argsStr.left(1000) + QStringLiteral("...");
 
@@ -724,8 +816,12 @@ QString GatewayClient::sendRequest(const QString &method,
 
     const QByteArray json =
         QJsonDocument(request).toJson(QJsonDocument::Compact);
-    qDebug().noquote() << "[Gateway] >>" << method
-                       << QString::fromUtf8(json);
+    qDebug().noquote() << "[Gateway][TRACE][SEND]"
+                       << "socket=" << QString::number(reinterpret_cast<quintptr>(m_socket))
+                       << "id=" << reqId
+                       << "method=" << method
+                       << "pending=" << m_pendingRequests.size()
+                       << "payload=" << QString::fromUtf8(json).left(500);
     m_socket->sendTextMessage(QString::fromUtf8(json));
 
     return reqId;

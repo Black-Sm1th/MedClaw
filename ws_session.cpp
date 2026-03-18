@@ -277,7 +277,7 @@ QJsonObject WsSession::buildLoadHistoryParams() const
 {
     QJsonObject params;
     params[QStringLiteral("sessionKey")] = m_currentSessionKey;
-    params[QStringLiteral("limit")]      = 100;
+    params[QStringLiteral("limit")]      = 500;
     return params;
 }
 
@@ -302,8 +302,46 @@ WsEventResult WsSession::parseEvent(const QString &event,
     const QJsonObject data     = payload.value(QStringLiteral("data")).toObject();
 
     // ── 工具调用检测 ──
-    // agent 事件中 data.type == "tool_use" 或 subEvent 含 "tool"
+    // 兼容两种格式：
+    //  1) data.type = tool_use / toolCall / toolResult
+    //  2) payload.stream = tool + data.phase = start/result/update
     const QString dataType = data.value(QStringLiteral("type")).toString();
+    const QString stream   = payload.value(QStringLiteral("stream")).toString();
+    const QString phase    = data.value(QStringLiteral("phase")).toString();
+    const bool isToolStream = (stream == QLatin1String("tool"));
+
+    if (isToolStream && phase == QLatin1String("start")) {
+        result.isToolCall = true;
+        result.toolName   = data.value(QStringLiteral("name")).toString(
+            data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId = data.value(QStringLiteral("toolCallId")).toString(
+            data.value(QStringLiteral("id")).toString());
+        QJsonObject args = data.value(QStringLiteral("args")).toObject();
+        if (args.isEmpty())
+            args = data.value(QStringLiteral("input")).toObject();
+        if (args.isEmpty())
+            args = data.value(QStringLiteral("arguments")).toObject();
+        result.toolArgs = QString::fromUtf8(
+            QJsonDocument(args).toJson(QJsonDocument::Compact));
+        return result;
+    }
+
+    if (isToolStream
+        && (phase == QLatin1String("result")
+            || phase == QLatin1String("done")
+            || phase == QLatin1String("complete"))) {
+        result.isToolResult = true;
+        result.toolName     = data.value(QStringLiteral("name")).toString(
+            data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
+            data.value(QStringLiteral("id")).toString());
+        result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
+        result.content      = data.value(QStringLiteral("content")).toString(
+            data.value(QStringLiteral("text")).toString());
+        if (result.content.isEmpty())
+            result.content = data.value(QStringLiteral("meta")).toString();
+        return result;
+    }
 
     if (dataType == QLatin1String("tool_use")
         || dataType == QLatin1String("toolCall")
@@ -315,8 +353,10 @@ WsEventResult WsSession::parseEvent(const QString &event,
             data.value(QStringLiteral("toolName")).toString());
         result.toolCallId = data.value(QStringLiteral("id")).toString(
             data.value(QStringLiteral("toolCallId")).toString());
-        // 参数可能在 input 或 arguments 字段
-        QJsonObject args = data.value(QStringLiteral("input")).toObject();
+        // 参数可能在 args / input / arguments 字段
+        QJsonObject args = data.value(QStringLiteral("args")).toObject();
+        if (args.isEmpty())
+            args = data.value(QStringLiteral("input")).toObject();
         if (args.isEmpty())
             args = data.value(QStringLiteral("arguments")).toObject();
         result.toolArgs = QString::fromUtf8(
@@ -336,6 +376,8 @@ WsEventResult WsSession::parseEvent(const QString &event,
         result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
         result.content      = data.value(QStringLiteral("content")).toString(
             data.value(QStringLiteral("text")).toString());
+        if (result.content.isEmpty())
+            result.content = data.value(QStringLiteral("meta")).toString();
         // content 可能是数组
         if (result.content.isEmpty()) {
             const QJsonArray cArr = data.value(QStringLiteral("content")).toArray();
@@ -351,7 +393,6 @@ WsEventResult WsSession::parseEvent(const QString &event,
     }
 
     // ── 从 data 字段检测事件语义 ──
-    const QString phase    = data.value(QStringLiteral("phase")).toString();
     const bool    hasDelta = data.contains(QStringLiteral("delta"));
     const QString delta    = data.value(QStringLiteral("delta")).toString();
 

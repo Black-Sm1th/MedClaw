@@ -1311,6 +1311,14 @@ ApplicationWindow {
                                                 color: "#5D4037"
                                             }
                                         }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: "CallId: " + (toolCallId || "-")
+                                            font.pixelSize: 10
+                                            color: "#8D6E63"
+                                            elide: Text.ElideRight
+                                        }
                                     }
                                 }
                             }
@@ -1390,6 +1398,14 @@ ApplicationWindow {
                                                     color: isError ? "#B71C1C" : "#33691E"
                                                 }
                                             }
+                                        }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: "CallId: " + (toolCallId || "-")
+                                            font.pixelSize: 10
+                                            color: isError ? "#B71C1C" : "#33691E"
+                                            elide: Text.ElideRight
                                         }
                                     }
                                 }
