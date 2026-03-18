@@ -17,7 +17,7 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://192.168.124.58:18789"
+    property string wsServerUrl: "ws://127.0.0.1:18789"
 
     // 启动时自动连接 WebSocket 服务器
     Component.onCompleted: {
