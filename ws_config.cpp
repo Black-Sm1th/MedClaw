@@ -7,7 +7,63 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QProcessEnvironment>
 #include <cstring>
+
+static QString readNestedToken(const QJsonObject &root, const QStringList &path)
+{
+    QJsonValue cur(root);
+    for (const QString &p : path) {
+        if (!cur.isObject())
+            return QString();
+        cur = cur.toObject().value(p);
+    }
+    return cur.isString() ? cur.toString() : QString();
+}
+
+static QString resolveGatewayTokenFromConfig()
+{
+    const QString cfgPath = QDir::homePath() + QStringLiteral("/.openclaw/openclaw.json");
+    QFile f(cfgPath);
+    if (!f.open(QIODevice::ReadOnly))
+        return QString();
+
+    const QByteArray raw = f.readAll();
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject())
+        return QString();
+
+    const QJsonObject root = doc.object();
+    const QStringList candidates = {
+        readNestedToken(root, {QStringLiteral("gateway"), QStringLiteral("token")}),
+        readNestedToken(root, {QStringLiteral("gateway"), QStringLiteral("auth"), QStringLiteral("token")}),
+        readNestedToken(root, {QStringLiteral("auth"), QStringLiteral("token")}),
+        readNestedToken(root, {QStringLiteral("token")})
+    };
+    for (const QString &t : candidates) {
+        if (!t.trimmed().isEmpty())
+            return t.trimmed();
+    }
+    return QString();
+}
+
+static QString resolveGatewayToken(const QString &fallback)
+{
+    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString fromEnv = env.value(QStringLiteral("OPENCLAW_GATEWAY_TOKEN")).trimmed();
+    if (!fromEnv.isEmpty())
+        return fromEnv;
+
+    const QString fromConfig = resolveGatewayTokenFromConfig();
+    if (!fromConfig.isEmpty())
+        return fromConfig;
+
+    return fallback;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  构造 / 初始化
@@ -25,12 +81,8 @@ WsConfig::WsConfig()
     // ── 客户端身份（需与 Gateway 白名单中的 client.id 匹配） ──
     // Windows 部署的 OpenClaw-CN 使用 clawdbot-control-ui
     // Linux 部署的标准 OpenClaw 使用 openclaw-control-ui
-#if defined(Q_OS_LINUX)
     , m_clientId(QStringLiteral("openclaw-control-ui"))
-#else
-    , m_clientId(QStringLiteral("clawdbot-control-ui"))
-#endif
-    , m_clientVersion(QStringLiteral("dev"))
+    , m_clientVersion(QStringLiteral("2026.3.13"))
     // ── 平台标识：编译期自动检测 ──
 #if defined(Q_OS_WIN)
     , m_clientPlatform(QStringLiteral("Win32"))
@@ -58,6 +110,9 @@ WsConfig::WsConfig()
 {
     memset(m_ed25519Pk, 0, sizeof(m_ed25519Pk));
     memset(m_ed25519Sk, 0, sizeof(m_ed25519Sk));
+
+    m_token = resolveGatewayToken(m_token);
+    qDebug() << "[WsConfig] gateway token loaded, length:" << m_token.length();
 
     // 在构造阶段即生成设备密钥，确保后续握手时密钥可用
     initDeviceKeys();
@@ -112,7 +167,10 @@ QJsonObject WsConfig::buildSignedDevice(const QString &challengeNonce) const
 
     // ── 组装 v2 签名 payload ──
     // 格式：v2|{deviceId}|{clientId}|{mode}|{role}|{scopes}|{signedAt}|{token}|{nonce}
-    const QString scopeStr = QStringLiteral("operator.admin,operator.approvals,operator.pairing");
+    QStringList scopeList;
+    for (const QJsonValue &v : m_scopes)
+        scopeList.append(v.toString());
+    const QString scopeStr = scopeList.join(QLatin1Char(','));
     const QString payload = QStringLiteral("v2|%1|%2|%3|%4|%5|%6|%7|%8")
         .arg(m_deviceId, m_clientId, m_clientMode, m_role, scopeStr)
         .arg(signedAt)
@@ -156,6 +214,7 @@ QJsonObject WsConfig::buildConnectParams(const QString &challengeNonce) const
     client[QStringLiteral("version")]  = m_clientVersion;
     client[QStringLiteral("platform")] = m_clientPlatform;
     client[QStringLiteral("mode")]     = m_clientMode;
+    client[QStringLiteral("instanceId")] = m_deviceId;
 
     // ── 组装顶层 params ──
     QJsonObject params;
@@ -164,7 +223,7 @@ QJsonObject WsConfig::buildConnectParams(const QString &challengeNonce) const
     params[QStringLiteral("client")]      = client;
     params[QStringLiteral("role")]        = m_role;
     params[QStringLiteral("scopes")]      = m_scopes;
-    params[QStringLiteral("caps")]        = QJsonArray();
+    params[QStringLiteral("caps")]        = QJsonArray({QStringLiteral("tool-events")});
     params[QStringLiteral("auth")]        = auth;
     params[QStringLiteral("locale")]      = QStringLiteral("zh-CN");
     params[QStringLiteral("userAgent")]   = QStringLiteral("MedClaw-Qt/1.0");
