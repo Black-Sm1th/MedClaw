@@ -120,6 +120,24 @@ QVariantList GatewayClient::skillList() const
     return m_skill.skillList();
 }
 
+/// 获取当前 agent 身份信息
+QVariantMap GatewayClient::agentIdentity() const
+{
+    return m_agentIdentity;
+}
+
+/// 获取 agent 列表
+QVariantList GatewayClient::agentList() const
+{
+    return m_agentList;
+}
+
+/// 获取默认 agent ID
+QString GatewayClient::defaultAgentId() const
+{
+    return m_defaultAgentId;
+}
+
 /// 设置连接状态并通知 QML 属性绑定系统
 void GatewayClient::setState(ConnectionState state)
 {
@@ -562,9 +580,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             emit errorOccurred(errMsg);
             return;
         }
-        // 握手成功：切换到 Connected，自动加载会话列表和历史
+        // 握手成功：切换到 Connected，自动加载 agent 列表、会话列表和历史
         qDebug() << "[Gateway] handshake complete!";
         setState(Connected);
+        refreshAgents();
         refreshSessions();
         loadHistory();
         return;
@@ -613,6 +632,53 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                  << "messages=" << messageCount
                  << "hasMore=" << payload.value(QStringLiteral("hasMore")).toBool(false)
                  << "nextCursor=" << payload.value(QStringLiteral("nextCursor")).toString();
+        const QVariantList history =
+            m_session.parseHistoryResponse(payload);
+        emit historyLoaded(history);
+        return;
+    }
+
+    // agents.list 响应 → 解析 agent 列表
+    if (method == QLatin1String("agents.list")) {
+        m_agentList.clear();
+        m_defaultAgentId = payload.value(QStringLiteral("defaultId")).toString();
+        const QString mainKey = payload.value(QStringLiteral("mainKey")).toString();
+
+        const QJsonArray agents = payload.value(QStringLiteral("agents")).toArray();
+        for (const QJsonValue &v : agents) {
+            const QJsonObject a = v.toObject();
+            const QString id = a.value(QStringLiteral("id")).toString();
+            if (id.isEmpty()) continue;
+
+            QString name = a.value(QStringLiteral("name")).toString();
+            if (name.isEmpty()) name = id;
+
+            QVariantMap entry;
+            entry[QStringLiteral("id")]         = id;
+            entry[QStringLiteral("name")]       = name;
+            entry[QStringLiteral("sessionKey")] =
+                QStringLiteral("agent:%1:main").arg(id);
+            entry[QStringLiteral("isDefault")]  = (id == m_defaultAgentId);
+
+            m_agentList.append(entry);
+        }
+
+        qDebug() << "[Gateway] agents.list: found" << m_agentList.count()
+                 << "agents, default:" << m_defaultAgentId
+                 << "mainKey:" << mainKey;
+        emit agentListChanged();
+        return;
+    }
+
+    // agent.identity.get 响应 → 解析身份并通知
+    if (method == QLatin1String("agent.identity.get")) {
+        m_agentIdentity = m_session.parseAgentIdentityResponse(payload);
+        emit agentIdentityChanged();
+        return;
+    }
+
+    // chat.history 响应 → 复用 parseHistoryResponse 解析
+    if (method == QLatin1String("chat.history")) {
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
         emit historyLoaded(history);
@@ -896,6 +962,18 @@ void GatewayClient::deleteSession(const QString &sessionKey)
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
+ * @brief 获取所有 Agent 列表
+ *
+ * 发送 agents.list RPC，响应在 handleResponse() 中解析。
+ * 连接成功后自动调用一次。
+ */
+void GatewayClient::refreshAgents()
+{
+    if (m_state != Connected) return;
+    sendRequest(QStringLiteral("agents.list"), QJsonObject());
+}
+
+/**
  * @brief 获取所有技能状态
  *
  * 发送 skills.status RPC，响应在 handleResponse() 中由 WsSkill 解析。
@@ -921,6 +999,64 @@ void GatewayClient::setSkillEnabled(const QString &skillKey, bool enabled)
     }
     sendRequest(QStringLiteral("skills.update"),
                 m_skill.buildSkillUpdateParams(skillKey, enabled));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  8. Agent 切换
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief 切换 Agent
+ *
+ * 依次发送三个 RPC：
+ *   1. agent.identity.get  → 获取 agent 身份信息
+ *   2. chat.history        → 获取聊天历史
+ *   3. sessions.list       → 刷新会话列表
+ */
+void GatewayClient::switchAgent(const QString &agentId)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+
+    const QString sessionKey =
+        QStringLiteral("agent:%1:main").arg(agentId);
+
+    qDebug().noquote() << "[Gateway] switchAgent:" << agentId
+                       << "sessionKey:" << sessionKey;
+
+    m_session.setCurrentSessionKey(sessionKey);
+    emit currentSessionChanged();
+
+    getAgentIdentity(sessionKey);
+    loadChatHistory(sessionKey);
+    refreshSessions();
+}
+
+/**
+ * @brief 获取 agent 身份信息
+ */
+void GatewayClient::getAgentIdentity(const QString &sessionKey)
+{
+    if (m_state != Connected) return;
+    const QString key = sessionKey.isEmpty()
+        ? m_session.currentSessionKey() : sessionKey;
+    sendRequest(QStringLiteral("agent.identity.get"),
+                m_session.buildAgentIdentityParams(key));
+}
+
+/**
+ * @brief 加载指定会话的聊天历史
+ */
+void GatewayClient::loadChatHistory(const QString &sessionKey, int limit)
+{
+    if (m_state != Connected) return;
+    const QString key = sessionKey.isEmpty()
+        ? m_session.currentSessionKey() : sessionKey;
+    sendRequest(QStringLiteral("chat.history"),
+                m_session.buildChatHistoryParams(key, limit));
 }
 
 /**

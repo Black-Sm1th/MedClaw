@@ -159,23 +159,36 @@ ApplicationWindow {
         wsClient.loadHistory()
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  本地会话扫描（已注释 — 改为 Agent 在线切换）
+    // ═══════════════════════════════════════════════════════════════
+    // function testScanLocalSessions() { ... }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Agent 切换测试函数
+    // ═══════════════════════════════════════════════════════════════
+
     /**
-     * @brief 测试扫描本地会话文件
+     * @brief 刷新 Agent 列表（通过 WebSocket agents.list RPC）
      *
-     * maincontrol 调用：sessionReader.scanSessions()
-     * 扫描 ~/.openclaw/agents/main/sessions/ 目录
+     * maincontrol 调用：wsClient.refreshAgents()
+     * 连接成功后自动调用一次，也可手动刷新
      */
-    function testScanLocalSessions() {
-        testAddLog("▶ testScanLocalSessions() → 扫描本地会话目录")
-        testAddLog("  路径: " + sessionReader.sessionsDir)
-        sessionReader.scanSessions()
-        var list = sessionReader.sessionList
-        testAddLog("  发现 " + list.length + " 个会话文件")
-        for (var i = 0; i < list.length; i++) {
-            testAddLog("  [" + i + "] " + list[i].displayName
-                       + " | " + list[i].modelId
-                       + " | active=" + list[i].isActive)
-        }
+    function testRefreshAgents() {
+        testAddLog("\u25b6 testRefreshAgents() \u2192 \u83b7\u53d6 Agent \u5217\u8868 (WebSocket)")
+        wsClient.refreshAgents()
+    }
+
+    /**
+     * @brief 切换到指定 Agent
+     * @param agentId agent ID（如 "main"、"coder"）
+     *
+     * maincontrol 调用：wsClient.switchAgent(agentId)
+     * 依次发送：agent.identity.get + chat.history + sessions.list
+     */
+    function testSwitchAgent(agentId) {
+        testAddLog("\u25b6 testSwitchAgent() \u2192 \u5207\u6362\u5230 agent: " + agentId)
+        wsClient.switchAgent(agentId)
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -206,78 +219,11 @@ ApplicationWindow {
         wsClient.setSkillEnabled(skillKey, enabled)
     }
 
-    /**
-     * @brief 测试加载本地会话的聊天消息
-     * @param filePath .jsonl 文件路径
-     * @param displayName 会话显示名（用于日志）
-     *
-     * 从本地文件系统直接读取 .jsonl，不需要 WebSocket 连接
-     */
-    function testLoadLocalMessages(filePath, displayName) {
-        testAddLog("▶ testLoadLocalMessages() → " + displayName)
-        var msgs = sessionReader.readSessionMessages(filePath)
-        testAddLog("  解析到 " + msgs.length + " 条条目")
-
-        chatModel.clear()
-        chatModel.addMessage("system", "本地历史: " + displayName)
-        for (var i = 0; i < msgs.length; i++) {
-            var m = msgs[i]
-            var mt = m.msgType || "text"
-            if (mt === "toolCall") {
-                chatModel.addToolCall(m.toolName || "", m.toolArgs || "", m.toolCallId || "")
-            } else if (mt === "toolResult") {
-                chatModel.addToolResult(m.toolName || "", m.content || "",
-                                        m.toolCallId || "", m.isError || false)
-            } else {
-                chatModel.addMessage(m.role, m.content)
-            }
-        }
-    }
-
-    /**
-     * @brief 加载 WebSocket 抓包文件（messages.list 响应格式）
-     *
-     * 直接使用桌面上的抓包文件测试工具调用显示
-     * maincontrol 调用：sessionReader.parseResponseFile()
-     */
-    function testLoadCaptureFile() {
-        // 自动检测文件路径（桌面上的抓包文件）
-        var homePath = sessionReader.sessionsDir.replace(
-            "/.openclaw/agents/main/sessions", "")
-        var capturePath = homePath + "/Desktop/接受的流式数据.txt"
-
-        testAddLog("▶ testLoadCaptureFile() → " + capturePath)
-        var msgs = sessionReader.parseResponseFile(capturePath)
-        testAddLog("  解析到 " + msgs.length + " 条条目")
-
-        // 统计各类型数量
-        var textCount = 0, toolCallCount = 0, toolResultCount = 0
-        for (var i = 0; i < msgs.length; i++) {
-            var mt = msgs[i].msgType || "text"
-            if (mt === "toolCall") toolCallCount++
-            else if (mt === "toolResult") toolResultCount++
-            else textCount++
-        }
-        testAddLog("  文本:" + textCount + " 工具调用:" + toolCallCount
-                   + " 工具结果:" + toolResultCount)
-
-        chatModel.clear()
-        chatModel.addMessage("system", "抓包数据: " + capturePath)
-        for (var j = 0; j < msgs.length; j++) {
-            var m = msgs[j]
-            var type = m.msgType || "text"
-            if (type === "toolCall") {
-                chatModel.addToolCall(m.toolName || "", m.toolArgs || "",
-                                      m.toolCallId || "")
-            } else if (type === "toolResult") {
-                chatModel.addToolResult(m.toolName || "", m.content || "",
-                                        m.toolCallId || "", m.isError || false)
-            } else {
-                chatModel.addMessage(m.role || "system", m.content || "")
-            }
-        }
-        testAddLog("  ✓ 已加载到聊天区域")
-    }
+    // ═══════════════════════════════════════════════════════════════
+    //  本地文件加载测试函数（已注释 — 改为在线 chat.history）
+    // ═══════════════════════════════════════════════════════════════
+    // function testLoadLocalMessages(filePath, displayName) { ... }
+    // function testLoadCaptureFile() { ... }
 
     /**
      * @brief 测试读取 sessions.json 完整内容
@@ -398,6 +344,28 @@ ApplicationWindow {
         function onSkillUpdated(skillKey, enabled) {
             var action = enabled ? "\u5df2\u542f\u7528" : "\u5df2\u7981\u7528"
             testAddLog("\u25c6 skillUpdated \u2192 [" + skillKey + "] " + action)
+        }
+
+        /// Agent 身份信息更新
+        function onAgentIdentityChanged() {
+            var id = wsClient.agentIdentity
+            var name = id.name || ""
+            var emoji = id.emoji || ""
+            testAddLog("\u25c6 agentIdentity \u2192 " + emoji + " " + name
+                       + " model=" + (id.model || ""))
+        }
+
+        /// Agent 列表更新
+        function onAgentListChanged() {
+            var list = wsClient.agentList
+            testAddLog("\u25c6 agentListChanged \u2192 " + list.length
+                       + " \u4e2a agent, \u9ed8\u8ba4: " + wsClient.defaultAgentId)
+            for (var i = 0; i < list.length; i++) {
+                var a = list[i]
+                testAddLog("  [" + i + "] id=" + a.id + " name=" + a.name
+                           + " key=" + a.sessionKey
+                           + (a.isDefault ? " (\u9ed8\u8ba4)" : ""))
+            }
         }
     }
 
@@ -617,13 +585,16 @@ ApplicationWindow {
                         implicitWidth: 80
                     }
 
-                    /// 扫描本地会话 → testScanLocalSessions()
+                    /// 刷新 Agent 列表 → testRefreshAgents()
                     Button {
-                        text: "扫描本地"
-                        onClicked: testScanLocalSessions()
+                        text: "\u5237\u65b0Agent"
+                        enabled: wsClient.connectionState === 3
+                        onClicked: testRefreshAgents()
                         background: Rectangle {
                             radius: 6
-                            color: parent.down ? "#00695C" : "#00897B"
+                            color: parent.enabled
+                                   ? (parent.down ? "#00695C" : "#00897B")
+                                   : "#BDBDBD"
                         }
                         contentItem: Label {
                             text: parent.text
@@ -658,25 +629,6 @@ ApplicationWindow {
                         implicitWidth: 80
                     }
 
-                    /// 加载 WebSocket 抓包文件 → testLoadCaptureFile()
-                    Button {
-                        text: "\u52a0\u8f7d\u6293\u5305"
-                        onClicked: testLoadCaptureFile()
-                        background: Rectangle {
-                            radius: 6
-                            color: parent.down ? "#BF360C" : "#E64A19"
-                        }
-                        contentItem: Label {
-                            text: parent.text
-                            color: "#FFFFFF"
-                            font.pixelSize: 13
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        implicitHeight: 34
-                        implicitWidth: 90
-                    }
-
                     Item { Layout.fillWidth: true }
                 }
             }
@@ -703,14 +655,43 @@ ApplicationWindow {
                     anchors.margins: 8
                     spacing: 4
 
-                    // ── 标签页切换：在线 / 本地 / 技能 ──
-                    property int testTabIndex: 0  // 0=在线, 1=本地, 2=技能
+                    // ── 标签页切换：会话 / Agent / 技能 ──
+                    property int testTabIndex: 0  // 0=会话, 1=Agent, 2=技能
+
+                    // ── Agent 身份显示栏 ──
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: wsClient.agentIdentity.name ? 32 : 0
+                        visible: wsClient.agentIdentity.name ? true : false
+                        radius: 6
+                        color: "#E8EAF6"
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 6
+
+                            Label {
+                                text: wsClient.agentIdentity.emoji || "\u{1F916}"
+                                font.pixelSize: 16
+                            }
+                            Label {
+                                text: wsClient.agentIdentity.name || ""
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: "#283593"
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+                    }
 
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 4
 
-                        // 在线会话标签
+                        // 会话标签
                         Rectangle {
                             Layout.fillWidth: true
                             height: 28
@@ -718,7 +699,7 @@ ApplicationWindow {
                             color: testSessionPanel.testTabIndex === 0 ? "#1976D2" : "#F0F0F0"
                             Label {
                                 anchors.centerIn: parent
-                                text: "\u5728\u7ebf"
+                                text: "\u4f1a\u8bdd"
                                 font.pixelSize: 12
                                 font.bold: true
                                 color: testSessionPanel.testTabIndex === 0 ? "#FFFFFF" : "#666666"
@@ -730,7 +711,7 @@ ApplicationWindow {
                             }
                         }
 
-                        // 本地历史标签
+                        // Agent 标签
                         Rectangle {
                             Layout.fillWidth: true
                             height: 28
@@ -738,7 +719,7 @@ ApplicationWindow {
                             color: testSessionPanel.testTabIndex === 1 ? "#388E3C" : "#F0F0F0"
                             Label {
                                 anchors.centerIn: parent
-                                text: "\u672c\u5730"
+                                text: "Agent"
                                 font.pixelSize: 12
                                 font.bold: true
                                 color: testSessionPanel.testTabIndex === 1 ? "#FFFFFF" : "#666666"
@@ -748,7 +729,9 @@ ApplicationWindow {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     testSessionPanel.testTabIndex = 1
-                                    testScanLocalSessions()
+                                    if (wsClient.agentList.length === 0
+                                            && wsClient.connectionState === 3)
+                                        testRefreshAgents()
                                 }
                             }
                         }
@@ -825,54 +808,39 @@ ApplicationWindow {
                                 onClicked: {
                                     var key = modelData.sessionKey || ""
                                     if (key !== wsClient.currentSessionKey) {
-                                        testAddLog("▶ 切换在线会话 → " + key)
+                                        testAddLog("\u25b6 \u5207\u6362\u5728\u7ebf\u4f1a\u8bdd \u2192 " + key)
                                         wsClient.currentSessionKey = key
-                                        wsClient.loadHistory()
+                                        wsClient.getAgentIdentity(key)
+                                        wsClient.loadChatHistory(key, 200)
                                     }
                                 }
                             }
                         }
                     }
 
-                    // ── 本地历史会话列表（从文件系统读取） ──
+                    // ── Agent 切换面板 ──
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         visible: testSessionPanel.testTabIndex === 1
                         spacing: 4
 
-                        // 操作按钮
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 4
 
                             Button {
-                                text: "刷新"
+                                text: "\u5237\u65b0"
                                 implicitHeight: 26
                                 implicitWidth: 50
                                 font.pixelSize: 11
-                                onClicked: testScanLocalSessions()
+                                enabled: wsClient.connectionState === 3
+                                onClicked: testRefreshAgents()
                                 background: Rectangle {
                                     radius: 4
-                                    color: parent.down ? "#2E7D32" : "#43A047"
-                                }
-                                contentItem: Label {
-                                    text: parent.text
-                                    color: "#FFFFFF"
-                                    font.pixelSize: 11
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                            }
-
-                            Button {
-                                text: "sessions.json"
-                                implicitHeight: 26
-                                font.pixelSize: 11
-                                onClicked: testReadSessionsJson()
-                                background: Rectangle {
-                                    radius: 4
-                                    color: parent.down ? "#4527A0" : "#5E35B1"
+                                    color: parent.enabled
+                                           ? (parent.down ? "#2E7D32" : "#43A047")
+                                           : "#BDBDBD"
                                 }
                                 contentItem: Label {
                                     text: parent.text
@@ -884,91 +852,116 @@ ApplicationWindow {
                             }
 
                             Item { Layout.fillWidth: true }
+
+                            Label {
+                                text: wsClient.agentList.length + " \u4e2a Agent"
+                                font.pixelSize: 10
+                                color: "#999999"
+                            }
                         }
 
-                        // 路径显示
                         Label {
-                            text: sessionReader.sessionsDir
+                            text: "\u5f53\u524d: " + wsClient.currentSessionKey
                             font.pixelSize: 9
-                            color: "#999999"
+                            color: "#666666"
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
                         }
 
-                        // 本地会话列表
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#E0E0E0"
+                        }
+
                         ListView {
-                            id: testLocalSessionList
+                            id: testAgentListView
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true
-                            model: sessionReader.sessionList
+                            model: wsClient.agentList
                             spacing: 2
 
-                            // 当前选中的本地会话文件路径
-                            property string testSelectedFilePath: ""
-
                             delegate: Rectangle {
-                                width: testLocalSessionList.width
-                                height: 52
+                                width: testAgentListView.width
+                                height: testAgentDelegateCol.implicitHeight + 12
                                 radius: 6
                                 color: {
-                                    if (modelData.filePath === testLocalSessionList.testSelectedFilePath)
+                                    var key = modelData.sessionKey || ""
+                                    if (key === wsClient.currentSessionKey)
                                         return "#E8F5E9"
-                                    return testLocalDelegateArea.containsMouse
+                                    return testAgentDelegateArea.containsMouse
                                            ? "#F5F5F5" : "transparent"
                                 }
 
                                 ColumnLayout {
-                                    anchors.fill: parent
+                                    id: testAgentDelegateCol
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
                                     anchors.leftMargin: 8
                                     anchors.rightMargin: 8
-                                    anchors.topMargin: 4
-                                    anchors.bottomMargin: 4
+                                    anchors.topMargin: 6
                                     spacing: 2
 
-                                    // 第一行：活跃/归档标记 + 预览
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: {
-                                            var tag = modelData.isActive ? "[活跃]" : "[归档]"
-                                            var preview = modelData.preview || modelData.sessionId.substring(0, 8)
-                                            return tag + " " + preview
+                                    RowLayout {
+                                        spacing: 6
+
+                                        Label {
+                                            text: "\u{1F916}"
+                                            font.pixelSize: 16
                                         }
-                                        font.pixelSize: 11
-                                        font.bold: modelData.isActive
-                                        color: modelData.isActive ? "#1B5E20" : "#333333"
-                                        elide: Text.ElideRight
+
+                                        Label {
+                                            text: modelData.name || modelData.id
+                                            font.pixelSize: 13
+                                            font.bold: true
+                                            color: {
+                                                var key = modelData.sessionKey || ""
+                                                return key === wsClient.currentSessionKey
+                                                       ? "#1B5E20" : "#333333"
+                                            }
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Label {
+                                            text: modelData.isDefault ? "\u9ed8\u8ba4" : ""
+                                            font.pixelSize: 9
+                                            color: "#FF8F00"
+                                            visible: modelData.isDefault === true
+                                        }
                                     }
 
-                                    // 第二行：模型 + 消息数 + 时间
                                     Label {
-                                        Layout.fillWidth: true
-                                        text: {
-                                            var info = (modelData.modelId || "unknown")
-                                            info += " | " + (modelData.messageCount || 0) + "条"
-                                            if (modelData.resetTime)
-                                                info += " | " + modelData.resetTime.substring(5, 16)
-                                            else if (modelData.timestamp)
-                                                info += " | " + modelData.timestamp.substring(0, 16)
-                                            return info
-                                        }
+                                        text: "sessionKey: " + (modelData.sessionKey || "")
                                         font.pixelSize: 9
                                         color: "#888888"
                                         elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Label {
+                                        text: modelData.workspace || ""
+                                        font.pixelSize: 8
+                                        color: "#AAAAAA"
+                                        elide: Text.ElideMiddle
+                                        Layout.fillWidth: true
+                                        visible: (modelData.workspace || "").length > 0
                                     }
                                 }
 
                                 MouseArea {
-                                    id: testLocalDelegateArea
+                                    id: testAgentDelegateArea
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        testLocalSessionList.testSelectedFilePath = modelData.filePath
-                                        testLoadLocalMessages(modelData.filePath, modelData.displayName)
-                                    }
-                                    onDoubleClicked: {
-                                        testReadSessionSummary(modelData.filePath)
+                                        if (wsClient.connectionState !== 3) {
+                                            testAddLog("\u26a0 \u8bf7\u5148\u8fde\u63a5\u670d\u52a1\u5668")
+                                            return
+                                        }
+                                        testSwitchAgent(modelData.id)
                                     }
                                 }
                             }
@@ -1155,7 +1148,13 @@ ApplicationWindow {
                     spacing: 4
 
                     Label {
-                        text: "对话内容  (chatModel: " + chatModel.count + " 条)"
+                        text: {
+                            var title = (wsClient.agentIdentity.emoji || "") + " "
+                            title += wsClient.agentIdentity.name
+                                     || wsClient.currentSessionKey
+                            title += "  (" + chatModel.count + " \u6761)"
+                            return title
+                        }
                         font.pixelSize: 13
                         font.bold: true
                         color: "#333333"
@@ -1548,16 +1547,17 @@ ApplicationWindow {
     // ═══════════════════════════════════════════════════════════════
 
     Component.onCompleted: {
-        testAddLog("═══ TestChatClient 启动 ═══")
+        testAddLog("\u2550\u2550\u2550 TestChatClient \u542f\u52a8 \u2550\u2550\u2550")
         testAddLog("maincontrol: wsClient (GatewayClient)")
-        testAddLog("服务器地址: " + testServerUrl)
-        testAddLog("当前会话: " + wsClient.currentSessionKey)
-        testAddLog("连接状态: " + wsClient.statusText)
-        testAddLog("本地 sessions 目录: " + sessionReader.sessionsDir)
-        testAddLog("───────────────────────────────────")
-        testAddLog("操作指引:")
-        testAddLog("  在线功能 → 点击「连接服务器」")
-        testAddLog("  本地历史 → 点击「扫描本地」或切换左侧「本地历史」标签")
-        testAddLog("  双击本地会话条目可查看会话摘要详情")
+        testAddLog("\u670d\u52a1\u5668\u5730\u5740: " + testServerUrl)
+        testAddLog("\u5f53\u524d\u4f1a\u8bdd: " + wsClient.currentSessionKey)
+        testAddLog("\u8fde\u63a5\u72b6\u6001: " + wsClient.statusText)
+        testAddLog("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+        testAddLog("\u64cd\u4f5c\u6307\u5f15:")
+        testAddLog("  \u8fde\u63a5 \u2192 \u70b9\u51fb\u300c\u8fde\u63a5\u670d\u52a1\u5668\u300d")
+        testAddLog("  \u5207\u6362 Agent \u2192 \u5de6\u4fa7\u300cAgent\u300d\u6807\u7b7e\u9875\uff0c\u70b9\u51fb\u67d0\u4e2a Agent")
+        testAddLog("  \u6280\u80fd\u7ba1\u7406 \u2192 \u5de6\u4fa7\u300c\u6280\u80fd\u300d\u6807\u7b7e\u9875")
+
+        // Agent 列表在连接成功后由 GatewayClient 自动请求（agents.list RPC）
     }
 }

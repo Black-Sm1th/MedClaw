@@ -131,6 +131,20 @@ public:
      */
     Q_INVOKABLE QVariantList parseResponseFile(const QString &filePath);
 
+    /**
+     * @brief 从 openclaw.json 读取已配置的 agent 列表
+     * @return QVariantList，每项为 QVariantMap：
+     *   - id          : agent ID（如 "main"、"coder"）
+     *   - name        : 显示名称
+     *   - sessionKey  : 自动生成的 sessionKey（格式 agent:<id>:main）
+     *   - isDefault   : 是否为默认 agent
+     *   - workspace   : 工作空间路径
+     *   - agentDir    : agent 配置目录
+     *
+     * 文件路径：~/.openclaw/openclaw.json → agents.list[]
+     */
+    Q_INVOKABLE QVariantList readAgentList();
+
 signals:
     void sessionListChanged();
 
@@ -139,6 +153,7 @@ private:
     QVariantMap quickParseSummary(const QString &filePath);
 
     QString m_sessionsDir;
+    QString m_openclawDir;      ///< ~/.openclaw 目录路径
     QVariantList m_sessionList;
 };
 

@@ -20,12 +20,10 @@
 SessionReader::SessionReader(QObject *parent)
     : QObject(parent)
 {
-    // 跨平台路径自动识别：
-    //   Windows → C:\Users\<user>\.openclaw\agents\main\sessions
-    //   Linux   → /home/<user>/.openclaw/agents/main/sessions
-    m_sessionsDir = QDir::homePath()
-        + QStringLiteral("/.openclaw/agents/main/sessions");
+    m_openclawDir = QDir::homePath() + QStringLiteral("/.openclaw");
+    m_sessionsDir = m_openclawDir + QStringLiteral("/agents/main/sessions");
 
+    qDebug() << "[SessionReader] openclaw dir:" << m_openclawDir;
     qDebug() << "[SessionReader] sessions dir:" << m_sessionsDir;
 }
 
@@ -626,4 +624,52 @@ QVariantList SessionReader::parseResponseFile(const QString &filePath)
     qDebug() << "[SessionReader] parseResponseFile: parsed"
              << result.count() << "display entries";
     return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  读取 openclaw.json 中的 agent 列表
+// ═══════════════════════════════════════════════════════════════════════
+
+QVariantList SessionReader::readAgentList()
+{
+    QVariantList agents;
+
+    const QString configPath = m_openclawDir + QStringLiteral("/openclaw.json");
+    QFile file(configPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "[SessionReader] readAgentList: cannot open" << configPath;
+        return agents;
+    }
+
+    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+
+    const QJsonObject agentsObj = root.value(QStringLiteral("agents")).toObject();
+    const QJsonArray  list      = agentsObj.value(QStringLiteral("list")).toArray();
+
+    for (const QJsonValue &v : list) {
+        const QJsonObject a = v.toObject();
+        const QString id = a.value(QStringLiteral("id")).toString();
+        if (id.isEmpty()) continue;
+
+        QString name = a.value(QStringLiteral("name")).toString();
+        if (name.isEmpty()) name = id;
+
+        QVariantMap entry;
+        entry[QStringLiteral("id")]         = id;
+        entry[QStringLiteral("name")]       = name;
+        entry[QStringLiteral("sessionKey")] =
+            QStringLiteral("agent:%1:main").arg(id);
+        entry[QStringLiteral("isDefault")]  =
+            a.value(QStringLiteral("default")).toBool(false);
+        entry[QStringLiteral("workspace")]  =
+            a.value(QStringLiteral("workspace")).toString();
+        entry[QStringLiteral("agentDir")]   =
+            a.value(QStringLiteral("agentDir")).toString();
+
+        agents.append(entry);
+    }
+
+    qDebug() << "[SessionReader] readAgentList: found" << agents.count() << "agents";
+    return agents;
 }

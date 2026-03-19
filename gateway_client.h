@@ -68,6 +68,12 @@ class GatewayClient : public QObject
                WRITE setCurrentSessionKey NOTIFY currentSessionChanged)
     Q_PROPERTY(QVariantList skillList READ skillList
                NOTIFY skillListChanged)
+    Q_PROPERTY(QVariantMap agentIdentity READ agentIdentity
+               NOTIFY agentIdentityChanged)
+    Q_PROPERTY(QVariantList agentList READ agentList
+               NOTIFY agentListChanged)
+    Q_PROPERTY(QString defaultAgentId READ defaultAgentId
+               NOTIFY agentListChanged)
 
 public:
     /**
@@ -104,6 +110,12 @@ public:
     QString currentSessionKey() const;
     /// 获取技能列表（委托给 WsSkill）
     QVariantList skillList() const;
+    /// 获取当前 agent 身份信息
+    QVariantMap agentIdentity() const;
+    /// 获取 agent 列表（通过 agents.list RPC 获取）
+    QVariantList agentList() const;
+    /// 获取默认 agent ID
+    QString defaultAgentId() const;
 
     // ═══════════════════════════════════════════════════════════════
     //  QML 可调用方法（Q_INVOKABLE）
@@ -148,11 +160,30 @@ public:
     /// 加载当前会话的历史消息（发送 messages.list RPC）
     Q_INVOKABLE void loadHistory();
 
+    /// 获取所有 Agent 列表（发送 agents.list RPC）
+    Q_INVOKABLE void refreshAgents();
+
     /// 获取所有技能状态（发送 skills.status RPC）
     Q_INVOKABLE void refreshSkills();
 
     /// 启用/禁用指定技能（发送 skills.update RPC）
     Q_INVOKABLE void setSkillEnabled(const QString &skillKey, bool enabled);
+
+    /**
+     * @brief 切换 Agent（依次发送 agent.identity.get + chat.history + sessions.list）
+     * @param agentId agent ID（如 "main"、"coder"）
+     *
+     * 自动构造 sessionKey = "agent:<agentId>:main"，
+     * 切换 currentSessionKey 并发送三个 RPC 请求。
+     */
+    Q_INVOKABLE void switchAgent(const QString &agentId);
+
+    /// 获取指定会话的 agent 身份信息（发送 agent.identity.get RPC）
+    Q_INVOKABLE void getAgentIdentity(const QString &sessionKey = QString());
+
+    /// 加载指定会话的聊天历史（发送 chat.history RPC）
+    Q_INVOKABLE void loadChatHistory(const QString &sessionKey = QString(),
+                                      int limit = 200);
 
 signals:
     // ── 连接状态 ──
@@ -186,6 +217,10 @@ signals:
     // ── 技能管理 ──
     void skillListChanged();         ///< 技能列表更新
     void skillUpdated(const QString &skillKey, bool enabled); ///< 技能状态变更
+
+    // ── Agent 管理 ──
+    void agentIdentityChanged();     ///< Agent 身份信息更新
+    void agentListChanged();         ///< Agent 列表更新
 
 private slots:
     // ── WebSocket 事件槽函数 ──
@@ -282,8 +317,11 @@ private:
     // ── 子类实例 ──
     WsConfig         m_config;          ///< 配置类：连接参数、设备密钥
     WsSession        m_session;         ///< 会话类：会话管理、消息收发
-    WsSkill          m_skill;           ///< 技能类：预留
+    WsSkill          m_skill;           ///< 技能类
     WsScheduledTask  m_scheduledTask;   ///< 定时任务类：预留
+    QVariantMap      m_agentIdentity;   ///< 当前 agent 身份缓存
+    QVariantList     m_agentList;       ///< agents.list 缓存
+    QString          m_defaultAgentId;  ///< 默认 agent ID
 };
 
 #endif // GATEWAY_CLIENT_H

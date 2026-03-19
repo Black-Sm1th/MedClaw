@@ -128,6 +128,19 @@ public:
     /// 构建 messages.list 请求参数（加载历史消息）
     QJsonObject buildLoadHistoryParams() const;
 
+    /// 构建 chat.history 请求参数（切换 agent 时加载历史）
+    QJsonObject buildChatHistoryParams(const QString &sessionKey,
+                                        int limit = 200) const;
+    /// 构建 agent.identity.get 请求参数
+    QJsonObject buildAgentIdentityParams(const QString &sessionKey) const;
+
+    /**
+     * @brief 解析 agent.identity.get 响应
+     * @param payload 响应 payload
+     * @return QVariantMap 包含 name, emoji, model 等
+     */
+    QVariantMap parseAgentIdentityResponse(const QJsonObject &payload) const;
+
     // ═══════════════════════════════════════════════════════════════
     //  服务器推送事件解析
     // ═══════════════════════════════════════════════════════════════

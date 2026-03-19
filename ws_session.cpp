@@ -281,6 +281,49 @@ QJsonObject WsSession::buildLoadHistoryParams() const
     return params;
 }
 
+QJsonObject WsSession::buildChatHistoryParams(const QString &sessionKey,
+                                               int limit) const
+{
+    const QString key = sessionKey.isEmpty() ? m_currentSessionKey : sessionKey;
+    QJsonObject params;
+    params[QStringLiteral("sessionKey")] = key;
+    params[QStringLiteral("limit")]      = limit;
+    return params;
+}
+
+QJsonObject WsSession::buildAgentIdentityParams(const QString &sessionKey) const
+{
+    const QString key = sessionKey.isEmpty() ? m_currentSessionKey : sessionKey;
+    QJsonObject params;
+    params[QStringLiteral("sessionKey")] = key;
+    return params;
+}
+
+QVariantMap WsSession::parseAgentIdentityResponse(const QJsonObject &payload) const
+{
+    QVariantMap identity;
+
+    auto extract = [&](const QString &field) {
+        if (payload.contains(field))
+            identity[field] = payload.value(field).toVariant();
+    };
+
+    extract(QStringLiteral("name"));
+    extract(QStringLiteral("emoji"));
+    extract(QStringLiteral("avatar"));
+    extract(QStringLiteral("model"));
+    extract(QStringLiteral("provider"));
+    extract(QStringLiteral("sessionKey"));
+    extract(QStringLiteral("sessionId"));
+    extract(QStringLiteral("agentId"));
+    extract(QStringLiteral("workspace"));
+
+    qDebug() << "[WsSession] agent identity:"
+             << identity.value(QStringLiteral("name")).toString()
+             << identity.value(QStringLiteral("emoji")).toString();
+    return identity;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  服务器推送事件解析
 // ═══════════════════════════════════════════════════════════════════════
