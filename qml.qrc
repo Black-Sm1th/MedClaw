@@ -24,7 +24,6 @@
         <file>components/DatePicker.qml</file>
         <file>components/TimePicker.qml</file>
         <file>images/chatNew.png</file>
-        <file>images/clock.png</file>
         <file>images/folder.png</file>
         <file>images/puzzle.png</file>
         <file>images/search.png</file>
@@ -40,5 +39,7 @@
         <file>images/largeIcon.png</file>
         <file>images/titleIcon.png</file>
         <file>images/icon.ico</file>
+        <file>images/alarm.png</file>
+        <file>images/history.png</file>
     </qresource>
 </RCC>

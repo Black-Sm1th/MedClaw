@@ -33,7 +33,7 @@ ApplicationWindow {
     }
     Rectangle{
         id: leftContainer
-        width: window.sidebarCollapsed ? 0 : 280
+        width: window.sidebarCollapsed ? 68 : 280
         height: parent.height
         anchors.left: parent.left
         anchors.top: parent.top
@@ -61,6 +61,7 @@ ApplicationWindow {
                     source: "qrc:/images/sidebarMinimalistic.png"
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.right: parent.right
+                    visible: !window.sidebarCollapsed
                     onClicked: window.sidebarCollapsed = !window.sidebarCollapsed
                 }
             }
@@ -72,9 +73,16 @@ ApplicationWindow {
                 Column{
                     spacing: 12
                     width: parent.width
+                    ImageButton{
+                        source: "qrc:/images/sidebarMinimalistic.png"
+                        visible: window.sidebarCollapsed
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        onClicked: window.sidebarCollapsed = !window.sidebarCollapsed
+                    }
                     Column{
                         spacing: 4
                         width: parent.width
+                        visible: !window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeater
                             model: ["新建任务", "定时任务", "技能", "MCP"]
@@ -100,7 +108,7 @@ ApplicationWindow {
                                             if(modelData === "新建任务"){
                                                 return "qrc:/images/chatNew.png"
                                             }else if(modelData === "定时任务"){
-                                                return "qrc:/images/clock.png"
+                                                return "qrc:/images/alarm.png"
                                             }else if(modelData === "技能"){
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "MCP"){
@@ -124,7 +132,50 @@ ApplicationWindow {
                             }
                         }
                     }
+                    Column{
+                        spacing: 4
+                        width: parent.width
+                        visible: window.sidebarCollapsed
+                        Repeater {
+                            id: selectionRepeaterCollapsed
+                            model: ["新建任务", "定时任务", "技能", "MCP", "history"]
+                            delegate: Rectangle{
+                                property bool isSelected: index === window.leftSelectedIndex
+                                width: leftMidPanel.width
+                                height: 36
+                                radius: 8
+                                color: isSelected ? "#E6E7EB"
+                                     : selItemMouseCollapse.containsMouse ? "#0A000000"
+                                     : "transparent"
+                                Image{
+                                    anchors.centerIn: parent
+                                    width: 16
+                                    height: 16
+                                    source: {
+                                        if(modelData === "新建任务"){
+                                            return "qrc:/images/chatNew.png"
+                                        }else if(modelData === "定时任务"){
+                                            return "qrc:/images/alarm.png"
+                                        }else if(modelData === "技能"){
+                                            return "qrc:/images/category.png"
+                                        }else if(modelData === "MCP"){
+                                            return "qrc:/images/puzzle.png"
+                                        }else if(modelData === "history"){
+                                            return "qrc:/images/history.png"
+                                        }
 
+                                    }
+                                }
+                                MouseArea {
+                                    id: selItemMouseCollapse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: window.leftSelectedIndex = index
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -175,7 +226,6 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.leftMargin: 16
                 radius: 8
-                visible: !window.sidebarCollapsed
                 Row{
                     id: statusRow
                     height: parent.height
@@ -209,35 +259,6 @@ ApplicationWindow {
                         font.pixelSize: 14
                         color: "#A6000000"
                         anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-            }
-            Row {
-                leftPadding: 16
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 16
-                visible: window.sidebarCollapsed
-
-                opacity: window.sidebarCollapsed ? 1 : 0
-                Behavior on opacity {
-                    NumberAnimation { duration: 150 }
-                }
-
-                Image {
-                    source: "qrc:/images/titleIcon.png"
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                ImageButton {
-                    source: "qrc:/images/sidebarMinimalistic.png"
-                    anchors.verticalCenter: parent.verticalCenter
-                    onClicked: window.sidebarCollapsed = false
-                }
-                ImageButton {
-                    source: "qrc:/images/chatLine.png"
-                    anchors.verticalCenter: parent.verticalCenter
-                    onClicked: {
-                        window.leftSelectedIndex = 0
                     }
                 }
             }
