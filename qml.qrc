@@ -10,7 +10,6 @@
         <file>images/minus.png</file>
         <file>components/ImageButton.qml</file>
         <file>images/sidebarMinimalistic.png</file>
-        <file>images/titleIcon.png</file>
         <file>fonts/AlimamaShuHeiTi-Bold.ttf</file>
         <file>components/MultiLineTextInput.qml</file>
         <file>images/category.png</file>
@@ -38,5 +37,8 @@
         <file>images/chatLine.png</file>
         <file>images/ai.png</file>
         <file>images/filePicture.png</file>
+        <file>images/largeIcon.png</file>
+        <file>images/titleIcon.png</file>
+        <file>images/icon.ico</file>
     </qresource>
 </RCC>

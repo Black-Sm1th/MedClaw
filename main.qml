@@ -329,9 +329,13 @@ ApplicationWindow {
                     visible: !newTaskRec.hasMessages
                     width: 840
                     spacing: 11
-                    anchors.topMargin: 100
+                    anchors.topMargin: 80
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
+                    Image{
+                        source: "qrc:/images/largeIcon.png"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
                     Label{
                         text: "AetherMedClaw_Desk"
                         font.family: "Alimama ShuHeiTi"
@@ -793,15 +797,16 @@ ApplicationWindow {
                                                     }
                                                 }
                                             }
-                                            Item { width: 1; height: 8 }
+                                            Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
                                             Rectangle {
                                                 width: wsPopup.width - 16
                                                 height: 1
                                                 color: "#EBEDF0"
                                                 anchors.horizontalCenter: parent.horizontalCenter
+                                                visible: dropdownSelectionWorkSpace.recentFolders.length > 0
                                             }
 
-                                            Item { width: 1; height: 8 }
+                                            Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0 }
 
                                             Text {
                                                 text: qsTr("最近")
@@ -809,11 +814,13 @@ ApplicationWindow {
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#73000000"
                                                 leftPadding: 12
+                                                visible: dropdownSelectionWorkSpace.recentFolders.length > 0
                                             }
 
-                                            Item { width: 1; height: 8 }
+                                            Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
 
                                             Repeater {
+                                                visible: dropdownSelectionWorkSpace.recentFolders.length > 0
                                                 model: dropdownSelectionWorkSpace.recentFolders
                                                 delegate: Rectangle {
                                                     width: wsPopup.width - 8
