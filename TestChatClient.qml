@@ -234,6 +234,27 @@ ApplicationWindow {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  模型管理测试函数
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * @brief 刷新可用模型列表（models.list RPC）
+     */
+    function testRefreshModels() {
+        testAddLog("\u25b6 testRefreshModels() \u2192 \u83b7\u53d6\u53ef\u7528\u6a21\u578b\u5217\u8868")
+        wsClient.refreshModels()
+    }
+
+    /**
+     * @brief 切换当前会话的模型（sessions.patch RPC）
+     * @param modelId 目标模型 ID（如 "deepseek-chat"）
+     */
+    function testChangeModel(modelId) {
+        testAddLog("\u25b6 testChangeModel() \u2192 \u5207\u6362\u5230\u6a21\u578b: " + modelId)
+        wsClient.patchSessionModel(modelId)
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  本地文件加载测试函数（已注释 — 改为在线 chat.history）
     // ═══════════════════════════════════════════════════════════════
     // function testLoadLocalMessages(filePath, displayName) { ... }
@@ -392,6 +413,23 @@ ApplicationWindow {
         function onAgentDeleted(agentId, success, message) {
             var tag = success ? "\u2714" : "\u2716"
             testAddLog("\u25c6 agentDeleted \u2192 " + tag + " " + message)
+        }
+
+        /// 可用模型列表更新
+        function onModelListChanged() {
+            var list = wsClient.modelList
+            testAddLog("\u25c6 modelListChanged \u2192 " + list.length + " \u4e2a\u53ef\u7528\u6a21\u578b")
+            for (var i = 0; i < list.length; i++) {
+                testAddLog("  [" + i + "] " + list[i].id
+                           + " (" + list[i].name + ") - " + list[i].provider)
+            }
+        }
+
+        /// 当前会话模型变更
+        function onCurrentModelChanged() {
+            var m = wsClient.currentModel
+            testAddLog("\u25c6 currentModelChanged \u2192 "
+                       + (m.modelProvider || "") + " / " + (m.model || ""))
         }
     }
 
@@ -838,6 +876,7 @@ ApplicationWindow {
                                         wsClient.currentSessionKey = key
                                         wsClient.getAgentIdentity(key)
                                         wsClient.loadChatHistory(key, 200)
+                                        wsClient.patchSessionModel("")
                                     }
                                 }
                             }
@@ -919,7 +958,7 @@ ApplicationWindow {
                                 TextField {
                                     id: testNewAgentIdInput
                                     Layout.fillWidth: true
-                                    placeholderText: "Agent ID (e.g. writer)"
+                                    placeholderText: "Agent 名称 (e.g. writer)"
                                     font.pixelSize: 10
                                     implicitHeight: 24
                                 }
@@ -927,7 +966,7 @@ ApplicationWindow {
                                 TextField {
                                     id: testNewAgentWorkspaceInput
                                     Layout.fillWidth: true
-                                    placeholderText: "Workspace (e.g. ~/.openclaw/workspace-writer)"
+                                    placeholderText: "工作空间路径 (留空则自动生成)"
                                     font.pixelSize: 10
                                     implicitHeight: 24
                                 }
@@ -1256,18 +1295,228 @@ ApplicationWindow {
                     anchors.margins: 8
                     spacing: 4
 
-                    Label {
-                        text: {
-                            var title = (wsClient.agentIdentity.emoji || "") + " "
-                            title += wsClient.agentIdentity.name
-                                     || wsClient.currentSessionKey
-                            title += "  (" + chatModel.count + " \u6761)"
-                            return title
-                        }
-                        font.pixelSize: 13
-                        font.bold: true
-                        color: "#333333"
+                    RowLayout {
+                        Layout.fillWidth: true
                         Layout.leftMargin: 4
+                        spacing: 8
+
+                        Label {
+                            text: {
+                                var title = (wsClient.agentIdentity.emoji || "") + " "
+                                title += wsClient.agentIdentity.name
+                                         || wsClient.currentSessionKey
+                                title += "  (" + chatModel.count + " \u6761)"
+                                return title
+                            }
+                            font.pixelSize: 13
+                            font.bold: true
+                            color: "#333333"
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // ── 模型选择器按钮 ──
+                        Rectangle {
+                            id: testModelBtn
+                            height: 24
+                            width: testModelBtnRow.implicitWidth + 20
+                            radius: 12
+                            color: testModelBtnArea.containsMouse ? "#E3F2FD" : "#F5F5F5"
+                            border.color: "#BBDEFB"
+                            border.width: 1
+
+                            RowLayout {
+                                id: testModelBtnRow
+                                anchors.centerIn: parent
+                                spacing: 4
+
+                                Label {
+                                    text: "\u2699"
+                                    font.pixelSize: 11
+                                }
+                                Label {
+                                    text: {
+                                        var m = wsClient.currentModel.model || ""
+                                        return m.length > 0 ? m : "\u9009\u62e9\u6a21\u578b"
+                                    }
+                                    font.pixelSize: 10
+                                    color: "#1565C0"
+                                }
+                                Label {
+                                    text: "\u25BC"
+                                    font.pixelSize: 7
+                                    color: "#90A4AE"
+                                }
+                            }
+
+                            MouseArea {
+                                id: testModelBtnArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (wsClient.modelList.length === 0
+                                            && wsClient.connectionState === 3)
+                                        wsClient.refreshModels()
+                                    testModelPopup.open()
+                                }
+                            }
+
+                            // ── 模型选择弹出框 ──
+                            Popup {
+                                id: testModelPopup
+                                y: parent.height + 4
+                                x: parent.width - width
+                                width: 320
+                                height: Math.min(testModelPopupCol.implicitHeight + 20, 400)
+                                padding: 10
+
+                                background: Rectangle {
+                                    radius: 8
+                                    color: "#FFFFFF"
+                                    border.color: "#E0E0E0"
+                                    border.width: 1
+                                }
+
+                                Column {
+                                    id: testModelPopupCol
+                                    width: parent.width
+                                    spacing: 6
+
+                                    // 弹窗标题
+                                    RowLayout {
+                                        width: parent.width
+                                        Label {
+                                            text: "\u53ef\u7528\u6a21\u578b"
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            color: "#333333"
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Label {
+                                            text: "\u5237\u65b0"
+                                            font.pixelSize: 10
+                                            color: "#1976D2"
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: wsClient.refreshModels()
+                                            }
+                                        }
+                                    }
+
+                                    // 当前模型信息
+                                    Rectangle {
+                                        width: parent.width
+                                        height: 28
+                                        radius: 6
+                                        color: "#E8EAF6"
+                                        visible: (wsClient.currentModel.model || "").length > 0
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: "\u5f53\u524d: "
+                                                  + (wsClient.currentModel.modelProvider || "")
+                                                  + " / "
+                                                  + (wsClient.currentModel.model || "")
+                                            font.pixelSize: 10
+                                            color: "#283593"
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: parent.width
+                                        height: 1
+                                        color: "#E0E0E0"
+                                    }
+
+                                    // 模型列表
+                                    Repeater {
+                                        model: wsClient.modelList
+
+                                        Rectangle {
+                                            width: testModelPopupCol.width
+                                            height: testMItemCol.implicitHeight + 12
+                                            radius: 6
+                                            color: {
+                                                var isActive = modelData.id
+                                                    === (wsClient.currentModel.model || "")
+                                                if (isActive) return "#E3F2FD"
+                                                return testMItemArea.containsMouse
+                                                       ? "#F5F5F5" : "transparent"
+                                            }
+
+                                            Column {
+                                                id: testMItemCol
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.margins: 6
+                                                spacing: 2
+
+                                                Row {
+                                                    spacing: 6
+                                                    Label {
+                                                        text: modelData.name || modelData.id
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                        color: modelData.id
+                                                            === (wsClient.currentModel.model || "")
+                                                            ? "#1565C0" : "#333333"
+                                                    }
+                                                    Label {
+                                                        text: modelData.id
+                                                            === (wsClient.currentModel.model || "")
+                                                            ? "\u2714" : ""
+                                                        font.pixelSize: 14
+                                                        color: "#1565C0"
+                                                    }
+                                                }
+
+                                                Row {
+                                                    spacing: 8
+                                                    Label {
+                                                        text: modelData.provider || ""
+                                                        font.pixelSize: 9
+                                                        color: "#888888"
+                                                    }
+                                                    Label {
+                                                        text: modelData.contextWindow > 0
+                                                            ? (Math.floor(
+                                                                modelData.contextWindow / 1024)
+                                                                + "K context")
+                                                            : ""
+                                                        font.pixelSize: 9
+                                                        color: "#888888"
+                                                        visible: modelData.contextWindow > 0
+                                                    }
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: testMItemArea
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    testChangeModel(modelData.id)
+                                                    testModelPopup.close()
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // 空状态
+                                    Label {
+                                        visible: wsClient.modelList.length === 0
+                                        text: wsClient.connectionState === 3
+                                              ? "\u52a0\u8f7d\u4e2d..."
+                                              : "\u8bf7\u5148\u8fde\u63a5\u670d\u52a1\u5668"
+                                        font.pixelSize: 11
+                                        color: "#999999"
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Rectangle {

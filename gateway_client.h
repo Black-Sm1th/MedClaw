@@ -74,6 +74,10 @@ class GatewayClient : public QObject
                NOTIFY agentListChanged)
     Q_PROPERTY(QString defaultAgentId READ defaultAgentId
                NOTIFY agentListChanged)
+    Q_PROPERTY(QVariantList modelList READ modelList
+               NOTIFY modelListChanged)
+    Q_PROPERTY(QVariantMap currentModel READ currentModel
+               NOTIFY currentModelChanged)
 
 public:
     /**
@@ -116,6 +120,10 @@ public:
     QVariantList agentList() const;
     /// 获取默认 agent ID
     QString defaultAgentId() const;
+    /// 获取可用模型列表
+    QVariantList modelList() const;
+    /// 获取当前会话的模型信息
+    QVariantMap currentModel() const;
 
     // ═══════════════════════════════════════════════════════════════
     //  QML 可调用方法（Q_INVOKABLE）
@@ -201,6 +209,15 @@ public:
     Q_INVOKABLE void loadChatHistory(const QString &sessionKey = QString(),
                                       int limit = 200);
 
+    /// 获取可用模型列表（发送 models.list RPC）
+    Q_INVOKABLE void refreshModels();
+
+    /**
+     * @brief 查询或设置当前会话的模型（发送 sessions.patch RPC）
+     * @param modelId 为空时查询当前模型（model:null），非空时切换到指定模型
+     */
+    Q_INVOKABLE void patchSessionModel(const QString &modelId = QString());
+
 signals:
     // ── 连接状态 ──
     void connectionStateChanged();  ///< 连接状态发生变化
@@ -241,6 +258,10 @@ signals:
                       const QString &message); ///< 新 Agent 创建结果
     void agentDeleted(const QString &agentId, bool success,
                       const QString &message); ///< Agent 删除结果
+
+    // ── 模型管理 ──
+    void modelListChanged();              ///< 可用模型列表更新
+    void currentModelChanged();           ///< 当前会话模型信息变更
 
 private slots:
     // ── WebSocket 事件槽函数 ──
@@ -345,6 +366,10 @@ private:
 
     QString m_pendingCreateName;       ///< agents.create 待确认名称
     QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
+
+    // ── 模型管理 ──
+    QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）
+    QVariantMap  m_currentModel;       ///< 当前会话模型信息（sessions.patch 响应）
 };
 
 #endif // GATEWAY_CLIENT_H

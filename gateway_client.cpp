@@ -138,6 +138,12 @@ QString GatewayClient::defaultAgentId() const
     return m_defaultAgentId;
 }
 
+/// 获取可用模型列表
+QVariantList GatewayClient::modelList() const { return m_modelList; }
+
+/// 获取当前会话的模型信息
+QVariantMap GatewayClient::currentModel() const { return m_currentModel; }
+
 /// 设置连接状态并通知 QML 属性绑定系统
 void GatewayClient::setState(ConnectionState state)
 {
@@ -590,12 +596,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             emit errorOccurred(errMsg);
             return;
         }
-        // 握手成功：切换到 Connected，自动加载 agent 列表、会话列表和历史
+        // 握手成功：切换到 Connected，自动加载所有初始数据
         qDebug() << "[Gateway] handshake complete!";
         setState(Connected);
         refreshAgents();
         refreshSessions();
+        refreshModels();
         loadHistory();
+        patchSessionModel(QString());
         return;
     }
 
@@ -746,6 +754,52 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 }
             }
         }
+        return;
+    }
+
+    // models.list 响应 → 解析可用模型列表
+    if (method == QLatin1String("models.list")) {
+        m_modelList.clear();
+
+        // 支持多种 payload 格式：payload.models[] / payload 自身为数组 / payload.items[]
+        QJsonArray arr = payload.value(QStringLiteral("models")).toArray();
+        if (arr.isEmpty())
+            arr = msg.value(QStringLiteral("payload")).toArray();
+        if (arr.isEmpty())
+            arr = payload.value(QStringLiteral("items")).toArray();
+        if (arr.isEmpty())
+            arr = payload.value(QStringLiteral("data")).toArray();
+
+        for (const QJsonValue &v : arr) {
+            const QJsonObject m = v.toObject();
+            const QString id = m.value(QStringLiteral("id")).toString();
+            if (id.isEmpty()) continue;
+
+            QVariantMap entry;
+            entry[QStringLiteral("id")]            = id;
+            entry[QStringLiteral("name")]          = m.value(QStringLiteral("name")).toString(id);
+            entry[QStringLiteral("provider")]      = m.value(QStringLiteral("provider")).toString();
+            entry[QStringLiteral("contextWindow")] = m.value(QStringLiteral("contextWindow")).toInt();
+            m_modelList.append(entry);
+        }
+
+        qDebug() << "[Gateway] models.list:" << m_modelList.count() << "models";
+        emit modelListChanged();
+        return;
+    }
+
+    // sessions.patch 响应 → 更新当前会话模型信息
+    if (method == QLatin1String("sessions.patch")) {
+        m_currentModel.clear();
+        m_currentModel[QStringLiteral("model")]         =
+            payload.value(QStringLiteral("model")).toString();
+        m_currentModel[QStringLiteral("modelProvider")] =
+            payload.value(QStringLiteral("modelProvider")).toString();
+
+        qDebug() << "[Gateway] sessions.patch →"
+                 << m_currentModel.value(QStringLiteral("modelProvider")).toString()
+                 << "/" << m_currentModel.value(QStringLiteral("model")).toString();
+        emit currentModelChanged();
         return;
     }
 }
@@ -1032,12 +1086,17 @@ void GatewayClient::createAgent(const QString &name,
 
     m_pendingCreateName = name;
 
+    QString ws = workspace.trimmed();
+    if (ws.isEmpty()) {
+        ws = QStringLiteral("~/.openclaw/workspace-%1").arg(name.trimmed().toLower());
+    }
+
     QJsonObject params;
     params[QStringLiteral("name")]      = name.trimmed();
-    params[QStringLiteral("workspace")] = workspace.trimmed();
+    params[QStringLiteral("workspace")] = ws;
 
     qDebug().noquote() << "[Gateway] agents.create:" << name
-                       << "workspace:" << workspace;
+                       << "workspace:" << ws;
     sendRequest(QStringLiteral("agents.create"), params);
 }
 
@@ -1099,7 +1158,53 @@ void GatewayClient::setSkillEnabled(const QString &skillKey, bool enabled)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  8. Agent 切换
+//  8. 模型管理
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief 获取可用模型列表
+ *
+ * 发送 models.list RPC，响应在 handleResponse() 中解析。
+ * 连接成功后自动调用一次。
+ */
+void GatewayClient::refreshModels()
+{
+    if (m_state != Connected) return;
+    sendRequest(QStringLiteral("models.list"), QJsonObject());
+}
+
+/**
+ * @brief 查询或设置当前会话的模型
+ *
+ * sessions.patch RPC：
+ *   - modelId 为空 → params.model = null → 查询当前模型
+ *   - modelId 非空 → params.model = "model-id" → 切换到指定模型
+ * 两种情况的响应都包含 modelProvider / model 字段。
+ */
+void GatewayClient::patchSessionModel(const QString &modelId)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
+        return;
+    }
+
+    QJsonObject params;
+    params[QStringLiteral("key")] = m_session.currentSessionKey();
+
+    if (modelId.isEmpty()) {
+        params[QStringLiteral("model")] = QJsonValue();
+    } else {
+        params[QStringLiteral("model")] = modelId;
+    }
+
+    qDebug().noquote() << "[Gateway] sessions.patch model:"
+                       << (modelId.isEmpty() ? "null (query)" : modelId)
+                       << "session:" << m_session.currentSessionKey();
+    sendRequest(QStringLiteral("sessions.patch"), params);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  9. Agent 切换
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
@@ -1130,6 +1235,7 @@ void GatewayClient::switchAgent(const QString &agentId)
     getAgentIdentity(sessionKey);
     loadChatHistory(sessionKey);
     refreshSessions();
+    patchSessionModel(QString());
 }
 
 /**
