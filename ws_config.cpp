@@ -172,3 +172,53 @@ QJsonObject WsConfig::buildConnectParams(const QString &challengeNonce) const
 
     return params;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Agents 配置
+// ═══════════════════════════════════════════════════════════════════════
+
+QVariantList WsConfig::getAvailableAgents() const
+{
+    QVariantList agentsList;
+    
+    // 默认的 fallback 列表
+    QVariantMap mainAgent;
+    mainAgent[QStringLiteral("id")] = QStringLiteral("main");
+    mainAgent[QStringLiteral("name")] = QStringLiteral("Main Agent");
+    mainAgent[QStringLiteral("sessionKey")] = QStringLiteral("agent:main:main");
+    agentsList.append(mainAgent);
+
+    const QString cfgPath = QDir::homePath() + QStringLiteral("/.openclaw/openclaw.json");
+    QFile f(cfgPath);
+    if (!f.open(QIODevice::ReadOnly))
+        return agentsList; // 返回默认
+
+    const QByteArray raw = f.readAll();
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject())
+        return agentsList; // 返回默认
+
+    const QJsonObject root = doc.object();
+    QJsonValue agentsVal = root.value(QStringLiteral("agents"));
+    if (agentsVal.isObject()) {
+        QJsonValue listVal = agentsVal.toObject().value(QStringLiteral("list"));
+        if (listVal.isArray()) {
+            QJsonArray arr = listVal.toArray();
+            if (!arr.isEmpty()) {
+                agentsList.clear(); // 清空默认，使用配置中的
+                for (const QJsonValue &v : arr) {
+                    QString agentId = v.toString();
+                    if (!agentId.isEmpty()) {
+                        QVariantMap agentInfo;
+                        agentInfo[QStringLiteral("id")] = agentId;
+                        agentInfo[QStringLiteral("name")] = agentId; // 初始名称与ID相同，之后可由 agent.identity.get 补全
+                        agentInfo[QStringLiteral("sessionKey")] = QStringLiteral("agent:%1:main").arg(agentId);
+                        agentsList.append(agentInfo);
+                    }
+                }
+            }
+        }
+    }
+    return agentsList;
+}
