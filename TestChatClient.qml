@@ -170,13 +170,21 @@ ApplicationWindow {
 
     /**
      * @brief 刷新 Agent 列表（通过 WebSocket agents.list RPC）
-     *
-     * maincontrol 调用：wsClient.refreshAgents()
-     * 连接成功后自动调用一次，也可手动刷新
      */
     function testRefreshAgents() {
-        testAddLog("\u25b6 testRefreshAgents() \u2192 \u83b7\u53d6 Agent \u5217\u8868 (WebSocket)")
+        testAddLog("\u25b6 testRefreshAgents() \u2192 \u83b7\u53d6 Agent \u5217\u8868")
         wsClient.refreshAgents()
+    }
+
+    /**
+     * @brief 创建新 Agent（config.get → config.patch → agents.list）
+     * @param agentId   新 agent ID
+     * @param workspace 工作空间路径
+     */
+    function testCreateAgent(agentId, workspace) {
+        testAddLog("\u25b6 testCreateAgent() \u2192 id=" + agentId
+                   + " workspace=" + workspace)
+        wsClient.createAgent(agentId, workspace)
     }
 
     /**
@@ -366,6 +374,12 @@ ApplicationWindow {
                            + " key=" + a.sessionKey
                            + (a.isDefault ? " (\u9ed8\u8ba4)" : ""))
             }
+        }
+
+        /// Agent 创建结果
+        function onAgentCreated(agentId, success, message) {
+            var tag = success ? "\u2714" : "\u2716"
+            testAddLog("\u25c6 agentCreated \u2192 " + tag + " " + message)
         }
     }
 
@@ -866,6 +880,74 @@ ApplicationWindow {
                             color: "#666666"
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
+                        }
+
+                        // ── 新建 Agent ──
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: testCreateAgentCol.implicitHeight + 12
+                            radius: 6
+                            color: "#FFF3E0"
+                            border.color: "#FFB74D"
+                            border.width: 1
+
+                            ColumnLayout {
+                                id: testCreateAgentCol
+                                anchors.fill: parent
+                                anchors.margins: 6
+                                spacing: 3
+
+                                Label {
+                                    text: "\u65b0\u5efa Agent"
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: "#E65100"
+                                }
+
+                                TextField {
+                                    id: testNewAgentIdInput
+                                    Layout.fillWidth: true
+                                    placeholderText: "Agent ID (e.g. writer)"
+                                    font.pixelSize: 10
+                                    implicitHeight: 24
+                                }
+
+                                TextField {
+                                    id: testNewAgentWorkspaceInput
+                                    Layout.fillWidth: true
+                                    placeholderText: "Workspace (e.g. ~/.openclaw/workspace-writer)"
+                                    font.pixelSize: 10
+                                    implicitHeight: 24
+                                }
+
+                                Button {
+                                    text: "\u521b\u5efa"
+                                    implicitHeight: 24
+                                    Layout.fillWidth: true
+                                    enabled: wsClient.connectionState === 3
+                                             && testNewAgentIdInput.text.trim().length > 0
+                                    onClicked: {
+                                        testCreateAgent(
+                                            testNewAgentIdInput.text.trim(),
+                                            testNewAgentWorkspaceInput.text.trim())
+                                        testNewAgentIdInput.text = ""
+                                        testNewAgentWorkspaceInput.text = ""
+                                    }
+                                    background: Rectangle {
+                                        radius: 4
+                                        color: parent.enabled
+                                               ? (parent.down ? "#BF360C" : "#E65100")
+                                               : "#BDBDBD"
+                                    }
+                                    contentItem: Label {
+                                        text: parent.text
+                                        color: "#FFFFFF"
+                                        font.pixelSize: 10
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                }
+                            }
                         }
 
                         Rectangle {

@@ -563,6 +563,16 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (errMsg.isEmpty())
             errMsg = QStringLiteral("Request failed (ok=false)");
         qWarning() << "[Gateway] error" << method << "id=" << id << errMsg;
+
+        // config.get / config.patch 失败 → 清理创建 Agent 的中间状态
+        if ((method == QLatin1String("config.get")
+             || method == QLatin1String("config.patch"))
+                && !m_pendingAgentId.isEmpty()) {
+            emit agentCreated(m_pendingAgentId, false, errMsg);
+            m_pendingAgentId.clear();
+            m_pendingAgentWorkspace.clear();
+        }
+
         emit errorOccurred(errMsg);
         return;
     }
@@ -635,6 +645,74 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
         emit historyLoaded(history);
+        return;
+    }
+
+    // config.get 响应 → 提取 hash + agents.list，续发 config.patch
+    if (method == QLatin1String("config.get")) {
+        m_configHash = payload.value(QStringLiteral("hash")).toString();
+        const QJsonObject config = payload.value(QStringLiteral("config")).toObject();
+        const QJsonObject agents = config.value(QStringLiteral("agents")).toObject();
+        m_currentAgentsList = agents.value(QStringLiteral("list")).toArray();
+
+        qDebug() << "[Gateway] config.get: hash=" << m_configHash
+                 << "existing agents:" << m_currentAgentsList.count();
+
+        if (!m_pendingAgentId.isEmpty()) {
+            // 检查是否已存在同名 agent
+            for (const QJsonValue &v : m_currentAgentsList) {
+                if (v.toObject().value(QStringLiteral("id")).toString()
+                        == m_pendingAgentId) {
+                    emit agentCreated(m_pendingAgentId, false,
+                        QStringLiteral("agent \"%1\" \u5df2\u5b58\u5728")
+                            .arg(m_pendingAgentId));
+                    m_pendingAgentId.clear();
+                    return;
+                }
+            }
+
+            // 构造新 agent 条目
+            QJsonObject newAgent;
+            newAgent[QStringLiteral("id")] = m_pendingAgentId;
+            if (!m_pendingAgentWorkspace.isEmpty())
+                newAgent[QStringLiteral("workspace")] = m_pendingAgentWorkspace;
+
+            // 追加到现有列表
+            QJsonArray updatedList = m_currentAgentsList;
+            updatedList.append(newAgent);
+
+            // 构造 patch JSON5 字符串
+            QJsonObject patchAgents;
+            patchAgents[QStringLiteral("list")] = updatedList;
+            QJsonObject patchRoot;
+            patchRoot[QStringLiteral("agents")] = patchAgents;
+
+            const QString raw = QString::fromUtf8(
+                QJsonDocument(patchRoot).toJson(QJsonDocument::Compact));
+
+            QJsonObject params;
+            params[QStringLiteral("raw")]      = raw;
+            params[QStringLiteral("baseHash")] = m_configHash;
+
+            qDebug().noquote() << "[Gateway] createAgent: step2 config.patch"
+                               << "adding" << m_pendingAgentId;
+            sendRequest(QStringLiteral("config.patch"), params);
+        }
+        return;
+    }
+
+    // config.patch 响应 → 新 agent 创建完成，刷新列表验证
+    if (method == QLatin1String("config.patch")) {
+        const QString agentId = m_pendingAgentId;
+        m_pendingAgentId.clear();
+        m_pendingAgentWorkspace.clear();
+
+        if (!agentId.isEmpty()) {
+            qDebug() << "[Gateway] config.patch success, verifying with agents.list";
+            emit agentCreated(agentId, true,
+                QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId));
+            refreshAgents();
+        }
         return;
     }
 
@@ -971,6 +1049,32 @@ void GatewayClient::refreshAgents()
 {
     if (m_state != Connected) return;
     sendRequest(QStringLiteral("agents.list"), QJsonObject());
+}
+
+/**
+ * @brief 创建新 Agent
+ *
+ * 流程：config.get → 取 hash + 现有 agents → config.patch 追加 → agents.list 验证
+ * OpenClaw 没有 agents.create RPC，需通过 config.patch 修改配置文件。
+ */
+void GatewayClient::createAgent(const QString &agentId,
+                                 const QString &workspace)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
+        return;
+    }
+    if (agentId.isEmpty()) {
+        emit agentCreated(agentId, false, QStringLiteral("agent ID \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+
+    m_pendingAgentId        = agentId;
+    m_pendingAgentWorkspace = workspace;
+
+    qDebug().noquote() << "[Gateway] createAgent: step1 config.get for"
+                       << agentId << "workspace:" << workspace;
+    sendRequest(QStringLiteral("config.get"), QJsonObject());
 }
 
 /**
