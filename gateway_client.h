@@ -164,12 +164,20 @@ public:
     Q_INVOKABLE void refreshAgents();
 
     /**
-     * @brief 创建新 Agent（config.get → config.patch → agents.list 验证）
-     * @param agentId   新 agent ID（如 "writer"）
-     * @param workspace 工作空间路径（如 "~/.openclaw/workspace-writer"）
+     * @brief 创建新 Agent（agents.create RPC）
+     * @param name      agent 名称（服务端自动 normalizeAgentId 生成 ID）
+     * @param workspace 工作空间路径
      */
-    Q_INVOKABLE void createAgent(const QString &agentId,
+    Q_INVOKABLE void createAgent(const QString &name,
                                   const QString &workspace);
+
+    /**
+     * @brief 删除 Agent（agents.delete RPC）
+     * @param agentId    要删除的 agent ID
+     * @param deleteFiles 是否同时删除 workspace/sessions 文件，默认 true
+     */
+    Q_INVOKABLE void deleteAgent(const QString &agentId,
+                                  bool deleteFiles = true);
 
     /// 获取所有技能状态（发送 skills.status RPC）
     Q_INVOKABLE void refreshSkills();
@@ -231,6 +239,8 @@ signals:
     void agentListChanged();         ///< Agent 列表更新
     void agentCreated(const QString &agentId, bool success,
                       const QString &message); ///< 新 Agent 创建结果
+    void agentDeleted(const QString &agentId, bool success,
+                      const QString &message); ///< Agent 删除结果
 
 private slots:
     // ── WebSocket 事件槽函数 ──
@@ -333,11 +343,8 @@ private:
     QVariantList     m_agentList;       ///< agents.list 缓存
     QString          m_defaultAgentId;  ///< 默认 agent ID
 
-    // ── 创建 Agent 的中间状态 ──
-    QString m_configHash;              ///< config.get 返回的 hash（乐观锁）
-    QString m_pendingAgentId;          ///< 正在创建的 agent ID
-    QString m_pendingAgentWorkspace;   ///< 正在创建的 agent workspace
-    QJsonArray m_currentAgentsList;    ///< config 中现有的 agents.list 数组
+    QString m_pendingCreateName;       ///< agents.create 待确认名称
+    QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
 };
 
 #endif // GATEWAY_CLIENT_H

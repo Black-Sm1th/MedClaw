@@ -564,13 +564,13 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             errMsg = QStringLiteral("Request failed (ok=false)");
         qWarning() << "[Gateway] error" << method << "id=" << id << errMsg;
 
-        // config.get / config.patch 失败 → 清理创建 Agent 的中间状态
-        if ((method == QLatin1String("config.get")
-             || method == QLatin1String("config.patch"))
-                && !m_pendingAgentId.isEmpty()) {
-            emit agentCreated(m_pendingAgentId, false, errMsg);
-            m_pendingAgentId.clear();
-            m_pendingAgentWorkspace.clear();
+        if (method == QLatin1String("agents.create") && !m_pendingCreateName.isEmpty()) {
+            emit agentCreated(m_pendingCreateName, false, errMsg);
+            m_pendingCreateName.clear();
+        }
+        if (method == QLatin1String("agents.delete") && !m_pendingDeleteId.isEmpty()) {
+            emit agentDeleted(m_pendingDeleteId, false, errMsg);
+            m_pendingDeleteId.clear();
         }
 
         emit errorOccurred(errMsg);
@@ -648,71 +648,31 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         return;
     }
 
-    // config.get 响应 → 提取 hash + agents.list，续发 config.patch
-    if (method == QLatin1String("config.get")) {
-        m_configHash = payload.value(QStringLiteral("hash")).toString();
-        const QJsonObject config = payload.value(QStringLiteral("config")).toObject();
-        const QJsonObject agents = config.value(QStringLiteral("agents")).toObject();
-        m_currentAgentsList = agents.value(QStringLiteral("list")).toArray();
+    // agents.create 响应 → 创建成功，刷新列表
+    if (method == QLatin1String("agents.create")) {
+        const QString agentId = payload.value(QStringLiteral("agentId")).toString();
+        const QString name = m_pendingCreateName;
+        m_pendingCreateName.clear();
 
-        qDebug() << "[Gateway] config.get: hash=" << m_configHash
-                 << "existing agents:" << m_currentAgentsList.count();
-
-        if (!m_pendingAgentId.isEmpty()) {
-            // 检查是否已存在同名 agent
-            for (const QJsonValue &v : m_currentAgentsList) {
-                if (v.toObject().value(QStringLiteral("id")).toString()
-                        == m_pendingAgentId) {
-                    emit agentCreated(m_pendingAgentId, false,
-                        QStringLiteral("agent \"%1\" \u5df2\u5b58\u5728")
-                            .arg(m_pendingAgentId));
-                    m_pendingAgentId.clear();
-                    return;
-                }
-            }
-
-            // 构造新 agent 条目
-            QJsonObject newAgent;
-            newAgent[QStringLiteral("id")] = m_pendingAgentId;
-            if (!m_pendingAgentWorkspace.isEmpty())
-                newAgent[QStringLiteral("workspace")] = m_pendingAgentWorkspace;
-
-            // 追加到现有列表
-            QJsonArray updatedList = m_currentAgentsList;
-            updatedList.append(newAgent);
-
-            // 构造 patch JSON5 字符串
-            QJsonObject patchAgents;
-            patchAgents[QStringLiteral("list")] = updatedList;
-            QJsonObject patchRoot;
-            patchRoot[QStringLiteral("agents")] = patchAgents;
-
-            const QString raw = QString::fromUtf8(
-                QJsonDocument(patchRoot).toJson(QJsonDocument::Compact));
-
-            QJsonObject params;
-            params[QStringLiteral("raw")]      = raw;
-            params[QStringLiteral("baseHash")] = m_configHash;
-
-            qDebug().noquote() << "[Gateway] createAgent: step2 config.patch"
-                               << "adding" << m_pendingAgentId;
-            sendRequest(QStringLiteral("config.patch"), params);
-        }
+        qDebug() << "[Gateway] agents.create ok:" << agentId;
+        emit agentCreated(agentId, true,
+            QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId));
+        refreshAgents();
         return;
     }
 
-    // config.patch 响应 → 新 agent 创建完成，刷新列表验证
-    if (method == QLatin1String("config.patch")) {
-        const QString agentId = m_pendingAgentId;
-        m_pendingAgentId.clear();
-        m_pendingAgentWorkspace.clear();
+    // agents.delete 响应 → 删除成功，刷新列表
+    if (method == QLatin1String("agents.delete")) {
+        const QString agentId = payload.value(QStringLiteral("agentId")).toString();
+        const int removedBindings =
+            payload.value(QStringLiteral("removedBindings")).toInt(0);
+        m_pendingDeleteId.clear();
 
-        if (!agentId.isEmpty()) {
-            qDebug() << "[Gateway] config.patch success, verifying with agents.list";
-            emit agentCreated(agentId, true,
-                QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId));
-            refreshAgents();
-        }
+        qDebug() << "[Gateway] agents.delete ok:" << agentId
+                 << "removedBindings:" << removedBindings;
+        emit agentDeleted(agentId, true,
+            QStringLiteral("agent \"%1\" \u5df2\u5220\u9664").arg(agentId));
+        refreshAgents();
         return;
     }
 
@@ -1052,29 +1012,62 @@ void GatewayClient::refreshAgents()
 }
 
 /**
- * @brief 创建新 Agent
+ * @brief 创建新 Agent（agents.create RPC）
  *
- * 流程：config.get → 取 hash + 现有 agents → config.patch 追加 → agents.list 验证
- * OpenClaw 没有 agents.create RPC，需通过 config.patch 修改配置文件。
+ * params: { name, workspace, emoji?, avatar? }
+ * 服务端 normalizeAgentId(name) 生成 agentId
  */
-void GatewayClient::createAgent(const QString &agentId,
+void GatewayClient::createAgent(const QString &name,
                                  const QString &workspace)
 {
     if (m_state != Connected) {
         emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
         return;
     }
-    if (agentId.isEmpty()) {
-        emit agentCreated(agentId, false, QStringLiteral("agent ID \u4e0d\u80fd\u4e3a\u7a7a"));
+    if (name.trimmed().isEmpty()) {
+        emit agentCreated(name, false,
+            QStringLiteral("name \u4e0d\u80fd\u4e3a\u7a7a"));
         return;
     }
 
-    m_pendingAgentId        = agentId;
-    m_pendingAgentWorkspace = workspace;
+    m_pendingCreateName = name;
 
-    qDebug().noquote() << "[Gateway] createAgent: step1 config.get for"
-                       << agentId << "workspace:" << workspace;
-    sendRequest(QStringLiteral("config.get"), QJsonObject());
+    QJsonObject params;
+    params[QStringLiteral("name")]      = name.trimmed();
+    params[QStringLiteral("workspace")] = workspace.trimmed();
+
+    qDebug().noquote() << "[Gateway] agents.create:" << name
+                       << "workspace:" << workspace;
+    sendRequest(QStringLiteral("agents.create"), params);
+}
+
+/**
+ * @brief 删除 Agent（agents.delete RPC）
+ *
+ * params: { agentId, deleteFiles? }
+ * "main" 不可删除（服务端会拒绝）
+ */
+void GatewayClient::deleteAgent(const QString &agentId, bool deleteFiles)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
+        return;
+    }
+    if (agentId.trimmed().isEmpty()) {
+        emit agentDeleted(agentId, false,
+            QStringLiteral("agentId \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+
+    m_pendingDeleteId = agentId;
+
+    QJsonObject params;
+    params[QStringLiteral("agentId")]    = agentId.trimmed();
+    params[QStringLiteral("deleteFiles")] = deleteFiles;
+
+    qDebug().noquote() << "[Gateway] agents.delete:" << agentId
+                       << "deleteFiles:" << deleteFiles;
+    sendRequest(QStringLiteral("agents.delete"), params);
 }
 
 /**

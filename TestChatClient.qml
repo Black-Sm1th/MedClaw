@@ -177,14 +177,20 @@ ApplicationWindow {
     }
 
     /**
-     * @brief 创建新 Agent（config.get → config.patch → agents.list）
-     * @param agentId   新 agent ID
-     * @param workspace 工作空间路径
+     * @brief 创建新 Agent（agents.create RPC）
      */
-    function testCreateAgent(agentId, workspace) {
-        testAddLog("\u25b6 testCreateAgent() \u2192 id=" + agentId
+    function testCreateAgent(name, workspace) {
+        testAddLog("\u25b6 testCreateAgent() \u2192 name=" + name
                    + " workspace=" + workspace)
-        wsClient.createAgent(agentId, workspace)
+        wsClient.createAgent(name, workspace)
+    }
+
+    /**
+     * @brief 删除 Agent（agents.delete RPC）
+     */
+    function testDeleteAgent(agentId) {
+        testAddLog("\u25b6 testDeleteAgent() \u2192 " + agentId)
+        wsClient.deleteAgent(agentId, true)
     }
 
     /**
@@ -380,6 +386,12 @@ ApplicationWindow {
         function onAgentCreated(agentId, success, message) {
             var tag = success ? "\u2714" : "\u2716"
             testAddLog("\u25c6 agentCreated \u2192 " + tag + " " + message)
+        }
+
+        /// Agent 删除结果
+        function onAgentDeleted(agentId, success, message) {
+            var tag = success ? "\u2714" : "\u2716"
+            testAddLog("\u25c6 agentDeleted \u2192 " + tag + " " + message)
         }
     }
 
@@ -1012,6 +1024,21 @@ ApplicationWindow {
                                             font.pixelSize: 9
                                             color: "#FF8F00"
                                             visible: modelData.isDefault === true
+                                        }
+
+                                        // 删除按钮（main 不可删）
+                                        Label {
+                                            text: "\u2716"
+                                            font.pixelSize: 12
+                                            color: testDelArea.containsMouse ? "#D32F2F" : "#BDBDBD"
+                                            visible: modelData.id !== "main"
+                                            MouseArea {
+                                                id: testDelArea
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: testDeleteAgent(modelData.id)
+                                            }
                                         }
                                     }
 
