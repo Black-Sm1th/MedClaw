@@ -30,7 +30,7 @@
  *      - 由 WsConfig 构建含 Ed25519 签名的 params
  *      - 发送 {type:"req", method:"connect", params:{...}}
  *   5. 收到 {type:"res", ok:true} → 握手完成 → 状态切换为 Connected
- *   6. 自动获取会话列表 + 加载当前会话历史
+ *   6. 自动刷新 agents / sessions / models（不预加载聊天历史；需用户选择 agent）
  *
  * 断开流程：
  *   - 主动断开：调用 disconnectFromServer() → socket.close()
@@ -262,6 +262,13 @@ public:
      */
     Q_INVOKABLE void switchAgent(const QString &agentId);
 
+    /**
+     * @brief 清除当前选中的 agent 会话（不加载任何历史）
+     *
+     * 用于「新建任务」入口：回到主聊天区但尚未绑定具体 agent。
+     */
+    Q_INVOKABLE void clearActiveAgentContext();
+
     /// 获取指定会话的 agent 身份信息（发送 agent.identity.get RPC）
     Q_INVOKABLE void getAgentIdentity(const QString &sessionKey = QString());
 
@@ -438,6 +445,10 @@ private:
 
     QString m_pendingCreateName;       ///< agents.create 待确认名称
     QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
+
+    /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
+    QString m_pendingFirstChatMessage;
+    bool m_pendingAgentCreateForChat = false;
 
     // ── 模型管理 ──
     QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）

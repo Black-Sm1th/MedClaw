@@ -12,6 +12,7 @@
  *   7. 业务方法（会话管理、历史加载、聊天发送）
  */
 #include "gateway_client.h"
+#include <QDateTime>
 #include <QDebug>
 #include <QUuid>
 #include <QNetworkRequest>
@@ -39,7 +40,7 @@ static const QLatin1String T_RES("res");
  *      - textMessageReceived   → onTextMessageReceived() 文本消息
  *      - error                 → onSocketError()       底层错误
  *   3. WsConfig 在自身构造时已自动生成 Ed25519 密钥对
- *   4. WsSession 在自身构造时已设置默认 sessionKey
+ *   4. WsSession 初始无选中会话，仅在用户选择 agent 或首条消息自动建 agent 后才有 sessionKey
  */
 GatewayClient::GatewayClient(QObject *parent)
     : QObject(parent)
@@ -172,6 +173,14 @@ void GatewayClient::setCurrentSessionKey(const QString &key)
         emit currentSessionChanged();
 }
 
+void GatewayClient::clearActiveAgentContext()
+{
+    m_pendingAgentCreateForChat = false;
+    m_pendingFirstChatMessage.clear();
+    if (m_session.setCurrentSessionKey(QString()))
+        emit currentSessionChanged();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  3. 连接生命周期
 // ═══════════════════════════════════════════════════════════════════════
@@ -194,6 +203,8 @@ void GatewayClient::connectToServer(const QString &url)
 
     m_challengeNonce.clear();
     m_pendingRequests.clear();
+    m_pendingAgentCreateForChat = false;
+    m_pendingFirstChatMessage.clear();
     setState(Connecting);
 
     // ── 构造带 Origin 头的请求 ──
@@ -592,6 +603,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (method == QLatin1String("agents.create") && !m_pendingCreateName.isEmpty()) {
             emit agentCreated(m_pendingCreateName, false, errMsg);
             m_pendingCreateName.clear();
+            m_pendingAgentCreateForChat = false;
+            m_pendingFirstChatMessage.clear();
         }
         if (method == QLatin1String("agents.delete") && !m_pendingDeleteId.isEmpty()) {
             emit agentDeleted(m_pendingDeleteId, false, errMsg);
@@ -621,8 +634,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         refreshAgents();
         refreshSessions();
         refreshModels();
-        loadHistory();
-        patchSessionModel(QString());
+        if (!m_session.currentSessionKey().trimmed().isEmpty())
+            patchSessionModel(QString());
         return;
     }
 
@@ -678,13 +691,26 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // agents.create 响应 → 创建成功，刷新列表
     if (method == QLatin1String("agents.create")) {
         const QString agentId = payload.value(QStringLiteral("agentId")).toString();
-        const QString name = m_pendingCreateName;
         m_pendingCreateName.clear();
+
+        QString bootstrapMsg;
+        if (m_pendingAgentCreateForChat) {
+            m_pendingAgentCreateForChat = false;
+            bootstrapMsg = m_pendingFirstChatMessage;
+            m_pendingFirstChatMessage.clear();
+        }
+
+        const bool doBootstrap = !bootstrapMsg.isEmpty() && !agentId.isEmpty();
+        if (doBootstrap)
+            switchAgent(agentId);
 
         qDebug() << "[Gateway] agents.create ok:" << agentId;
         emit agentCreated(agentId, true,
             QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId));
         refreshAgents();
+
+        if (doBootstrap)
+            sendChatMessage(bootstrapMsg);
         return;
     }
 
@@ -1083,6 +1109,8 @@ QString GatewayClient::sendRequest(const QString &method,
 void GatewayClient::loadHistory()
 {
     if (m_state != Connected) return;
+    if (m_session.currentSessionKey().trimmed().isEmpty())
+        return;
     sendRequest(QStringLiteral("messages.list"),
                 m_session.buildLoadHistoryParams());
 }
@@ -1110,6 +1138,11 @@ void GatewayClient::createNewSession()
     if (m_state != Connected) {
         emit errorOccurred(
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    if (m_session.currentSessionKey().trimmed().isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u8bf7\u5148\u5728\u4efb\u52a1\u8bb0\u5f55\u4e2d\u9009\u62e9 Agent"));
         return;
     }
     const QString reqId = sendRequest(
@@ -1270,6 +1303,10 @@ void GatewayClient::patchSessionModel(const QString &modelId)
         emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
         return;
     }
+    if (m_session.currentSessionKey().trimmed().isEmpty()) {
+        qDebug() << "[Gateway] patchSessionModel skipped (no active session)";
+        return;
+    }
 
     QJsonObject params;
     params[QStringLiteral("key")] = m_session.currentSessionKey();
@@ -1305,6 +1342,10 @@ void GatewayClient::switchAgent(const QString &agentId)
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
+    if (agentId.trimmed().isEmpty()) {
+        clearActiveAgentContext();
+        return;
+    }
 
     const QString sessionKey =
         QStringLiteral("agent:%1:main").arg(agentId);
@@ -1329,6 +1370,8 @@ void GatewayClient::getAgentIdentity(const QString &sessionKey)
     if (m_state != Connected) return;
     const QString key = sessionKey.isEmpty()
         ? m_session.currentSessionKey() : sessionKey;
+    if (key.trimmed().isEmpty())
+        return;
     sendRequest(QStringLiteral("agent.identity.get"),
                 m_session.buildAgentIdentityParams(key));
 }
@@ -1341,6 +1384,8 @@ void GatewayClient::loadChatHistory(const QString &sessionKey, int limit)
     if (m_state != Connected) return;
     const QString key = sessionKey.isEmpty()
         ? m_session.currentSessionKey() : sessionKey;
+    if (key.trimmed().isEmpty())
+        return;
     sendRequest(QStringLiteral("chat.history"),
                 m_session.buildChatHistoryParams(key, limit));
 }
@@ -1361,6 +1406,29 @@ void GatewayClient::sendChatMessage(const QString &message,
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
+    const QString trimmed = message.trimmed();
+    if (trimmed.isEmpty())
+        return;
+
+    if (m_pendingAgentCreateForChat) {
+        emit errorOccurred(QStringLiteral(
+            "\u6b63\u5728\u521b\u5efa\u65b0\u667a\u80fd\u4f53\uff0c\u8bf7\u7a0d\u5019"));
+        return;
+    }
+
+    const QString explicitKey = sessionKey.trimmed();
+    const QString activeKey = explicitKey.isEmpty()
+        ? m_session.currentSessionKey().trimmed() : explicitKey;
+
+    if (activeKey.isEmpty()) {
+        m_pendingFirstChatMessage = trimmed;
+        m_pendingAgentCreateForChat = true;
+        const QString autoName = QStringLiteral("task-%1")
+            .arg(QDateTime::currentMSecsSinceEpoch());
+        createAgent(autoName, QString());
+        return;
+    }
+
     sendRequest(QStringLiteral("chat.send"),
                 m_session.buildChatSendParams(message, sessionKey));
 }

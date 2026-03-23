@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 WsSession::WsSession()
-    : m_currentSessionKey(QStringLiteral("agent:main:main"))
+    : m_currentSessionKey(QString())
     , m_isStreaming(false)
 {
 }

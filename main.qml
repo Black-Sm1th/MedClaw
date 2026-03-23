@@ -47,6 +47,23 @@ ApplicationWindow {
                 cronRunsModel.append(runs[i])
             }
         }
+        function onAgentListChanged(){
+            // 不在列表刷新时自动选中 main；仅用户点击任务记录后才 switchAgent 并加载历史
+        }
+        function onAgentCreated(agentId, success, message){
+            if (success) {
+                leftMidPanel.activeAgentId = agentId
+                window.leftSelectedIndex = 0
+                // 首条消息自动建 agent 时已在 C++ 内 switchAgent + send；此处不再重复 switch
+            }
+        }
+        function onAgentDeleted(agentId, success, message){
+            if (success && leftMidPanel.activeAgentId === agentId) {
+                leftMidPanel.activeAgentId = ""
+                chatModel.clear()
+                wsClient.clearActiveAgentContext()
+            }
+        }
         function onErrorOccurred(message){
             console.warn("[Gateway Error]", message)
             errorToast.text = message
@@ -129,7 +146,12 @@ ApplicationWindow {
                 width: parent.width - 32
                 height: parent.height - 56
                 color: "transparent"
+
+                // 当前选中的 agent ID（用于高亮）
+                property string activeAgentId: ""
+
                 Column{
+                    id: leftMenuColumn
                     spacing: 12
                     width: parent.width
                     ImageButton{
@@ -186,7 +208,14 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: window.leftSelectedIndex = index
+                                    onClicked: {
+                                        window.leftSelectedIndex = index
+                                        if (modelData === "新建任务") {
+                                            leftMidPanel.activeAgentId = ""
+                                            chatModel.clear()
+                                            wsClient.clearActiveAgentContext()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -222,7 +251,6 @@ ApplicationWindow {
                                         }else if(modelData === "history"){
                                             return "qrc:/images/history.png"
                                         }
-
                                     }
                                 }
                                 MouseArea {
@@ -230,7 +258,118 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: window.leftSelectedIndex = index
+                                    onClicked: {
+                                        window.leftSelectedIndex = index
+                                        if (modelData === "新建任务") {
+                                            leftMidPanel.activeAgentId = ""
+                                            chatModel.clear()
+                                            wsClient.clearActiveAgentContext()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ═══════════════════════════════════════════════
+                //  任务记录列表（agent 列表）
+                // ═══════════════════════════════════════════════
+                Item {
+                    visible: !window.sidebarCollapsed
+                    anchors.top: leftMenuColumn.bottom
+                    anchors.topMargin: 16
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 16
+                    width: parent.width
+
+                    // 分隔标题
+                    Label {
+                        id: taskRecordLabel
+                        text: "任务记录"
+                        font.pixelSize: 12
+                        color: "#80000000"
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                    }
+
+                    // 可滚动的 agent 列表
+                    ScrollView {
+                        id: agentListScrollView
+                        anchors.top: taskRecordLabel.bottom
+                        anchors.topMargin: 8
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        Column {
+                            spacing: 2
+                            width: agentListScrollView.width
+
+                            Repeater {
+                                model: wsClient.agentList
+
+                                delegate: Rectangle {
+                                    id: agentItemRect
+                                    width: agentListScrollView.width
+                                    height: 55
+                                    radius: 8
+                                    color: {
+                                        var isActive = (modelData.id === leftMidPanel.activeAgentId)
+                                        if (isActive) return "#E6E7EB"
+                                        if (agentItemMouse.containsMouse) return "#0A000000"
+                                        return "transparent"
+                                    }
+
+                                    Column {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 8
+                                        anchors.right: agentDeleteBtn.left
+                                        anchors.rightMargin: 4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 2
+
+                                        Row {
+                                            spacing: 4
+                                            width: parent.width
+                                            Label {
+                                                text: modelData.name || modelData.id || ""
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                                width: parent.width - (cronTag.parent.visible ? cronTag.parent.width + 4 : 0)
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+
+                                        // 时间显示
+                                        Label {
+                                            text: {
+                                                var sk = modelData.sessionKey || ""
+                                                if (sk) {
+                                                    var parts = sk.split(":")
+                                                    if (parts.length >= 2) return parts[1]
+                                                }
+                                                return modelData.id || ""
+                                            }
+                                            font.pixelSize: 11
+                                            color: "#73000000"
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: agentItemMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            leftMidPanel.activeAgentId = modelData.id
+                                            window.leftSelectedIndex = 5
+                                            wsClient.switchAgent(modelData.id)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -391,7 +530,7 @@ ApplicationWindow {
             Rectangle{
                 id: newTaskRec
                 anchors.fill: parent
-                visible: window.leftSelectedIndex === 0
+                visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 5
                 property bool hasMessages: chatModel.count > 0
 
                 function doSendMessage() {
@@ -467,7 +606,7 @@ ApplicationWindow {
                                 anchors.left: chatBubble.isUser ? undefined : parent.left
                                 anchors.right: chatBubble.isUser ? parent.right : undefined
                                 anchors.top: parent.top
-                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.width)
+                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.isUser ? chatBubble.width * 0.75 : chatBubble.width)
                                 height: bubbleText.implicitHeight + 24
                                 radius: 12
                                 color: chatBubble.isUser ? "#EBEDF0" : "transparent"
@@ -475,7 +614,7 @@ ApplicationWindow {
                                 Text {
                                     id: bubbleText
                                     text: content
-                                    width: Math.min(implicitWidth, chatBubble.width * 0.75 - 32)
+                                    width: Math.min(implicitWidth, chatBubble.isUser ? chatBubble.width * 0.75 - 32 : chatBubble.width)
                                     wrapMode: Text.Wrap
                                     font.pixelSize: 16
                                     anchors.centerIn: parent
