@@ -20,7 +20,7 @@ WsConfig::WsConfig()
 #if defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM)
     , m_token(QStringLiteral("25e30855b27e123e31731de3769e4149380b8a5f89f3f5b5"))
 #else
-    , m_token(QStringLiteral("ac07de8b0e5e599bbdfb72f9664c73ca20cd49540d88d21f"))
+    , m_token(QStringLiteral("25e30855b27e123e31731de3769e4149380b8a5f89f3f5b5"))
 #endif
 // ── 客户端身份（需与 Gateway 白名单中的 client.id 匹配） ──
 // Windows 部署的 OpenClaw-CN 使用 clawdbot-control-ui

@@ -120,6 +120,18 @@ QVariantList GatewayClient::skillList() const
     return m_skill.skillList();
 }
 
+/// 委托给 WsScheduledTask 获取任务列表
+QVariantList GatewayClient::cronJobs() const
+{
+    return m_scheduledTask.jobList();
+}
+
+/// 委托给 WsScheduledTask 获取 cron 服务状态
+QVariantMap GatewayClient::cronServiceStatus() const
+{
+    return m_scheduledTask.cronStatus();
+}
+
 /// 获取当前 agent 身份信息
 QVariantMap GatewayClient::agentIdentity() const
 {
@@ -393,7 +405,14 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     // ── ② tick / heartbeat：心跳（当前忽略） ──
     if (event == QLatin1String("tick")
         || event == QLatin1String("heartbeat")) {
-        // 预留：可转发给 m_scheduledTask.handleTick()
+        return;
+    }
+
+    // ── ②.5 cron 事件：定时任务状态变更推送 ──
+    if (event == QLatin1String("cron")) {
+        qDebug() << "[Gateway] cron event:" << payload;
+        emit cronStatusChanged();
+        refreshCronJobs(true);
         return;
     }
 
@@ -754,6 +773,70 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 }
             }
         }
+        return;
+    }
+
+    // ── 定时任务相关响应 ──
+
+    // cron.list 响应 → 委托 WsScheduledTask 解析
+    if (method == QLatin1String("cron.list")) {
+        m_scheduledTask.parseJobListResponse(payload);
+        emit cronJobsChanged();
+        return;
+    }
+
+    // cron.status 响应
+    if (method == QLatin1String("cron.status")) {
+        m_scheduledTask.parseCronStatusResponse(payload);
+        emit cronStatusChanged();
+        return;
+    }
+
+    // cron.add 响应 → 新任务入缓存
+    if (method == QLatin1String("cron.add")) {
+        const QString jobId = m_scheduledTask.parseJobAddResponse(payload);
+        if (!jobId.isEmpty()) {
+            emit cronJobsChanged();
+            emit cronJobAdded(jobId);
+        }
+        return;
+    }
+
+    // cron.update 响应 → 更新缓存
+    if (method == QLatin1String("cron.update")) {
+        const QString jobId = m_scheduledTask.parseJobUpdateResponse(payload);
+        if (!jobId.isEmpty()) {
+            emit cronJobsChanged();
+            emit cronJobUpdated(jobId);
+        }
+        return;
+    }
+
+    // cron.remove 响应 → 从缓存移除
+    if (method == QLatin1String("cron.remove")) {
+        const QString jobId = m_scheduledTask.lastOperatedJobId();
+        if (m_scheduledTask.parseJobRemoveResponse(jobId, payload)) {
+            emit cronJobsChanged();
+            emit cronJobRemoved(jobId);
+        }
+        m_scheduledTask.clearLastOperatedJobId();
+        return;
+    }
+
+    // cron.run 响应 → 手动触发结果
+    if (method == QLatin1String("cron.run")) {
+        m_scheduledTask.parseRunResponse(payload);
+        const QString jobId = m_scheduledTask.lastOperatedJobId();
+        if (!jobId.isEmpty())
+            emit cronRunTriggered(jobId);
+        m_scheduledTask.clearLastOperatedJobId();
+        return;
+    }
+
+    // cron.runs 响应 → 执行记录
+    if (method == QLatin1String("cron.runs")) {
+        m_scheduledTask.parseRunsResponse(payload);
+        emit cronRunsLoaded(m_scheduledTask.runList());
         return;
     }
 
@@ -1280,4 +1363,169 @@ void GatewayClient::sendChatMessage(const QString &message,
     }
     sendRequest(QStringLiteral("chat.send"),
                 m_session.buildChatSendParams(message, sessionKey));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  8. 定时任务管理（QML 调用入口）
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief 刷新定时任务列表
+ * @param includeDisabled 是否包含已禁用的任务
+ *
+ * 发送 cron.list RPC，响应在 handleResponse() 中由 WsScheduledTask 解析。
+ */
+void GatewayClient::refreshCronJobs(bool includeDisabled)
+{
+    if (m_state != Connected) return;
+    sendRequest(QStringLiteral("cron.list"),
+                m_scheduledTask.buildListParams(includeDisabled));
+}
+
+/**
+ * @brief 获取 cron 服务状态
+ *
+ * 发送 cron.status RPC，响应在 handleResponse() 中解析。
+ */
+void GatewayClient::refreshCronStatus()
+{
+    if (m_state != Connected) return;
+    sendRequest(QStringLiteral("cron.status"),
+                m_scheduledTask.buildStatusParams());
+}
+
+/**
+ * @brief 添加 cron 表达式定时任务
+ * @param name      任务名称（如 "每日晨报"）
+ * @param cronExpr  cron 表达式（如 "0 9 * * *" 表示每天 9 点）
+ * @param message   触发时发送给 agent 的消息
+ * @param tz        时区（默认 Asia/Shanghai）
+ *
+ * 常用 cron 表达式示例：
+ *   "0 9 * * *"     每天 9:00
+ *   "0 9 * * 1-5"   周一至周五 9:00
+ *   "30 8,12 * * *"  每天 8:30 和 12:30
+ *   "0 * /6 * * *"   每 6 小时
+ */
+void GatewayClient::addCronJob(const QString &name,
+                                const QString &cronExpr,
+                                const QString &message,
+                                const QString &tz)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    sendRequest(QStringLiteral("cron.add"),
+                m_scheduledTask.buildAddCronJobParams(name, cronExpr,
+                                                      message, tz));
+}
+
+/**
+ * @brief 添加固定间隔定时任务
+ * @param name        任务名称
+ * @param intervalSec 执行间隔（秒），内部转换为毫秒
+ * @param message     触发时发送给 agent 的消息
+ */
+void GatewayClient::addIntervalJob(const QString &name,
+                                    int intervalSec,
+                                    const QString &message)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    sendRequest(QStringLiteral("cron.add"),
+                m_scheduledTask.buildAddIntervalJobParams(
+                    name, intervalSec * 1000, message));
+}
+
+/**
+ * @brief 添加一次性定时任务
+ * @param name     任务名称
+ * @param dateTime 执行时间（ISO 8601 格式，如 "2026-03-20T09:00:00"）
+ * @param message  触发时发送给 agent 的消息
+ *
+ * 任务执行后自动删除。
+ */
+void GatewayClient::addOneTimeJob(const QString &name,
+                                   const QString &dateTime,
+                                   const QString &message)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    const QDateTime at = QDateTime::fromString(dateTime, Qt::ISODate);
+    if (!at.isValid()) {
+        emit errorOccurred(
+            QStringLiteral("\u65e0\u6548\u7684\u65f6\u95f4\u683c\u5f0f: %1").arg(dateTime));
+        return;
+    }
+    sendRequest(QStringLiteral("cron.add"),
+                m_scheduledTask.buildAddOneTimeJobParams(name, at, message));
+}
+
+/**
+ * @brief 启用或禁用定时任务
+ * @param jobId   任务 ID
+ * @param enabled true=启用, false=禁用
+ */
+void GatewayClient::setCronJobEnabled(const QString &jobId, bool enabled)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    sendRequest(QStringLiteral("cron.update"),
+                m_scheduledTask.buildToggleEnabledParams(jobId, enabled));
+}
+
+/**
+ * @brief 删除定时任务
+ * @param jobId 要删除的任务 ID
+ */
+void GatewayClient::removeCronJob(const QString &jobId)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    m_scheduledTask.setLastOperatedJobId(jobId);
+    sendRequest(QStringLiteral("cron.remove"),
+                m_scheduledTask.buildRemoveParams(jobId));
+}
+
+/**
+ * @brief 手动触发定时任务立即执行一次
+ * @param jobId 任务 ID
+ *
+ * 使用 force 模式，忽略调度时间限制。
+ */
+void GatewayClient::runCronJobNow(const QString &jobId)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    m_scheduledTask.setLastOperatedJobId(jobId);
+    sendRequest(QStringLiteral("cron.run"),
+                m_scheduledTask.buildRunParams(jobId));
+}
+
+/**
+ * @brief 查询定时任务的执行记录
+ * @param jobId 任务 ID（空则查询所有任务的记录）
+ */
+void GatewayClient::loadCronRuns(const QString &jobId)
+{
+    if (m_state != Connected) return;
+    sendRequest(QStringLiteral("cron.runs"),
+                m_scheduledTask.buildRunsParams(jobId));
 }

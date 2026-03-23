@@ -68,6 +68,10 @@ class GatewayClient : public QObject
                WRITE setCurrentSessionKey NOTIFY currentSessionChanged)
     Q_PROPERTY(QVariantList skillList READ skillList
                NOTIFY skillListChanged)
+    Q_PROPERTY(QVariantList cronJobs READ cronJobs
+               NOTIFY cronJobsChanged)
+    Q_PROPERTY(QVariantMap cronServiceStatus READ cronServiceStatus
+               NOTIFY cronStatusChanged)
     Q_PROPERTY(QVariantMap agentIdentity READ agentIdentity
                NOTIFY agentIdentityChanged)
     Q_PROPERTY(QVariantList agentList READ agentList
@@ -114,6 +118,10 @@ public:
     QString currentSessionKey() const;
     /// 获取技能列表（委托给 WsSkill）
     QVariantList skillList() const;
+    /// 获取定时任务列表（委托给 WsScheduledTask）
+    QVariantList cronJobs() const;
+    /// 获取 cron 服务状态（委托给 WsScheduledTask）
+    QVariantMap cronServiceStatus() const;
     /// 获取当前 agent 身份信息
     QVariantMap agentIdentity() const;
     /// 获取 agent 列表（通过 agents.list RPC 获取）
@@ -193,6 +201,58 @@ public:
     /// 启用/禁用指定技能（发送 skills.update RPC）
     Q_INVOKABLE void setSkillEnabled(const QString &skillKey, bool enabled);
 
+    // ── 定时任务管理 ──
+
+    /// 刷新定时任务列表（发送 cron.list RPC）
+    Q_INVOKABLE void refreshCronJobs(bool includeDisabled = false);
+
+    /// 获取 cron 服务状态（发送 cron.status RPC）
+    Q_INVOKABLE void refreshCronStatus();
+
+    /**
+     * @brief 添加 cron 表达式定时任务
+     * @param name      任务名称
+     * @param cronExpr  cron 表达式（如 "0 9 * * 1-5"）
+     * @param message   触发时发送给 agent 的消息
+     * @param tz        时区（默认 Asia/Shanghai）
+     */
+    Q_INVOKABLE void addCronJob(const QString &name,
+                                const QString &cronExpr,
+                                const QString &message,
+                                const QString &tz = QStringLiteral("Asia/Shanghai"));
+
+    /**
+     * @brief 添加固定间隔定时任务
+     * @param name      任务名称
+     * @param intervalSec 执行间隔（秒）
+     * @param message   触发时发送给 agent 的消息
+     */
+    Q_INVOKABLE void addIntervalJob(const QString &name,
+                                    int intervalSec,
+                                    const QString &message);
+
+    /**
+     * @brief 添加一次性定时任务
+     * @param name      任务名称
+     * @param dateTime  执行时间（ISO 格式字符串或 QML Date）
+     * @param message   触发时发送给 agent 的消息
+     */
+    Q_INVOKABLE void addOneTimeJob(const QString &name,
+                                   const QString &dateTime,
+                                   const QString &message);
+
+    /// 启用/禁用定时任务
+    Q_INVOKABLE void setCronJobEnabled(const QString &jobId, bool enabled);
+
+    /// 删除定时任务
+    Q_INVOKABLE void removeCronJob(const QString &jobId);
+
+    /// 手动触发定时任务
+    Q_INVOKABLE void runCronJobNow(const QString &jobId);
+
+    /// 查询执行记录（空 jobId 查全部）
+    Q_INVOKABLE void loadCronRuns(const QString &jobId = QString());
+
     /**
      * @brief 切换 Agent（依次发送 agent.identity.get + chat.history + sessions.list）
      * @param agentId agent ID（如 "main"、"coder"）
@@ -251,6 +311,15 @@ signals:
     void skillListChanged();         ///< 技能列表更新
     void skillUpdated(const QString &skillKey, bool enabled); ///< 技能状态变更
 
+    // ── 定时任务管理 ──
+    void cronJobsChanged();          ///< 任务列表更新
+    void cronStatusChanged();        ///< cron 服务状态更新
+    void cronJobAdded(const QString &jobId);   ///< 新任务添加成功
+    void cronJobRemoved(const QString &jobId); ///< 任务删除成功
+    void cronJobUpdated(const QString &jobId); ///< 任务更新成功
+    void cronRunTriggered(const QString &jobId); ///< 手动触发成功
+    void cronRunsLoaded(const QVariantList &runs); ///< 执行记录加载完成
+
     // ── Agent 管理 ──
     void agentIdentityChanged();     ///< Agent 身份信息更新
     void agentListChanged();         ///< Agent 列表更新
@@ -289,7 +358,8 @@ private:
      *
      * 处理流程：
      *   1. connect.challenge → 提取 nonce，发送 connect 请求
-     *   2. tick / heartbeat → 忽略（后续可转发给 WsScheduledTask）
+     *   2. tick / heartbeat → 忽略
+     *   2.5 cron → 定时任务状态推送，刷新任务列表
      *   3. agent / chat 事件 → 委托给 WsSession::parseEvent()
      *      根据返回的 WsEventResult 发射对应信号
      */
@@ -318,6 +388,8 @@ private:
      *   4. chat.send（/new）→ 刷新列表，发射 sessionCreated
      *   5. session.delete → 刷新列表
      *   6. messages.list → 委托 WsSession 解析，发射 historyLoaded
+     *   7. cron.list / cron.status / cron.add / cron.update /
+     *      cron.remove / cron.run / cron.runs → 委托 WsScheduledTask 解析
      */
     void handleResponse(const QJsonObject &msg);
 

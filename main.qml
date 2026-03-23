@@ -9,7 +9,7 @@ ApplicationWindow {
     width: 1440
     height: 800
     visible: true
-    title: qsTr("AetherMedClaw_Desk")
+    title: qsTr("AetherMED_ClawDESK")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
@@ -17,7 +17,7 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://127.0.0.1:18789"
+    property string wsServerUrl: "ws://192.168.124.58:18789"
 
     // 启动时自动连接 WebSocket 服务器
     Component.onCompleted: {
@@ -28,7 +28,66 @@ ApplicationWindow {
         function onConnectionStateChanged(){
             if(wsClient.connectionState === 3){
                 wsClient.refreshSkills()
+                wsClient.refreshCronJobs(true)
+                wsClient.refreshCronStatus()
             }
+        }
+        function onCronJobAdded(jobId){
+            wsClient.refreshCronJobs(true)
+        }
+        function onCronJobRemoved(jobId){
+            wsClient.refreshCronJobs(true)
+        }
+        function onCronJobUpdated(jobId){
+            wsClient.refreshCronJobs(true)
+        }
+        function onCronRunsLoaded(runs){
+            cronRunsModel.clear()
+            for(var i = 0; i < runs.length; i++){
+                cronRunsModel.append(runs[i])
+            }
+        }
+        function onErrorOccurred(message){
+            console.warn("[Gateway Error]", message)
+            errorToast.text = message
+            errorToast.visible = true
+            errorToastTimer.restart()
+        }
+    }
+    ListModel { id: cronRunsModel }
+
+    // 错误提示 Toast
+    Rectangle {
+        id: errorToast
+        property string text: ""
+        visible: false
+        z: 9999
+        width: Math.min(errorToastLabel.implicitWidth + 40, window.width - 80)
+        height: 44
+        radius: 8
+        color: "#CC000000"
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 60
+
+        Label {
+            id: errorToastLabel
+            text: errorToast.text
+            color: "#FFFFFF"
+            font.pixelSize: 14
+            anchors.centerIn: parent
+            width: parent.width - 32
+            elide: Text.ElideRight
+        }
+
+        Timer {
+            id: errorToastTimer
+            interval: 5000
+            onTriggered: errorToast.visible = false
+        }
+
+        Behavior on visible {
+            NumberAnimation { property: "opacity"; duration: 200 }
         }
     }
     Rectangle{
@@ -358,7 +417,7 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Label{
-                        text: "AetherMedClaw_Desk"
+                        text: "AetherMED_ClawDESK"
                         font.family: "Alimama ShuHeiTi"
                         font.pixelSize: 36
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -1324,6 +1383,26 @@ ApplicationWindow {
                 id: scheduledTaskRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 1
+
+                // 调度类型显示名映射
+                function scheduleDisplay(kind, expr) {
+                    if (kind === "cron") {
+                        if (expr === "0 * * * *") return "每小时"
+                        if (/^[\d]+ [\d]+ \* \* \*$/.test(expr)) return "每天"
+                        if (/^[\d]+ [\d]+ \* \* [0-6,-]+$/.test(expr)) return "每周"
+                        return "cron: " + expr
+                    }
+                    if (kind === "every") {
+                        var ms = parseInt(expr)
+                        if (ms >= 86400000) return "每 " + Math.round(ms/86400000) + " 天"
+                        if (ms >= 3600000) return "每 " + Math.round(ms/3600000) + " 小时"
+                        if (ms >= 60000) return "每 " + Math.round(ms/60000) + " 分钟"
+                        return "每 " + Math.round(ms/1000) + " 秒"
+                    }
+                    if (kind === "at") return "不重复"
+                    return kind || "未知"
+                }
+
                 Column{
                     anchors.fill: parent
                     leftPadding: 60
@@ -1350,95 +1429,171 @@ ApplicationWindow {
                                 color: "#A6000000"
                             }
                         }
-                        CustomButton{
-                            width: 80
-                            height: 36
-                            backgroundColor: "#0F006BFF"
-                            textColor: "#006BFF"
-                            borderWidth: 0
-                            text: "+ 新建"
-                            fontSize: 14
+                        Row {
                             anchors.right: parent.right
-                            onClicked: newTaskDialog.open()
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
+                            CustomButton{
+                                width: 80
+                                height: 36
+                                backgroundColor: "#0F006BFF"
+                                textColor: "#006BFF"
+                                borderWidth: 0
+                                text: "+ 新建"
+                                fontSize: 14
+                                onClicked: {
+                                    newTaskTitleInput.text = ""
+                                    newTaskPromptInput.text = ""
+                                    newTaskRepeatSelect.currentIndex = 0
+                                    newTaskDialog.open()
+                                }
+                            }
                         }
                     }
                     TabBarView{
                         id: scheduledTaskTab
                         lineWidth: parent.width - 120
-                        tabs: [ { text: "任务"}, { text: "历史" }]
+                        tabs: [ { text: "任务", badge: wsClient.cronJobs.length }, { text: "历史" }]
+                        onTabClicked: {
+                            if (index === 1) wsClient.loadCronRuns()
+                        }
                     }
+
+                    // ═══════════ 任务 Tab ═══════════
                     ScrollView {
                         id: scheduledTaskScrollView
                         width: parent.width
                         height: parent.height - 32 - scheduledTaskTitleRec.height - scheduledTaskTab.height - 24
                         clip: true
+                        visible: scheduledTaskTab.currentIndex === 0
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         Column{
                             spacing: 12
                             width: parent.width
-                            Repeater{
-                                model: ListModel {
-                                    ListElement { title: "标题标题标题"; repeat: "不重复"; time: "2026/3/13 09:00"; enabled: true }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
-                                    ListElement { title: "每日摘要推送"; repeat: "每天"; time: "2026/3/14 08:00"; enabled: false }
+
+                            // 空状态
+                            Rectangle {
+                                width: scheduledTaskScrollView.width - 120
+                                height: 120
+                                visible: wsClient.cronJobs.length === 0
+                                color: "transparent"
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: qsTr("暂无定时任务，点击「+ 新建」创建第一个任务")
+                                    font.pixelSize: 14
+                                    color: "#A6000000"
                                 }
+                            }
+
+                            Repeater{
+                                model: wsClient.cronJobs
                                 delegate: Rectangle {
                                     width: scheduledTaskScrollView.width - 120
                                     height: 76
                                     radius: 8
-                                    color: "#F7F9FA"
+                                    color: taskItemMouse.containsMouse ? "#F0F2F5" : "#F7F9FA"
+
+                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                    MouseArea {
+                                        id: taskItemMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.NoButton
+                                    }
 
                                     Column {
                                         anchors.left: parent.left
                                         anchors.leftMargin: 16
+                                        anchors.right: taskRightRow.left
+                                        anchors.rightMargin: 16
                                         anchors.verticalCenter: parent.verticalCenter
                                         spacing: 4
 
                                         Label {
-                                            text: model.title
+                                            text: modelData.name || ""
                                             font.pixelSize: 16
                                             font.weight: Font.Bold
-                                            color: "#D9000000"
+                                            color: modelData.enabled ? "#D9000000" : "#80000000"
+                                            width: parent.width
+                                            elide: Text.ElideRight
                                         }
                                         Row {
                                             spacing: 8
                                             Label {
-                                                text: model.repeat
-                                                font.pixelSize: 16
+                                                text: scheduledTaskRec.scheduleDisplay(
+                                                          modelData.scheduleKind || "",
+                                                          modelData.scheduleExpr || "")
+                                                font.pixelSize: 14
                                                 color: "#73000000"
                                             }
                                             Label {
-                                                text: model.time
-                                                font.pixelSize: 16
+                                                text: {
+                                                    var next = modelData.nextRunAt || ""
+                                                    if (next) return "下次: " + next.replace("T", " ").substring(0, 16)
+                                                    var last = modelData.lastRunAt || ""
+                                                    if (last) return "上次: " + last.replace("T", " ").substring(0, 16)
+                                                    return ""
+                                                }
+                                                font.pixelSize: 14
                                                 color: "#73000000"
+                                                visible: text !== ""
+                                            }
+                                            // 载荷类型标签
+                                            Rectangle {
+                                                visible: (modelData.payloadKind || "") === "systemEvent"
+                                                width: sysLabel.implicitWidth + 12
+                                                height: 20
+                                                radius: 4
+                                                color: "#0FFF8800"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                Label {
+                                                    id: sysLabel
+                                                    text: "系统事件"
+                                                    font.pixelSize: 11
+                                                    color: "#FF8800"
+                                                    anchors.centerIn: parent
+                                                }
                                             }
                                         }
                                     }
 
                                     Row {
+                                        id: taskRightRow
                                         anchors.right: parent.right
                                         anchors.rightMargin: 16
                                         anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 40
+                                        spacing: 16
                                         height: 22
+
+                                        // 立即运行
                                         ImageButton {
-                                            source: "qrc:/images/more.png"
+                                            source: "qrc:/images/send.png"
+                                            width: 20; height: 20
                                             anchors.verticalCenter: parent.verticalCenter
+                                            visible: taskItemMouse.containsMouse
+                                            ToolTip.visible: hovered
+                                            ToolTip.text: "立即运行"
+                                            onClicked: wsClient.runCronJobNow(modelData.id)
                                         }
 
+                                        // 删除
+                                        ImageButton {
+                                            source: "qrc:/images/delete.png"
+                                            width: 20; height: 20
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: taskItemMouse.containsMouse
+                                            ToolTip.visible: hovered
+                                            ToolTip.text: "删除"
+                                            onClicked: wsClient.removeCronJob(modelData.id)
+                                        }
+
+                                        // 开关
                                         Switch {
                                             id: taskSwitch
-                                            checked: model.enabled
+                                            checked: modelData.enabled || false
                                             anchors.verticalCenter: parent.verticalCenter
+                                            onToggled: wsClient.setCronJobEnabled(modelData.id, checked)
                                             MouseArea {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
@@ -1470,6 +1625,117 @@ ApplicationWindow {
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ═══════════ 历史 Tab ═══════════
+                    ScrollView {
+                        id: cronHistoryScrollView
+                        width: parent.width
+                        height: parent.height - 32 - scheduledTaskTitleRec.height - scheduledTaskTab.height - 24
+                        clip: true
+                        visible: scheduledTaskTab.currentIndex === 1
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                        Column {
+                            spacing: 8
+                            width: parent.width
+
+                            Rectangle {
+                                width: cronHistoryScrollView.width - 120
+                                height: 120
+                                visible: cronRunsModel.count === 0
+                                color: "transparent"
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: qsTr("暂无执行记录")
+                                    font.pixelSize: 14
+                                    color: "#A6000000"
+                                }
+                            }
+
+                            Repeater {
+                                model: cronRunsModel
+                                delegate: Rectangle {
+                                    width: cronHistoryScrollView.width - 120
+                                    height: 64
+                                    radius: 8
+                                    color: "#F7F9FA"
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 12
+
+                                        // 状态指示圆点
+                                        Rectangle {
+                                            width: 10; height: 10; radius: 5
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            color: {
+                                                var s = model.status || ""
+                                                if (s === "ok") return "#22C55E"
+                                                if (s === "error") return "#EF4444"
+                                                if (s === "skipped") return "#F59E0B"
+                                                return "#D9D9D9"
+                                            }
+                                        }
+
+                                        Column {
+                                            spacing: 4
+                                            Label {
+                                                text: model.jobName || model.jobId || ""
+                                                font.pixelSize: 14
+                                                font.weight: Font.DemiBold
+                                                color: "#D9000000"
+                                            }
+                                            Row {
+                                                spacing: 12
+                                                Label {
+                                                    text: {
+                                                        var s = model.status || ""
+                                                        if (s === "ok") return "成功"
+                                                        if (s === "error") return "失败"
+                                                        if (s === "skipped") return "跳过"
+                                                        return s
+                                                    }
+                                                    font.pixelSize: 12
+                                                    color: {
+                                                        var s = model.status || ""
+                                                        if (s === "ok") return "#22C55E"
+                                                        if (s === "error") return "#EF4444"
+                                                        return "#73000000"
+                                                    }
+                                                }
+                                                Label {
+                                                    text: (model.startedAt || "").replace("T", " ").substring(0, 19)
+                                                    font.pixelSize: 12
+                                                    color: "#73000000"
+                                                    visible: (model.startedAt || "") !== ""
+                                                }
+                                                Label {
+                                                    text: model.durationMs ? (model.durationMs + " ms") : ""
+                                                    font.pixelSize: 12
+                                                    color: "#73000000"
+                                                    visible: text !== ""
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // 错误信息
+                                    Label {
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: model.error || ""
+                                        font.pixelSize: 12
+                                        color: "#EF4444"
+                                        visible: (model.error || "") !== ""
+                                        width: Math.min(implicitWidth, 200)
+                                        elide: Text.ElideRight
                                     }
                                 }
                             }
@@ -2191,6 +2457,7 @@ ApplicationWindow {
                             color: "#D9000000"
                         }
                         SingleLineTextInput {
+                            id: newTaskTitleInput
                             width: parent.width
                             inputHeight: 40
                             inputRadius: 8
@@ -2208,6 +2475,7 @@ ApplicationWindow {
                             color: "#D9000000"
                         }
                         MultiLineTextInput {
+                            id: newTaskPromptInput
                             width: parent.width
                             inputHeight: 120
                             placeholderText: qsTr("请输入要执行的提示词")
@@ -2226,22 +2494,45 @@ ApplicationWindow {
                             width: parent.width
                             spacing: 12
                             DropdownSelect {
+                                id: newTaskRepeatSelect
                                 width: (parent.width - 24) / 3
                                 height: 40
-                                model: ["不重复", "每天", "每周"]
+                                model: ["不重复", "每天", "每周", "每小时", "自定义间隔"]
                                 currentIndex: 0
                                 borderColor: "#E6E7EB"
                                 borderWidth: 1
-                                alignment:Qt.AlignLeft
+                                alignment: Qt.AlignLeft
                             }
                             DatePicker {
+                                id: newTaskDatePicker
                                 width: (parent.width - 24) / 3
                                 height: 40
                             }
                             TimePicker {
+                                id: newTaskTimePicker
                                 width: (parent.width - 24) / 3
                                 height: 40
                             }
+                        }
+                    }
+
+                    // 自定义间隔输入（仅当选择"自定义间隔"时显示）
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        visible: newTaskRepeatSelect.currentIndex === 4
+                        Label {
+                            text: qsTr("执行间隔（秒）")
+                            font.pixelSize: 14
+                            color: "#D9000000"
+                        }
+                        SingleLineTextInput {
+                            id: newTaskIntervalInput
+                            width: parent.width
+                            inputHeight: 40
+                            inputRadius: 8
+                            placeholderText: qsTr("例如: 3600 = 每小时")
+                            fontSize: 14
                         }
                     }
 
@@ -2257,6 +2548,7 @@ ApplicationWindow {
                             width: parent.width
                             spacing: 8
                             SingleLineTextInput {
+                                id: newTaskWorkDirInput
                                 width: parent.width - 88
                                 inputHeight: 40
                                 inputRadius: 8
@@ -2273,9 +2565,7 @@ ApplicationWindow {
                                 borderWidth: 1
                                 text: qsTr("浏览")
                                 fontSize: 14
-                                onClicked: {
-
-                                }
+                                onClicked: workDirDialog.open()
                             }
                         }
                     }
@@ -2290,9 +2580,59 @@ ApplicationWindow {
                             backgroundColor: "#006BFF"
                             textColor: "#FFFFFF"
                             borderWidth: 0
-                            text: qsTr("重新生成")
+                            text: qsTr("创建")
                             fontSize: 14
-                            onClicked: newTaskDialog.close()
+                            onClicked: {
+                                var title = newTaskTitleInput.text.trim()
+                                var prompt = newTaskPromptInput.text.trim()
+                                console.log("[CronAdd] title='" + title + "' prompt='" + prompt.substring(0,50) + "' repeat=" + newTaskRepeatSelect.currentIndex)
+                                if (!title) {
+                                    errorToast.text = "请输入任务标题"
+                                    errorToast.visible = true
+                                    errorToastTimer.restart()
+                                    return
+                                }
+                                if (!prompt) {
+                                    errorToast.text = "请输入要执行的提示词"
+                                    errorToast.visible = true
+                                    errorToastTimer.restart()
+                                    return
+                                }
+
+                                var repeatIdx = newTaskRepeatSelect.currentIndex
+                                var y = newTaskDatePicker.selectedYear
+                                var m = newTaskDatePicker.selectedMonth
+                                var d = newTaskDatePicker.selectedDay
+                                var hh = newTaskTimePicker.selectedHour
+                                var mm = newTaskTimePicker.selectedMinute
+
+                                function pad(n) { return n < 10 ? "0" + n : "" + n }
+
+                                if (repeatIdx === 0) {
+                                    var dt = y + "-" + pad(m) + "-" + pad(d) + "T" + pad(hh) + ":" + pad(mm) + ":00"
+                                    console.log("[CronAdd] oneTime dateTime=" + dt)
+                                    wsClient.addOneTimeJob(title, dt, prompt)
+                                } else if (repeatIdx === 1) {
+                                    var cronExpr = mm + " " + hh + " * * *"
+                                    console.log("[CronAdd] daily cron=" + cronExpr)
+                                    wsClient.addCronJob(title, cronExpr, prompt)
+                                } else if (repeatIdx === 2) {
+                                    var dateObj = new Date(y, m - 1, d)
+                                    var dow = dateObj.getDay()
+                                    var cronExpr2 = mm + " " + hh + " * * " + dow
+                                    console.log("[CronAdd] weekly cron=" + cronExpr2)
+                                    wsClient.addCronJob(title, cronExpr2, prompt)
+                                } else if (repeatIdx === 3) {
+                                    var cronExpr3 = mm + " * * * *"
+                                    console.log("[CronAdd] hourly cron=" + cronExpr3)
+                                    wsClient.addCronJob(title, cronExpr3, prompt)
+                                } else if (repeatIdx === 4) {
+                                    var sec = parseInt(newTaskIntervalInput.text) || 3600
+                                    console.log("[CronAdd] interval sec=" + sec)
+                                    wsClient.addIntervalJob(title, sec, prompt)
+                                }
+                                newTaskDialog.close()
+                            }
                         }
                         CustomButton {
                             width: 96
@@ -2325,6 +2665,17 @@ ApplicationWindow {
         title: qsTr("选择文件夹")
         selectFolder: true
         onAccepted: {
+        }
+    }
+
+    FileDialog {
+        id: workDirDialog
+        title: qsTr("选择工作目录")
+        selectFolder: true
+        onAccepted: {
+            var path = workDirDialog.fileUrl.toString()
+            path = path.replace(/^file:\/\/\//, "")
+            newTaskWorkDirInput.text = path
         }
     }
 
