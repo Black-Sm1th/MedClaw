@@ -14,8 +14,10 @@
 #include "gateway_client.h"
 #include <QDateTime>
 #include <QDebug>
+#include <QJsonDocument>
 #include <QUuid>
 #include <QNetworkRequest>
+#include <algorithm>
 #include <limits>
 
 /// 帧类型常量：事件帧
@@ -162,6 +164,11 @@ QVariantList GatewayClient::modelList() const { return m_modelList; }
 
 /// 获取当前会话的模型信息
 QVariantMap GatewayClient::currentModel() const { return m_currentModel; }
+
+QVariantList GatewayClient::mcpList() const
+{
+    return m_mcpList;
+}
 
 /// 设置连接状态并通知 QML 属性绑定系统
 void GatewayClient::setState(ConnectionState state)
@@ -962,6 +969,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         refreshAgents();
         refreshSessions();
         refreshModels();
+        refreshMcpList();
         if (!m_session.currentSessionKey().trimmed().isEmpty())
             patchSessionModel(QString());
         return;
@@ -1219,6 +1227,20 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("cron.runs")) {
         m_scheduledTask.parseRunsResponse(payload);
         emit cronRunsLoaded(m_scheduledTask.runList());
+        return;
+    }
+
+    // config.get → 更新 baseHash 与 mcp.servers 列表
+    if (method == QLatin1String("config.get")) {
+        applyMcpListFromConfigGetPayload(payload);
+        emit mcpListChanged();
+        return;
+    }
+
+    // config.patch → Gateway 可能重启，再拉一次快照以刷新 hash / 列表
+    if (method == QLatin1String("config.patch")) {
+        qDebug() << "[Gateway] config.patch ok, follow-up config.get";
+        refreshMcpList();
         return;
     }
 
@@ -2016,4 +2038,166 @@ void GatewayClient::loadCronRuns(const QString &jobId)
     if (m_state != Connected) return;
     sendRequest(QStringLiteral("cron.runs"),
                 m_scheduledTask.buildRunsParams(jobId));
+}
+
+void GatewayClient::rebuildMcpListFromConfigObject(const QJsonObject &config)
+{
+    m_mcpList.clear();
+    const QJsonObject mcp = config.value(QStringLiteral("mcp")).toObject();
+    const QJsonObject servers = mcp.value(QStringLiteral("servers")).toObject();
+    QStringList keys;
+    for (auto it = servers.begin(); it != servers.end(); ++it)
+        keys.append(it.key());
+    std::sort(keys.begin(), keys.end());
+    for (const QString &key : keys) {
+        if (key.isEmpty())
+            continue;
+        const QJsonObject s = servers.value(key).toObject();
+        QVariantMap e;
+        e[QStringLiteral("name")] = key;
+        e[QStringLiteral("title")] = key;
+        const QString url = s.value(QStringLiteral("url")).toString().trimmed();
+        const QString cmd = s.value(QStringLiteral("command")).toString();
+        const bool isHttp = !url.isEmpty();
+        e[QStringLiteral("transportHttp")] = isHttp;
+        e[QStringLiteral("url")] = url;
+        e[QStringLiteral("command")] = cmd;
+        QString desc = s.value(QStringLiteral("description")).toString();
+        QStringList argLines;
+        const QJsonArray args = s.value(QStringLiteral("args")).toArray();
+        for (const QJsonValue &v : args)
+            argLines.append(v.toString());
+        e[QStringLiteral("argsText")] = argLines.join(QLatin1Char('\n'));
+        e[QStringLiteral("description")] = desc;
+        if (desc.isEmpty()) {
+            if (isHttp)
+                desc = url;
+            else {
+                QStringList parts;
+                if (!cmd.isEmpty())
+                    parts.append(cmd);
+                for (const QString &a : argLines) {
+                    if (!a.isEmpty())
+                        parts.append(a);
+                }
+                desc = parts.join(QLatin1Char(' '));
+            }
+        }
+        e[QStringLiteral("desc")] = desc;
+        e[QStringLiteral("icon")] = QStringLiteral("qrc:/images/skillIcon.png");
+        m_mcpList.append(e);
+    }
+}
+
+void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
+{
+    const QString h = payload.value(QStringLiteral("hash")).toString().trimmed();
+    if (!h.isEmpty())
+        m_configSnapshotHash = h;
+    rebuildMcpListFromConfigObject(payload.value(QStringLiteral("config")).toObject());
+}
+
+void GatewayClient::refreshMcpList()
+{
+    if (m_state != Connected)
+        return;
+    sendRequest(QStringLiteral("config.get"), QJsonObject());
+}
+
+void GatewayClient::applyMcpServer(bool isEdit,
+                                   const QString &originalServerName,
+                                   const QString &serverName,
+                                   bool useHttp,
+                                   const QString &stdioCommand,
+                                   const QString &stdioArgsMultiline,
+                                   const QString &httpUrl,
+                                   const QString &description)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    const QString name = serverName.trimmed();
+    if (name.isEmpty()) {
+        emit errorOccurred(
+            QStringLiteral("MCP \u670d\u52a1\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+    QJsonObject serverObj;
+    if (useHttp) {
+        const QString u = httpUrl.trimmed();
+        if (u.isEmpty()) {
+            emit errorOccurred(
+                QStringLiteral("\u8bf7\u586b\u5199 MCP \u670d\u52a1 URL"));
+            return;
+        }
+        serverObj[QStringLiteral("url")] = u;
+    } else {
+        const QString c = stdioCommand.trimmed();
+        if (c.isEmpty()) {
+            emit errorOccurred(
+                QStringLiteral("\u8bf7\u9009\u62e9\u6216\u586b\u5199\u542f\u52a8\u547d\u4ee4"));
+            return;
+        }
+        serverObj[QStringLiteral("command")] = c;
+        QJsonArray args;
+        const QStringList lines = stdioArgsMultiline.split(QLatin1Char('\n'));
+        for (QString ln : lines) {
+            ln = ln.trimmed();
+            if (!ln.isEmpty())
+                args.append(ln);
+        }
+        if (!args.isEmpty())
+            serverObj[QStringLiteral("args")] = args;
+    }
+    const QString d = description.trimmed();
+    if (!d.isEmpty())
+        serverObj[QStringLiteral("description")] = d;
+
+    QJsonObject serversPatch;
+    const QString orig = originalServerName.trimmed();
+    if (isEdit && !orig.isEmpty() && orig != name)
+        serversPatch[orig] = QJsonValue(QJsonValue::Null);
+    serversPatch[name] = serverObj;
+
+    QJsonObject mcpObj;
+    mcpObj[QStringLiteral("servers")] = serversPatch;
+    QJsonObject rawTop;
+    rawTop[QStringLiteral("mcp")] = mcpObj;
+
+    QJsonObject params;
+    params[QStringLiteral("raw")] =
+        QString::fromUtf8(QJsonDocument(rawTop).toJson(QJsonDocument::Compact));
+    if (!m_configSnapshotHash.isEmpty())
+        params[QStringLiteral("baseHash")] = m_configSnapshotHash;
+
+    sendRequest(QStringLiteral("config.patch"), params);
+}
+
+void GatewayClient::removeMcpServer(const QString &serverName)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    const QString n = serverName.trimmed();
+    if (n.isEmpty())
+        return;
+
+    QJsonObject serversPatch;
+    serversPatch[n] = QJsonValue(QJsonValue::Null);
+    QJsonObject mcpObj;
+    mcpObj[QStringLiteral("servers")] = serversPatch;
+    QJsonObject rawTop;
+    rawTop[QStringLiteral("mcp")] = mcpObj;
+
+    QJsonObject params;
+    params[QStringLiteral("raw")] =
+        QString::fromUtf8(QJsonDocument(rawTop).toJson(QJsonDocument::Compact));
+    if (!m_configSnapshotHash.isEmpty())
+        params[QStringLiteral("baseHash")] = m_configSnapshotHash;
+
+    sendRequest(QStringLiteral("config.patch"), params);
 }

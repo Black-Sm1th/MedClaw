@@ -84,6 +84,9 @@ class GatewayClient : public QObject
                NOTIFY modelListChanged)
     Q_PROPERTY(QVariantMap currentModel READ currentModel
                NOTIFY currentModelChanged)
+    /// OpenClaw 配置中的 mcp.servers（来自 config.get）
+    Q_PROPERTY(QVariantList mcpList READ mcpList
+               NOTIFY mcpListChanged)
 
 public:
     /**
@@ -134,6 +137,9 @@ public:
     QVariantList modelList() const;
     /// 获取当前会话的模型信息
     QVariantMap currentModel() const;
+
+    /// 已配置的 MCP 服务器列表（展示用）
+    QVariantList mcpList() const;
 
     // ═══════════════════════════════════════════════════════════════
     //  QML 可调用方法（Q_INVOKABLE）
@@ -314,6 +320,27 @@ public:
      */
     Q_INVOKABLE void patchSessionModel(const QString &modelId = QString());
 
+    /// 拉取配置快照并解析 mcp.servers（config.get）
+    Q_INVOKABLE void refreshMcpList();
+
+    /**
+     * @brief 通过 config.patch 写入 mcp.servers 条目
+     * @param isEdit 是否编辑已有条目（名称变更时会删除旧键）
+     * @param originalServerName 编辑前的服务名（新建时为空）
+     * @param useHttp true=HTTP/SSE（用 httpUrl），false=stdio（command + 参数行）
+     */
+    Q_INVOKABLE void applyMcpServer(bool isEdit,
+                                     const QString &originalServerName,
+                                     const QString &serverName,
+                                     bool useHttp,
+                                     const QString &stdioCommand,
+                                     const QString &stdioArgsMultiline,
+                                     const QString &httpUrl,
+                                     const QString &description);
+
+    /// 从配置中删除 mcp.servers 某键（merge patch null）
+    Q_INVOKABLE void removeMcpServer(const QString &serverName);
+
 signals:
     // ── 连接状态 ──
     void connectionStateChanged();  ///< 连接状态发生变化
@@ -367,6 +394,7 @@ signals:
     // ── 模型管理 ──
     void modelListChanged();              ///< 可用模型列表更新
     void currentModelChanged();           ///< 当前会话模型信息变更
+    void mcpListChanged();                ///< MCP 服务器列表更新
 
 private slots:
     // ── WebSocket 事件槽函数 ──
@@ -454,6 +482,11 @@ private:
     static QString firstUserMessageFromHistoryList(const QVariantList &history);
     void setAgentListSidebarTitle(const QString &agentId, const QString &text);
 
+    /// 解析 config.get 的 payload，更新 m_configSnapshotHash 与 m_mcpList
+    void applyMcpListFromConfigGetPayload(const QJsonObject &payload);
+    /// 从完整 config 对象填充 m_mcpList（按名称排序）
+    void rebuildMcpListFromConfigObject(const QJsonObject &config);
+
     /// 定时任务专用：先 agents.create 再 cron.add 时使用的显示名
     static QString makeCronDedicatedAgentName(const QString &taskTitle);
     void clearPendingCronDedicatedAgent();
@@ -521,6 +554,9 @@ private:
     // ── 模型管理 ──
     QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）
     QVariantMap  m_currentModel;       ///< 当前会话模型信息（sessions.patch 响应）
+
+    QString        m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
+    QVariantList   m_mcpList;          ///< mcp.servers 展示列表
 };
 
 #endif // GATEWAY_CLIENT_H

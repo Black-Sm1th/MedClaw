@@ -23,6 +23,9 @@ ApplicationWindow {
     property string editingCronPayloadKind: "agentTurn"
     property string pendingDeleteCronJobId: ""
     property string pendingDeleteCronJobName: ""
+    property string pendingDeleteMcpName: ""
+    /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
+    property var mcpEditEntry: null
 
     // 启动时自动连接 WebSocket 服务器
     Component.onCompleted: {
@@ -35,6 +38,7 @@ ApplicationWindow {
                 wsClient.refreshSkills()
                 wsClient.refreshCronJobs(true)
                 wsClient.refreshCronStatus()
+                wsClient.refreshMcpList()
             }
         }
         function onCronJobAdded(jobId){
@@ -2600,6 +2604,10 @@ ApplicationWindow {
                 id: mcpSettingRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 3
+                onVisibleChanged: {
+                    if (visible && wsClient.connectionState === 3)
+                        wsClient.refreshMcpList()
+                }
                 Column {
                     anchors.fill: parent
                     leftPadding: 60
@@ -2630,7 +2638,7 @@ ApplicationWindow {
                                 inputWidth: mcpTitleRec.width
                                 icon: "qrc:/images/search.png"
                                 iconSize: 16
-                                placeholderText: "搜索技能"
+                                placeholderText: qsTr("搜索 MCP")
                             }
                         }
                         CustomButton {
@@ -2643,6 +2651,7 @@ ApplicationWindow {
                             fontSize: 14
                             anchors.right: parent.right
                             onClicked: {
+                                window.mcpEditEntry = null
                                 mcpServiceDialog.isEdit = false
                                 mcpServiceDialog.open()
                             }
@@ -2651,7 +2660,7 @@ ApplicationWindow {
                     TabBarView {
                         id: mcpTab
                         lineWidth: parent.width - 120
-                        tabs: [{ text: "已安装", badge: 13 }]
+                        tabs: [{ text: "已安装", badge: wsClient.mcpList.length }]
                     }
 
                     ScrollView {
@@ -2669,22 +2678,19 @@ ApplicationWindow {
                             width: mcpInstalledScrollView.width
                             property real cellWidth: (width - spacing) / 2
 
+                            Label {
+                                visible: wsClient.mcpList.length === 0
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                topPadding: 40
+                                text: qsTr("暂无 MCP 服务，请点击「+ 添加」从网关配置写入 mcp.servers")
+                                font.pixelSize: 14
+                                color: "#73000000"
+                                wrapMode: Text.WordWrap
+                            }
+
                             Repeater {
-                                model: ListModel {
-                                    ListElement { title: "Tavily"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "GitHub"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "GitLab"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Context7"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                    ListElement { title: "Google Drive"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; enabled: true }
-                                }
+                                model: wsClient.mcpList
 
                                 delegate: Rectangle {
                                     width: mcpInstalledGrid.cellWidth
@@ -2709,11 +2715,11 @@ ApplicationWindow {
                                             height: 28
                                             Image {
                                                 width: 28; height: 28
-                                                source: model.icon
+                                                source: modelData.icon || "qrc:/images/skillIcon.png"
                                                 fillMode: Image.PreserveAspectFit
                                             }
                                             Label {
-                                                text: model.title
+                                                text: modelData.title || modelData.name || ""
                                                 font.pixelSize: 16
                                                 font.weight: Font.Bold
                                                 color: "#D9000000"
@@ -2721,9 +2727,11 @@ ApplicationWindow {
                                             }
                                         }
                                         Label {
-                                            text: model.desc
+                                            text: modelData.desc || ""
                                             font.pixelSize: 14
                                             color: "#73000000"
+                                            elide: Text.ElideRight
+                                            width: parent.width
                                         }
                                     }
 
@@ -2740,6 +2748,7 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             visible: mcpCardHover.hovered
                                             onClicked: {
+                                                window.mcpEditEntry = modelData
                                                 mcpServiceDialog.isEdit = true
                                                 mcpServiceDialog.open()
                                             }
@@ -2748,38 +2757,9 @@ ApplicationWindow {
                                             source: "qrc:/images/delete.png"
                                             anchors.verticalCenter: parent.verticalCenter
                                             visible: mcpCardHover.hovered
-                                        }
-                                        Rectangle {
-                                            height: 16
-                                            width: 1
-                                            color: "#1F000000"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: mcpCardHover.hovered
-                                        }
-                                        Switch {
-                                            id: mcpSwitch
-                                            checked: model.enabled
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: mcpSwitch.toggle()
-                                            }
-                                            indicator: Rectangle {
-                                                implicitWidth: 44
-                                                implicitHeight: 22
-                                                x: mcpSwitch.leftPadding
-                                                y: parent.height / 2 - height / 2
-                                                radius: 12
-                                                color: mcpSwitch.checked ? "#006BFF" : "#1F000000"
-                                                Behavior on color { ColorAnimation { duration: 150 } }
-                                                Rectangle {
-                                                    x: mcpSwitch.checked ? parent.width - width - 3 : 3
-                                                    y: parent.height / 2 - height / 2
-                                                    width: 18; height: 18; radius: 9
-                                                    color: "#FFFFFF"
-                                                    Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                                }
+                                            onClicked: {
+                                                window.pendingDeleteMcpName = modelData.name || ""
+                                                deleteMcpPopup.open()
                                             }
                                         }
                                     }
