@@ -21,7 +21,10 @@ struct ChatMessage {
     QString toolName;     // 工具名称
     QString toolArgs;     // 工具参数（JSON 字符串）
     QString toolCallId;   // 工具调用 ID（关联 call 和 result）
-    bool    isError;      // 工具结果是否为错误
+    bool    isError;      // 工具结果是否为错误（独立 toolResult 行或合并后）
+    /// 合并到 toolCall 行：收到 toolResult 后写入，不再单独插入一行
+    QString toolResultText;
+    bool    hasToolResult = false;
 };
 
 class ChatModel : public QAbstractListModel
@@ -38,7 +41,9 @@ public:
         ToolNameRole,
         ToolArgsRole,
         ToolCallIdRole,
-        IsErrorRole
+        IsErrorRole,
+        ToolResultTextRole,
+        HasToolResultRole
     };
 
     explicit ChatModel(QObject *parent = nullptr);

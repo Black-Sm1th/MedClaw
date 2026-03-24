@@ -60,22 +60,52 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
             s.value(QStringLiteral("sessionKey")).toString());
         if (key.isEmpty()) continue;
 
-        // 显示名称：优先 "title"，兼容 "name"，回退到 key 中间段
-        QString name = s.value(QStringLiteral("title")).toString(
-            s.value(QStringLiteral("name")).toString());
+        // 网关返回的 displayName 优先（与 sessions.list 一致）
+        QString name = s.value(QStringLiteral("displayName")).toString();
+        if (name.isEmpty()) {
+            name = s.value(QStringLiteral("title")).toString(
+                s.value(QStringLiteral("name")).toString());
+        }
         if (name.isEmpty()) {
             const QStringList parts = key.split(QLatin1Char(':'));
             name = (parts.size() >= 2) ? parts[1] : key;
         }
 
-        // 附加模型信息（如 deepseek-chat）
+        // 模型名单独存放；侧栏标题用 derivedTitle/label/displayName，不再把模型拼进 displayName
         const QString model = s.value(QStringLiteral("model")).toString();
-        if (!model.isEmpty())
-            name += QStringLiteral(" (%1)").arg(model);
+
+        qint64 updatedAt = 0;
+        const QJsonValue uVal = s.value(QStringLiteral("updatedAt"));
+        if (!uVal.isNull()) {
+            if (uVal.isDouble())
+                updatedAt = static_cast<qint64>(uVal.toDouble());
+            else if (uVal.isString())
+                updatedAt = uVal.toString().toLongLong();
+        }
+
+        qint64 startedAt = 0;
+        const QJsonValue sVal = s.value(QStringLiteral("startedAt"));
+        if (!sVal.isNull()) {
+            if (sVal.isDouble())
+                startedAt = static_cast<qint64>(sVal.toDouble());
+            else if (sVal.isString())
+                startedAt = sVal.toString().toLongLong();
+        }
+
+        const QString derivedTitle = s.value(QStringLiteral("derivedTitle")).toString();
+        const QString label = s.value(QStringLiteral("label")).toString();
 
         QVariantMap entry;
-        entry[QStringLiteral("sessionKey")]  = key;
-        entry[QStringLiteral("displayName")] = name;
+        entry[QStringLiteral("sessionKey")]   = key;
+        entry[QStringLiteral("displayName")]  = name;
+        entry[QStringLiteral("updatedAt")]    = QVariant(static_cast<qlonglong>(updatedAt));
+        entry[QStringLiteral("startedAt")]    = QVariant(static_cast<qlonglong>(startedAt));
+        if (!derivedTitle.isEmpty())
+            entry[QStringLiteral("derivedTitle")] = derivedTitle;
+        if (!label.isEmpty())
+            entry[QStringLiteral("label")] = label;
+        if (!model.isEmpty())
+            entry[QStringLiteral("model")] = model;
         m_sessions.append(entry);
     }
 
@@ -84,6 +114,8 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
         QVariantMap def;
         def[QStringLiteral("sessionKey")]  = QStringLiteral("agent:main:main");
         def[QStringLiteral("displayName")] = QStringLiteral("Main Agent");
+        def[QStringLiteral("updatedAt")]   = QVariant(static_cast<qlonglong>(0));
+        def[QStringLiteral("startedAt")]  = QVariant(static_cast<qlonglong>(0));
         m_sessions.append(def);
     }
 
@@ -263,6 +295,8 @@ QJsonObject WsSession::buildListSessionsParams() const
     params[QStringLiteral("includeGlobal")]  = true;
     params[QStringLiteral("includeUnknown")] = false;
     params[QStringLiteral("limit")]          = 120;
+    // 便于侧栏显示最近会话标题（服务端会从 transcript 推导）
+    params[QStringLiteral("includeDerivedTitles")] = true;
     return params;
 }
 

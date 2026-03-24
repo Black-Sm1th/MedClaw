@@ -42,6 +42,7 @@
 #define GATEWAY_CLIENT_H
 
 #include <QObject>
+#include <QTimer>
 #include <QWebSocket>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -408,6 +409,23 @@ private:
      */
     void sendConnectRequest();
 
+    /// 根据 sessions.list 缓存，为每个 agent 填入最近活跃会话的标题与时间；有改动返回 true
+    bool mergeSessionHintsIntoAgentList();
+
+    /**
+     * @brief 绑定 sessionKey 并拉取身份 / 可选历史 / 会话列表 / 模型
+     * @param shouldLoadHistory 为 false 时不请求 chat.history（首条消息 bootstrap 时避免空历史清空 UI）
+     */
+    void applyAgentSwitch(const QString &agentId, bool shouldLoadHistory);
+
+    /// 合并 agents / sessions 后防抖拉取各 agent 首条用户消息，作为侧栏标题
+    void scheduleAgentListFirstUserTitles();
+    void flushAgentListFirstUserTitles();
+    /// 仅刷新一个 agent 的侧栏首句（避免每次 sessions.list 全量 chat.history）
+    void refreshSidebarFirstUserTitleForAgent(const QString &agentId);
+    static QString firstUserMessageFromHistoryList(const QVariantList &history);
+    void setAgentListSidebarTitle(const QString &agentId, const QString &text);
+
     /// 生成唯一的请求 ID（UUID v4，不含花括号）
     QString nextRequestId();
 
@@ -449,6 +467,12 @@ private:
     /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;
     bool m_pendingAgentCreateForChat = false;
+
+    /// 侧栏「首句问话」：chat.history 请求 id → agentId / 批次号（与切换会话的历史请求区分）
+    QMap<QString, QString> m_sidebarTitleHistReqAgent;
+    QMap<QString, quint64> m_sidebarTitleHistReqBatch;
+    quint64 m_sidebarTitleBatchGen = 0;
+    QTimer m_agentFirstUserTitleDebounce;
 
     // ── 模型管理 ──
     QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）

@@ -53,7 +53,7 @@ ApplicationWindow {
         function onAgentCreated(agentId, success, message){
             if (success) {
                 leftMidPanel.activeAgentId = agentId
-                window.leftSelectedIndex = 0
+                window.leftSelectedIndex = 5
                 // 首条消息自动建 agent 时已在 C++ 内 switchAgent + send；此处不再重复 switch
             }
         }
@@ -290,7 +290,7 @@ ApplicationWindow {
                         font.pixelSize: 12
                         color: "#80000000"
                         anchors.left: parent.left
-                        anchors.leftMargin: 8
+                        anchors.leftMargin: 12
                     }
 
                     // 可滚动的 agent 列表
@@ -326,9 +326,9 @@ ApplicationWindow {
 
                                     Column {
                                         anchors.left: parent.left
-                                        anchors.leftMargin: 8
-                                        anchors.right: agentDeleteBtn.left
-                                        anchors.rightMargin: 4
+                                        anchors.leftMargin: 12
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 12
                                         anchors.verticalCenter: parent.verticalCenter
                                         spacing: 2
 
@@ -336,25 +336,28 @@ ApplicationWindow {
                                             spacing: 4
                                             width: parent.width
                                             Label {
-                                                text: modelData.name || modelData.id || ""
+                                                // 主标题：首条用户问话（chat.history）；未拉到前用 agent 名
+                                                text: {
+                                                    var t = modelData.activeSessionTitle || ""
+                                                    if (t.length > 0) return t
+                                                    return modelData.name || modelData.id || ""
+                                                }
                                                 font.pixelSize: 14
                                                 color: "#D9000000"
-                                                width: parent.width - (cronTag.parent.visible ? cronTag.parent.width + 4 : 0)
-                                                elide: Text.ElideRight
+                                                width: parent.width
+                                                // elide: Text.ElideRight
                                             }
                                         }
 
-                                        // 时间显示
+                                        // 最近活跃会话的更新时间（与上行标题为同一条 session）
                                         Label {
                                             text: {
-                                                var sk = modelData.sessionKey || ""
-                                                if (sk) {
-                                                    var parts = sk.split(":")
-                                                    if (parts.length >= 2) return parts[1]
-                                                }
-                                                return modelData.id || ""
+                                                // 使用会话 startedAt / task-创建时间，不用 updatedAt（点击会刷新）
+                                                var ms = Number(modelData.activeSessionDisplayAt || 0)
+                                                if (!ms || ms <= 0) return ""
+                                                return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
                                             }
-                                            font.pixelSize: 11
+                                            font.pixelSize: 12
                                             color: "#73000000"
                                         }
                                     }
@@ -588,8 +591,8 @@ ApplicationWindow {
                     delegate: Item {
                         width: chatListView.width
                         height: {
-                            if (msgType === "toolCall") return toolCallCard.height
-                            if (msgType === "toolResult") return toolResCard.height
+                            if (msgType === "toolCall") return toolBlockRoot.height
+                            if (msgType === "toolResult") return orphanToolResultRoot.height
                             return chatBubble.height
                         }
 
@@ -625,88 +628,238 @@ ApplicationWindow {
                             }
                         }
 
-                        Rectangle {
-                            id: toolCallCard
+                        // ── 工具调用 + 结果（合并到同一行，可折叠详情）──
+                        Item {
+                            id: toolBlockRoot
                             visible: msgType === "toolCall"
                             width: parent.width
-                            height: visible ? toolCallInner.height + 8 : 0
-                            color: "transparent"
+                            height: visible ? toolBlockRow.implicitHeight : 0
 
-                            Rectangle {
-                                id: toolCallInner
+                            readonly property bool toolDone: hasToolResult
+                            readonly property bool toolOk: hasToolResult && !isError
+                            readonly property bool toolFail: hasToolResult && isError
+                            property bool toolDetailExpanded: true
+
+                            Row {
+                                id: toolBlockRow
                                 width: parent.width
-                                anchors.top: parent.top
-                                height: toolCallCol.implicitHeight + 16
-                                radius: 10
-                                color: "#FFF8E1"
-                                border.color: "#FFE082"
-                                border.width: 1
+                                spacing: 10
+
+                                Rectangle {
+                                    id: toolTimelineBar
+                                    width: 2
+                                    height: toolBlockContent.height
+                                    radius: 1
+                                    color: "#D0D0D0"
+                                }
 
                                 Column {
-                                    id: toolCallCol
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    spacing: 4
+                                    id: toolBlockContent
+                                    width: toolBlockRoot.width - toolTimelineBar.width - toolBlockRow.spacing
+                                    spacing: 0
 
                                     Row {
-                                        spacing: 6
-                                        Text { text: "\u2699"; font.pixelSize: 14 }
-                                        Text {
-                                            text: qsTr("工具调用: ") + toolName
-                                            font.pixelSize: 13
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            font.bold: true
-                                            color: "#F57F17"
+                                        id: toolHeaderRow
+                                        width: parent.width
+                                        spacing: 8
+                                        height: 28
+
+                                        Item {
+                                            width: 20
+                                            height: 20
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            Text {
+                                                anchors.centerIn: parent
+                                                visible: toolBlockRoot.toolOk
+                                                text: "\u2713"
+                                                color: "#22C55E"
+                                                font.pixelSize: 16
+                                                font.bold: true
+                                            }
+                                            Rectangle {
+                                                anchors.centerIn: parent
+                                                visible: !toolBlockRoot.toolOk
+                                                width: 8
+                                                height: 8
+                                                radius: 4
+                                                color: "#EF4444"
+                                            }
+                                        }
+
+                                        Row {
+                                            spacing: 4
+                                            anchors.verticalCenter: parent.verticalCenter
+
+                                            Text {
+                                                text: toolName || qsTr("工具")
+                                                font.pixelSize: 14
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                font.bold: true
+                                                color: "#D9000000"
+                                            }
+
+                                            Text {
+                                                id: toolChevron
+                                                text: toolBlockRoot.toolDetailExpanded ? "\u25BE" : "\u25B8"
+                                                font.pixelSize: 12
+                                                color: "#99000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    anchors.margins: -6
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: toolBlockRoot.toolDetailExpanded = !toolBlockRoot.toolDetailExpanded
+                                                }
+                                            }
+
+                                        }
+                                    }
+
+                                    Column {
+                                        width: parent.width
+                                        visible: toolBlockRoot.toolDetailExpanded
+                                        spacing: 8
+
+                                        Rectangle {
+                                            width: parent.width
+                                            visible: toolArgs && String(toolArgs).length > 0
+                                            height: visible ? Math.min(toolArgsText.implicitHeight + 20, 200) : 0
+                                            radius: 8
+                                            color: "#F3F4F6"
+                                            border.width: 1
+                                            border.color: "#E5E7EB"
+                                            clip: true
+
+                                            Text {
+                                                id: toolArgsText
+                                                anchors.fill: parent
+                                                anchors.margins: 10
+                                                text: toolArgs || ""
+                                                wrapMode: Text.Wrap
+                                                font.pixelSize: 12
+                                                font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0"
+                                                color: "#374151"
+                                                textFormat: Text.MarkdownText
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: parent.width
+                                            visible: hasToolResult && String(toolResultText).length > 0
+                                            height: visible ? Math.min(toolResultBody.implicitHeight + 20, 320) : 0
+                                            radius: 8
+                                            color: "#F3F4F6"
+                                            border.width: 1
+                                            border.color: isError ? "#FECACA" : "#E5E7EB"
+                                            clip: true
+
+                                            Text {
+                                                id: toolResultBody
+                                                anchors.fill: parent
+                                                anchors.margins: 10
+                                                text: toolResultText || ""
+                                                wrapMode: Text.Wrap
+                                                font.pixelSize: 12
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: isError ? "#DC2626" : "#374151"
+                                                textFormat: Text.MarkdownText
+                                            }
+                                        }
+
+                                        Row {
+                                            width: parent.width
+                                            visible: hasToolResult
+                                            spacing: 8
+                                            height: 24
+
+                                            Item {
+                                                width: 20
+                                                height: 20
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    visible: toolBlockRoot.toolOk
+                                                    text: "\u2713"
+                                                    color: "#22C55E"
+                                                    font.pixelSize: 16
+                                                    font.bold: true
+                                                }
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    visible: !toolBlockRoot.toolOk
+                                                    width: 8
+                                                    height: 8
+                                                    radius: 4
+                                                    color: "#EF4444"
+                                                }
+                                            }
+
+                                            Text {
+                                                text: isError ? qsTr("任务失败") : qsTr("任务完成")
+                                                font.pixelSize: 13
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: isError ? "#DC2626" : "#16A34A"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
 
-                        Rectangle {
-                            id: toolResCard
+                        // 未匹配到 toolCall 的孤立 toolResult（兼容）
+                        Item {
+                            id: orphanToolResultRoot
                             visible: msgType === "toolResult"
                             width: parent.width
-                            height: visible ? toolResInner.height + 8 : 0
-                            color: "transparent"
+                            height: visible ? orphanToolCol.implicitHeight + 24 : 0
 
                             Rectangle {
-                                id: toolResInner
-                                width: parent.width
-                                anchors.top: parent.top
-                                height: toolResCol.implicitHeight + 16
-                                radius: 10
-                                color: isError ? "#FFEBEE" : "#E8F5E9"
-                                border.color: isError ? "#EF9A9A" : "#A5D6A7"
+                                anchors.fill: parent
+                                radius: 8
+                                color: "#F3F4F6"
                                 border.width: 1
+                                border.color: isError ? "#FECACA" : "#E5E7EB"
 
                                 Column {
-                                    id: toolResCol
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    spacing: 4
+                                    id: orphanToolCol
+                                    width: parent.width - 24
+                                    x: 12
+                                    y: 12
+                                    spacing: 6
 
                                     Row {
-                                        spacing: 6
-                                        Text { text: isError ? "\u274C" : "\u2705"; font.pixelSize: 14 }
+                                        spacing: 8
                                         Text {
-                                            text: (isError ? qsTr("错误: ") : qsTr("结果: ")) + toolName
-                                            font.pixelSize: 13
-                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            visible: !isError
+                                            text: "\u2713"
+                                            color: "#22C55E"
+                                            font.pixelSize: 14
                                             font.bold: true
-                                            color: isError ? "#C62828" : "#2E7D32"
+                                        }
+                                        Rectangle {
+                                            visible: isError
+                                            width: 8
+                                            height: 8
+                                            radius: 4
+                                            color: "#EF4444"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Text {
+                                            text: toolName
+                                            font.pixelSize: 13
+                                            font.bold: true
+                                            color: "#D9000000"
                                         }
                                     }
-
                                     Text {
                                         width: parent.width
                                         text: content || ""
                                         wrapMode: Text.Wrap
                                         font.pixelSize: 12
                                         font.family: "Alibaba PuHuiTi 3.0"
-                                        color: isError ? "#B71C1C" : "#33691E"
-                                        maximumLineCount: 3
-                                        elide: Text.ElideRight
+                                        color: isError ? "#DC2626" : "#374151"
+                                        textFormat: Text.MarkdownText
                                     }
                                 }
                             }

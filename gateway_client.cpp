@@ -47,8 +47,14 @@ GatewayClient::GatewayClient(QObject *parent)
     , m_socket(new QWebSocket(QString(),
                               QWebSocketProtocol::VersionLatest, this))
     , m_state(Disconnected)
+    , m_agentFirstUserTitleDebounce(this)
     // m_config、m_session、m_skill、m_scheduledTask 由各自默认构造函数初始化
 {
+    m_agentFirstUserTitleDebounce.setSingleShot(true);
+    m_agentFirstUserTitleDebounce.setInterval(400);
+    connect(&m_agentFirstUserTitleDebounce, &QTimer::timeout, this,
+            &GatewayClient::flushAgentListFirstUserTitles);
+
     m_socket->setMaxAllowedIncomingFrameSize(std::numeric_limits<quint64>::max());
     m_socket->setMaxAllowedIncomingMessageSize(std::numeric_limits<quint64>::max());
 
@@ -181,6 +187,177 @@ void GatewayClient::clearActiveAgentContext()
         emit currentSessionChanged();
 }
 
+bool GatewayClient::mergeSessionHintsIntoAgentList()
+{
+    struct Best {
+        qint64 updated = 0;   // 挑选该 agent 下最近活跃的会话（用于 startedAt / task- 时间）
+        qint64 startedAt = 0; // 会话开始时间，侧栏展示（不用 updatedAt）
+    };
+    QHash<QString, Best> bestByAgent;
+
+    const QVariantList sess = m_session.sessions();
+    for (const QVariant &v : sess) {
+        const QVariantMap m = v.toMap();
+        const QString key = m.value(QStringLiteral("sessionKey")).toString();
+        if (!key.startsWith(QLatin1String("agent:")))
+            continue;
+        const QStringList parts = key.split(QLatin1Char(':'));
+        if (parts.size() < 3)
+            continue;
+        const QString agentId = parts[1];
+        if (agentId.isEmpty())
+            continue;
+
+        const qint64 updated =
+            m.value(QStringLiteral("updatedAt")).toLongLong();
+        const qint64 startedAt =
+            m.value(QStringLiteral("startedAt")).toLongLong();
+
+        Best &slot = bestByAgent[agentId];
+        if (updated >= slot.updated) {
+            slot.updated = updated;
+            slot.startedAt = startedAt;
+        }
+    }
+
+    QVariantList next = m_agentList;
+    bool changed = false;
+    for (int i = 0; i < next.size(); ++i) {
+        QVariantMap row = next.at(i).toMap();
+        const QString id = row.value(QStringLiteral("id")).toString();
+        const Best b = bestByAgent.value(id);
+
+        qint64 displayAt = b.startedAt;
+        if (displayAt <= 0 && id.startsWith(QLatin1String("task-"))) {
+            bool ok = false;
+            const qint64 parsed = id.mid(5).toLongLong(&ok);
+            if (ok && parsed > Q_INT64_C(1000000000000))
+                displayAt = parsed;
+        }
+
+        const qint64 oldDisplayAt =
+            row.value(QStringLiteral("activeSessionDisplayAt")).toLongLong();
+        const QString oldTitle =
+            row.value(QStringLiteral("activeSessionTitle")).toString();
+
+        // 侧栏标题由 chat.history 首条用户消息填充，此处只维护时间
+        if (b.updated == 0) {
+            row.remove(QStringLiteral("activeSessionDisplayAt"));
+            row.remove(QStringLiteral("activeSessionTitle"));
+        } else {
+            row[QStringLiteral("activeSessionDisplayAt")] =
+                QVariant(static_cast<qlonglong>(displayAt));
+        }
+
+        if (oldDisplayAt
+                != row.value(QStringLiteral("activeSessionDisplayAt")).toLongLong()
+            || oldTitle
+                != row.value(QStringLiteral("activeSessionTitle")).toString()) {
+            changed = true;
+        }
+        next[i] = row;
+    }
+
+    if (!changed)
+        return false;
+    m_agentList = next;
+    return true;
+}
+
+void GatewayClient::scheduleAgentListFirstUserTitles()
+{
+    if (m_state != Connected)
+        return;
+    m_agentFirstUserTitleDebounce.start();
+}
+
+void GatewayClient::flushAgentListFirstUserTitles()
+{
+    if (m_state != Connected)
+        return;
+    if (m_agentList.isEmpty())
+        return;
+
+    ++m_sidebarTitleBatchGen;
+    const quint64 batch = m_sidebarTitleBatchGen;
+
+    for (const QVariant &v : m_agentList) {
+        const QVariantMap row = v.toMap();
+        const QString aid = row.value(QStringLiteral("id")).toString();
+        if (aid.isEmpty())
+            continue;
+        const QString sk = QStringLiteral("agent:%1:main").arg(aid);
+        const QString reqId =
+            sendRequest(QStringLiteral("chat.history"),
+                        m_session.buildChatHistoryParams(sk, 1000));
+        m_sidebarTitleHistReqAgent.insert(reqId, aid);
+        m_sidebarTitleHistReqBatch.insert(reqId, batch);
+    }
+
+    qDebug().noquote() << "[Gateway] sidebar first-user titles batch" << batch
+                       << "agents=" << m_agentList.size();
+}
+
+void GatewayClient::refreshSidebarFirstUserTitleForAgent(const QString &agentId)
+{
+    if (m_state != Connected)
+        return;
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty())
+        return;
+
+    ++m_sidebarTitleBatchGen;
+    const quint64 batch = m_sidebarTitleBatchGen;
+    const QString sk = QStringLiteral("agent:%1:main").arg(aid);
+    const QString reqId =
+        sendRequest(QStringLiteral("chat.history"),
+                    m_session.buildChatHistoryParams(sk, 1000));
+    m_sidebarTitleHistReqAgent.insert(reqId, aid);
+    m_sidebarTitleHistReqBatch.insert(reqId, batch);
+}
+
+QString GatewayClient::firstUserMessageFromHistoryList(const QVariantList &history)
+{
+    for (const QVariant &v : history) {
+        const QVariantMap m = v.toMap();
+        if (m.value(QStringLiteral("role")).toString() != QLatin1String("user"))
+            continue;
+        const QString mt = m.value(QStringLiteral("msgType")).toString();
+        if (mt == QLatin1String("toolCall") || mt == QLatin1String("toolResult"))
+            continue;
+        const QString t = m.value(QStringLiteral("content")).toString().trimmed();
+        if (!t.isEmpty())
+            return t;
+    }
+    return QString();
+}
+
+void GatewayClient::setAgentListSidebarTitle(const QString &agentId, const QString &text)
+{
+    QString t = text;
+    if (t.length() > 120)
+        t = t.left(117) + QStringLiteral("...");
+
+    QVariantList next = m_agentList;
+    bool changed = false;
+    for (int i = 0; i < next.size(); ++i) {
+        QVariantMap row = next.at(i).toMap();
+        if (row.value(QStringLiteral("id")).toString() != agentId)
+            continue;
+        const QString old = row.value(QStringLiteral("activeSessionTitle")).toString();
+        if (old == t)
+            return;
+        row[QStringLiteral("activeSessionTitle")] = t;
+        next[i] = row;
+        changed = true;
+        break;
+    }
+    if (changed) {
+        m_agentList = next;
+        emit agentListChanged();
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  3. 连接生命周期
 // ═══════════════════════════════════════════════════════════════════════
@@ -205,6 +382,9 @@ void GatewayClient::connectToServer(const QString &url)
     m_pendingRequests.clear();
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
+    m_sidebarTitleHistReqAgent.clear();
+    m_sidebarTitleHistReqBatch.clear();
+    m_agentFirstUserTitleDebounce.stop();
     setState(Connecting);
 
     // ── 构造带 Origin 头的请求 ──
@@ -269,6 +449,9 @@ void GatewayClient::onDisconnected()
              << "pendingBeforeClear=" << m_pendingRequests.size();
     m_session.setStreaming(false);
     m_pendingRequests.clear();
+    m_sidebarTitleHistReqAgent.clear();
+    m_sidebarTitleHistReqBatch.clear();
+    m_agentFirstUserTitleDebounce.stop();
     setState(Disconnected);
 }
 
@@ -611,6 +794,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_pendingDeleteId.clear();
         }
 
+        m_sidebarTitleHistReqAgent.remove(id);
+        m_sidebarTitleHistReqBatch.remove(id);
+
         emit errorOccurred(errMsg);
         return;
     }
@@ -650,6 +836,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("sessions.list")) {
         m_session.parseSessionsResponse(payload);
         emit sessionsChanged();
+        if (mergeSessionHintsIntoAgentList())
+            emit agentListChanged();
+        // 不在此处拉侧栏首句：点击任务会 refreshSessions → 若这里全量 chat.history
+        // 会对每个 agent 发请求并多次 agentListChanged，列表会像「每次刷新」。
         return;
     }
 
@@ -702,7 +892,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
         const bool doBootstrap = !bootstrapMsg.isEmpty() && !agentId.isEmpty();
         if (doBootstrap)
-            switchAgent(agentId);
+            applyAgentSwitch(agentId, false);
 
         qDebug() << "[Gateway] agents.create ok:" << agentId;
         emit agentCreated(agentId, true,
@@ -757,7 +947,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         qDebug() << "[Gateway] agents.list: found" << m_agentList.count()
                  << "agents, default:" << m_defaultAgentId
                  << "mainKey:" << mainKey;
+        mergeSessionHintsIntoAgentList();
         emit agentListChanged();
+        scheduleAgentListFirstUserTitles();
         return;
     }
 
@@ -768,10 +960,23 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         return;
     }
 
-    // chat.history 响应 → 复用 parseHistoryResponse 解析
+    // chat.history 响应 → 侧栏首句预取 或 当前会话历史
     if (method == QLatin1String("chat.history")) {
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
+
+        const QString sidebarAgent = m_sidebarTitleHistReqAgent.take(id);
+        const quint64 reqBatch = m_sidebarTitleHistReqBatch.take(id);
+
+        if (!sidebarAgent.isEmpty()) {
+            if (reqBatch == m_sidebarTitleBatchGen) {
+                const QString first = firstUserMessageFromHistoryList(history);
+                if (!first.isEmpty())
+                    setAgentListSidebarTitle(sidebarAgent, first);
+            }
+            return;
+        }
+
         emit historyLoaded(history);
         return;
     }
@@ -909,6 +1114,17 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                  << m_currentModel.value(QStringLiteral("modelProvider")).toString()
                  << "/" << m_currentModel.value(QStringLiteral("model")).toString();
         emit currentModelChanged();
+        return;
+    }
+
+    // 其余 chat.send（非 /new，且前面未 return）：只更新当前 agent 侧栏首句标题
+    if (method == QLatin1String("chat.send")) {
+        const QString key = m_session.currentSessionKey();
+        if (key.startsWith(QLatin1String("agent:"))) {
+            const QStringList parts = key.split(QLatin1Char(':'));
+            if (parts.size() >= 2 && !parts[1].isEmpty())
+                refreshSidebarFirstUserTitleForAgent(parts[1]);
+        }
         return;
     }
 }
@@ -1337,6 +1553,11 @@ void GatewayClient::patchSessionModel(const QString &modelId)
  */
 void GatewayClient::switchAgent(const QString &agentId)
 {
+    applyAgentSwitch(agentId, true);
+}
+
+void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHistory)
+{
     if (m_state != Connected) {
         emit errorOccurred(
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
@@ -1351,13 +1572,15 @@ void GatewayClient::switchAgent(const QString &agentId)
         QStringLiteral("agent:%1:main").arg(agentId);
 
     qDebug().noquote() << "[Gateway] switchAgent:" << agentId
-                       << "sessionKey:" << sessionKey;
+                       << "sessionKey:" << sessionKey
+                       << "loadHistory:" << shouldLoadHistory;
 
     m_session.setCurrentSessionKey(sessionKey);
     emit currentSessionChanged();
 
     getAgentIdentity(sessionKey);
-    loadChatHistory(sessionKey);
+    if (shouldLoadHistory)
+        loadChatHistory(sessionKey);
     refreshSessions();
     patchSessionModel(QString());
 }
