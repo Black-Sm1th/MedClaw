@@ -18,6 +18,11 @@ ApplicationWindow {
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
     property string wsServerUrl: "ws://192.168.124.58:18789"
+    /// 非空表示「编辑」已有定时任务；空为新建
+    property string editingCronJobId: ""
+    property string editingCronPayloadKind: "agentTurn"
+    property string pendingDeleteCronJobId: ""
+    property string pendingDeleteCronJobName: ""
 
     // 启动时自动连接 WebSocket 服务器
     Component.onCompleted: {
@@ -1734,6 +1739,8 @@ ApplicationWindow {
                                 text: "+ 新建"
                                 fontSize: 14
                                 onClicked: {
+                                    window.editingCronJobId = ""
+                                    window.editingCronPayloadKind = "agentTurn"
                                     newTaskTitleInput.text = ""
                                     newTaskPromptInput.text = ""
                                     newTaskRepeatSelect.currentIndex = 0
@@ -1780,6 +1787,8 @@ ApplicationWindow {
                             Repeater{
                                 model: wsClient.cronJobs
                                 delegate: Rectangle {
+                                    id: cronJobRow
+                                    property var job: modelData
                                     width: scheduledTaskScrollView.width - 120
                                     height: 76
                                     radius: 8
@@ -1803,10 +1812,10 @@ ApplicationWindow {
                                         spacing: 4
 
                                         Label {
-                                            text: modelData.name || ""
+                                            text: cronJobRow.job.name || ""
                                             font.pixelSize: 16
                                             font.weight: Font.Bold
-                                            color: modelData.enabled ? "#D9000000" : "#80000000"
+                                            color: cronJobRow.job.enabled ? "#D9000000" : "#80000000"
                                             width: parent.width
                                             elide: Text.ElideRight
                                         }
@@ -1814,16 +1823,16 @@ ApplicationWindow {
                                             spacing: 8
                                             Label {
                                                 text: scheduledTaskRec.scheduleDisplay(
-                                                          modelData.scheduleKind || "",
-                                                          modelData.scheduleExpr || "")
+                                                          cronJobRow.job.scheduleKind || "",
+                                                          cronJobRow.job.scheduleExpr || "")
                                                 font.pixelSize: 14
                                                 color: "#73000000"
                                             }
                                             Label {
                                                 text: {
-                                                    var next = modelData.nextRunAt || ""
+                                                    var next = cronJobRow.job.nextRunAt || ""
                                                     if (next) return "下次: " + next.replace("T", " ").substring(0, 16)
-                                                    var last = modelData.lastRunAt || ""
+                                                    var last = cronJobRow.job.lastRunAt || ""
                                                     if (last) return "上次: " + last.replace("T", " ").substring(0, 16)
                                                     return ""
                                                 }
@@ -1833,7 +1842,7 @@ ApplicationWindow {
                                             }
                                             // 载荷类型标签
                                             Rectangle {
-                                                visible: (modelData.payloadKind || "") === "systemEvent"
+                                                visible: (cronJobRow.job.payloadKind || "") === "systemEvent"
                                                 width: sysLabel.implicitWidth + 12
                                                 height: 20
                                                 radius: 4
@@ -1859,22 +1868,169 @@ ApplicationWindow {
                                         height: 22
 
                                         ImageButton {
+                                            id: cronMoreBtn
                                             source: "qrc:/images/more.png"
                                             width: 20; height: 20
                                             anchors.verticalCenter: parent.verticalCenter
+                                            onClicked: cronRowMoreMenu.open()
                                         }
 
-                                        // 开关
+                                        Popup {
+                                            id: cronRowMoreMenu
+                                            parent: cronMoreBtn
+                                            x: parent.width - width
+                                            y: parent.height + 4
+                                            width: 156
+                                            padding: 8
+                                            modal: false
+                                            closePolicy: Popup.CloseOnPressOutside
+                                            background: Rectangle {
+                                                radius: 8
+                                                color: "#FFFFFF"
+                                                border.color: "#14000000"
+                                                border.width: 1
+                                            }
+                                            contentItem: Column {
+                                                spacing: 2
+                                                // 立即运行
+                                                Rectangle {
+                                                    width: 140
+                                                    height: 36
+                                                    radius: 6
+                                                    color: miRun.pressed ? "#14000000"
+                                                         : miRun.containsMouse ? "#EBEDF0" : "transparent"
+                                                    Row {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 12
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        spacing: 8
+                                                        Image{
+                                                            width: 16
+                                                            height: 16
+                                                            source: "qrc:/images/play.png"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                        Label {
+                                                            text: qsTr("立即运行")
+                                                            font.pixelSize: 14
+                                                            color: "#D9000000"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: miRun
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            cronRowMoreMenu.close()
+                                                            wsClient.runCronJobNow(cronJobRow.job.id)
+                                                        }
+                                                    }
+                                                }
+                                                // 编辑
+                                                Rectangle {
+                                                    width: 140
+                                                    height: 36
+                                                    radius: 6
+                                                    color: miEdit.pressed ? "#14000000"
+                                                         : miEdit.containsMouse ? "#EBEDF0" : "transparent"
+                                                    Row {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 12
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        spacing: 8
+                                                        Image{
+                                                            width: 16
+                                                            height: 16
+                                                            source: "qrc:/images/edit.png"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                        Label {
+                                                            text: qsTr("编辑")
+                                                            font.pixelSize: 14
+                                                            color: "#D9000000"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: miEdit
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            cronRowMoreMenu.close()
+                                                            window.editingCronJobId = cronJobRow.job.id
+                                                            window.editingCronPayloadKind = cronJobRow.job.payloadKind || "agentTurn"
+                                                            newTaskTitleInput.text = cronJobRow.job.name || ""
+                                                            newTaskPromptInput.text = cronJobRow.job.payloadMessage || ""
+                                                            newTaskDialog.open()
+                                                        }
+                                                    }
+                                                }
+                                                // 删除
+                                                Rectangle {
+                                                    width: 140
+                                                    height: 36
+                                                    radius: 6
+                                                    color: miDel.pressed ? "#14000000"
+                                                         : miDel.containsMouse ? "#EBEDF0" : "transparent"
+                                                    Row {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 12
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        spacing: 8
+                                                        Image{
+                                                            width: 16
+                                                            height: 16
+                                                            source: "qrc:/images/delete.png"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                        Label {
+                                                            text: qsTr("删除")
+                                                            font.pixelSize: 14
+                                                            color: "#FF3D40"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: miDel
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            cronRowMoreMenu.close()
+                                                            window.pendingDeleteCronJobId = cronJobRow.job.id
+                                                            window.pendingDeleteCronJobName = cronJobRow.job.name || ""
+                                                            deleteCronJobPopup.open()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 开关（checked 不能绑定 model，否则与点击互斥；用 guard 与列表刷新同步）
                                         Switch {
                                             id: taskSwitch
-                                            checked: modelData.enabled || false
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            onToggled: wsClient.setCronJobEnabled(modelData.id, checked)
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: taskSwitch.toggle()
+                                            property bool _syncGuard: false
+                                            function syncFromModel() {
+                                                _syncGuard = true
+                                                checked = (cronJobRow.job.enabled === true)
+                                                _syncGuard = false
                                             }
+                                            Component.onCompleted: syncFromModel()
+                                            Connections {
+                                                target: wsClient
+                                                function onCronJobsChanged() {
+                                                    taskSwitch.syncFromModel()
+                                                }
+                                            }
+                                            onCheckedChanged: {
+                                                if (_syncGuard)
+                                                    return
+                                                wsClient.setCronJobEnabled(cronJobRow.job.id, checked)
+                                            }
+                                            anchors.verticalCenter: parent.verticalCenter
                                             indicator: Rectangle {
                                                 implicitWidth: 44
                                                 implicitHeight: 22
@@ -2644,6 +2800,12 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         padding: 0
+        onVisibleChanged: {
+            if (!visible) {
+                window.editingCronJobId = ""
+                window.editingCronPayloadKind = "agentTurn"
+            }
+        }
 
         enter: Transition {
             ParallelAnimation {
@@ -2692,7 +2854,8 @@ ApplicationWindow {
                     height: 64
 
                     Label {
-                        text: qsTr("新建任务")
+                        id: newTaskDialogTitleLabel
+                        text: window.editingCronJobId ? qsTr("编辑定时任务") : qsTr("新建任务")
                         font.pixelSize: 20
                         font.weight: Font.Bold
                         color: "#D9000000"
@@ -2761,6 +2924,7 @@ ApplicationWindow {
                     Column {
                         width: parent.width
                         spacing: 8
+                        visible: window.editingCronJobId === ""
                         Label {
                             text: qsTr("计划")
                             font.pixelSize: 14
@@ -2796,7 +2960,7 @@ ApplicationWindow {
                     Column {
                         width: parent.width
                         spacing: 8
-                        visible: newTaskRepeatSelect.currentIndex === 4
+                        visible: window.editingCronJobId === "" && newTaskRepeatSelect.currentIndex === 4
                         Label {
                             text: qsTr("执行间隔（秒）")
                             font.pixelSize: 14
@@ -2815,6 +2979,7 @@ ApplicationWindow {
                     Column {
                         width: parent.width
                         spacing: 8
+                        visible: window.editingCronJobId === ""
                         Label {
                             text: qsTr("工作目录")
                             font.pixelSize: 14
@@ -2856,11 +3021,29 @@ ApplicationWindow {
                             backgroundColor: "#006BFF"
                             textColor: "#FFFFFF"
                             borderWidth: 0
-                            text: qsTr("创建")
+                            text: window.editingCronJobId ? qsTr("保存") : qsTr("创建")
                             fontSize: 14
                             onClicked: {
                                 var title = newTaskTitleInput.text.trim()
                                 var prompt = newTaskPromptInput.text.trim()
+                                if (window.editingCronJobId) {
+                                    if (!title) {
+                                        errorToast.text = "请输入任务标题"
+                                        errorToast.visible = true
+                                        errorToastTimer.restart()
+                                        return
+                                    }
+                                    if (!prompt) {
+                                        errorToast.text = "请输入要执行的提示词"
+                                        errorToast.visible = true
+                                        errorToastTimer.restart()
+                                        return
+                                    }
+                                    wsClient.updateCronJobContent(window.editingCronJobId, title, prompt,
+                                                                  window.editingCronPayloadKind)
+                                    newTaskDialog.close()
+                                    return
+                                }
                                 console.log("[CronAdd] title='" + title + "' prompt='" + prompt.substring(0,50) + "' repeat=" + newTaskRepeatSelect.currentIndex)
                                 if (!title) {
                                     errorToast.text = "请输入任务标题"
@@ -2933,9 +3116,71 @@ ApplicationWindow {
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
-                            onClicked: newTaskDialog.close()
+                            onClicked: {
+                                window.editingCronJobId = ""
+                                newTaskDialog.close()
+                            }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: deleteCronJobPopup
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 360
+        padding: 20
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            radius: 12
+            color: "#FFFFFF"
+            border.color: "#14000000"
+            border.width: 1
+        }
+        contentItem: Column {
+            spacing: 16
+            width: parent.width
+            Label {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("确定删除定时任务「") + window.pendingDeleteCronJobName + "」？"
+                font.pixelSize: 15
+                color: "#D9000000"
+            }
+            Row {
+                spacing: 12
+                layoutDirection: Qt.RightToLeft
+                anchors.right: parent.right
+                CustomButton {
+                    width: 88
+                    height: 36
+                    backgroundColor: "#E54545"
+                    textColor: "#FFFFFF"
+                    borderWidth: 0
+                    text: qsTr("删除")
+                    fontSize: 14
+                    onClicked: {
+                        if (window.pendingDeleteCronJobId)
+                            wsClient.removeCronJob(window.pendingDeleteCronJobId)
+                        window.pendingDeleteCronJobId = ""
+                        window.pendingDeleteCronJobName = ""
+                        deleteCronJobPopup.close()
+                    }
+                }
+                CustomButton {
+                    width: 88
+                    height: 36
+                    backgroundColor: "#F7F9FA"
+                    textColor: "#A6000000"
+                    borderColor: "#E6E7EB"
+                    borderWidth: 1
+                    text: qsTr("取消")
+                    fontSize: 14
+                    onClicked: deleteCronJobPopup.close()
                 }
             }
         }

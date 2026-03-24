@@ -270,6 +270,15 @@ public:
     /// 手动触发定时任务
     Q_INVOKABLE void runCronJobNow(const QString &jobId);
 
+    /**
+     * @brief 更新定时任务名称与载荷文案（cron.update patch）
+     * @param payloadKind 与任务一致：agentTurn 用 message；systemEvent 用 text
+     */
+    Q_INVOKABLE void updateCronJobContent(const QString &jobId,
+                                          const QString &name,
+                                          const QString &content,
+                                          const QString &payloadKind);
+
     /// 查询执行记录（空 jobId 查全部）
     Q_INVOKABLE void loadCronRuns(const QString &jobId = QString());
 

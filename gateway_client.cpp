@@ -1968,7 +1968,43 @@ void GatewayClient::runCronJobNow(const QString &jobId)
     }
     m_scheduledTask.setLastOperatedJobId(jobId);
     sendRequest(QStringLiteral("cron.run"),
-                m_scheduledTask.buildRunParams(jobId));
+                m_scheduledTask.buildRunParams(jobId, QStringLiteral("force")));
+}
+
+void GatewayClient::updateCronJobContent(const QString &jobId,
+                                         const QString &name,
+                                         const QString &content,
+                                         const QString &payloadKind)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    const QString jid = jobId.trimmed();
+    if (jid.isEmpty()) {
+        emit errorOccurred(QStringLiteral("jobId \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+
+    QJsonObject patch;
+    if (!name.trimmed().isEmpty())
+        patch[QStringLiteral("name")] = name.trimmed();
+
+    QJsonObject payloadPatch;
+    const QString pk = payloadKind.trimmed().toLower();
+    if (pk == QLatin1String("systemevent")
+        || pk == QLatin1String("system_event")) {
+        payloadPatch[QStringLiteral("kind")] = QStringLiteral("systemEvent");
+        payloadPatch[QStringLiteral("text")] = content;
+    } else {
+        payloadPatch[QStringLiteral("kind")] = QStringLiteral("agentTurn");
+        payloadPatch[QStringLiteral("message")] = content;
+    }
+    patch[QStringLiteral("payload")] = payloadPatch;
+
+    sendRequest(QStringLiteral("cron.update"),
+                m_scheduledTask.buildUpdateParams(jid, patch));
 }
 
 /**
