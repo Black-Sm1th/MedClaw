@@ -1855,29 +1855,13 @@ ApplicationWindow {
                                         anchors.right: parent.right
                                         anchors.rightMargin: 16
                                         anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 16
+                                        spacing: 40
                                         height: 22
 
-                                        // 立即运行
                                         ImageButton {
-                                            source: "qrc:/images/send.png"
+                                            source: "qrc:/images/more.png"
                                             width: 20; height: 20
                                             anchors.verticalCenter: parent.verticalCenter
-                                            visible: taskItemMouse.containsMouse
-                                            ToolTip.visible: hovered
-                                            ToolTip.text: "立即运行"
-                                            onClicked: wsClient.runCronJobNow(modelData.id)
-                                        }
-
-                                        // 删除
-                                        ImageButton {
-                                            source: "qrc:/images/delete.png"
-                                            width: 20; height: 20
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: taskItemMouse.containsMouse
-                                            ToolTip.visible: hovered
-                                            ToolTip.text: "删除"
-                                            onClicked: wsClient.removeCronJob(modelData.id)
                                         }
 
                                         // 开关
@@ -2900,28 +2884,42 @@ ApplicationWindow {
 
                                 function pad(n) { return n < 10 ? "0" + n : "" + n }
 
+                                var workPath = newTaskWorkDirInput.text.trim()
+                                var agentDisplay = wsClient.cronDedicatedAgentDisplayName(title)
+
                                 if (repeatIdx === 0) {
                                     var dt = y + "-" + pad(m) + "-" + pad(d) + "T" + pad(hh) + ":" + pad(mm) + ":00"
                                     console.log("[CronAdd] oneTime dateTime=" + dt)
-                                    wsClient.addOneTimeJob(title, dt, prompt)
+                                    wsClient.createAgent(agentDisplay, workPath)
+                                    wsClient.prepareCronJobWithDedicatedAgent(3, title, prompt, "", "", 0, dt)
                                 } else if (repeatIdx === 1) {
                                     var cronExpr = mm + " " + hh + " * * *"
                                     console.log("[CronAdd] daily cron=" + cronExpr)
-                                    wsClient.addCronJob(title, cronExpr, prompt)
+                                    wsClient.createAgent(agentDisplay, workPath)
+                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr, "Asia/Shanghai", 0, "")
                                 } else if (repeatIdx === 2) {
                                     var dateObj = new Date(y, m - 1, d)
                                     var dow = dateObj.getDay()
                                     var cronExpr2 = mm + " " + hh + " * * " + dow
                                     console.log("[CronAdd] weekly cron=" + cronExpr2)
-                                    wsClient.addCronJob(title, cronExpr2, prompt)
+                                    wsClient.createAgent(agentDisplay, workPath)
+                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr2, "Asia/Shanghai", 0, "")
                                 } else if (repeatIdx === 3) {
                                     var cronExpr3 = mm + " * * * *"
                                     console.log("[CronAdd] hourly cron=" + cronExpr3)
-                                    wsClient.addCronJob(title, cronExpr3, prompt)
+                                    wsClient.createAgent(agentDisplay, workPath)
+                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr3, "Asia/Shanghai", 0, "")
                                 } else if (repeatIdx === 4) {
                                     var sec = parseInt(newTaskIntervalInput.text) || 3600
+                                    if (sec <= 0) {
+                                        errorToast.text = "间隔须大于 0 秒"
+                                        errorToast.visible = true
+                                        errorToastTimer.restart()
+                                        return
+                                    }
                                     console.log("[CronAdd] interval sec=" + sec)
-                                    wsClient.addIntervalJob(title, sec, prompt)
+                                    wsClient.createAgent(agentDisplay, workPath)
+                                    wsClient.prepareCronJobWithDedicatedAgent(2, title, prompt, "", "", sec, "")
                                 }
                                 newTaskDialog.close()
                             }

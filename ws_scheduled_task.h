@@ -152,7 +152,8 @@ public:
         const QString &message,
         const QString &tz = QStringLiteral("Asia/Shanghai"),
         const QString &sessionTarget = QStringLiteral("main"),
-        bool deliver = false) const;
+        bool deliver = false,
+        const QString &agentId = QString()) const;
 
     /**
      * @brief 构建 cron.add 请求参数 —— 固定间隔调度
@@ -165,7 +166,8 @@ public:
         int everyMs,
         const QString &message,
         const QString &sessionTarget = QStringLiteral("main"),
-        bool deliver = false) const;
+        bool deliver = false,
+        const QString &agentId = QString()) const;
 
     /**
      * @brief 构建 cron.add 请求参数 —— 一次性定时
@@ -179,7 +181,8 @@ public:
         const QDateTime &at,
         const QString &message,
         bool deleteAfterRun = true,
-        const QString &sessionTarget = QStringLiteral("isolated")) const;
+        const QString &sessionTarget = QStringLiteral("isolated"),
+        const QString &agentId = QString()) const;
 
     /**
      * @brief 构建 cron.add 请求参数 —— 系统事件（非 agent 对话）

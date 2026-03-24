@@ -47,6 +47,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QDateTime>
 #include <QMap>
 
 #include "ws_config.h"
@@ -209,6 +210,24 @@ public:
 
     /// 获取 cron 服务状态（发送 cron.status RPC）
     Q_INVOKABLE void refreshCronStatus();
+
+    /**
+     * @brief 专用 agent 定时任务：显示名（与 createAgent 的 name 一致）
+     */
+    Q_INVOKABLE QString cronDedicatedAgentDisplayName(const QString &taskTitle) const;
+
+    /**
+     * @brief 暂存定时任务参数，在 createAgent 成功后再发 cron.add
+     * @param scheduleKind 1=cron 表达式 2=固定间隔(秒) 3=一次性 ISO 时间
+     * @note 调用顺序应为：先 createAgent(cronDedicatedAgentDisplayName(title), workspace)，再本方法
+     */
+    Q_INVOKABLE void prepareCronJobWithDedicatedAgent(int scheduleKind,
+                                                       const QString &jobName,
+                                                       const QString &message,
+                                                       const QString &cronExpr,
+                                                       const QString &tz,
+                                                       int intervalSec,
+                                                       const QString &isoDateTime);
 
     /**
      * @brief 添加 cron 表达式定时任务
@@ -426,6 +445,11 @@ private:
     static QString firstUserMessageFromHistoryList(const QVariantList &history);
     void setAgentListSidebarTitle(const QString &agentId, const QString &text);
 
+    /// 定时任务专用：先 agents.create 再 cron.add 时使用的显示名
+    static QString makeCronDedicatedAgentName(const QString &taskTitle);
+    void clearPendingCronDedicatedAgent();
+    void sendPendingCronAddWithAgentId(const QString &agentId);
+
     /// 生成唯一的请求 ID（UUID v4，不含花括号）
     QString nextRequestId();
 
@@ -467,6 +491,17 @@ private:
     /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;
     bool m_pendingAgentCreateForChat = false;
+
+    /// 创建定时任务时先建专用 agent：1=cron 2=interval 3=oneTime
+    bool m_cronAwaitingDedicatedAgent = false;
+    int m_cronPendingScheduleKind = 0;
+    QString m_cronPendingJobName;
+    QString m_cronPendingCronExpr;
+    QString m_cronPendingMessage;
+    QString m_cronPendingTz;
+    int m_cronPendingEveryMs = 0;
+    QDateTime m_cronPendingAt;
+    bool m_cronPendingDeleteAfterRun = true;
 
     /// 侧栏「首句问话」：chat.history 请求 id → agentId / 批次号（与切换会话的历史请求区分）
     QMap<QString, QString> m_sidebarTitleHistReqAgent;

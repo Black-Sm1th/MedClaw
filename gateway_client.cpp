@@ -358,6 +358,145 @@ void GatewayClient::setAgentListSidebarTitle(const QString &agentId, const QStri
     }
 }
 
+QString GatewayClient::makeCronDedicatedAgentName(const QString &taskTitle)
+{
+    QString t = taskTitle.trimmed();
+    if (t.isEmpty())
+        t = QStringLiteral("task");
+    if (t.length() > 28)
+        t = t.left(28);
+    return QStringLiteral("\u5b9a\u65f6-%1-%2")
+        .arg(t)
+        .arg(QDateTime::currentMSecsSinceEpoch());
+}
+
+QString GatewayClient::cronDedicatedAgentDisplayName(const QString &taskTitle) const
+{
+    return makeCronDedicatedAgentName(taskTitle);
+}
+
+void GatewayClient::prepareCronJobWithDedicatedAgent(
+    int scheduleKind,
+    const QString &jobName,
+    const QString &message,
+    const QString &cronExpr,
+    const QString &tz,
+    int intervalSec,
+    const QString &isoDateTime)
+{
+    if (m_state != Connected) {
+        clearPendingCronDedicatedAgent();
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+
+    clearPendingCronDedicatedAgent();
+    m_cronAwaitingDedicatedAgent = true;
+    m_cronPendingScheduleKind = scheduleKind;
+    m_cronPendingJobName = jobName;
+    m_cronPendingMessage = message;
+
+    switch (scheduleKind) {
+    case 1:
+        m_cronPendingCronExpr = cronExpr;
+        m_cronPendingTz = tz.isEmpty() ? QStringLiteral("Asia/Shanghai") : tz;
+        return;
+    case 2:
+        if (intervalSec <= 0) {
+            clearPendingCronDedicatedAgent();
+            emit errorOccurred(
+                QStringLiteral("\u95f4\u9694\u5fc5\u987b\u5927\u4e8e 0 \u79d2"));
+            return;
+        }
+        m_cronPendingEveryMs = intervalSec * 1000;
+        return;
+    case 3: {
+        const QDateTime at = QDateTime::fromString(isoDateTime, Qt::ISODate);
+        if (!at.isValid()) {
+            clearPendingCronDedicatedAgent();
+            emit errorOccurred(
+                QStringLiteral("\u65e0\u6548\u7684\u65f6\u95f4\u683c\u5f0f: %1")
+                    .arg(isoDateTime));
+            return;
+        }
+        m_cronPendingAt = at;
+        m_cronPendingDeleteAfterRun = true;
+        return;
+    }
+    default:
+        clearPendingCronDedicatedAgent();
+        emit errorOccurred(
+            QStringLiteral("\u65e0\u6548\u7684\u5b9a\u65f6\u7c7b\u578b"));
+        return;
+    }
+}
+
+void GatewayClient::clearPendingCronDedicatedAgent()
+{
+    m_cronAwaitingDedicatedAgent = false;
+    m_cronPendingScheduleKind = 0;
+    m_cronPendingJobName.clear();
+    m_cronPendingCronExpr.clear();
+    m_cronPendingMessage.clear();
+    m_cronPendingTz.clear();
+    m_cronPendingEveryMs = 0;
+    m_cronPendingAt = QDateTime();
+    m_cronPendingDeleteAfterRun = true;
+}
+
+void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
+{
+    if (agentId.isEmpty() || !m_cronAwaitingDedicatedAgent
+        || m_cronPendingScheduleKind <= 0) {
+        return;
+    }
+
+    const int kind = m_cronPendingScheduleKind;
+    const QString jobName = m_cronPendingJobName;
+    const QString cronExpr = m_cronPendingCronExpr;
+    const QString message = m_cronPendingMessage;
+    const QString tz = m_cronPendingTz.isEmpty() ? QStringLiteral("Asia/Shanghai")
+                                                  : m_cronPendingTz;
+    const int everyMs = m_cronPendingEveryMs;
+    const QDateTime at = m_cronPendingAt;
+    const bool deleteAfterRun = m_cronPendingDeleteAfterRun;
+
+    clearPendingCronDedicatedAgent();
+
+    // OpenClaw：sessionTarget "main" 仅允许 payload.kind=systemEvent；
+    // agentTurn + 指定 agentId 须用 isolated（见 src/cron/service/jobs.ts assertSupportedJobSpec）
+    const QString sessionIsolated = QStringLiteral("isolated");
+
+    QJsonObject cronParams;
+    switch (kind) {
+    case 1:
+        cronParams = m_scheduledTask.buildAddCronJobParams(
+            jobName, cronExpr, message, tz, sessionIsolated, false, agentId);
+        break;
+    case 2:
+        if (everyMs > 0) {
+            cronParams = m_scheduledTask.buildAddIntervalJobParams(
+                jobName, everyMs, message, sessionIsolated, false, agentId);
+        }
+        break;
+    case 3:
+        if (at.isValid()) {
+            cronParams = m_scheduledTask.buildAddOneTimeJobParams(
+                jobName, at, message, deleteAfterRun, sessionIsolated, agentId);
+        }
+        break;
+    default:
+        break;
+    }
+
+    if (!cronParams.isEmpty()) {
+        qDebug().noquote() << "[Gateway] cron.add bound to dedicated agent" << agentId
+                           << "scheduleKind=" << kind;
+        sendRequest(QStringLiteral("cron.add"), cronParams);
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  3. 连接生命周期
 // ═══════════════════════════════════════════════════════════════════════
@@ -382,6 +521,7 @@ void GatewayClient::connectToServer(const QString &url)
     m_pendingRequests.clear();
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
+    clearPendingCronDedicatedAgent();
     m_sidebarTitleHistReqAgent.clear();
     m_sidebarTitleHistReqBatch.clear();
     m_agentFirstUserTitleDebounce.stop();
@@ -449,6 +589,7 @@ void GatewayClient::onDisconnected()
              << "pendingBeforeClear=" << m_pendingRequests.size();
     m_session.setStreaming(false);
     m_pendingRequests.clear();
+    clearPendingCronDedicatedAgent();
     m_sidebarTitleHistReqAgent.clear();
     m_sidebarTitleHistReqBatch.clear();
     m_agentFirstUserTitleDebounce.stop();
@@ -788,6 +929,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_pendingCreateName.clear();
             m_pendingAgentCreateForChat = false;
             m_pendingFirstChatMessage.clear();
+            clearPendingCronDedicatedAgent();
         }
         if (method == QLatin1String("agents.delete") && !m_pendingDeleteId.isEmpty()) {
             emit agentDeleted(m_pendingDeleteId, false, errMsg);
@@ -881,6 +1023,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // agents.create 响应 → 创建成功，刷新列表
     if (method == QLatin1String("agents.create")) {
         const QString agentId = payload.value(QStringLiteral("agentId")).toString();
+
         m_pendingCreateName.clear();
 
         QString bootstrapMsg;
@@ -901,6 +1044,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
         if (doBootstrap)
             sendChatMessage(bootstrapMsg);
+
+        // 在日志与 agentCreated 之后再发 cron.add，避免控制台顺序像「定时任务先于 agent」
+        if (m_cronAwaitingDedicatedAgent) {
+            if (!agentId.isEmpty())
+                sendPendingCronAddWithAgentId(agentId);
+            else
+                clearPendingCronDedicatedAgent();
+        }
         return;
     }
 
@@ -1708,9 +1859,11 @@ void GatewayClient::addCronJob(const QString &name,
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
-    sendRequest(QStringLiteral("cron.add"),
-                m_scheduledTask.buildAddCronJobParams(name, cronExpr,
-                                                      message, tz));
+    const QString agentName = cronDedicatedAgentDisplayName(name);
+    createAgent(agentName, QString());
+    prepareCronJobWithDedicatedAgent(
+        1, name, message, cronExpr,
+        tz.isEmpty() ? QStringLiteral("Asia/Shanghai") : tz, 0, QString());
 }
 
 /**
@@ -1728,9 +1881,15 @@ void GatewayClient::addIntervalJob(const QString &name,
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
-    sendRequest(QStringLiteral("cron.add"),
-                m_scheduledTask.buildAddIntervalJobParams(
-                    name, intervalSec * 1000, message));
+    if (intervalSec <= 0) {
+        emit errorOccurred(
+            QStringLiteral("\u95f4\u9694\u5fc5\u987b\u5927\u4e8e 0 \u79d2"));
+        return;
+    }
+    const QString agentName = cronDedicatedAgentDisplayName(name);
+    createAgent(agentName, QString());
+    prepareCronJobWithDedicatedAgent(2, name, message, QString(), QString(),
+                                     intervalSec, QString());
 }
 
 /**
@@ -1756,8 +1915,10 @@ void GatewayClient::addOneTimeJob(const QString &name,
             QStringLiteral("\u65e0\u6548\u7684\u65f6\u95f4\u683c\u5f0f: %1").arg(dateTime));
         return;
     }
-    sendRequest(QStringLiteral("cron.add"),
-                m_scheduledTask.buildAddOneTimeJobParams(name, at, message));
+    const QString agentName = cronDedicatedAgentDisplayName(name);
+    createAgent(agentName, QString());
+    prepareCronJobWithDedicatedAgent(3, name, message, QString(), QString(), 0,
+                                     dateTime);
 }
 
 /**

@@ -324,7 +324,8 @@ QJsonObject WsScheduledTask::buildAddCronJobParams(
     const QString &message,
     const QString &tz,
     const QString &sessionTarget,
-    bool deliver) const
+    bool deliver,
+    const QString &agentId) const
 {
     QJsonObject schedule;
     schedule[QStringLiteral("kind")] = QStringLiteral("cron");
@@ -343,6 +344,8 @@ QJsonObject WsScheduledTask::buildAddCronJobParams(
     params[QStringLiteral("sessionTarget")] = sessionTarget;
     params[QStringLiteral("wakeMode")]      = QStringLiteral("now");
     params[QStringLiteral("enabled")]       = true;
+    if (!agentId.isEmpty())
+        params[QStringLiteral("agentId")] = agentId;
     return params;
 }
 
@@ -351,7 +354,8 @@ QJsonObject WsScheduledTask::buildAddIntervalJobParams(
     int everyMs,
     const QString &message,
     const QString &sessionTarget,
-    bool deliver) const
+    bool deliver,
+    const QString &agentId) const
 {
     QJsonObject schedule;
     schedule[QStringLiteral("kind")]    = QStringLiteral("every");
@@ -369,6 +373,8 @@ QJsonObject WsScheduledTask::buildAddIntervalJobParams(
     params[QStringLiteral("sessionTarget")] = sessionTarget;
     params[QStringLiteral("wakeMode")]      = QStringLiteral("now");
     params[QStringLiteral("enabled")]       = true;
+    if (!agentId.isEmpty())
+        params[QStringLiteral("agentId")] = agentId;
     return params;
 }
 
@@ -377,7 +383,8 @@ QJsonObject WsScheduledTask::buildAddOneTimeJobParams(
     const QDateTime &at,
     const QString &message,
     bool deleteAfterRun,
-    const QString &sessionTarget) const
+    const QString &sessionTarget,
+    const QString &agentId) const
 {
     QJsonObject schedule;
     schedule[QStringLiteral("kind")] = QStringLiteral("at");
@@ -395,6 +402,8 @@ QJsonObject WsScheduledTask::buildAddOneTimeJobParams(
     params[QStringLiteral("wakeMode")]       = QStringLiteral("now");
     params[QStringLiteral("enabled")]        = true;
     params[QStringLiteral("deleteAfterRun")] = deleteAfterRun;
+    if (!agentId.isEmpty())
+        params[QStringLiteral("agentId")] = agentId;
     return params;
 }
 
