@@ -170,6 +170,11 @@ QVariantList GatewayClient::mcpList() const
     return m_mcpList;
 }
 
+QVariantList GatewayClient::toolList() const
+{
+    return m_tools.toolList();
+}
+
 /// 设置连接状态并通知 QML 属性绑定系统
 void GatewayClient::setState(ConnectionState state)
 {
@@ -200,7 +205,13 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
         qint64 updated = 0;   // 挑选该 agent 下最近活跃的会话（用于 startedAt / task- 时间）
         qint64 startedAt = 0; // 会话开始时间，侧栏展示（不用 updatedAt）
     };
+    struct CronPick {
+        qint64 updated = -1;
+        qint64 startedAt = 0;
+        QString sessionKey;
+    };
     QHash<QString, Best> bestByAgent;
+    QHash<QString, CronPick> bestCronByAgent;
 
     const QVariantList sess = m_session.sessions();
     for (const QVariant &v : sess) {
@@ -225,6 +236,16 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
             slot.updated = updated;
             slot.startedAt = startedAt;
         }
+
+        // agent:<id>:cron:<uuid> — 定时任务会话
+        if (parts.size() >= 4 && parts[2] == QLatin1String("cron")) {
+            CronPick &cp = bestCronByAgent[agentId];
+            if (updated >= cp.updated) {
+                cp.updated = updated;
+                cp.startedAt = startedAt;
+                cp.sessionKey = key;
+            }
+        }
     }
 
     QVariantList next = m_agentList;
@@ -232,31 +253,65 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
     for (int i = 0; i < next.size(); ++i) {
         QVariantMap row = next.at(i).toMap();
         const QString id = row.value(QStringLiteral("id")).toString();
+        const QString name = row.value(QStringLiteral("name")).toString();
+        // 与 makeCronDedicatedAgentName 一致：「定时-」前缀的专用 agent 走 cron 会话
+        const bool cronDedicatedAgent =
+            name.startsWith(QStringLiteral("\u5b9a\u65f6-"));
+        const CronPick cronPick = bestCronByAgent.value(id);
         const Best b = bestByAgent.value(id);
 
-        qint64 displayAt = b.startedAt;
-        if (displayAt <= 0 && id.startsWith(QLatin1String("task-"))) {
-            bool ok = false;
-            const qint64 parsed = id.mid(5).toLongLong(&ok);
-            if (ok && parsed > Q_INT64_C(1000000000000))
-                displayAt = parsed;
-        }
-
+        const QString oldChatSk =
+            row.value(QStringLiteral("chatSessionKey")).toString();
         const qint64 oldDisplayAt =
             row.value(QStringLiteral("activeSessionDisplayAt")).toLongLong();
         const QString oldTitle =
             row.value(QStringLiteral("activeSessionTitle")).toString();
 
-        // 侧栏标题由 chat.history 首条用户消息填充，此处只维护时间
-        if (b.updated == 0) {
-            row.remove(QStringLiteral("activeSessionDisplayAt"));
-            row.remove(QStringLiteral("activeSessionTitle"));
+        if (cronDedicatedAgent && !cronPick.sessionKey.isEmpty()) {
+            row[QStringLiteral("chatSessionKey")] = cronPick.sessionKey;
+            qint64 displayAt = cronPick.startedAt;
+            if (displayAt <= 0)
+                displayAt = cronPick.updated;
+            if (displayAt <= 0 && id.startsWith(QLatin1String("task-"))) {
+                bool ok = false;
+                const qint64 parsed = id.mid(5).toLongLong(&ok);
+                if (ok && parsed > Q_INT64_C(1000000000000))
+                    displayAt = parsed;
+            }
+            if (cronPick.updated >= 0) {
+                row[QStringLiteral("activeSessionDisplayAt")] =
+                    QVariant(static_cast<qlonglong>(displayAt));
+            }
         } else {
-            row[QStringLiteral("activeSessionDisplayAt")] =
-                QVariant(static_cast<qlonglong>(displayAt));
+            row.remove(QStringLiteral("chatSessionKey"));
+            qint64 displayAt = b.startedAt;
+            if (displayAt <= 0 && id.startsWith(QLatin1String("task-"))) {
+                bool ok = false;
+                const qint64 parsed = id.mid(5).toLongLong(&ok);
+                if (ok && parsed > Q_INT64_C(1000000000000))
+                    displayAt = parsed;
+            }
+            if (b.updated == 0) {
+                row.remove(QStringLiteral("activeSessionDisplayAt"));
+                row.remove(QStringLiteral("activeSessionTitle"));
+            } else {
+                row[QStringLiteral("activeSessionDisplayAt")] =
+                    QVariant(static_cast<qlonglong>(displayAt));
+            }
         }
 
-        if (oldDisplayAt
+        const QString newChatSk =
+            row.value(QStringLiteral("chatSessionKey")).toString();
+        const QString primarySk = newChatSk.trimmed().isEmpty()
+            ? QStringLiteral("agent:%1:main").arg(id)
+            : newChatSk.trimmed();
+        const QString oldRowSk = row.value(QStringLiteral("sessionKey")).toString();
+        row[QStringLiteral("sessionKey")] = primarySk;
+        if (oldRowSk != primarySk)
+            changed = true;
+
+        if (oldChatSk != newChatSk
+            || oldDisplayAt
                 != row.value(QStringLiteral("activeSessionDisplayAt")).toLongLong()
             || oldTitle
                 != row.value(QStringLiteral("activeSessionTitle")).toString()) {
@@ -293,7 +348,7 @@ void GatewayClient::flushAgentListFirstUserTitles()
         const QString aid = row.value(QStringLiteral("id")).toString();
         if (aid.isEmpty())
             continue;
-        const QString sk = QStringLiteral("agent:%1:main").arg(aid);
+        const QString sk = resolveChatSessionKeyForAgentId(aid);
         const QString reqId =
             sendRequest(QStringLiteral("chat.history"),
                         m_session.buildChatHistoryParams(sk, 1000));
@@ -315,7 +370,7 @@ void GatewayClient::refreshSidebarFirstUserTitleForAgent(const QString &agentId)
 
     ++m_sidebarTitleBatchGen;
     const quint64 batch = m_sidebarTitleBatchGen;
-    const QString sk = QStringLiteral("agent:%1:main").arg(aid);
+    const QString sk = resolveChatSessionKeyForAgentId(aid);
     const QString reqId =
         sendRequest(QStringLiteral("chat.history"),
                     m_session.buildChatHistoryParams(sk, 1000));
@@ -363,6 +418,24 @@ void GatewayClient::setAgentListSidebarTitle(const QString &agentId, const QStri
         m_agentList = next;
         emit agentListChanged();
     }
+}
+
+QString GatewayClient::resolveChatSessionKeyForAgentId(const QString &agentId) const
+{
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty())
+        return QString();
+    for (const QVariant &v : m_agentList) {
+        const QVariantMap row = v.toMap();
+        if (row.value(QStringLiteral("id")).toString() != aid)
+            continue;
+        const QString csk =
+            row.value(QStringLiteral("chatSessionKey")).toString().trimmed();
+        if (!csk.isEmpty())
+            return csk;
+        break;
+    }
+    return QStringLiteral("agent:%1:main").arg(aid);
 }
 
 QString GatewayClient::makeCronDedicatedAgentName(const QString &taskTitle)
@@ -970,6 +1043,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         refreshSessions();
         refreshModels();
         refreshMcpList();
+        refreshToolsCatalog(QString());
         if (!m_session.currentSessionKey().trimmed().isEmpty())
             patchSessionModel(QString());
         return;
@@ -1227,6 +1301,19 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("cron.runs")) {
         m_scheduledTask.parseRunsResponse(payload);
         emit cronRunsLoaded(m_scheduledTask.runList());
+        return;
+    }
+
+    // tools.catalog → 展平工具组，并按当前 config 快照应用 tools 策略
+    if (method == QLatin1String("tools.catalog")) {
+        m_tools.parseToolsCatalogResponse(payload);
+        if (!m_lastConfigSnapshot.isEmpty()) {
+            QString aid = m_tools.catalogAgentId().trimmed();
+            if (aid.isEmpty())
+                aid = m_defaultAgentId;
+            m_tools.applyToolPolicyFromConfig(m_lastConfigSnapshot, aid);
+        }
+        emit toolListChanged();
         return;
     }
 
@@ -1741,8 +1828,7 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
         return;
     }
 
-    const QString sessionKey =
-        QStringLiteral("agent:%1:main").arg(agentId);
+    const QString sessionKey = resolveChatSessionKeyForAgentId(agentId.trimmed());
 
     qDebug().noquote() << "[Gateway] switchAgent:" << agentId
                        << "sessionKey:" << sessionKey
@@ -1756,6 +1842,7 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
         loadChatHistory(sessionKey);
     refreshSessions();
     patchSessionModel(QString());
+    refreshToolsCatalog(agentId.trimmed());
 }
 
 /**
@@ -2094,7 +2181,15 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     const QString h = payload.value(QStringLiteral("hash")).toString().trimmed();
     if (!h.isEmpty())
         m_configSnapshotHash = h;
-    rebuildMcpListFromConfigObject(payload.value(QStringLiteral("config")).toObject());
+    m_lastConfigSnapshot = payload.value(QStringLiteral("config")).toObject();
+    rebuildMcpListFromConfigObject(m_lastConfigSnapshot);
+    if (!m_tools.toolList().isEmpty()) {
+        QString aid = m_tools.catalogAgentId().trimmed();
+        if (aid.isEmpty())
+            aid = m_defaultAgentId;
+        m_tools.applyToolPolicyFromConfig(m_lastConfigSnapshot, aid);
+        emit toolListChanged();
+    }
 }
 
 void GatewayClient::refreshMcpList()
@@ -2102,6 +2197,55 @@ void GatewayClient::refreshMcpList()
     if (m_state != Connected)
         return;
     sendRequest(QStringLiteral("config.get"), QJsonObject());
+}
+
+void GatewayClient::refreshToolsCatalog(const QString &agentId)
+{
+    if (m_state != Connected)
+        return;
+    const QString useAgent =
+        agentId.trimmed().isEmpty() ? m_defaultAgentId : agentId.trimmed();
+    const QJsonObject params =
+        m_tools.buildToolsCatalogParams(useAgent, true);
+    sendRequest(QStringLiteral("tools.catalog"), params);
+}
+
+void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &toolId,
+                                        bool enabled)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    const QString aid = agentId.trimmed();
+    const QString tid = toolId.trimmed();
+    if (aid.isEmpty() || tid.isEmpty()) {
+        emit errorOccurred(QStringLiteral("agentId / toolId \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+    if (m_lastConfigSnapshot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u914d\u7f6e\u5feb\u7167\u672a\u52a0\u8f7d\uff0c\u8bf7\u5148\u5237\u65b0\u8fde\u63a5\u6216 MCP \u5217\u8868"));
+        return;
+    }
+    const QJsonObject patch =
+        m_tools.buildToolToggleMergePatch(m_lastConfigSnapshot, aid, tid, enabled);
+    if (patch.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u672a\u627e\u5230\u6307\u5b9a agent\uff0c\u65e0\u6cd5\u66f4\u65b0\u5de5\u5177\u72b6\u6001"));
+        return;
+    }
+
+    QJsonObject reqParams;
+    reqParams[QStringLiteral("raw")] =
+        QString::fromUtf8(QJsonDocument(patch).toJson(QJsonDocument::Compact));
+    if (!m_configSnapshotHash.isEmpty())
+        reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+
+    sendRequest(QStringLiteral("config.patch"), reqParams);
+
+    m_tools.setLocalToolEnabled(tid, enabled);
+    emit toolListChanged();
 }
 
 void GatewayClient::applyMcpServer(bool isEdit,

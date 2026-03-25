@@ -18,8 +18,9 @@
  * │  组合子类：                                                   │
  * │    ├── WsConfig            配置类（连接参数、设备密钥）         │
  * │    ├── WsSession           会话类（会话管理、消息收发）         │
- * │    ├── WsSkill             技能类（预留）                     │
- * │    └── WsScheduledTask     定时任务类（预留）                  │
+ * │    ├── WsSkill             技能类（skills.status / update）   │
+ * │    ├── WsTools             工具类（tools.catalog + deny/allow）│
+ * │    └── WsScheduledTask     定时任务类                         │
  * └─────────────────────────────────────────────────────────────┘
  *
  * 连接流程概述：
@@ -53,6 +54,7 @@
 #include "ws_config.h"
 #include "ws_session.h"
 #include "ws_skill.h"
+#include "ws_tools.h"
 #include "ws_scheduled_task.h"
 
 class GatewayClient : public QObject
@@ -87,6 +89,9 @@ class GatewayClient : public QObject
     /// OpenClaw 配置中的 mcp.servers（来自 config.get）
     Q_PROPERTY(QVariantList mcpList READ mcpList
                NOTIFY mcpListChanged)
+    /// tools.catalog 展平后的工具列表（含 enabled，与 config 中 deny 对齐）
+    Q_PROPERTY(QVariantList toolList READ toolList
+               NOTIFY toolListChanged)
 
 public:
     /**
@@ -140,6 +145,8 @@ public:
 
     /// 已配置的 MCP 服务器列表（展示用）
     QVariantList mcpList() const;
+    /// 运行时工具目录（tools.catalog + deny 状态）
+    QVariantList toolList() const;
 
     // ═══════════════════════════════════════════════════════════════
     //  QML 可调用方法（Q_INVOKABLE）
@@ -292,7 +299,8 @@ public:
      * @brief 切换 Agent（依次发送 agent.identity.get + chat.history + sessions.list）
      * @param agentId agent ID（如 "main"、"coder"）
      *
-     * 自动构造 sessionKey = "agent:<agentId>:main"，
+     * 默认 sessionKey = "agent:<agentId>:main"；定时任务专用 agent（名称以「定时-」开头）
+     * 且存在 cron 会话时，使用 "agent:<agentId>:cron:<uuid>"，
      * 切换 currentSessionKey 并发送三个 RPC 请求。
      */
     Q_INVOKABLE void switchAgent(const QString &agentId);
@@ -322,6 +330,15 @@ public:
 
     /// 拉取配置快照并解析 mcp.servers（config.get）
     Q_INVOKABLE void refreshMcpList();
+
+    /// 拉取 tools.catalog（agentId 空则用 defaultAgentId）
+    Q_INVOKABLE void refreshToolsCatalog(const QString &agentId = QString());
+
+    /**
+     * @brief 通过 agents.list[].tools.deny 启用/禁用工具（config.patch）
+     */
+    Q_INVOKABLE void setAgentToolEnabled(const QString &agentId, const QString &toolId,
+                                         bool enabled);
 
     /**
      * @brief 通过 config.patch 写入 mcp.servers 条目
@@ -395,6 +412,7 @@ signals:
     void modelListChanged();              ///< 可用模型列表更新
     void currentModelChanged();           ///< 当前会话模型信息变更
     void mcpListChanged();                ///< MCP 服务器列表更新
+    void toolListChanged();               ///< 工具目录列表更新
 
 private slots:
     // ── WebSocket 事件槽函数 ──
@@ -482,7 +500,14 @@ private:
     static QString firstUserMessageFromHistoryList(const QVariantList &history);
     void setAgentListSidebarTitle(const QString &agentId, const QString &text);
 
-    /// 解析 config.get 的 payload，更新 m_configSnapshotHash 与 m_mcpList
+    /// 聊天/历史/身份使用的 sessionKey（agent 行上可有 chatSessionKey）
+    QString resolveChatSessionKeyForAgentId(const QString &agentId) const;
+
+    /**
+     * @brief 解析 config.get 的 payload，更新 m_configSnapshotHash、m_mcpList
+     *
+     * 同时将 payload 内完整 config 对象写入 m_lastConfigSnapshot（供 tools deny 与 patch 基线）。
+     */
     void applyMcpListFromConfigGetPayload(const QJsonObject &payload);
     /// 从完整 config 对象填充 m_mcpList（按名称排序）
     void rebuildMcpListFromConfigObject(const QJsonObject &config);
@@ -557,6 +582,9 @@ private:
 
     QString        m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
     QVariantList   m_mcpList;          ///< mcp.servers 展示列表
+
+    WsTools        m_tools;            ///< tools.catalog 与 tools 策略展平
+    QJsonObject    m_lastConfigSnapshot; ///< config.get 返回的 config 全文快照
 };
 
 #endif // GATEWAY_CLIENT_H

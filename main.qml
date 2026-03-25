@@ -62,7 +62,7 @@ ApplicationWindow {
         function onAgentCreated(agentId, success, message){
             if (success) {
                 leftMidPanel.activeAgentId = agentId
-                window.leftSelectedIndex = 5
+                window.leftSelectedIndex = 6
                 // 首条消息自动建 agent 时已在 C++ 内 switchAgent + send；此处不再重复 switch
             }
         }
@@ -175,7 +175,7 @@ ApplicationWindow {
                         visible: !window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "技能", "MCP"]
+                            model: ["新建任务", "定时任务", "技能", "Tools", "MCP"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -203,6 +203,8 @@ ApplicationWindow {
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "MCP"){
                                                 return "qrc:/images/puzzle.png"
+                                            }else if(modelData === "Tools"){
+                                                return "qrc:/images/tools.png"
                                             }
                                         }
                                     }
@@ -235,7 +237,7 @@ ApplicationWindow {
                         visible: window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "技能", "MCP", "history"]
+                            model: ["新建任务", "定时任务", "技能", "Tools", "MCP", "history"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -259,6 +261,8 @@ ApplicationWindow {
                                             return "qrc:/images/puzzle.png"
                                         }else if(modelData === "history"){
                                             return "qrc:/images/history.png"
+                                        }else if(modelData === "Tools"){
+                                            return "qrc:/images/tools.png"
                                         }
                                     }
                                 }
@@ -345,16 +349,32 @@ ApplicationWindow {
                                             spacing: 4
                                             width: parent.width
                                             Label {
-                                                // 主标题：首条用户问话（chat.history）；未拉到前用 agent 名
+                                                id: agentListCronTag
+                                                visible: {
+                                                    var nm = modelData.name || ""
+                                                    var sk = modelData.sessionKey || ""
+                                                    return (nm.indexOf("\u5b9a\u65f6-") === 0)
+                                                        || (sk.indexOf(":cron:") >= 0)
+                                                }
+                                                text: qsTr("[定时]")
+                                                font.pixelSize: 14
+                                                color: "#73000000"
+                                                height: 21
+                                            }
+                                            Label {
                                                 text: {
                                                     var t = modelData.activeSessionTitle || ""
-                                                    if (t.length > 0) return t
-                                                    return modelData.name || modelData.id || ""
+                                                    if (t.length === 0)
+                                                        t = modelData.name || modelData.id || ""
+                                                    return t
                                                 }
                                                 font.pixelSize: 14
                                                 color: "#D9000000"
-                                                width: parent.width
-                                                // elide: Text.ElideRight
+                                                height: 21
+                                                elide: Text.ElideRight
+                                                width: agentListCronTag.visible
+                                                       ? Math.max(0, parent.width - agentListCronTag.width - parent.spacing)
+                                                       : parent.width
                                             }
                                         }
 
@@ -378,7 +398,7 @@ ApplicationWindow {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             leftMidPanel.activeAgentId = modelData.id
-                                            window.leftSelectedIndex = 5
+                                            window.leftSelectedIndex = 6
                                             wsClient.switchAgent(modelData.id)
                                         }
                                     }
@@ -542,7 +562,7 @@ ApplicationWindow {
             Rectangle{
                 id: newTaskRec
                 anchors.fill: parent
-                visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 5
+                visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6
                 property bool hasMessages: chatModel.count > 0
 
                 function doSendMessage() {
@@ -2600,10 +2620,43 @@ ApplicationWindow {
                     }
                 }
             }
+            Rectangle{
+                id: toolsSettingRec
+                anchors.fill: parent
+                visible: window.leftSelectedIndex === 3
+                Column{
+                    anchors.fill: parent
+                    leftPadding: 60
+                    topPadding: 24
+                    rightPadding: 60
+                    spacing: 16
+                    Rectangle{
+                        id: toolsSettingTitleRec
+                        height: toolsSettingTitle.height
+                        width: parent.width - 120
+                        Column{
+                            id: toolsSettingTitle
+                            spacing: 8
+                            anchors.left: parent.left
+                            Label{
+                                text: qsTr("工具访问权限")
+                                font.pixelSize: 20
+                                font.weight: Font.Bold
+                                color: "#D9000000"
+                            }
+                            Label{
+                                text: qsTr("此代理具有通用配置以及针对每个工具的单独设置。")
+                                font.pixelSize: 14
+                                color: "#A6000000"
+                            }
+                        }
+                    }
+                }
+            }
             Rectangle {
                 id: mcpSettingRec
                 anchors.fill: parent
-                visible: window.leftSelectedIndex === 3
+                visible: window.leftSelectedIndex === 4
                 onVisibleChanged: {
                     if (visible && wsClient.connectionState === 3)
                         wsClient.refreshMcpList()

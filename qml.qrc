@@ -42,5 +42,6 @@
         <file>images/alarm.png</file>
         <file>images/history.png</file>
         <file>images/play.png</file>
+        <file>images/tools.png</file>
     </qresource>
 </RCC>
