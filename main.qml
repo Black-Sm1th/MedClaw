@@ -17,7 +17,7 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://192.168.124.58:18789"
+    property string wsServerUrl: "ws://127.0.0.1:18789"
     /// 非空表示「编辑」已有定时任务；空为新建
     property string editingCronJobId: ""
     property string editingCronPayloadKind: "agentTurn"
@@ -175,7 +175,7 @@ ApplicationWindow {
                         visible: !window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "技能", "Tools", "MCP"]
+                            model: ["新建任务", "定时任务", "技能", "工具", "MCP"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -203,7 +203,7 @@ ApplicationWindow {
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "MCP"){
                                                 return "qrc:/images/puzzle.png"
-                                            }else if(modelData === "Tools"){
+                                            }else if(modelData === "工具"){
                                                 return "qrc:/images/tools.png"
                                             }
                                         }
@@ -237,7 +237,7 @@ ApplicationWindow {
                         visible: window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "技能", "Tools", "MCP", "history"]
+                            model: ["新建任务", "定时任务", "技能", "工具", "MCP", "history"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -261,7 +261,7 @@ ApplicationWindow {
                                             return "qrc:/images/puzzle.png"
                                         }else if(modelData === "history"){
                                             return "qrc:/images/history.png"
-                                        }else if(modelData === "Tools"){
+                                        }else if(modelData === "工具"){
                                             return "qrc:/images/tools.png"
                                         }
                                     }
@@ -572,7 +572,10 @@ ApplicationWindow {
                     if (wsClient.connectionState !== 3)
                         return
                     textInputArea.text = ""
-                    $MainViewController.sendMessage(msg)
+                    var wsPath = ""
+                    if (!newTaskRec.hasMessages)
+                        wsPath = dropdownSelectionWorkSpace.absolutePath
+                    $MainViewController.sendMessage(msg, wsPath)
                 }
 
                 Column{
@@ -1054,23 +1057,60 @@ ApplicationWindow {
                                     width: 137
                                     height: 36
 
-                                    property string currentText: "workspace"
+                                    property string currentText: qsTr("workspace")
+                                    property string absolutePath: ""
                                     property var recentFolders: []
+
+                                    readonly property bool pickerLocked: newTaskRec.hasMessages
+
+                                    readonly property string displayText: {
+                                        if (pickerLocked) {
+                                            var w = ""
+                                            if (wsClient.agentIdentity)
+                                                w = wsClient.agentIdentity.workspace || ""
+                                            w = String(w).replace(/\\/g, "/")
+                                            if (!w)
+                                                return qsTr("workspace")
+                                            var segs = w.split("/")
+                                            return segs[segs.length - 1] || w
+                                        }
+                                        return currentText
+                                    }
+
+                                    function resetPicker() {
+                                        absolutePath = ""
+                                        currentText = qsTr("workspace")
+                                    }
+
+                                    Connections {
+                                        target: chatModel
+                                        function onCountChanged() {
+                                            if (chatModel.count === 0)
+                                                dropdownSelectionWorkSpace.resetPicker()
+                                        }
+                                    }
 
                                     Rectangle {
                                         id: wsButton
                                         anchors.fill: parent
                                         radius: 8
+                                        opacity: dropdownSelectionWorkSpace.pickerLocked ? 0.85 : 1
                                         color: wsMouseArea.pressed ? "#14000000"
                                              : wsMouseArea.containsMouse ? "#0A000000"
                                              : "transparent"
                                         Behavior on color { ColorAnimation { duration: 100 } }
 
+                                        ToolTip.visible: wsMouseArea.containsMouse
+                                                         && dropdownSelectionWorkSpace.pickerLocked
+                                                         && (wsClient.agentIdentity && (wsClient.agentIdentity.workspace || "").length > 0)
+                                        ToolTip.text: wsClient.agentIdentity ? (wsClient.agentIdentity.workspace || "") : ""
+                                        ToolTip.delay: 400
+
                                         Row {
                                             spacing: 6
                                             anchors.verticalCenter: parent.verticalCenter
                                             anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.horizontalCenterOffset: -wsChevron.width / 2 - 2
+                                            anchors.horizontalCenterOffset: dropdownSelectionWorkSpace.pickerLocked ? 0 : (-wsChevron.width / 2 - 2)
 
                                             Image {
                                                 source: "qrc:/images/folder.png"
@@ -1080,7 +1120,9 @@ ApplicationWindow {
                                                 sourceSize: Qt.size(20, 20)
                                             }
                                             Text {
-                                                text: dropdownSelectionWorkSpace.currentText
+                                                text: dropdownSelectionWorkSpace.displayText
+                                                width: Math.min(implicitWidth, 100)
+                                                elide: Text.ElideMiddle
                                                 font.pixelSize: 14
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#D9000000"
@@ -1090,6 +1132,7 @@ ApplicationWindow {
 
                                         Canvas {
                                             id: wsChevron
+                                            visible: !dropdownSelectionWorkSpace.pickerLocked
                                             width: 16; height: 16
                                             anchors.right: parent.right
                                             anchors.rightMargin: 12
@@ -1115,8 +1158,12 @@ ApplicationWindow {
                                             id: wsMouseArea
                                             anchors.fill: parent
                                             hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: wsPopup.visible ? wsPopup.close() : wsPopup.open()
+                                            cursorShape: dropdownSelectionWorkSpace.pickerLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (dropdownSelectionWorkSpace.pickerLocked)
+                                                    return
+                                                wsPopup.visible ? wsPopup.close() : wsPopup.open()
+                                            }
                                         }
                                     }
 
@@ -1282,9 +1329,13 @@ ApplicationWindow {
                                         title: qsTr("选择文件夹")
                                         selectFolder: true
                                         onAccepted: {
-                                            var path = folderDialogWorkSpace.fileUrl.toString()
-                                            path = path.replace(/^file:\/\/\//, "")
-                                            var parts = path.split("/")
+                                            var url = folderDialogWorkSpace.fileUrl.toString()
+                                            var path = url.replace(/^file:\/{2,3}/, "")
+                                            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                                                path = path.substring(1)
+                                            path = path.replace(/\//g, "\\")
+                                            dropdownSelectionWorkSpace.absolutePath = path
+                                            var parts = path.replace(/\\/g, "/").split("/")
                                             dropdownSelectionWorkSpace.currentText = parts[parts.length - 1] || path
                                         }
                                     }

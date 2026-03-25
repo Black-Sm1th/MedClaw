@@ -49,6 +49,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QDateTime>
+#include <QHash>
 #include <QMap>
 
 #include "ws_config.h"
@@ -172,9 +173,11 @@ public:
      * @brief 发送聊天消息
      * @param message    用户输入的消息文本
      * @param sessionKey 目标会话 key（空则使用当前会话）
+     * @param workspaceForNewAgent 当前无会话、将触发 agents.create 时使用的 workspace（空则服务端默认路径）
      */
     Q_INVOKABLE void sendChatMessage(const QString &message,
-                                     const QString &sessionKey = QString());
+                                     const QString &sessionKey = QString(),
+                                     const QString &workspaceForNewAgent = QString());
 
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();
@@ -506,11 +509,17 @@ private:
     /**
      * @brief 解析 config.get 的 payload，更新 m_configSnapshotHash、m_mcpList
      *
-     * 同时将 payload 内完整 config 对象写入 m_lastConfigSnapshot（供 tools deny 与 patch 基线）。
+     * 将 config 根对象写入 m_lastConfigSnapshot（优先 config，其次 resolved，再次 parsed）；
+     * 并解析 agents.list[].workspace 供界面展示（agent.identity.get 不含 workspace）。
      */
     void applyMcpListFromConfigGetPayload(const QJsonObject &payload);
     /// 从完整 config 对象填充 m_mcpList（按名称排序）
     void rebuildMcpListFromConfigObject(const QJsonObject &config);
+    /// 从 config 根对象重建 agentId → workspace（及 agents.defaults.workspace）
+    void rebuildAgentWorkspaceMapFromConfigObject(const QJsonObject &configRoot);
+    QString resolveWorkspacePathForAgentId(const QString &agentId) const;
+    /// 用当前 workspace 映射补全 m_agentIdentity["workspace"] 并 notify
+    void mergeWorkspaceIntoAgentIdentity();
 
     /// 定时任务专用：先 agents.create 再 cron.add 时使用的显示名
     static QString makeCronDedicatedAgentName(const QString &taskTitle);
@@ -584,7 +593,10 @@ private:
     QVariantList   m_mcpList;          ///< mcp.servers 展示列表
 
     WsTools        m_tools;            ///< tools.catalog 与 tools 策略展平
-    QJsonObject    m_lastConfigSnapshot; ///< config.get 返回的 config 全文快照
+    QJsonObject    m_lastConfigSnapshot; ///< config.get 解析出的配置根对象（供 tools / patch）
+
+    QHash<QString, QString> m_agentWorkspaceById; ///< agents.list[].id → workspace
+    QString                 m_agentsDefaultWorkspace; ///< agents.defaults.workspace
 };
 
 #endif // GATEWAY_CLIENT_H

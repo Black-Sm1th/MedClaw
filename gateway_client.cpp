@@ -1187,8 +1187,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     }
 
     // agent.identity.get 响应 → 解析身份并通知
+    // 服务端 identity 不含 workspace，从 config.get 缓存的 agents.list 补全
     if (method == QLatin1String("agent.identity.get")) {
         m_agentIdentity = m_session.parseAgentIdentityResponse(payload);
+        const QString aid =
+            m_agentIdentity.value(QStringLiteral("agentId")).toString().trimmed();
+        const QString ws = resolveWorkspacePathForAgentId(aid);
+        if (!ws.isEmpty())
+            m_agentIdentity.insert(QStringLiteral("workspace"), ws);
         emit agentIdentityChanged();
         return;
     }
@@ -1877,12 +1883,14 @@ void GatewayClient::loadChatHistory(const QString &sessionKey, int limit)
  * @brief 发送聊天消息
  * @param message    用户输入的消息文本
  * @param sessionKey 目标会话 key（空则使用当前会话）
+ * @param workspaceForNewAgent 首条消息创建 agent 时传入的 workspace
  *
  * 消息发送后，服务器会通过 event 帧推送 agent 的流式回复，
  * 由 handleEvent() → WsSession::parseEvent() 链路处理。
  */
 void GatewayClient::sendChatMessage(const QString &message,
-                                     const QString &sessionKey)
+                                     const QString &sessionKey,
+                                     const QString &workspaceForNewAgent)
 {
     if (m_state != Connected) {
         emit errorOccurred(
@@ -1908,7 +1916,7 @@ void GatewayClient::sendChatMessage(const QString &message,
         m_pendingAgentCreateForChat = true;
         const QString autoName = QStringLiteral("task-%1")
             .arg(QDateTime::currentMSecsSinceEpoch());
-        createAgent(autoName, QString());
+        createAgent(autoName, workspaceForNewAgent);
         return;
     }
 
@@ -2181,8 +2189,21 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     const QString h = payload.value(QStringLiteral("hash")).toString().trimmed();
     if (!h.isEmpty())
         m_configSnapshotHash = h;
-    m_lastConfigSnapshot = payload.value(QStringLiteral("config")).toObject();
+
+    QJsonObject cfgRoot = payload.value(QStringLiteral("config")).toObject();
+    if (cfgRoot.isEmpty())
+        cfgRoot = payload.value(QStringLiteral("resolved")).toObject();
+    if (cfgRoot.isEmpty()) {
+        const QJsonValue parsed = payload.value(QStringLiteral("parsed"));
+        if (parsed.isObject())
+            cfgRoot = parsed.toObject();
+    }
+    m_lastConfigSnapshot = cfgRoot;
+
     rebuildMcpListFromConfigObject(m_lastConfigSnapshot);
+    rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
+    mergeWorkspaceIntoAgentIdentity();
+
     if (!m_tools.toolList().isEmpty()) {
         QString aid = m_tools.catalogAgentId().trimmed();
         if (aid.isEmpty())
@@ -2190,6 +2211,53 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
         m_tools.applyToolPolicyFromConfig(m_lastConfigSnapshot, aid);
         emit toolListChanged();
     }
+}
+
+void GatewayClient::rebuildAgentWorkspaceMapFromConfigObject(
+    const QJsonObject &root)
+{
+    m_agentWorkspaceById.clear();
+    m_agentsDefaultWorkspace.clear();
+    if (root.isEmpty())
+        return;
+
+    const QJsonObject agents = root.value(QStringLiteral("agents")).toObject();
+    m_agentsDefaultWorkspace =
+        agents.value(QStringLiteral("defaults")).toObject()
+            .value(QStringLiteral("workspace")).toString().trimmed();
+
+    const QJsonArray list = agents.value(QStringLiteral("list")).toArray();
+    for (const QJsonValue &v : list) {
+        const QJsonObject a = v.toObject();
+        const QString id = a.value(QStringLiteral("id")).toString().trimmed();
+        const QString ws = a.value(QStringLiteral("workspace")).toString().trimmed();
+        if (!id.isEmpty() && !ws.isEmpty())
+            m_agentWorkspaceById.insert(id, ws);
+    }
+}
+
+QString GatewayClient::resolveWorkspacePathForAgentId(const QString &agentId) const
+{
+    const QString id = agentId.trimmed();
+    if (id.isEmpty())
+        return QString();
+    auto it = m_agentWorkspaceById.constFind(id);
+    if (it != m_agentWorkspaceById.cend() && !it.value().isEmpty())
+        return it.value();
+    return m_agentsDefaultWorkspace;
+}
+
+void GatewayClient::mergeWorkspaceIntoAgentIdentity()
+{
+    const QString aid =
+        m_agentIdentity.value(QStringLiteral("agentId")).toString().trimmed();
+    if (aid.isEmpty())
+        return;
+    const QString ws = resolveWorkspacePathForAgentId(aid);
+    if (ws.isEmpty())
+        return;
+    m_agentIdentity.insert(QStringLiteral("workspace"), ws);
+    emit agentIdentityChanged();
 }
 
 void GatewayClient::refreshMcpList()

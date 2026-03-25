@@ -14,7 +14,8 @@ class MainViewController : public QObject
 public:
     void init(ChatModel *chatModel, GatewayClient *wsClient);
 
-    Q_INVOKABLE void sendMessage(const QString &text);
+    Q_INVOKABLE void sendMessage(const QString &text,
+                                 const QString &workspaceForNewAgent = QString());
 
 private:
     ChatModel      *m_chatModel  = nullptr;
