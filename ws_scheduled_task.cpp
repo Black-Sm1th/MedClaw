@@ -7,6 +7,7 @@
  *   cron.remove / cron.run / cron.runs
  */
 #include "ws_scheduled_task.h"
+#include <QHash>
 #include <QJsonDocument>
 #include <QDebug>
 
@@ -249,32 +250,53 @@ int WsScheduledTask::parseRunsResponse(const QJsonObject &payload)
 {
     m_runs.clear();
 
-    QJsonArray arr = payload.value(QStringLiteral("items")).toArray();
+    QJsonArray arr = payload.value(QStringLiteral("entries")).toArray();
+    if (arr.isEmpty())
+        arr = payload.value(QStringLiteral("items")).toArray();
     if (arr.isEmpty())
         arr = payload.value(QStringLiteral("runs")).toArray();
+
+    QHash<QString, QString> jobNameLookup;
+    for (const QVariant &jv : m_jobs) {
+        const QVariantMap jm = jv.toMap();
+        const QString jid = jm.value(QStringLiteral("id")).toString();
+        const QString jname = jm.value(QStringLiteral("name")).toString();
+        if (!jid.isEmpty() && !jname.isEmpty())
+            jobNameLookup.insert(jid, jname);
+    }
 
     for (const QJsonValue &v : arr) {
         const QJsonObject r = v.toObject();
 
+        const QString jobId = r.value(QStringLiteral("jobId")).toString();
+
         QVariantMap entry;
-        entry[QStringLiteral("id")] =
-            r.value(QStringLiteral("id")).toString();
-        entry[QStringLiteral("jobId")] =
-            r.value(QStringLiteral("jobId")).toString();
-        entry[QStringLiteral("jobName")] =
-            r.value(QStringLiteral("jobName")).toString();
+        entry[QStringLiteral("jobId")] = jobId;
+        entry[QStringLiteral("jobName")] = jobNameLookup.value(jobId, jobId);
         entry[QStringLiteral("status")] =
             r.value(QStringLiteral("status")).toString();
         entry[QStringLiteral("deliveryStatus")] =
             r.value(QStringLiteral("deliveryStatus")).toString();
-        entry[QStringLiteral("startedAt")] =
-            r.value(QStringLiteral("startedAt")).toString();
-        entry[QStringLiteral("endedAt")] =
-            r.value(QStringLiteral("endedAt")).toString();
-        entry[QStringLiteral("durationMs")] =
-            r.value(QStringLiteral("durationMs")).toInt(0);
         entry[QStringLiteral("error")] =
             r.value(QStringLiteral("error")).toString();
+        entry[QStringLiteral("summary")] =
+            r.value(QStringLiteral("summary")).toString();
+        entry[QStringLiteral("durationMs")] =
+            r.value(QStringLiteral("durationMs")).toInt(0);
+
+        const auto tsMs = static_cast<qint64>(r.value(QStringLiteral("ts")).toDouble(0));
+        if (tsMs > 0) {
+            entry[QStringLiteral("startedAt")] =
+                QDateTime::fromMSecsSinceEpoch(tsMs).toString(Qt::ISODate);
+        } else {
+            const auto runAtMs = static_cast<qint64>(
+                r.value(QStringLiteral("runAtMs")).toDouble(0));
+            if (runAtMs > 0)
+                entry[QStringLiteral("startedAt")] =
+                    QDateTime::fromMSecsSinceEpoch(runAtMs).toString(Qt::ISODate);
+            else
+                entry[QStringLiteral("startedAt")] = QString();
+        }
 
         m_runs.append(entry);
     }

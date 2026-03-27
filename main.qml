@@ -17,7 +17,7 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://127.0.0.1:18789"
+    property string wsServerUrl: "ws://192.168.124.58:18789"
     /// 非空表示「编辑」已有定时任务；空为新建
     property string editingCronJobId: ""
     property string editingCronPayloadKind: "agentTurn"
@@ -225,6 +225,8 @@ ApplicationWindow {
                                             leftMidPanel.activeAgentId = ""
                                             chatModel.clear()
                                             wsClient.clearActiveAgentContext()
+                                        }else{
+                                            leftMidPanel.activeAgentId = ""
                                         }
                                     }
                                 }
@@ -277,6 +279,8 @@ ApplicationWindow {
                                             leftMidPanel.activeAgentId = ""
                                             chatModel.clear()
                                             wsClient.clearActiveAgentContext()
+                                        }else{
+                                            leftMidPanel.activeAgentId = ""
                                         }
                                     }
                                 }
@@ -1340,10 +1344,20 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                                DropdownSelect {
+                                    id: dropdownSelectionModel
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 137
+                                    height: 36
+                                    model: ["Qwen3-32B"]
+                                    icon: "qrc:/images/ai.png"
+                                    iconSize: 20
+                                    currentIndex: 0
+                                }
                                 Item {
                                     id: dropdownSelectionSkill
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: skillBtnRow.width + 12 + skillChevron.width + 12
+                                    width: skillBtnRow.width + 12 + 12
                                     height: 36
 
                                     property var selectedSkills: []
@@ -1428,13 +1442,13 @@ ApplicationWindow {
                                                 fillMode: Image.PreserveAspectFit
                                                 sourceSize: Qt.size(20, 20)
                                             }
-                                            Text {
-                                                text: "技能"
-                                                font.pixelSize: 14
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#D9000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
+                                            // Text {
+                                            //     text: "技能"
+                                            //     font.pixelSize: 14
+                                            //     font.family: "Alibaba PuHuiTi 3.0"
+                                            //     color: "#D9000000"
+                                            //     anchors.verticalCenter: parent.verticalCenter
+                                            // }
                                             Rectangle {
                                                 visible: dropdownSelectionSkill.selectedSkills.length > 0
                                                 width: badgeText.width + 8
@@ -1454,28 +1468,28 @@ ApplicationWindow {
                                             }
                                         }
 
-                                        Canvas {
-                                            id: skillChevron
-                                            width: 16; height: 16
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: 12
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            rotation: skillPopup.visible ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                ctx.reset()
-                                                ctx.strokeStyle = "#80000000"
-                                                ctx.lineWidth = 1.5
-                                                ctx.lineCap = "round"
-                                                ctx.lineJoin = "round"
-                                                ctx.beginPath()
-                                                ctx.moveTo(4, 6)
-                                                ctx.lineTo(8, 10)
-                                                ctx.lineTo(12, 6)
-                                                ctx.stroke()
-                                            }
-                                        }
+                                        // Canvas {
+                                        //     id: skillChevron
+                                        //     width: 16; height: 16
+                                        //     anchors.right: parent.right
+                                        //     anchors.rightMargin: 12
+                                        //     anchors.verticalCenter: parent.verticalCenter
+                                        //     rotation: skillPopup.visible ? 180 : 0
+                                        //     Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                        //     onPaint: {
+                                        //         var ctx = getContext("2d")
+                                        //         ctx.reset()
+                                        //         ctx.strokeStyle = "#80000000"
+                                        //         ctx.lineWidth = 1.5
+                                        //         ctx.lineCap = "round"
+                                        //         ctx.lineJoin = "round"
+                                        //         ctx.beginPath()
+                                        //         ctx.moveTo(4, 6)
+                                        //         ctx.lineTo(8, 10)
+                                        //         ctx.lineTo(12, 6)
+                                        //         ctx.stroke()
+                                        //     }
+                                        // }
 
                                         MouseArea {
                                             id: skillMouseArea
@@ -1677,16 +1691,6 @@ ApplicationWindow {
                                             NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
                                         }
                                     }
-                                }
-                                DropdownSelect {
-                                    id: dropdownSelectionModel
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 137
-                                    height: 36
-                                    model: ["Qwen3-32B"]
-                                    icon: "qrc:/images/ai.png"
-                                    iconSize: 20
-                                    currentIndex: 0
                                 }
                                 Rectangle{
                                     width: parent.width - dropdownSelectionWorkSpace.width - dropdownSelectionSkill.width - dropdownSelectionModel.width - inputLeftRow.width - 4 * 4
@@ -2146,6 +2150,7 @@ ApplicationWindow {
                         clip: true
                         visible: scheduledTaskTab.currentIndex === 1
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+
                         Column {
                             spacing: 8
                             width: parent.width
@@ -2165,24 +2170,37 @@ ApplicationWindow {
 
                             Repeater {
                                 model: cronRunsModel
+
                                 delegate: Rectangle {
+                                    id: historyRow
+                                    property var run: model
                                     width: cronHistoryScrollView.width - 120
-                                    height: 64
+                                    height: 76
                                     radius: 8
-                                    color: "#F7F9FA"
+                                    color: historyHover.containsMouse ? "#F0F2F5" : "#F7F9FA"
+
+                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                    MouseArea {
+                                        id: historyHover
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.NoButton
+                                    }
 
                                     Row {
                                         anchors.left: parent.left
                                         anchors.leftMargin: 16
+                                        anchors.right: historyRightCol.left
+                                        anchors.rightMargin: 16
                                         anchors.verticalCenter: parent.verticalCenter
                                         spacing: 12
 
-                                        // 状态指示圆点
                                         Rectangle {
                                             width: 10; height: 10; radius: 5
                                             anchors.verticalCenter: parent.verticalCenter
                                             color: {
-                                                var s = model.status || ""
+                                                var s = historyRow.run.status || ""
                                                 if (s === "ok") return "#22C55E"
                                                 if (s === "error") return "#EF4444"
                                                 if (s === "skipped") return "#F59E0B"
@@ -2192,57 +2210,155 @@ ApplicationWindow {
 
                                         Column {
                                             spacing: 4
+                                            width: parent.width - 22
+
                                             Label {
-                                                text: model.jobName || model.jobId || ""
-                                                font.pixelSize: 14
-                                                font.weight: Font.DemiBold
+                                                text: historyRow.run.jobName || historyRow.run.jobId || ""
+                                                font.pixelSize: 16
+                                                font.weight: Font.Bold
                                                 color: "#D9000000"
+                                                width: parent.width
+                                                elide: Text.ElideRight
                                             }
+
                                             Row {
-                                                spacing: 12
+                                                spacing: 8
+
+                                                Rectangle {
+                                                    width: historyStatusText.implicitWidth + 12
+                                                    height: 20
+                                                    radius: 4
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: {
+                                                        var s = historyRow.run.status || ""
+                                                        if (s === "ok") return "#0F22C55E"
+                                                        if (s === "error") return "#0FEF4444"
+                                                        if (s === "skipped") return "#0FF59E0B"
+                                                        return "#0A000000"
+                                                    }
+                                                    Label {
+                                                        id: historyStatusText
+                                                        anchors.centerIn: parent
+                                                        text: {
+                                                            var s = historyRow.run.status || ""
+                                                            if (s === "ok") return "成功"
+                                                            if (s === "error") return "失败"
+                                                            if (s === "skipped") return "跳过"
+                                                            return s
+                                                        }
+                                                        font.pixelSize: 11
+                                                        color: {
+                                                            var s = historyRow.run.status || ""
+                                                            if (s === "ok") return "#22C55E"
+                                                            if (s === "error") return "#EF4444"
+                                                            if (s === "skipped") return "#F59E0B"
+                                                            return "#73000000"
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    visible: {
+                                                        var d = historyRow.run.deliveryStatus || ""
+                                                        return d !== "" && d !== "not-requested"
+                                                    }
+                                                    width: deliveryLabel.implicitWidth + 12
+                                                    height: 20
+                                                    radius: 4
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: {
+                                                        var d = historyRow.run.deliveryStatus || ""
+                                                        if (d === "delivered") return "#0F006BFF"
+                                                        return "#0A000000"
+                                                    }
+                                                    Label {
+                                                        id: deliveryLabel
+                                                        anchors.centerIn: parent
+                                                        text: {
+                                                            var d = historyRow.run.deliveryStatus || ""
+                                                            if (d === "delivered") return "已投递"
+                                                            if (d === "not-delivered") return "未投递"
+                                                            if (d === "unknown") return "投递未知"
+                                                            return d
+                                                        }
+                                                        font.pixelSize: 11
+                                                        color: {
+                                                            var d = historyRow.run.deliveryStatus || ""
+                                                            if (d === "delivered") return "#006BFF"
+                                                            return "#73000000"
+                                                        }
+                                                    }
+                                                }
+
+                                                Label {
+                                                    text: (historyRow.run.startedAt || "").replace("T", " ").substring(0, 19)
+                                                    font.pixelSize: 14
+                                                    color: "#73000000"
+                                                    visible: (historyRow.run.startedAt || "") !== ""
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                }
+
                                                 Label {
                                                     text: {
-                                                        var s = model.status || ""
-                                                        if (s === "ok") return "成功"
-                                                        if (s === "error") return "失败"
-                                                        if (s === "skipped") return "跳过"
-                                                        return s
+                                                        var ms = historyRow.run.durationMs || 0
+                                                        if (ms <= 0) return ""
+                                                        if (ms < 1000) return ms + " ms"
+                                                        var sec = (ms / 1000).toFixed(1)
+                                                        return sec + " s"
                                                     }
-                                                    font.pixelSize: 12
-                                                    color: {
-                                                        var s = model.status || ""
-                                                        if (s === "ok") return "#22C55E"
-                                                        if (s === "error") return "#EF4444"
-                                                        return "#73000000"
-                                                    }
-                                                }
-                                                Label {
-                                                    text: (model.startedAt || "").replace("T", " ").substring(0, 19)
-                                                    font.pixelSize: 12
-                                                    color: "#73000000"
-                                                    visible: (model.startedAt || "") !== ""
-                                                }
-                                                Label {
-                                                    text: model.durationMs ? (model.durationMs + " ms") : ""
-                                                    font.pixelSize: 12
-                                                    color: "#73000000"
+                                                    font.pixelSize: 14
+                                                    color: "#A6000000"
                                                     visible: text !== ""
+                                                    anchors.verticalCenter: parent.verticalCenter
                                                 }
                                             }
                                         }
                                     }
 
-                                    // 错误信息
-                                    Label {
+                                    Column {
+                                        id: historyRightCol
                                         anchors.right: parent.right
                                         anchors.rightMargin: 16
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: model.error || ""
-                                        font.pixelSize: 12
-                                        color: "#EF4444"
-                                        visible: (model.error || "") !== ""
-                                        width: Math.min(implicitWidth, 200)
-                                        elide: Text.ElideRight
+                                        width: historyErrorLabel.visible ? Math.min(historyErrorLabel.implicitWidth, 240) : 0
+                                        spacing: 0
+
+                                        Label {
+                                            id: historyErrorLabel
+                                            text: historyRow.run.error || ""
+                                            font.pixelSize: 12
+                                            color: "#EF4444"
+                                            visible: (historyRow.run.error || "") !== ""
+                                            width: parent.width
+                                            elide: Text.ElideRight
+                                            horizontalAlignment: Text.AlignRight
+
+                                            ToolTip {
+                                                visible: historyErrorHover.containsMouse && historyErrorLabel.truncated
+                                                text: historyErrorLabel.text
+                                                delay: 500
+                                                x: -width + historyErrorLabel.width
+                                                y: -height - 4
+                                                width: Math.min(implicitContentWidth + 20, 360)
+                                                background: Rectangle {
+                                                    color: "#A6000000"
+                                                    radius: 4
+                                                }
+                                                contentItem: Text {
+                                                    text: historyErrorLabel.text
+                                                    font.pixelSize: 14
+                                                    color: "#FFFFFF"
+                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                    wrapMode: Text.Wrap
+                                                }
+                                            }
+                                            MouseArea {
+                                                id: historyErrorHover
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                acceptedButtons: Qt.NoButton
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2675,6 +2791,54 @@ ApplicationWindow {
                 id: toolsSettingRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 3
+                property string toolSearchText: ""
+                onVisibleChanged: {
+                    if (visible && wsClient.connectionState === 3)
+                        wsClient.refreshToolsCatalog("")
+                }
+                function filteredToolGroups(sourceFilter) {
+                    var seen = {}
+                    var groups = []
+                    var list = wsClient.toolList
+                    var search = toolSearchText.toLowerCase()
+                    for (var i = 0; i < list.length; i++) {
+                        var t = list[i]
+                        if (sourceFilter === "plugin" && t.source !== "plugin") continue
+                        if (sourceFilter === "other" && t.source === "plugin") continue
+                        if (search && (t.label || "").toLowerCase().indexOf(search) < 0
+                            && (t.description || "").toLowerCase().indexOf(search) < 0) continue
+                        var gid = t.groupId || ""
+                        if (!seen[gid]) {
+                            seen[gid] = true
+                            groups.push({ groupId: gid, groupLabel: t.groupLabel || gid })
+                        }
+                    }
+                    return groups
+                }
+                function filteredToolsInGroup(groupId, sourceFilter) {
+                    var result = []
+                    var list = wsClient.toolList
+                    var search = toolSearchText.toLowerCase()
+                    for (var i = 0; i < list.length; i++) {
+                        var t = list[i]
+                        if ((t.groupId || "") !== groupId) continue
+                        if (sourceFilter === "plugin" && t.source !== "plugin") continue
+                        if (sourceFilter === "other" && t.source === "plugin") continue
+                        if (search && (t.label || "").toLowerCase().indexOf(search) < 0
+                            && (t.description || "").toLowerCase().indexOf(search) < 0) continue
+                        result.push(t)
+                    }
+                    return result
+                }
+                function toolCountForSource(sourceFilter) {
+                    var count = 0
+                    var list = wsClient.toolList
+                    for (var i = 0; i < list.length; i++) {
+                        if (sourceFilter === "plugin" && list[i].source === "plugin") count++
+                        else if (sourceFilter === "other" && list[i].source !== "plugin") count++
+                    }
+                    return count
+                }
                 Column{
                     anchors.fill: parent
                     leftPadding: 60
@@ -2690,15 +2854,172 @@ ApplicationWindow {
                             spacing: 8
                             anchors.left: parent.left
                             Label{
-                                text: qsTr("工具访问权限")
+                                text: qsTr("工具")
                                 font.pixelSize: 20
                                 font.weight: Font.Bold
                                 color: "#D9000000"
                             }
-                            Label{
-                                text: qsTr("此代理具有通用配置以及针对每个工具的单独设置。")
+                        }
+                    }
+                    Row {
+                        id: toolsTab
+                        spacing: 12
+                        property int currentIndex: 0
+
+                        CustomButton {
+                            width: 76
+                            height: 29
+                            buttonRadius: 8
+                            fontSize: 14
+                            text: qsTr("深度问数")
+                            backgroundColor: toolsTab.currentIndex === 0 ? "#0F006BFF" : "#F7F9FA"
+                            textColor: toolsTab.currentIndex === 0 ? "#006BFF" : "#A6000000"
+                            borderWidth: 0
+                            onClicked: toolsTab.currentIndex = 0
+                        }
+                        CustomButton {
+                            width: 48
+                            height: 29
+                            buttonRadius: 8
+                            fontSize: 14
+                            text: qsTr("其他")
+                            backgroundColor: toolsTab.currentIndex === 1 ? "#0F006BFF" : "#F7F9FA"
+                            textColor: toolsTab.currentIndex === 1 ? "#006BFF" : "#A6000000"
+                            borderWidth: 0
+                            onClicked: toolsTab.currentIndex = 1
+                        }
+                    }
+                    ScrollView {
+                        id: toolsScrollView
+                        width: parent.width - 120
+                        height: toolsSettingRec.height - 24 - toolsSettingTitleRec.height - toolsTab.height - 32
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+
+                        Column {
+                            id: toolsScrollContent
+                            width: toolsScrollView.width
+                            spacing: 20
+                            property string currentSourceFilter: toolsTab.currentIndex === 0 ? "plugin" : "other"
+
+                            Label {
+                                visible: toolsSettingRec.filteredToolGroups(toolsScrollContent.currentSourceFilter).length === 0
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                topPadding: 40
+                                text: toolsScrollContent.currentSourceFilter === "plugin"
+                                      ? qsTr("暂无深度工具，请通过插件扩展添加")
+                                      : qsTr("暂无其他工具")
                                 font.pixelSize: 14
-                                color: "#A6000000"
+                                color: "#73000000"
+                                wrapMode: Text.WordWrap
+                            }
+
+                            Repeater {
+                                model: toolsSettingRec.filteredToolGroups(toolsScrollContent.currentSourceFilter)
+
+                                delegate: Column {
+                                    width: toolsScrollContent.width
+                                    spacing: 4
+                                    property string delegateGroupId: modelData.groupId
+                                    property string delegateGroupLabel: modelData.groupLabel
+
+                                    Label {
+                                        text: delegateGroupLabel
+                                        font.pixelSize: 16
+                                        font.weight: Font.Bold
+                                        color: "#D9000000"
+                                    }
+
+                                    Grid {
+                                        columns: 2
+                                        spacing: 12
+                                        width: parent.width
+                                        property real cellWidth: (width - spacing) / 2
+
+                                        Repeater {
+                                            model: toolsSettingRec.filteredToolsInGroup(
+                                                delegateGroupId,
+                                                toolsScrollContent.currentSourceFilter
+                                            )
+
+                                            delegate: Rectangle {
+                                                width: parent.cellWidth
+                                                height: toolsLabelColumn.implicitHeight
+                                                radius: 8
+                                                border.color: "#E6E7EB"
+                                                border.width: 1
+                                                color: "#FFFFFF"
+
+                                                Column {
+                                                    id: toolsLabelColumn
+                                                    width: parent.width
+                                                    padding: 20
+                                                    spacing: 8
+
+                                                    Row {
+                                                        spacing: 8
+                                                        width: parent.width -  40
+                                                        height: 24
+
+                                                        Label {
+                                                            text: modelData.label || modelData.toolId || ""
+                                                            font.pixelSize: 14
+                                                            font.weight: Font.Bold
+                                                            color: "#D9000000"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                        Label {
+                                                            id: toolBadgeText
+                                                            text: "plugin:" + (modelData.pluginId || "")
+                                                            visible: modelData.pluginId !== ""
+                                                            font.pixelSize: 14
+                                                            color: "#D9000000"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+
+                                                    Label {
+                                                        id: toolDescLabel
+                                                        text: modelData.description || ""
+                                                        font.pixelSize: 14
+                                                        color: "#73000000"
+                                                        wrapMode: Text.Wrap
+                                                        width: parent.width - 40
+                                                        maximumLineCount: 3
+                                                        elide: Text.ElideRight
+
+                                                        ToolTip {
+                                                            visible: toolDescHover.containsMouse && toolDescLabel.truncated
+                                                            text: toolDescLabel.text
+                                                            delay: 500
+                                                            x: 0
+                                                            y: -height - 4
+                                                            width: Math.min(implicitContentWidth + 20, toolsScrollView.width / 2 - 40)
+                                                            background: Rectangle {
+                                                                color: "#A6000000"
+                                                                radius: 4
+                                                            }
+                                                            contentItem: Text {
+                                                                text: toolDescLabel.text
+                                                                font.pixelSize: 14
+                                                                color: "#FFFFFF"
+                                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                                wrapMode: Text.Wrap
+                                                            }
+                                                        }
+                                                        MouseArea {
+                                                            id: toolDescHover
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            acceptedButtons: Qt.NoButton
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
