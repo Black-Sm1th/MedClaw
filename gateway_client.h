@@ -344,6 +344,12 @@ public:
                                          bool enabled);
 
     /**
+     * @brief 批量设置工具启用状态，生成单次 config.patch
+     */
+    Q_INVOKABLE void batchSetAgentToolsEnabled(const QString &agentId,
+                                                const QVariantList &enabledToolIds);
+
+    /**
      * @brief 通过 config.patch 写入 mcp.servers 条目
      * @param isEdit 是否编辑已有条目（名称变更时会删除旧键）
      * @param originalServerName 编辑前的服务名（新建时为空）
@@ -563,6 +569,7 @@ private:
 
     QString m_pendingCreateName;       ///< agents.create 待确认名称
     QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
+    QString m_pendingProfileFullAgentId; ///< agents.create 后待设置 tools.profile="full" 的 agentId
 
     /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;

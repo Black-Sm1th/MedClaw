@@ -101,6 +101,10 @@ void WsTools::applyToolPolicyFromConfig(const QJsonObject &config, const QString
     const QStringList allow = jsonStringList(tobj.value(QStringLiteral("allow")).toArray());
     const QStringList alsoAllow =
         jsonStringList(tobj.value(QStringLiteral("alsoAllow")).toArray());
+    qDebug() << "[ToolPolicy] agent=" << agentId
+             << "deny=" << deny << "allow=" << allow
+             << "alsoAllow=" << alsoAllow
+             << "toolsObj.keys=" << tobj.keys();
 
     QSet<QString> denySet;
     for (const QString &s : deny)
@@ -222,5 +226,83 @@ void WsTools::setLocalToolEnabled(const QString &toolId, const bool enabled)
         e[QStringLiteral("enabled")] = enabled;
         m_toolList[i] = e;
         break;
+    }
+}
+
+QJsonObject WsTools::buildFullConfigWithBatchToolPolicy(const QJsonObject &fullConfig,
+                                                        const QString &agentId,
+                                                        const QStringList &enabledToolIds) const
+{
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty())
+        return QJsonObject();
+
+    QSet<QString> enabledSet;
+    for (const QString &s : enabledToolIds)
+        enabledSet.insert(s.trimmed());
+
+    QStringList deny;
+    for (const QVariant &tv : m_toolList) {
+        const QString tid = tv.toMap().value(QStringLiteral("toolId")).toString().trimmed();
+        if (!tid.isEmpty() && !enabledSet.contains(tid))
+            deny.append(tid);
+    }
+
+    qDebug() << "[ToolSave] deny list =" << deny;
+
+    QJsonObject result = fullConfig;
+
+    QJsonObject agentsObj = result.value(QStringLiteral("agents")).toObject();
+    QJsonArray list = agentsObj.value(QStringLiteral("list")).toArray();
+
+    int idx = -1;
+    for (int i = 0; i < list.count(); ++i) {
+        if (list[i].toObject().value(QStringLiteral("id")).toString().trimmed() == aid) {
+            idx = i;
+            break;
+        }
+    }
+
+    QJsonObject agentEntry;
+    if (idx >= 0) {
+        agentEntry = list[idx].toObject();
+    } else {
+        agentEntry[QStringLiteral("id")] = aid;
+        qDebug() << "[ToolSave] agent not in config list, creating new entry";
+    }
+
+    QJsonObject existingTools = agentEntry.value(QStringLiteral("tools")).toObject();
+    existingTools[QStringLiteral("profile")] = QStringLiteral("full");
+    existingTools[QStringLiteral("deny")] = toJsonArray(deny);
+    agentEntry[QStringLiteral("tools")] = existingTools;
+
+    if (idx >= 0)
+        list[idx] = agentEntry;
+    else
+        list.append(agentEntry);
+
+    agentsObj[QStringLiteral("list")] = list;
+    result[QStringLiteral("agents")] = agentsObj;
+
+    QJsonObject globalTools = result.value(QStringLiteral("tools")).toObject();
+    globalTools[QStringLiteral("profile")] = QStringLiteral("full");
+    result[QStringLiteral("tools")] = globalTools;
+
+    return result;
+}
+
+void WsTools::batchSetLocalToolEnabled(const QStringList &enabledToolIds)
+{
+    QSet<QString> enabledSet;
+    for (const QString &s : enabledToolIds)
+        enabledSet.insert(s.trimmed());
+
+    for (int i = 0; i < m_toolList.count(); ++i) {
+        QVariantMap e = m_toolList[i].toMap();
+        const QString tid = e.value(QStringLiteral("toolId")).toString().trimmed();
+        if (tid.isEmpty())
+            continue;
+        e[QStringLiteral("enabled")] = enabledSet.contains(tid);
+        m_toolList[i] = e;
     }
 }

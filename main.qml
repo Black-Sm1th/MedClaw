@@ -1118,10 +1118,10 @@ ApplicationWindow {
 
                                             Image {
                                                 source: "qrc:/images/folder.png"
-                                                width: 20; height: 20
+                                                width: 16; height: 16
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(20, 20)
+                                                sourceSize: Qt.size(16, 16)
                                             }
                                             Text {
                                                 text: dropdownSelectionWorkSpace.displayText
@@ -1351,7 +1351,7 @@ ApplicationWindow {
                                     height: 36
                                     model: ["Qwen3-32B"]
                                     icon: "qrc:/images/ai.png"
-                                    iconSize: 20
+                                    iconSize: 16
                                     currentIndex: 0
                                 }
                                 Item {
@@ -1437,10 +1437,10 @@ ApplicationWindow {
 
                                             Image {
                                                 source: "qrc:/images/category.png"
-                                                width: 20; height: 20
+                                                width: 16; height: 16
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(20, 20)
+                                                sourceSize: Qt.size(16, 16)
                                             }
                                             // Text {
                                             //     text: "技能"
@@ -1510,8 +1510,9 @@ ApplicationWindow {
                                         function calcY() {
                                             var globalPos = dropdownSelectionSkill.mapToItem(null, 0, 0)
                                             var windowH = window.height
-                                            var popupH = contentItem.implicitHeight + padding * 2
-                                            // 如果底部空间不足，则显示在上方
+                                            var popupH = Math.min(contentItem.implicitHeight, 300 + 50) + padding * 2
+                                            if (popupH < 60)
+                                                popupH = 360
                                             if (globalPos.y + dropdownSelectionSkill.height + 4 + popupH > windowH)
                                                 return -popupH - 4
                                             return dropdownSelectionSkill.height + 4
@@ -1523,6 +1524,7 @@ ApplicationWindow {
                                             skillSearchInput.text = ""
                                             y = calcY()
                                         }
+                                        onOpened: Qt.callLater(function() { y = calcY() })
 
                                         background: Rectangle {
                                             radius: 8
@@ -1692,8 +1694,357 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                                Item {
+                                    id: dropdownSelectionTool
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: toolBtnRow2.width + 12 + 12
+                                    height: 36
+
+                                    property var selectedToolIds: []
+                                    property string toolSearchText: ""
+
+                                    function syncToolsFromWsClient() {
+                                        var arr = []
+                                        var list = wsClient.toolList
+                                        var isExisting = leftMidPanel.activeAgentId !== ""
+                                        if (isExisting) {
+                                            for (var i = 0; i < list.length; i++) {
+                                                if (list[i].enabled)
+                                                    arr.push(list[i].toolId)
+                                            }
+                                        } else {
+                                            for (var i = 0; i < list.length; i++)
+                                                arr.push(list[i].toolId)
+                                        }
+                                        selectedToolIds = arr
+                                    }
+
+                                    Connections {
+                                        target: wsClient
+                                        function onToolListChanged() {
+                                            dropdownSelectionTool.syncToolsFromWsClient()
+                                        }
+                                    }
+
+                                    function isToolSelected(toolId) {
+                                        for (var i = 0; i < selectedToolIds.length; i++) {
+                                            if (selectedToolIds[i] === toolId) return true
+                                        }
+                                        return false
+                                    }
+
+                                    function toggleToolLocal(toolId) {
+                                        var arr = selectedToolIds.slice()
+                                        var idx = -1
+                                        for (var i = 0; i < arr.length; i++) {
+                                            if (arr[i] === toolId) { idx = i; break }
+                                        }
+                                        if (idx >= 0) arr.splice(idx, 1)
+                                        else arr.push(toolId)
+                                        selectedToolIds = arr
+                                    }
+
+                                    function saveToolChanges() {
+                                        var aid = leftMidPanel.activeAgentId
+                                        if (aid === "") {
+                                            toolPopup2.close()
+                                            return
+                                        }
+                                        wsClient.batchSetAgentToolsEnabled(aid, selectedToolIds)
+                                        toolPopup2.close()
+                                    }
+
+                                    function filteredTools() {
+                                        var list = wsClient.toolList
+                                        if (!toolSearchText) return list
+                                        var result = []
+                                        var q = toolSearchText.toLowerCase()
+                                        for (var i = 0; i < list.length; i++) {
+                                            var label = (list[i].label || list[i].toolId || "").toLowerCase()
+                                            if (label.indexOf(q) >= 0)
+                                                result.push(list[i])
+                                        }
+                                        return result
+                                    }
+
+                                    Rectangle {
+                                        id: toolButton2
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: toolMouseArea2.pressed ? "#14000000"
+                                             : toolMouseArea2.containsMouse ? "#0A000000"
+                                             : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                                        Row {
+                                            id: toolBtnRow2
+                                            spacing: 6
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 12
+
+                                            Image {
+                                                source: "qrc:/images/tools.png"
+                                                width: 16; height: 16
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(16, 16)
+                                            }
+                                            Rectangle {
+                                                visible: dropdownSelectionTool.selectedToolIds.length > 0
+                                                width: toolBadgeText.width + 8
+                                                height: 20
+                                                radius: 10
+                                                color: "#14000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                Text {
+                                                    id: toolBadgeText
+                                                    text: dropdownSelectionTool.selectedToolIds.length
+                                                    font.pixelSize: 12
+                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                    color: "#73000000"
+                                                    anchors.centerIn: parent
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: toolMouseArea2
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: toolPopup2.visible ? toolPopup2.close() : toolPopup2.open()
+                                        }
+                                    }
+
+                                    Popup {
+                                        id: toolPopup2
+                                        x: 0
+                                        width: 260
+                                        padding: 8
+                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+
+                                        function calcY() {
+                                            var globalPos = dropdownSelectionTool.mapToItem(null, 0, 0)
+                                            var windowH = window.height
+                                            var popupH = Math.min(contentItem.implicitHeight, 300 + 80) + padding * 2
+                                            if (popupH < 60)
+                                                popupH = 400
+                                            if (globalPos.y + dropdownSelectionTool.height + 4 + popupH > windowH)
+                                                return -popupH - 4
+                                            return dropdownSelectionTool.height + 4
+                                        }
+
+                                        y: calcY()
+
+                                        onAboutToShow: {
+                                            dropdownSelectionTool.syncToolsFromWsClient()
+                                            toolSearchInput2.text = ""
+                                            y = calcY()
+                                        }
+                                        onOpened: Qt.callLater(function() { y = calcY() })
+
+                                        background: Rectangle {
+                                            color: "#FFFFFF"
+                                            radius: 12
+                                            border.color: "#14000000"
+                                            border.width: 1
+                                            layer.enabled: true
+                                            layer.effect: DropShadow {
+                                                transparentBorder: true
+                                                radius: 12
+                                                samples: 25
+                                                color: "#1A000000"
+                                            }
+                                        }
+
+                                        contentItem: Column {
+                                            spacing: 6
+                                            width: toolPopup2.width - 16
+
+                                            Row {
+                                                width: parent.width
+                                                spacing: 6
+                                                leftPadding: 12
+                                                Text {
+                                                    text: qsTr("工具")
+                                                    font.pixelSize: 12
+                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                    color: "#73000000"
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                }
+
+                                                Item { width: parent.width - 14 * 2 - toolSaveBtn.width - toolSettingBtn2.width - 6 * 2 - 12; height: 1 }
+
+                                                CustomButton {
+                                                    id: toolSaveBtn
+                                                    text: qsTr("保存")
+                                                    buttonWidth: 44
+                                                    buttonHeight: 24
+                                                    buttonRadius: 4
+                                                    fontSize: 14
+                                                    backgroundColor: "#006BFF"
+                                                    textColor: "#FFFFFF"
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    onClicked: dropdownSelectionTool.saveToolChanges()
+                                                }
+
+                                                ImageButton {
+                                                    id: toolSettingBtn2
+                                                    source: "qrc:/images/setting.png"
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    onClicked: {
+                                                        toolPopup2.close()
+                                                        window.leftSelectedIndex = 3
+                                                    }
+                                                }
+                                            }
+
+                                            SingleLineTextInput {
+                                                id: toolSearchInput2
+                                                inputWidth: parent.width
+                                                inputHeight: 32
+                                                inputRadius: 6
+                                                icon: "qrc:/images/search.png"
+                                                iconSize: 14
+                                                fontSize: 13
+                                                placeholderText: qsTr("搜索工具")
+                                                onTextChanged: dropdownSelectionTool.toolSearchText = text
+                                            }
+
+                                            Flickable {
+                                                id: toolListFlick2
+                                                width: parent.width
+                                                height: Math.min(toolListCol2.height, 300)
+                                                contentHeight: toolListCol2.height
+                                                clip: true
+                                                boundsBehavior: Flickable.StopAtBounds
+
+                                                Column {
+                                                    id: toolListCol2
+                                                    width: parent.width
+                                                    spacing: 2
+
+                                                    Repeater {
+                                                        model: dropdownSelectionTool.filteredTools()
+
+                                                        delegate: Rectangle {
+                                                            width: toolPopup2.width - 16
+                                                            height: 36
+                                                            radius: 6
+                                                            color: toolItemMouse2.pressed ? "#14000000"
+                                                                 : toolItemMouse2.containsMouse ? "#0A000000"
+                                                                 : "transparent"
+                                                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                                                            Row {
+                                                                spacing: 8
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                anchors.left: parent.left
+                                                                anchors.leftMargin: 8
+
+                                                                Text {
+                                                                    id: toolPopNameLabel
+                                                                    width: toolPopup2.width - 16 - 16 - 16 - 16
+                                                                    text: modelData.label || modelData.toolId || ""
+                                                                    font.pixelSize: 14
+                                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                                    color: "#D9000000"
+                                                                    anchors.verticalCenter: parent.verticalCenter
+                                                                    elide: Text.ElideRight
+                                                                    ToolTip {
+                                                                        visible: toolItemMouse2.containsMouse && toolPopNameLabel.truncated
+                                                                        text: toolPopNameLabel.text
+                                                                        delay: 500
+                                                                        x: 0
+                                                                        y: toolPopNameLabel.height + 4
+                                                                        background: Rectangle {
+                                                                            color: "#A6000000"
+                                                                            radius: 4
+                                                                        }
+                                                                        contentItem: Text {
+                                                                            text: toolPopNameLabel.text
+                                                                            font.pixelSize: 14
+                                                                            color: "#FFFFFF"
+                                                                            font.family: "Alibaba PuHuiTi 3.0"
+                                                                            wrapMode: Text.Wrap
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Canvas {
+                                                                visible: dropdownSelectionTool.isToolSelected(modelData.toolId)
+                                                                width: 16; height: 16
+                                                                anchors.right: parent.right
+                                                                anchors.rightMargin: 8
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                onVisibleChanged: requestPaint()
+                                                                onPaint: {
+                                                                    var ctx = getContext("2d")
+                                                                    ctx.reset()
+                                                                    ctx.strokeStyle = "#006BFF"
+                                                                    ctx.lineWidth = 2
+                                                                    ctx.lineCap = "round"
+                                                                    ctx.lineJoin = "round"
+                                                                    ctx.beginPath()
+                                                                    ctx.moveTo(3, 8)
+                                                                    ctx.lineTo(6.5, 11.5)
+                                                                    ctx.lineTo(13, 4.5)
+                                                                    ctx.stroke()
+                                                                }
+                                                            }
+
+                                                            MouseArea {
+                                                                id: toolItemMouse2
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: dropdownSelectionTool.toggleToolLocal(modelData.toolId)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                ScrollBar.vertical: ScrollBar {
+                                                    policy: toolListFlick2.contentHeight > toolListFlick2.height
+                                                            ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                                                    width: 4
+                                                    contentItem: Rectangle {
+                                                        implicitWidth: 4
+                                                        radius: 2
+                                                        color: "#40000000"
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: dropdownSelectionTool.filteredTools().length === 0
+                                                text: dropdownSelectionTool.toolSearchText
+                                                      ? qsTr("未找到匹配的工具")
+                                                      : qsTr("暂无可用工具")
+                                                font.pixelSize: 13
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#80000000"
+                                                width: parent.width
+                                                horizontalAlignment: Text.AlignHCenter
+                                                topPadding: 16
+                                                bottomPadding: 16
+                                            }
+                                        }
+
+                                        enter: Transition {
+                                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                                            NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                                        }
+                                        exit: Transition {
+                                            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                                        }
+                                    }
+                                }
                                 Rectangle{
-                                    width: parent.width - dropdownSelectionWorkSpace.width - dropdownSelectionSkill.width - dropdownSelectionModel.width - inputLeftRow.width - 4 * 4
+                                    width: parent.width - dropdownSelectionWorkSpace.width - dropdownSelectionSkill.width - dropdownSelectionTool.width - dropdownSelectionModel.width - inputLeftRow.width - 5 * 4
                                     height: 1
                                 }
                                 Row{

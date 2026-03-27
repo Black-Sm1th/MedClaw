@@ -39,6 +39,17 @@ public:
 
     void setLocalToolEnabled(const QString &toolId, bool enabled);
 
+    /**
+     * @brief 在 fullConfig 上修改指定 agent 的 tools.deny，返回修改后的完整 config
+     *
+     * 用于 config.set 全量写入（与 Web UI 行为一致，不触发网关重启）。
+     */
+    QJsonObject buildFullConfigWithBatchToolPolicy(const QJsonObject &fullConfig,
+                                                    const QString &agentId,
+                                                    const QStringList &enabledToolIds) const;
+
+    void batchSetLocalToolEnabled(const QStringList &enabledToolIds);
+
 private:
     static QStringList jsonStringList(const QJsonArray &arr);
     static QJsonArray toJsonArray(const QStringList &list);

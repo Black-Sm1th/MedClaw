@@ -1124,6 +1124,11 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId));
         refreshAgents();
 
+        if (!agentId.isEmpty()) {
+            m_pendingProfileFullAgentId = agentId;
+            refreshMcpList();
+        }
+
         if (doBootstrap)
             sendChatMessage(bootstrapMsg);
 
@@ -1327,6 +1332,13 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("config.get")) {
         applyMcpListFromConfigGetPayload(payload);
         emit mcpListChanged();
+        return;
+    }
+
+    // config.set → 全量写入成功（不触发重启），刷新配置快照
+    if (method == QLatin1String("config.set")) {
+        qDebug() << "[Gateway] config.set ok, follow-up config.get";
+        refreshMcpList();
         return;
     }
 
@@ -2204,10 +2216,53 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
     mergeWorkspaceIntoAgentIdentity();
 
+    if (!m_pendingProfileFullAgentId.isEmpty()) {
+        const QString aid = m_pendingProfileFullAgentId;
+        m_pendingProfileFullAgentId.clear();
+
+        QJsonObject cfg = m_lastConfigSnapshot;
+
+        QJsonObject globalTools = cfg.value(QStringLiteral("tools")).toObject();
+        globalTools[QStringLiteral("profile")] = QStringLiteral("full");
+        cfg[QStringLiteral("tools")] = globalTools;
+
+        QJsonObject agentsObj = cfg.value(QStringLiteral("agents")).toObject();
+        QJsonArray list = agentsObj.value(QStringLiteral("list")).toArray();
+        int idx = -1;
+        for (int i = 0; i < list.count(); ++i) {
+            if (list[i].toObject().value(QStringLiteral("id")).toString().trimmed() == aid) {
+                idx = i;
+                break;
+            }
+        }
+        QJsonObject entry = (idx >= 0) ? list[idx].toObject() : QJsonObject();
+        if (idx < 0)
+            entry[QStringLiteral("id")] = aid;
+        QJsonObject t = entry.value(QStringLiteral("tools")).toObject();
+        t[QStringLiteral("profile")] = QStringLiteral("full");
+        entry[QStringLiteral("tools")] = t;
+        if (idx >= 0)
+            list[idx] = entry;
+        else
+            list.append(entry);
+        agentsObj[QStringLiteral("list")] = list;
+        cfg[QStringLiteral("agents")] = agentsObj;
+
+        const QByteArray cfgJson = QJsonDocument(cfg).toJson(QJsonDocument::Compact);
+        QJsonObject reqParams;
+        reqParams[QStringLiteral("raw")] = QString::fromUtf8(cfgJson);
+        if (!m_configSnapshotHash.isEmpty())
+            reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+        sendRequest(QStringLiteral("config.set"), reqParams);
+        qDebug() << "[Gateway] set tools.profile=full for new agent" << aid;
+    }
+
     if (!m_tools.toolList().isEmpty()) {
         QString aid = m_tools.catalogAgentId().trimmed();
         if (aid.isEmpty())
             aid = m_defaultAgentId;
+        qDebug() << "[ConfigGet→ToolPolicy] applying policy for agent=" << aid
+                 << "snapshotHash=" << m_configSnapshotHash;
         m_tools.applyToolPolicyFromConfig(m_lastConfigSnapshot, aid);
         emit toolListChanged();
     }
@@ -2313,6 +2368,59 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
     sendRequest(QStringLiteral("config.patch"), reqParams);
 
     m_tools.setLocalToolEnabled(tid, enabled);
+    emit toolListChanged();
+}
+
+void GatewayClient::batchSetAgentToolsEnabled(const QString &agentId,
+                                               const QVariantList &enabledToolIds)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty()) {
+        emit errorOccurred(QStringLiteral("agentId \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+    if (m_configSnapshotHash.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u914d\u7f6e\u5feb\u7167\u672a\u52a0\u8f7d\uff0c\u8bf7\u5148\u5237\u65b0\u8fde\u63a5"));
+        return;
+    }
+
+    if (m_lastConfigSnapshot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u914d\u7f6e\u5feb\u7167\u672a\u52a0\u8f7d\uff0c\u8bf7\u5148\u5237\u65b0\u8fde\u63a5"));
+        return;
+    }
+
+    QStringList ids;
+    for (const QVariant &v : enabledToolIds)
+        ids.append(v.toString().trimmed());
+
+    const QJsonObject fullCfg =
+        m_tools.buildFullConfigWithBatchToolPolicy(m_lastConfigSnapshot, aid, ids);
+    if (fullCfg.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u65e0\u6cd5\u6784\u5efa\u914d\u7f6e\uff0c\u8bf7\u68c0\u67e5 agentId"));
+        return;
+    }
+
+    const QByteArray cfgJson = QJsonDocument(fullCfg).toJson(QJsonDocument::Compact);
+    qDebug() << "[ToolSave] agentId=" << aid
+             << "enabledCount=" << ids.size()
+             << "hash=" << m_configSnapshotHash
+             << "configSize=" << cfgJson.size();
+
+    QJsonObject reqParams;
+    reqParams[QStringLiteral("raw")] = QString::fromUtf8(cfgJson);
+    if (!m_configSnapshotHash.isEmpty())
+        reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+
+    sendRequest(QStringLiteral("config.set"), reqParams);
+
+    m_tools.batchSetLocalToolEnabled(ids);
     emit toolListChanged();
 }
 
