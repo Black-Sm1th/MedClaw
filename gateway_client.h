@@ -501,6 +501,9 @@ private:
      */
     void applyAgentSwitch(const QString &agentId, bool shouldLoadHistory);
 
+    /// agent 回复结束后，刷新侧栏标题 + 会话列表（异步延迟，等 transcript 落盘）
+    void schedulePostStreamSidebarRefresh();
+
     /// 合并 agents / sessions 后防抖拉取各 agent 首条用户消息，作为侧栏标题
     void scheduleAgentListFirstUserTitles();
     void flushAgentListFirstUserTitles();
@@ -574,6 +577,11 @@ private:
     /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;
     bool m_pendingAgentCreateForChat = false;
+
+    /// 新建 agent 时暂存首句 + 时间，agents.list 回来后注入侧栏
+    QString m_newAgentSidebarId;
+    QString m_newAgentSidebarTitle;
+    qint64  m_newAgentSidebarTs = 0;
 
     /// 创建定时任务时先建专用 agent：1=cron 2=interval 3=oneTime
     bool m_cronAwaitingDedicatedAgent = false;

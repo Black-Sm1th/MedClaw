@@ -368,8 +368,13 @@ ApplicationWindow {
                                             Label {
                                                 text: {
                                                     var t = modelData.activeSessionTitle || ""
-                                                    if (t.length === 0)
-                                                        t = modelData.name || modelData.id || ""
+                                                    if (t.length === 0) {
+                                                        var nm = modelData.name || ""
+                                                        if (nm.match(/^task-\d+$/))
+                                                            t = qsTr("新对话")
+                                                        else
+                                                            t = nm || modelData.id || ""
+                                                    }
                                                     return t
                                                 }
                                                 font.pixelSize: 14

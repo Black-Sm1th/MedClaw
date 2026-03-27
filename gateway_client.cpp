@@ -293,8 +293,12 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
                     displayAt = parsed;
             }
             if (b.updated == 0) {
-                row.remove(QStringLiteral("activeSessionDisplayAt"));
-                row.remove(QStringLiteral("activeSessionTitle"));
+                if (displayAt > 0) {
+                    row[QStringLiteral("activeSessionDisplayAt")] =
+                        QVariant(static_cast<qlonglong>(displayAt));
+                } else {
+                    row.remove(QStringLiteral("activeSessionDisplayAt"));
+                }
             } else {
                 row[QStringLiteral("activeSessionDisplayAt")] =
                     QVariant(static_cast<qlonglong>(displayAt));
@@ -325,6 +329,25 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
         return false;
     m_agentList = next;
     return true;
+}
+
+void GatewayClient::schedulePostStreamSidebarRefresh()
+{
+    if (m_state != Connected)
+        return;
+    const QString key = m_session.currentSessionKey();
+    if (key.isEmpty())
+        return;
+    QTimer::singleShot(500, this, [this, key]() {
+        if (m_state != Connected)
+            return;
+        refreshSessions();
+        if (key.startsWith(QLatin1String("agent:"))) {
+            const QStringList parts = key.split(QLatin1Char(':'));
+            if (parts.size() >= 2 && !parts[1].isEmpty())
+                refreshSidebarFirstUserTitleForAgent(parts[1]);
+        }
+    });
 }
 
 void GatewayClient::scheduleAgentListFirstUserTitles()
@@ -931,6 +954,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             } else if (!r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
+            schedulePostStreamSidebarRefresh();
             return;
         }
         if (!r.content.isEmpty()) {
@@ -962,6 +986,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             } else if (!r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
+            schedulePostStreamSidebarRefresh();
             return;
         }
         return;
@@ -1127,13 +1152,18 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         }
 
         const bool doBootstrap = !bootstrapMsg.isEmpty() && !agentId.isEmpty();
-        if (doBootstrap)
+        if (doBootstrap) {
+            m_newAgentSidebarId    = agentId;
+            m_newAgentSidebarTitle = bootstrapMsg.left(120);
+            m_newAgentSidebarTs    = QDateTime::currentMSecsSinceEpoch();
             applyAgentSwitch(agentId, false);
+        }
 
         qDebug() << "[Gateway] agents.create ok:" << agentId;
         emit agentCreated(agentId, true,
             QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId));
         refreshAgents();
+        refreshSessions();
 
         if (!agentId.isEmpty()) {
             m_pendingProfileFullAgentId = agentId;
@@ -1197,6 +1227,25 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                  << "agents, default:" << m_defaultAgentId
                  << "mainKey:" << mainKey;
         mergeSessionHintsIntoAgentList();
+
+        if (!m_newAgentSidebarId.isEmpty()) {
+            for (int i = 0; i < m_agentList.size(); ++i) {
+                QVariantMap row = m_agentList[i].toMap();
+                if (row.value(QStringLiteral("id")).toString() == m_newAgentSidebarId) {
+                    if (!m_newAgentSidebarTitle.isEmpty())
+                        row[QStringLiteral("activeSessionTitle")] = m_newAgentSidebarTitle;
+                    if (m_newAgentSidebarTs > 0)
+                        row[QStringLiteral("activeSessionDisplayAt")] =
+                            QVariant(static_cast<qlonglong>(m_newAgentSidebarTs));
+                    m_agentList[i] = row;
+                    break;
+                }
+            }
+            m_newAgentSidebarId.clear();
+            m_newAgentSidebarTitle.clear();
+            m_newAgentSidebarTs = 0;
+        }
+
         emit agentListChanged();
         scheduleAgentListFirstUserTitles();
         return;
