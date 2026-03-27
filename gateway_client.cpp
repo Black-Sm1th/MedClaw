@@ -15,6 +15,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QJsonDocument>
+#include <QTimer>
 #include <QUuid>
 #include <QNetworkRequest>
 #include <algorithm>
@@ -834,7 +835,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     // ── 调试日志（前 50 条 agent/chat 事件） ──
     static int debugCount = 0;
     if (event == QLatin1String("agent")
-        || event == QLatin1String("chat")) {
+        || event == QLatin1String("chat")
+        || event == QLatin1String("session.tool")) {
         ++debugCount;
         const QJsonObject data =
             payload.value(QStringLiteral("data")).toObject();
@@ -869,7 +871,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     //  为了兼容这两种情况，agent / chat 都先走一遍结构化解析，
     //  如果检测到工具调用/结果则直接返回，不再走流式 delta 逻辑。
     // ══════════════════════════════════════════════════════════════
-    if (event == QLatin1String("chat") || event == QLatin1String("agent")) {
+    if (event == QLatin1String("chat") || event == QLatin1String("agent")
+        || event == QLatin1String("session.tool")) {
         if (handleStructuredChatEvent(payload))
             return;
     }
@@ -889,9 +892,17 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     }
     if (r.isToolResult) {
         qDebug().noquote() << "[Gateway] tool result:" << r.toolName
-                           << "error:" << r.toolIsError;
+                           << "error:" << r.toolIsError
+                           << "contentLen:" << r.content.length();
         emit toolResultReceived(r.toolName, r.content,
                                 r.toolCallId, r.toolIsError);
+        // 网关在非 full verbose 下会剥掉 data.result；此时补拉一次历史以同步正文
+        if (r.content.trimmed().isEmpty()) {
+            QTimer::singleShot(200, this, [this]() {
+                if (m_state == Connected)
+                    loadChatHistory(QString(), 500);
+            });
+        }
         return;
     }
 

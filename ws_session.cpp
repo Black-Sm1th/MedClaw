@@ -7,6 +7,77 @@
 #include <QDebug>
 #include <QJsonDocument>
 
+namespace {
+
+QString textFromContentArray(const QJsonArray &cArr)
+{
+    QString out;
+    for (const QJsonValue &cv : cArr) {
+        const QJsonObject co = cv.toObject();
+        if (co.value(QStringLiteral("type")).toString() == QLatin1String("text")) {
+            if (!out.isEmpty())
+                out += QLatin1Char('\n');
+            out += co.value(QStringLiteral("text")).toString();
+        }
+    }
+    return out;
+}
+
+/**
+ * OpenClaw agent 流里 phase=result 时正文在 data.result（常为 { content:[{type,text}] }），
+ * 而不是顶层的 content/text；网关在非 full verbose 下会删掉 result，此时仍可能为空。
+ */
+QString extractToolOutputFromDataObject(const QJsonObject &data)
+{
+    const QJsonValue contentTop = data.value(QStringLiteral("content"));
+    if (contentTop.isString() && !contentTop.toString().isEmpty())
+        return contentTop.toString();
+    if (contentTop.isArray()) {
+        const QString fromArr = textFromContentArray(contentTop.toArray());
+        if (!fromArr.isEmpty())
+            return fromArr;
+    }
+
+    const QString text = data.value(QStringLiteral("text")).toString();
+    if (!text.isEmpty())
+        return text;
+
+    const QJsonValue resultVal = data.value(QStringLiteral("result"));
+    if (!resultVal.isNull()) {
+        if (resultVal.isString())
+            return resultVal.toString();
+        if (resultVal.isObject()) {
+            const QJsonObject ro = resultVal.toObject();
+            const QString fromRc = textFromContentArray(ro.value(QStringLiteral("content")).toArray());
+            if (!fromRc.isEmpty())
+                return fromRc;
+            return QString::fromUtf8(QJsonDocument(ro).toJson(QJsonDocument::Compact));
+        }
+    }
+
+    const QJsonValue partialVal = data.value(QStringLiteral("partialResult"));
+    if (!partialVal.isNull()) {
+        if (partialVal.isString())
+            return partialVal.toString();
+        if (partialVal.isObject()) {
+            const QJsonObject ro = partialVal.toObject();
+            const QString fromRc = textFromContentArray(ro.value(QStringLiteral("content")).toArray());
+            if (!fromRc.isEmpty())
+                return fromRc;
+        }
+    }
+
+    const QJsonValue metaVal = data.value(QStringLiteral("meta"));
+    if (metaVal.isString() && !metaVal.toString().isEmpty())
+        return metaVal.toString();
+    if (metaVal.isObject())
+        return QString::fromUtf8(QJsonDocument(metaVal.toObject()).toJson(QJsonDocument::Compact));
+
+    return QString();
+}
+
+} // namespace
+
 // ═══════════════════════════════════════════════════════════════════════
 //  构造
 // ═══════════════════════════════════════════════════════════════════════
@@ -413,10 +484,7 @@ WsEventResult WsSession::parseEvent(const QString &event,
         result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
             data.value(QStringLiteral("id")).toString());
         result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
-        result.content      = data.value(QStringLiteral("content")).toString(
-            data.value(QStringLiteral("text")).toString());
-        if (result.content.isEmpty())
-            result.content = data.value(QStringLiteral("meta")).toString();
+        result.content      = extractToolOutputFromDataObject(data);
         return result;
     }
 
@@ -451,21 +519,7 @@ WsEventResult WsSession::parseEvent(const QString &event,
         result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
             data.value(QStringLiteral("id")).toString());
         result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
-        result.content      = data.value(QStringLiteral("content")).toString(
-            data.value(QStringLiteral("text")).toString());
-        if (result.content.isEmpty())
-            result.content = data.value(QStringLiteral("meta")).toString();
-        // content 可能是数组
-        if (result.content.isEmpty()) {
-            const QJsonArray cArr = data.value(QStringLiteral("content")).toArray();
-            for (const QJsonValue &cv : cArr) {
-                const QJsonObject co = cv.toObject();
-                if (co.value(QStringLiteral("type")).toString() == QLatin1String("text")) {
-                    if (!result.content.isEmpty()) result.content += QLatin1Char('\n');
-                    result.content += co.value(QStringLiteral("text")).toString();
-                }
-            }
-        }
+        result.content      = extractToolOutputFromDataObject(data);
         return result;
     }
 

@@ -672,6 +672,7 @@ ApplicationWindow {
                             height: visible ? toolBlockRow.implicitHeight : 0
 
                             readonly property bool toolDone: hasToolResult
+                            readonly property bool toolRunning: !hasToolResult
                             readonly property bool toolOk: hasToolResult && !isError
                             readonly property bool toolFail: hasToolResult && isError
                             property bool toolDetailExpanded: true
@@ -704,6 +705,31 @@ ApplicationWindow {
                                             width: 20
                                             height: 20
                                             anchors.verticalCenter: parent.verticalCenter
+                                            Rectangle {
+                                                id: toolHeaderRunDot
+                                                anchors.centerIn: parent
+                                                visible: toolBlockRoot.toolRunning
+                                                width: 8
+                                                height: 8
+                                                radius: 4
+                                                color: "#006BFF"
+                                            }
+                                            SequentialAnimation {
+                                                running: toolBlockRoot.toolRunning && toolBlockRoot.visible
+                                                loops: Animation.Infinite
+                                                NumberAnimation {
+                                                    target: toolHeaderRunDot
+                                                    property: "opacity"
+                                                    from: 0.35; to: 1; duration: 650
+                                                    easing.type: Easing.InOutQuad
+                                                }
+                                                NumberAnimation {
+                                                    target: toolHeaderRunDot
+                                                    property: "opacity"
+                                                    from: 1; to: 0.35; duration: 650
+                                                    easing.type: Easing.InOutQuad
+                                                }
+                                            }
                                             Text {
                                                 anchors.centerIn: parent
                                                 visible: toolBlockRoot.toolOk
@@ -714,7 +740,7 @@ ApplicationWindow {
                                             }
                                             Rectangle {
                                                 anchors.centerIn: parent
-                                                visible: !toolBlockRoot.toolOk
+                                                visible: toolBlockRoot.toolFail
                                                 width: 8
                                                 height: 8
                                                 radius: 4
@@ -804,6 +830,48 @@ ApplicationWindow {
 
                                         Row {
                                             width: parent.width
+                                            visible: toolBlockRoot.toolRunning
+                                            spacing: 8
+                                            height: 24
+                                            Item {
+                                                width: 20
+                                                height: 20
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                Rectangle {
+                                                    id: toolFooterRunDot
+                                                    anchors.centerIn: parent
+                                                    width: 8
+                                                    height: 8
+                                                    radius: 4
+                                                    color: "#006BFF"
+                                                }
+                                                SequentialAnimation {
+                                                    running: toolBlockRoot.toolRunning && toolBlockRoot.visible
+                                                    loops: Animation.Infinite
+                                                    NumberAnimation {
+                                                        target: toolFooterRunDot
+                                                        property: "opacity"
+                                                        from: 0.35; to: 1; duration: 650
+                                                        easing.type: Easing.InOutQuad
+                                                    }
+                                                    NumberAnimation {
+                                                        target: toolFooterRunDot
+                                                        property: "opacity"
+                                                        from: 1; to: 0.35; duration: 650
+                                                        easing.type: Easing.InOutQuad
+                                                    }
+                                                }
+                                            }
+                                            Text {
+                                                text: qsTr("执行中…")
+                                                font.pixelSize: 13
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#006BFF"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+                                        Row {
+                                            width: parent.width
                                             visible: hasToolResult
                                             spacing: 8
                                             height: 24
@@ -822,7 +890,7 @@ ApplicationWindow {
                                                 }
                                                 Rectangle {
                                                     anchors.centerIn: parent
-                                                    visible: !toolBlockRoot.toolOk
+                                                    visible: toolBlockRoot.toolFail
                                                     width: 8
                                                     height: 8
                                                     radius: 4

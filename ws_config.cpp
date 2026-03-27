@@ -164,7 +164,11 @@ QJsonObject WsConfig::buildConnectParams(const QString &challengeNonce) const
     params[QStringLiteral("client")]      = client;
     params[QStringLiteral("role")]        = m_role;
     params[QStringLiteral("scopes")]      = m_scopes;
-    params[QStringLiteral("caps")]        = QJsonArray();
+    // 与 OpenClaw GATEWAY_CLIENT_CAPS.TOOL_EVENTS 一致；无此项时 chat.send 不会
+    // registerToolEventRecipient，agent 流中的 tool start/result 不会推送到本连接。
+    QJsonArray caps;
+    caps.append(QStringLiteral("tool-events"));
+    params[QStringLiteral("caps")]        = caps;
     params[QStringLiteral("auth")]        = auth;
     params[QStringLiteral("locale")]      = QStringLiteral("zh-CN");
     params[QStringLiteral("userAgent")]   = QStringLiteral("MedClaw-Qt/1.0");
