@@ -15,6 +15,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -1185,10 +1186,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 const QString ws = m_pendingCreateWorkspace.isEmpty()
                     ? resolveWorkspacePathForAgentId(agentId)
                     : m_pendingCreateWorkspace;
-                const QString fileSuffix = resolveAndCopyFiles(m_pendingChatFiles, ws);
+                resolveAndCopyFiles(m_pendingChatFiles, ws);
                 m_pendingChatFiles.clear();
-                if (!fileSuffix.isEmpty())
-                    bootstrapMsg += fileSuffix;
             }
             sendChatMessage(bootstrapMsg);
         }
@@ -2648,21 +2647,61 @@ void GatewayClient::setPendingChatFiles(const QVariantList &files)
     m_pendingChatFiles = files;
 }
 
-QString GatewayClient::resolveAndCopyFiles(const QVariantList &files,
-                                           const QString &workspace)
+static void copySingleFile(const QString &srcPath, const QString &destDir)
+{
+    const QFileInfo srcInfo(srcPath);
+    if (!srcInfo.exists() || !srcInfo.isFile())
+        return;
+
+    QString destName = srcInfo.fileName();
+    QString destPath = destDir + QLatin1Char('/') + destName;
+
+    if (QFile::exists(destPath)) {
+        const QString base = srcInfo.completeBaseName();
+        const QString suffix = srcInfo.suffix();
+        int seq = 1;
+        do {
+            destName = suffix.isEmpty()
+                ? QStringLiteral("%1_%2").arg(base).arg(seq)
+                : QStringLiteral("%1_%2.%3").arg(base).arg(seq).arg(suffix);
+            destPath = destDir + QLatin1Char('/') + destName;
+            ++seq;
+        } while (QFile::exists(destPath));
+    }
+
+    if (QFile::copy(srcPath, destPath))
+        qDebug() << "[Gateway] file copied:" << srcPath << "->" << destPath;
+    else
+        qWarning() << "[Gateway] file copy failed:" << srcPath << "->" << destPath;
+}
+
+static void copyDirRecursive(const QString &srcDir, const QString &destDir)
+{
+    const QDir src(srcDir);
+    QDir().mkpath(destDir);
+
+    for (const QFileInfo &entry : src.entryInfoList(QDir::Files))
+        copySingleFile(entry.absoluteFilePath(), destDir);
+
+    for (const QFileInfo &entry : src.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+        copyDirRecursive(entry.absoluteFilePath(),
+                         destDir + QLatin1Char('/') + entry.fileName());
+}
+
+void GatewayClient::resolveAndCopyFiles(const QVariantList &files,
+                                        const QString &workspace)
 {
     if (files.isEmpty() || workspace.trimmed().isEmpty())
-        return QString();
+        return;
 
     QString ws = workspace;
     if (ws.startsWith(QStringLiteral("~/")))
         ws = QDir::homePath() + ws.mid(1);
     ws = QDir::cleanPath(ws);
 
-    const QString uploadDir = ws + QStringLiteral("/uploads");
+    const QString uploadDir = ws;
     QDir().mkpath(uploadDir);
 
-    QStringList copied;
     for (const QVariant &v : files) {
         const QVariantMap fm = v.toMap();
         const QString rawUrl = fm.value(QStringLiteral("fileUrl")).toString();
@@ -2671,39 +2710,15 @@ QString GatewayClient::resolveAndCopyFiles(const QVariantList &files,
             srcPath = QUrl(srcPath).toLocalFile();
 
         const QFileInfo srcInfo(srcPath);
-        if (!srcInfo.exists() || !srcInfo.isFile())
+        if (!srcInfo.exists())
             continue;
 
-        QString destName = srcInfo.fileName();
-        QString destPath = uploadDir + QLatin1Char('/') + destName;
-
-        if (QFile::exists(destPath)) {
-            const QString base = srcInfo.completeBaseName();
-            const QString suffix = srcInfo.suffix();
-            int seq = 1;
-            do {
-                destName = suffix.isEmpty()
-                    ? QStringLiteral("%1_%2").arg(base).arg(seq)
-                    : QStringLiteral("%1_%2.%3").arg(base).arg(seq).arg(suffix);
-                destPath = uploadDir + QLatin1Char('/') + destName;
-                ++seq;
-            } while (QFile::exists(destPath));
-        }
-
-        if (QFile::copy(srcPath, destPath)) {
-            copied.append(destName);
-            qDebug() << "[Gateway] file copied:" << srcPath << "->" << destPath;
+        if (srcInfo.isDir()) {
+            const QString destSubDir = uploadDir + QLatin1Char('/') + srcInfo.fileName();
+            copyDirRecursive(srcPath, destSubDir);
+            qDebug() << "[Gateway] folder copied:" << srcPath << "->" << destSubDir;
         } else {
-            qWarning() << "[Gateway] file copy failed:" << srcPath << "->" << destPath;
+            copySingleFile(srcPath, uploadDir);
         }
     }
-
-    if (copied.isEmpty())
-        return QString();
-
-    QString result = QStringLiteral(
-        "\n\n[上传文件] 以下文件已放置在工作空间 uploads 目录中:\n");
-    for (const QString &name : copied)
-        result += QStringLiteral("- uploads/%1\n").arg(name);
-    return result;
 }

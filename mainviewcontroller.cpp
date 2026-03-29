@@ -3,6 +3,7 @@
 #include "gateway_client.h"
 #include <QDebug>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QUrl>
@@ -47,13 +48,10 @@ void MainViewController::sendMessageWithFiles(const QString &text,
     if (!isNewAgent && !files.isEmpty()) {
         const QVariantMap identity = m_wsClient->agentIdentity();
         const QString ws = identity.value(QStringLiteral("workspace")).toString();
-        const QString fileSuffix = m_wsClient->resolveAndCopyFiles(files, ws);
-        QString finalMsg = text;
-        if (!fileSuffix.isEmpty())
-            finalMsg += fileSuffix;
+        m_wsClient->resolveAndCopyFiles(files, ws);
 
         m_chatModel->addMessage(QStringLiteral("user"), text);
-        m_wsClient->sendChatMessage(finalMsg);
+        m_wsClient->sendChatMessage(text);
     } else if (!files.isEmpty()) {
         m_wsClient->setPendingChatFiles(files);
         m_chatModel->addMessage(QStringLiteral("user"), text);
@@ -73,15 +71,59 @@ QString MainViewController::fileSizeHuman(const QString &fileUrl) const
     if (!fi.exists())
         return QString();
 
-    const qint64 bytes = fi.size();
-    if (bytes < 1024)
-        return QStringLiteral("%1B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1KB").arg(QString::number(bytes / 1024.0, 'f', 1));
-    if (bytes < 1024LL * 1024 * 1024)
-        return QStringLiteral("%1MB").arg(QString::number(bytes / (1024.0 * 1024.0), 'f', 1));
-    return QStringLiteral("%1GB").arg(
-        QString::number(bytes / (1024.0 * 1024.0 * 1024.0), 'f', 2));
+    if (fi.isDir()) {
+        qint64 total = 0;
+        int count = 0;
+        QDirIterator it(fi.absoluteFilePath(), QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            total += it.fileInfo().size();
+            ++count;
+        }
+        const QString sizeStr = fileSizeHumanBytes(total);
+        return QStringLiteral("%1 (%2 个文件)").arg(sizeStr).arg(count);
+    }
+
+    return fileSizeHumanBytes(fi.size());
+}
+
+QVariantList MainViewController::listFolderFiles(const QString &folderUrl) const
+{
+    QString path = folderUrl;
+    if (path.startsWith(QStringLiteral("file://")))
+        path = QUrl(path).toLocalFile();
+
+    QVariantList result;
+    const QFileInfo fi(path);
+    if (!fi.exists() || !fi.isDir())
+        return result;
+
+    const QString folderName = fi.fileName();
+    QDirIterator it(path, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo entryInfo = it.fileInfo();
+        const QString relPath = QDir(path).relativeFilePath(entryInfo.absoluteFilePath());
+        const QString displayName = folderName + QStringLiteral("/") + relPath;
+
+        const QString ext = entryInfo.suffix().toUpper();
+        const QStringList imgExts = {
+            QStringLiteral("JPG"), QStringLiteral("JPEG"), QStringLiteral("PNG"),
+            QStringLiteral("GIF"), QStringLiteral("BMP"), QStringLiteral("WEBP")
+        };
+        const bool isImg = imgExts.contains(ext);
+        const QString url = QUrl::fromLocalFile(entryInfo.absoluteFilePath()).toString();
+
+        QVariantMap entry;
+        entry[QStringLiteral("fileName")] = displayName;
+        entry[QStringLiteral("filePath")] = isImg ? url : QString();
+        entry[QStringLiteral("fileUrl")]  = url;
+        entry[QStringLiteral("fileSize")] = fileSizeHumanBytes(entryInfo.size());
+        entry[QStringLiteral("ext")]      = ext;
+        entry[QStringLiteral("isImage")]  = isImg;
+        result.append(entry);
+    }
+    return result;
 }
 
 QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
@@ -96,7 +138,7 @@ QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
         return QString();
 
     const QString ws = resolveWorkspacePath(workspace);
-    const QString uploadDir = ws + QStringLiteral("/uploads");
+    const QString uploadDir = ws;
     QDir().mkpath(uploadDir);
 
     QString destName = srcInfo.fileName();
@@ -129,4 +171,16 @@ QString MainViewController::resolveWorkspacePath(const QString &ws)
     if (p.startsWith(QStringLiteral("~/")))
         p = QDir::homePath() + p.mid(1);
     return QDir::cleanPath(p);
+}
+
+QString MainViewController::fileSizeHumanBytes(qint64 bytes)
+{
+    if (bytes < 1024)
+        return QStringLiteral("%1B").arg(bytes);
+    if (bytes < 1024 * 1024)
+        return QStringLiteral("%1KB").arg(QString::number(bytes / 1024.0, 'f', 1));
+    if (bytes < 1024LL * 1024 * 1024)
+        return QStringLiteral("%1MB").arg(QString::number(bytes / (1024.0 * 1024.0), 'f', 1));
+    return QStringLiteral("%1GB").arg(
+        QString::number(bytes / (1024.0 * 1024.0 * 1024.0), 'f', 2));
 }

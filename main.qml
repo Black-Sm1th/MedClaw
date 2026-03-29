@@ -1051,10 +1051,12 @@ ApplicationWindow {
 
                                         Image {
                                             width: 32; height: 32
-                                            source: (model.isImage && model.filePath)
-                                                    ? model.filePath
-                                                    : "qrc:/images/filePicture.png"
-                                            fillMode: (model.isImage && model.filePath)
+                                            source: (model.isFolder || false)
+                                                    ? "qrc:/images/folder.png"
+                                                    : (model.isImage && model.filePath)
+                                                      ? model.filePath
+                                                      : "qrc:/images/filePicture.png"
+                                            fillMode: (model.isImage && model.filePath && !(model.isFolder || false))
                                                       ? Image.PreserveAspectCrop : Image.Pad
                                             anchors.verticalCenter: parent.verticalCenter
                                             sourceSize.width: 32
@@ -2161,7 +2163,60 @@ ApplicationWindow {
                                         id: uploadBtn
                                         source: "qrc:/images/paperclip.png"
                                         anchors.verticalCenter: parent.verticalCenter
-                                        onClicked: attachFileDialog.open()
+                                        onClicked: uploadMenu.open()
+
+                                        Popup {
+                                            id: uploadMenu
+                                            y: -uploadMenu.height - 8
+                                            x: -20
+                                            width: 130
+                                            padding: 4
+                                            background: Rectangle {
+                                                radius: 8
+                                                color: "#FFFFFF"
+                                                border.color: "#14000000"
+                                                border.width: 1
+                                                layer.enabled: true
+                                                layer.effect: DropShadow {
+                                                    radius: 12; samples: 25
+                                                    color: "#26000000"
+                                                    verticalOffset: 4
+                                                }
+                                            }
+                                            Column {
+                                                width: parent.width
+                                                Rectangle {
+                                                    width: parent.width; height: 34; radius: 6
+                                                    color: umFile.containsMouse ? "#F0F2F5" : "transparent"
+                                                    Label {
+                                                        text: qsTr("上传文件")
+                                                        font.pixelSize: 14; color: "#D9000000"
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.left: parent.left; anchors.leftMargin: 10
+                                                    }
+                                                    MouseArea {
+                                                        id: umFile; anchors.fill: parent
+                                                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: { uploadMenu.close(); attachFileDialog.open() }
+                                                    }
+                                                }
+                                                Rectangle {
+                                                    width: parent.width; height: 34; radius: 6
+                                                    color: umFolder.containsMouse ? "#F0F2F5" : "transparent"
+                                                    Label {
+                                                        text: qsTr("上传文件夹")
+                                                        font.pixelSize: 14; color: "#D9000000"
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.left: parent.left; anchors.leftMargin: 10
+                                                    }
+                                                    MouseArea {
+                                                        id: umFolder; anchors.fill: parent
+                                                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: { uploadMenu.close(); attachFolderDialog.open() }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
 
                                     FileDialog {
@@ -2188,6 +2243,27 @@ ApplicationWindow {
                                                     isImage: isImg
                                                 })
                                             }
+                                        }
+                                    }
+                                    FileDialog {
+                                        id: attachFolderDialog
+                                        title: qsTr("选择文件夹")
+                                        selectFolder: true
+                                        onAccepted: {
+                                            var url = fileUrl.toString()
+                                            var path = url.replace(/^file:\/\/\//, "")
+                                            var parts = path.split("/")
+                                            var name = decodeURIComponent(parts[parts.length - 1] || "folder")
+                                            var size = $MainViewController.fileSizeHuman(url)
+                                            attachmentModel.append({
+                                                fileName: name,
+                                                filePath: "",
+                                                fileUrl: url,
+                                                fileSize: size,
+                                                ext: "",
+                                                isImage: false,
+                                                isFolder: true
+                                            })
                                         }
                                     }
                                     Rectangle{

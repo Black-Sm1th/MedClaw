@@ -180,7 +180,7 @@ public:
                                      const QString &workspaceForNewAgent = QString());
 
     void setPendingChatFiles(const QVariantList &files);
-    QString resolveAndCopyFiles(const QVariantList &files, const QString &workspace);
+    void resolveAndCopyFiles(const QVariantList &files, const QString &workspace);
 
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();

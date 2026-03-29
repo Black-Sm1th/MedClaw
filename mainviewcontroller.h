@@ -24,11 +24,14 @@ public:
 
     Q_INVOKABLE QString fileSizeHuman(const QString &fileUrl) const;
 
+    Q_INVOKABLE QVariantList listFolderFiles(const QString &folderUrl) const;
+
     Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl,
                                             const QString &workspace) const;
 
 private:
     static QString resolveWorkspacePath(const QString &ws);
+    static QString fileSizeHumanBytes(qint64 bytes);
 
     ChatModel      *m_chatModel  = nullptr;
     GatewayClient  *m_wsClient   = nullptr;
