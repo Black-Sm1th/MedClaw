@@ -174,12 +174,12 @@ QString MainViewController::resolveWorkspacePath(const QString &ws)
 {
     QString p = ws.trimmed();
     if (p.isEmpty())
-        return p;
+        return QString();
     if (p.startsWith(QStringLiteral("~/")))
         p = QDir::homePath() + p.mid(1);
-    if (QDir::isAbsolutePath(p))
-        return QDir::cleanPath(p);
-    return QDir::cleanPath(QDir::homePath() + QLatin1Char('/') + p);
+    else if (QDir::isRelativePath(p))
+        p = QDir::homePath() + QLatin1Char('/') + p;
+    return QDir::cleanPath(p);
 }
 
 QString MainViewController::fileSizeHumanBytes(qint64 bytes)
