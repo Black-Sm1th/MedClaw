@@ -33,6 +33,18 @@ static const QLatin1String T_REQ("req");
 /// 帧类型常量：响应帧
 static const QLatin1String T_RES("res");
 
+static QString expandWorkspaceToAbsolutePath(const QString &workspace)
+{
+    QString p = workspace.trimmed();
+    if (p.isEmpty())
+        return p;
+    if (p.startsWith(QLatin1String("~/")))
+        p = QDir::homePath() + p.mid(1);
+    if (QDir::isAbsolutePath(p))
+        return QDir::cleanPath(p);
+    return QDir::cleanPath(QDir::homePath() + QLatin1Char('/') + p);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  1. 构造 / 析构
 // ═══════════════════════════════════════════════════════════════════════
@@ -1780,6 +1792,7 @@ void GatewayClient::createAgent(const QString &name,
     if (ws.isEmpty()) {
         ws = QStringLiteral("~/.openclaw/workspace-%1").arg(name.trimmed().toLower());
     }
+    ws = expandWorkspaceToAbsolutePath(ws);
     m_pendingCreateWorkspace = ws;
 
     QJsonObject params;
@@ -2694,10 +2707,9 @@ void GatewayClient::resolveAndCopyFiles(const QVariantList &files,
     if (files.isEmpty() || workspace.trimmed().isEmpty())
         return;
 
-    QString ws = workspace;
-    if (ws.startsWith(QStringLiteral("~/")))
-        ws = QDir::homePath() + ws.mid(1);
-    ws = QDir::cleanPath(ws);
+    const QString ws = expandWorkspaceToAbsolutePath(workspace);
+    if (ws.isEmpty())
+        return;
 
     const QString uploadDir = ws;
     QDir().mkpath(uploadDir);

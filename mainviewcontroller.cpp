@@ -172,10 +172,14 @@ QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
 
 QString MainViewController::resolveWorkspacePath(const QString &ws)
 {
-    QString p = ws;
+    QString p = ws.trimmed();
+    if (p.isEmpty())
+        return p;
     if (p.startsWith(QStringLiteral("~/")))
         p = QDir::homePath() + p.mid(1);
-    return QDir::cleanPath(p);
+    if (QDir::isAbsolutePath(p))
+        return QDir::cleanPath(p);
+    return QDir::cleanPath(QDir::homePath() + QLatin1Char('/') + p);
 }
 
 QString MainViewController::fileSizeHumanBytes(qint64 bytes)
