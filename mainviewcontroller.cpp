@@ -61,6 +61,11 @@ void MainViewController::sendMessageWithFiles(const QString &text,
     }
 }
 
+QString MainViewController::userHomePath() const
+{
+    return QDir::homePath();
+}
+
 QString MainViewController::fileSizeHuman(const QString &fileUrl) const
 {
     QString path = fileUrl;
