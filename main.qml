@@ -1447,6 +1447,8 @@ ApplicationWindow {
                                                 if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
                                                     path = path.substring(1)
                                                 path = path.replace(/\//g, "\\")
+                                            }else if(Qt.platform.os === "linux"){
+                                                path = "/" + path
                                             }
                                             dropdownSelectionWorkSpace.absolutePath = path
                                             var parts = path.replace(/\\/g, "/").split("/")
