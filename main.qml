@@ -276,7 +276,9 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        window.leftSelectedIndex = index
+                                        if(modelData !== "history"){
+                                            window.leftSelectedIndex = index
+                                        }
                                         if (modelData === "新建任务") {
                                             leftMidPanel.activeAgentId = ""
                                             chatModel.clear()
@@ -1233,7 +1235,7 @@ ApplicationWindow {
                                             }
                                             Text {
                                                 text: dropdownSelectionWorkSpace.displayText
-                                                width: Math.min(implicitWidth, 100)
+                                                width: Math.min(implicitWidth, 90)
                                                 elide: Text.ElideMiddle
                                                 font.pixelSize: 14
                                                 font.family: "Alibaba PuHuiTi 3.0"
