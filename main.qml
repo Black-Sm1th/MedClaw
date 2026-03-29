@@ -21,6 +21,9 @@ ApplicationWindow {
     /// 非空表示「编辑」已有定时任务；空为新建
     property string editingCronJobId: ""
     property string editingCronPayloadKind: "agentTurn"
+    property string editingCronScheduleKind: ""
+    property string editingCronScheduleExpr: ""
+    property string editingCronScheduleTz: ""
     property string pendingDeleteCronJobId: ""
     property string pendingDeleteCronJobName: ""
     property string pendingDeleteMcpName: ""
@@ -59,11 +62,10 @@ ApplicationWindow {
         function onAgentListChanged(){
             // 不在列表刷新时自动选中 main；仅用户点击任务记录后才 switchAgent 并加载历史
         }
-        function onAgentCreated(agentId, success, message){
-            if (success) {
+        function onAgentCreated(agentId, success, message, forChat){
+            if (success && forChat) {
                 leftMidPanel.activeAgentId = agentId
                 window.leftSelectedIndex = 6
-                // 首条消息自动建 agent 时已在 C++ 内 switchAgent + send；此处不再重复 switch
             }
         }
         function onAgentDeleted(agentId, success, message){
@@ -367,9 +369,16 @@ ApplicationWindow {
                                             }
                                             Label {
                                                 text: {
+                                                    var nm = modelData.name || ""
+                                                    if (nm.indexOf("定时-") === 0) {
+                                                        var body = nm.substring(3)
+                                                        var lastDash = body.lastIndexOf("-")
+                                                        if (lastDash > 0 && /^\d+$/.test(body.substring(lastDash + 1)))
+                                                            return body.substring(0, lastDash)
+                                                        return body
+                                                    }
                                                     var t = modelData.activeSessionTitle || ""
                                                     if (t.length === 0) {
-                                                        var nm = modelData.name || ""
                                                         if (nm.match(/^task-\d+$/))
                                                             t = qsTr("新对话")
                                                         else
@@ -573,6 +582,7 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6
                 property bool hasMessages: chatModel.count > 0
+                property bool isNewTaskWelcome: window.leftSelectedIndex === 0 && !hasMessages
 
                 function doSendMessage() {
                     var msg = textInputArea.text.trim()
@@ -589,7 +599,7 @@ ApplicationWindow {
 
                 Column{
                     id: titleCol
-                    visible: !newTaskRec.hasMessages
+                    visible: newTaskRec.isNewTaskWelcome
                     width: 840
                     spacing: 11
                     anchors.topMargin: 80
@@ -988,9 +998,9 @@ ApplicationWindow {
                     height: attachmentModel.count > 0 ? 142 + 60 : 142
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
-                    y: newTaskRec.hasMessages
-                       ? newTaskRec.height - height - 24
-                       : titleCol.y + titleCol.height + 76
+                    y: newTaskRec.isNewTaskWelcome
+                       ? titleCol.y + titleCol.height + 76
+                       : newTaskRec.height - height - 24
                     Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -1138,7 +1148,7 @@ ApplicationWindow {
                                     property string absolutePath: ""
                                     property var recentFolders: []
 
-                                    readonly property bool pickerLocked: newTaskRec.hasMessages
+                                    readonly property bool pickerLocked: newTaskRec.hasMessages || window.leftSelectedIndex === 6
 
                                     readonly property string displayText: {
                                         if (pickerLocked) {
@@ -2244,9 +2254,13 @@ ApplicationWindow {
                                 onClicked: {
                                     window.editingCronJobId = ""
                                     window.editingCronPayloadKind = "agentTurn"
+                                    window.editingCronScheduleKind = ""
+                                    window.editingCronScheduleExpr = ""
+                                    window.editingCronScheduleTz   = ""
                                     newTaskTitleInput.text = ""
                                     newTaskPromptInput.text = ""
                                     newTaskRepeatSelect.currentIndex = 0
+                                    newTaskIntervalInput.text = ""
                                     newTaskDialog.open()
                                 }
                             }
@@ -2465,8 +2479,44 @@ ApplicationWindow {
                                                             cronRowMoreMenu.close()
                                                             window.editingCronJobId = cronJobRow.job.id
                                                             window.editingCronPayloadKind = cronJobRow.job.payloadKind || "agentTurn"
+                                                            window.editingCronScheduleKind = cronJobRow.job.scheduleKind || ""
+                                                            window.editingCronScheduleExpr = cronJobRow.job.scheduleExpr || ""
+                                                            window.editingCronScheduleTz   = cronJobRow.job.scheduleTz || ""
                                                             newTaskTitleInput.text = cronJobRow.job.name || ""
                                                             newTaskPromptInput.text = cronJobRow.job.payloadMessage || ""
+
+                                                            var sk = window.editingCronScheduleKind
+                                                            var expr = window.editingCronScheduleExpr
+                                                            if (sk === "at") {
+                                                                newTaskRepeatSelect.currentIndex = 0
+                                                                if (expr) {
+                                                                    var dt = new Date(expr)
+                                                                    if (!isNaN(dt.getTime())) {
+                                                                        newTaskDatePicker.selectedYear = dt.getFullYear()
+                                                                        newTaskDatePicker.selectedMonth = dt.getMonth() + 1
+                                                                        newTaskDatePicker.selectedDay = dt.getDate()
+                                                                        newTaskTimePicker.selectedHour = dt.getHours()
+                                                                        newTaskTimePicker.selectedMinute = dt.getMinutes()
+                                                                    }
+                                                                }
+                                                            } else if (sk === "every") {
+                                                                newTaskRepeatSelect.currentIndex = 4
+                                                                var sec = Math.round(parseInt(expr) / 1000)
+                                                                newTaskIntervalInput.text = sec > 0 ? String(sec) : ""
+                                                            } else if (sk === "cron" && expr) {
+                                                                var parts = expr.split(" ")
+                                                                var mm = parseInt(parts[0]) || 0
+                                                                var hh = parseInt(parts[1]) || 0
+                                                                if (parts.length >= 5 && parts[4] !== "*") {
+                                                                    newTaskRepeatSelect.currentIndex = 2
+                                                                } else if (parts[1] === "*") {
+                                                                    newTaskRepeatSelect.currentIndex = 3
+                                                                } else {
+                                                                    newTaskRepeatSelect.currentIndex = 1
+                                                                }
+                                                                newTaskTimePicker.selectedHour = hh
+                                                                newTaskTimePicker.selectedMinute = mm
+                                                            }
                                                             newTaskDialog.open()
                                                         }
                                                     }
@@ -3633,6 +3683,9 @@ ApplicationWindow {
             if (!visible) {
                 window.editingCronJobId = ""
                 window.editingCronPayloadKind = "agentTurn"
+                window.editingCronScheduleKind = ""
+                window.editingCronScheduleExpr = ""
+                window.editingCronScheduleTz   = ""
             }
         }
 
@@ -3753,7 +3806,6 @@ ApplicationWindow {
                     Column {
                         width: parent.width
                         spacing: 8
-                        visible: window.editingCronJobId === ""
                         Label {
                             text: qsTr("计划")
                             font.pixelSize: 14
@@ -3789,7 +3841,7 @@ ApplicationWindow {
                     Column {
                         width: parent.width
                         spacing: 8
-                        visible: window.editingCronJobId === "" && newTaskRepeatSelect.currentIndex === 4
+                        visible: newTaskRepeatSelect.currentIndex === 4
                         Label {
                             text: qsTr("执行间隔（秒）")
                             font.pixelSize: 14
@@ -3868,8 +3920,52 @@ ApplicationWindow {
                                         errorToastTimer.restart()
                                         return
                                     }
-                                    wsClient.updateCronJobContent(window.editingCronJobId, title, prompt,
-                                                                  window.editingCronPayloadKind)
+
+                                    var repeatIdx = newTaskRepeatSelect.currentIndex
+                                    var schedKind = 0
+                                    var schedExpr = ""
+                                    var schedTz   = "Asia/Shanghai"
+                                    function pad2(n) { return n < 10 ? "0" + n : "" + n }
+
+                                    var ehh = newTaskTimePicker.selectedHour
+                                    var emm = newTaskTimePicker.selectedMinute
+
+                                    if (repeatIdx === 0) {
+                                        schedKind = 3
+                                        var ey = newTaskDatePicker.selectedYear
+                                        var emo = newTaskDatePicker.selectedMonth
+                                        var ed = newTaskDatePicker.selectedDay
+                                        schedExpr = ey + "-" + pad2(emo) + "-" + pad2(ed)
+                                                  + "T" + pad2(ehh) + ":" + pad2(emm) + ":00"
+                                    } else if (repeatIdx === 1) {
+                                        schedKind = 1
+                                        schedExpr = emm + " " + ehh + " * * *"
+                                    } else if (repeatIdx === 2) {
+                                        schedKind = 1
+                                        var eDate = new Date(newTaskDatePicker.selectedYear,
+                                                             newTaskDatePicker.selectedMonth - 1,
+                                                             newTaskDatePicker.selectedDay)
+                                        var eDow = eDate.getDay()
+                                        schedExpr = emm + " " + ehh + " * * " + eDow
+                                    } else if (repeatIdx === 3) {
+                                        schedKind = 1
+                                        schedExpr = emm + " * * * *"
+                                    } else if (repeatIdx === 4) {
+                                        schedKind = 2
+                                        var eSec = parseInt(newTaskIntervalInput.text) || 0
+                                        if (eSec <= 0) {
+                                            errorToast.text = "间隔须大于 0 秒"
+                                            errorToast.visible = true
+                                            errorToastTimer.restart()
+                                            return
+                                        }
+                                        schedExpr = String(eSec * 1000)
+                                    }
+
+                                    wsClient.updateCronJobContent(
+                                        window.editingCronJobId, title, prompt,
+                                        window.editingCronPayloadKind,
+                                        schedKind, schedExpr, schedTz)
                                     newTaskDialog.close()
                                     return
                                 }
@@ -4911,10 +5007,6 @@ ApplicationWindow {
                                 Repeater {
                                     model: ListModel {
                                         id: memoryListModel
-                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
-                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
-                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
-                                        ListElement { memTitle: "记忆标题"; memDate: "更新于 2026/3/13 09:00"; memContent: "记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆记忆" }
                                     }
 
                                     delegate: Rectangle {

@@ -293,7 +293,10 @@ public:
     Q_INVOKABLE void updateCronJobContent(const QString &jobId,
                                           const QString &name,
                                           const QString &content,
-                                          const QString &payloadKind);
+                                          const QString &payloadKind,
+                                          int scheduleKind = 0,
+                                          const QString &scheduleExpr = QString(),
+                                          const QString &scheduleTz = QString());
 
     /// 查询执行记录（空 jobId 查全部）
     Q_INVOKABLE void loadCronRuns(const QString &jobId = QString());
@@ -413,7 +416,8 @@ signals:
     void agentIdentityChanged();     ///< Agent 身份信息更新
     void agentListChanged();         ///< Agent 列表更新
     void agentCreated(const QString &agentId, bool success,
-                      const QString &message); ///< 新 Agent 创建结果
+                      const QString &message,
+                      bool forChat); ///< 新 Agent 创建结果
     void agentDeleted(const QString &agentId, bool success,
                       const QString &message); ///< Agent 删除结果
 

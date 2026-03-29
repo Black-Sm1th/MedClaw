@@ -430,6 +430,9 @@ void GatewayClient::setAgentListSidebarTitle(const QString &agentId, const QStri
         QVariantMap row = next.at(i).toMap();
         if (row.value(QStringLiteral("id")).toString() != agentId)
             continue;
+        const QString name = row.value(QStringLiteral("name")).toString();
+        if (name.startsWith(QStringLiteral("\u5b9a\u65f6-")))
+            return;
         const QString old = row.value(QStringLiteral("activeSessionTitle")).toString();
         if (old == t)
             return;
@@ -1041,7 +1044,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         qWarning() << "[Gateway] error" << method << "id=" << id << errMsg;
 
         if (method == QLatin1String("agents.create") && !m_pendingCreateName.isEmpty()) {
-            emit agentCreated(m_pendingCreateName, false, errMsg);
+            emit agentCreated(m_pendingCreateName, false, errMsg, false);
             m_pendingCreateName.clear();
             m_pendingAgentCreateForChat = false;
             m_pendingFirstChatMessage.clear();
@@ -1161,7 +1164,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
         qDebug() << "[Gateway] agents.create ok:" << agentId;
         emit agentCreated(agentId, true,
-            QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId));
+            QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId),
+            doBootstrap);
         refreshAgents();
         refreshSessions();
 
@@ -1750,7 +1754,7 @@ void GatewayClient::createAgent(const QString &name,
     }
     if (name.trimmed().isEmpty()) {
         emit agentCreated(name, false,
-            QStringLiteral("name \u4e0d\u80fd\u4e3a\u7a7a"));
+            QStringLiteral("name \u4e0d\u80fd\u4e3a\u7a7a"), false);
         return;
     }
 
@@ -2163,7 +2167,10 @@ void GatewayClient::runCronJobNow(const QString &jobId)
 void GatewayClient::updateCronJobContent(const QString &jobId,
                                          const QString &name,
                                          const QString &content,
-                                         const QString &payloadKind)
+                                         const QString &payloadKind,
+                                         int scheduleKind,
+                                         const QString &scheduleExpr,
+                                         const QString &scheduleTz)
 {
     if (m_state != Connected) {
         emit errorOccurred(
@@ -2191,6 +2198,38 @@ void GatewayClient::updateCronJobContent(const QString &jobId,
         payloadPatch[QStringLiteral("message")] = content;
     }
     patch[QStringLiteral("payload")] = payloadPatch;
+
+    if (scheduleKind > 0 && !scheduleExpr.trimmed().isEmpty()) {
+        QJsonObject sched;
+        switch (scheduleKind) {
+        case 1: {
+            sched[QStringLiteral("kind")] = QStringLiteral("cron");
+            sched[QStringLiteral("expr")] = scheduleExpr.trimmed();
+            const QString tz = scheduleTz.trimmed().isEmpty()
+                ? QStringLiteral("Asia/Shanghai") : scheduleTz.trimmed();
+            sched[QStringLiteral("tz")] = tz;
+            break;
+        }
+        case 2: {
+            bool ok = false;
+            const int ms = scheduleExpr.trimmed().toInt(&ok);
+            if (ok && ms > 0) {
+                sched[QStringLiteral("kind")] = QStringLiteral("every");
+                sched[QStringLiteral("everyMs")] = ms;
+            }
+            break;
+        }
+        case 3: {
+            sched[QStringLiteral("kind")] = QStringLiteral("at");
+            sched[QStringLiteral("at")] = scheduleExpr.trimmed();
+            break;
+        }
+        default:
+            break;
+        }
+        if (!sched.isEmpty())
+            patch[QStringLiteral("schedule")] = sched;
+    }
 
     sendRequest(QStringLiteral("cron.update"),
                 m_scheduledTask.buildUpdateParams(jid, patch));
