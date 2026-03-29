@@ -14,8 +14,12 @@
 #include "gateway_client.h"
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QTimer>
+#include <QUrl>
 #include <QUuid>
 #include <QNetworkRequest>
 #include <algorithm>
@@ -1046,8 +1050,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (method == QLatin1String("agents.create") && !m_pendingCreateName.isEmpty()) {
             emit agentCreated(m_pendingCreateName, false, errMsg, false);
             m_pendingCreateName.clear();
+            m_pendingCreateWorkspace.clear();
             m_pendingAgentCreateForChat = false;
             m_pendingFirstChatMessage.clear();
+            m_pendingChatFiles.clear();
             clearPendingCronDedicatedAgent();
         }
         if (method == QLatin1String("agents.delete") && !m_pendingDeleteId.isEmpty()) {
@@ -1174,8 +1180,19 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             refreshMcpList();
         }
 
-        if (doBootstrap)
+        if (doBootstrap) {
+            if (!m_pendingChatFiles.isEmpty()) {
+                const QString ws = m_pendingCreateWorkspace.isEmpty()
+                    ? resolveWorkspacePathForAgentId(agentId)
+                    : m_pendingCreateWorkspace;
+                const QString fileSuffix = resolveAndCopyFiles(m_pendingChatFiles, ws);
+                m_pendingChatFiles.clear();
+                if (!fileSuffix.isEmpty())
+                    bootstrapMsg += fileSuffix;
+            }
             sendChatMessage(bootstrapMsg);
+        }
+        m_pendingCreateWorkspace.clear();
 
         // 在日志与 agentCreated 之后再发 cron.add，避免控制台顺序像「定时任务先于 agent」
         if (m_cronAwaitingDedicatedAgent) {
@@ -1764,6 +1781,7 @@ void GatewayClient::createAgent(const QString &name,
     if (ws.isEmpty()) {
         ws = QStringLiteral("~/.openclaw/workspace-%1").arg(name.trimmed().toLower());
     }
+    m_pendingCreateWorkspace = ws;
 
     QJsonObject params;
     params[QStringLiteral("name")]      = name.trimmed();
@@ -2619,4 +2637,73 @@ void GatewayClient::removeMcpServer(const QString &serverName)
         params[QStringLiteral("baseHash")] = m_configSnapshotHash;
 
     sendRequest(QStringLiteral("config.patch"), params);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  文件附件：暂存 & 复制到工作空间
+// ═══════════════════════════════════════════════════════════════════════
+
+void GatewayClient::setPendingChatFiles(const QVariantList &files)
+{
+    m_pendingChatFiles = files;
+}
+
+QString GatewayClient::resolveAndCopyFiles(const QVariantList &files,
+                                           const QString &workspace)
+{
+    if (files.isEmpty() || workspace.trimmed().isEmpty())
+        return QString();
+
+    QString ws = workspace;
+    if (ws.startsWith(QStringLiteral("~/")))
+        ws = QDir::homePath() + ws.mid(1);
+    ws = QDir::cleanPath(ws);
+
+    const QString uploadDir = ws + QStringLiteral("/uploads");
+    QDir().mkpath(uploadDir);
+
+    QStringList copied;
+    for (const QVariant &v : files) {
+        const QVariantMap fm = v.toMap();
+        const QString rawUrl = fm.value(QStringLiteral("fileUrl")).toString();
+        QString srcPath = rawUrl;
+        if (srcPath.startsWith(QStringLiteral("file://")))
+            srcPath = QUrl(srcPath).toLocalFile();
+
+        const QFileInfo srcInfo(srcPath);
+        if (!srcInfo.exists() || !srcInfo.isFile())
+            continue;
+
+        QString destName = srcInfo.fileName();
+        QString destPath = uploadDir + QLatin1Char('/') + destName;
+
+        if (QFile::exists(destPath)) {
+            const QString base = srcInfo.completeBaseName();
+            const QString suffix = srcInfo.suffix();
+            int seq = 1;
+            do {
+                destName = suffix.isEmpty()
+                    ? QStringLiteral("%1_%2").arg(base).arg(seq)
+                    : QStringLiteral("%1_%2.%3").arg(base).arg(seq).arg(suffix);
+                destPath = uploadDir + QLatin1Char('/') + destName;
+                ++seq;
+            } while (QFile::exists(destPath));
+        }
+
+        if (QFile::copy(srcPath, destPath)) {
+            copied.append(destName);
+            qDebug() << "[Gateway] file copied:" << srcPath << "->" << destPath;
+        } else {
+            qWarning() << "[Gateway] file copy failed:" << srcPath << "->" << destPath;
+        }
+    }
+
+    if (copied.isEmpty())
+        return QString();
+
+    QString result = QStringLiteral(
+        "\n\n[上传文件] 以下文件已放置在工作空间 uploads 目录中:\n");
+    for (const QString &name : copied)
+        result += QStringLiteral("- uploads/%1\n").arg(name);
+    return result;
 }

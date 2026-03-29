@@ -179,6 +179,9 @@ public:
                                      const QString &sessionKey = QString(),
                                      const QString &workspaceForNewAgent = QString());
 
+    void setPendingChatFiles(const QVariantList &files);
+    QString resolveAndCopyFiles(const QVariantList &files, const QString &workspace);
+
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();
 
@@ -575,12 +578,14 @@ private:
     QString          m_defaultAgentId;  ///< 默认 agent ID
 
     QString m_pendingCreateName;       ///< agents.create 待确认名称
+    QString m_pendingCreateWorkspace;  ///< agents.create 使用的 workspace 路径
     QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
     QString m_pendingProfileFullAgentId; ///< agents.create 后待设置 tools.profile="full" 的 agentId
 
     /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;
     bool m_pendingAgentCreateForChat = false;
+    QVariantList m_pendingChatFiles;
 
     /// 新建 agent 时暂存首句 + 时间，agents.list 回来后注入侧栏
     QString m_newAgentSidebarId;

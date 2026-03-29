@@ -17,7 +17,7 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://192.168.124.58:18789"
+    property string wsServerUrl: "ws://127.0.0.1:18789"
     /// 非空表示「编辑」已有定时任务；空为新建
     property string editingCronJobId: ""
     property string editingCronPayloadKind: "agentTurn"
@@ -587,14 +587,24 @@ ApplicationWindow {
                 function doSendMessage() {
                     var msg = textInputArea.text.trim()
                     if (msg === "") return
-                    // 未连接时不发送，防止消息丢失
                     if (wsClient.connectionState !== 3)
                         return
                     textInputArea.text = ""
                     var wsPath = ""
                     if (!newTaskRec.hasMessages)
                         wsPath = dropdownSelectionWorkSpace.absolutePath
-                    $MainViewController.sendMessage(msg, wsPath)
+
+                    if (attachmentModel.count > 0) {
+                        var files = []
+                        for (var i = 0; i < attachmentModel.count; i++) {
+                            var item = attachmentModel.get(i)
+                            files.push({ fileUrl: item.fileUrl || "", fileName: item.fileName || "" })
+                        }
+                        attachmentModel.clear()
+                        $MainViewController.sendMessageWithFiles(msg, files, wsPath)
+                    } else {
+                        $MainViewController.sendMessage(msg, wsPath)
+                    }
                 }
 
                 Column{
@@ -995,7 +1005,7 @@ ApplicationWindow {
                     border.color: "#40000000"
                     border.width: 1
                     radius: 20
-                    height: attachmentModel.count > 0 ? 142 + 60 : 142
+                    height: attachmentModel.count > 0 ? 142 + 72 : 142
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: newTaskRec.isNewTaskWelcome
@@ -1003,7 +1013,7 @@ ApplicationWindow {
                        : newTaskRec.height - height - 24
                     Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-
+                    clip: true
                     Column{
                         anchors.fill: parent
                         padding: 12
@@ -1013,81 +1023,81 @@ ApplicationWindow {
                             id: attachmentRow
                             visible: attachmentModel.count > 0
                             width: parent.width - 24
-                            height: visible ? 48 : 0
-                            clip: true
+                            height: visible ? 60 : 0
                             spacing: 8
 
                             Repeater {
                                 model: attachmentModel
 
                                 delegate: Rectangle {
-                                    width: 148
-                                    height: 48
+                                    id: attachCard
+                                    width: 168
+                                    height: 56
                                     radius: 12
                                     color: "#F7F9FA"
 
-                                    Row {
+                                    MouseArea {
+                                        id: attachCardHover
                                         anchors.fill: parent
-                                        anchors.margins: 4
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.NoButton
+                                    }
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 10
+                                        anchors.verticalCenter: parent.verticalCenter
                                         spacing: 4
 
-                                        Rectangle {
-                                            width: 36
-                                            height: 36
-                                            radius: 6
-                                            color: "transparent"
-                                            clip: true
-
-                                            Image {
+                                        Image {
+                                            width: 32; height: 32
+                                            source: (model.isImage && model.filePath)
+                                                    ? model.filePath
+                                                    : "qrc:/images/filePicture.png"
+                                            fillMode: (model.isImage && model.filePath)
+                                                      ? Image.PreserveAspectCrop : Image.Pad
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            sourceSize.width: 32
+                                            sourceSize.height: 32
+                                            Rectangle {
                                                 anchors.fill: parent
-                                                source: model.filePath || ""
-                                                fillMode: Image.PreserveAspectCrop
-                                                visible: model.isImage || false
+                                                radius: 6
+                                                color: "transparent"
+                                                border.color: (model.isImage && model.filePath)
+                                                              ? "#0A000000" : "transparent"
+                                                border.width: 1
+                                                z: -1
                                             }
-
-                                            Image {
-                                                anchors.centerIn: parent
-                                                source: "qrc:/images/filePicture.png"
-                                                fillMode: Image.PreserveAspectCrop
-                                                visible: !(model.isImage || false)
-                                            }
-
                                         }
 
                                         Column {
                                             anchors.verticalCenter: parent.verticalCenter
-                                            width: parent.width - 36 - 20 - 8
-                                            spacing: 2
+                                            width: attachCard.width - 10 - 32 - 8 - 10
+                                            spacing: 4
 
                                             Text {
-                                                id:fileNameText
+                                                id: attachNameText
                                                 width: parent.width
                                                 text: model.fileName || ""
                                                 font.pixelSize: 14
-                                                font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#D9000000"
                                                 elide: Text.ElideRight
+                                                font.family: "Alibaba PuHuiTi 3.0"
                                                 ToolTip {
-                                                    visible: fileNameHover.containsMouse && fileNameText.truncated
-                                                    text: fileNameText.text
+                                                    visible: attachNameHover.containsMouse && attachNameText.truncated
+                                                    text: attachNameText.text
                                                     delay: 500
-                                                    x: 0
-                                                    y: fileNameText.height + 4
-                                                    width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
-                                                    background: Rectangle {
-                                                        color: "#A6000000"
-                                                        radius: 4
-                                                    }
+                                                    x: 0; y: attachNameText.height + 4
+                                                    background: Rectangle { color: "#A6000000"; radius: 4 }
                                                     contentItem: Text {
-                                                        text: fileNameText.text
-                                                        font.pixelSize: 14
-                                                        color: "#FFFFFF"
-                                                        font.family: "Alibaba PuHuiTi 3.0"
+                                                        text: attachNameText.text
+                                                        font.pixelSize: 14; color: "#FFFFFF"
                                                         wrapMode: Text.Wrap
+                                                        font.family: "Alibaba PuHuiTi 3.0"
                                                     }
                                                 }
                                                 MouseArea {
-                                                    id: fileNameHover
+                                                    id: attachNameHover
                                                     anchors.fill: parent
                                                     hoverEnabled: true
                                                     acceptedButtons: Qt.NoButton
@@ -1095,24 +1105,37 @@ ApplicationWindow {
                                             }
                                             Text {
                                                 text: model.fileSize || ""
-                                                font.pixelSize: 12
                                                 font.family: "Alibaba PuHuiTi 3.0"
+                                                font.pixelSize: 12
                                                 color: "#40000000"
                                             }
                                         }
+                                    }
+
+                                    Rectangle {
+                                        id: attachDelBtn
+                                        width: 20; height: 20; radius: 10
+                                        color: attachDelMouse.containsMouse ? "#B0000000" : "#80000000"
+                                        visible: attachCardHover.containsMouse || attachDelMouse.containsMouse || attachNameHover.containsMouse
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: -4
+                                        anchors.top: parent.top
+                                        anchors.topMargin: -4
+                                        z: 9999
 
                                         Text {
                                             text: "\u2715"
-                                            font.pixelSize: 12
-                                            color: "#80000000"
-                                            anchors.verticalCenter: parent.verticalCenter
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                anchors.margins: -4
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: attachmentModel.remove(index)
-                                            }
+                                            font.pixelSize: 10
+                                            color: "#FFFFFF"
+                                            anchors.centerIn: parent
+                                        }
+                                        MouseArea {
+                                            id: attachDelMouse
+                                            anchors.fill: parent
+                                            anchors.margins: -4
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: attachmentModel.remove(index)
                                         }
                                     }
                                 }
@@ -2150,15 +2173,17 @@ ApplicationWindow {
                                                 var url = fileUrls[i].toString()
                                                 var path = url.replace(/^file:\/\/\//, "")
                                                 var parts = path.split("/")
-                                                var name = parts[parts.length - 1] || ""
+                                                var name = decodeURIComponent(parts[parts.length - 1] || "")
                                                 var dotIdx = name.lastIndexOf(".")
                                                 var ext = dotIdx >= 0 ? name.substring(dotIdx + 1).toUpperCase() : ""
                                                 var imgExts = ["JPG", "JPEG", "PNG", "GIF", "BMP", "WEBP"]
                                                 var isImg = imgExts.indexOf(ext) >= 0
+                                                var size = $MainViewController.fileSizeHuman(url)
                                                 attachmentModel.append({
                                                     fileName: name,
                                                     filePath: isImg ? url : "",
-                                                    fileSize: "",
+                                                    fileUrl: url,
+                                                    fileSize: size,
                                                     ext: ext,
                                                     isImage: isImg
                                                 })
