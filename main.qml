@@ -1442,10 +1442,12 @@ ApplicationWindow {
                                         selectFolder: true
                                         onAccepted: {
                                             var url = folderDialogWorkSpace.fileUrl.toString()
-                                            var path = url.replace(/^file:\/{2,3}/, "")
-                                            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
-                                                path = path.substring(1)
-                                            path = path.replace(/\//g, "\\")
+                                            var path = decodeURIComponent(url.replace(/^file:\/{2,3}/, ""))
+                                            if (Qt.platform.os === "windows") {
+                                                if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                                                    path = path.substring(1)
+                                                path = path.replace(/\//g, "\\")
+                                            }
                                             dropdownSelectionWorkSpace.absolutePath = path
                                             var parts = path.replace(/\\/g, "/").split("/")
                                             dropdownSelectionWorkSpace.currentText = parts[parts.length - 1] || path
@@ -4234,8 +4236,12 @@ ApplicationWindow {
         title: qsTr("选择工作目录")
         selectFolder: true
         onAccepted: {
-            var path = workDirDialog.fileUrl.toString()
-            path = path.replace(/^file:\/\/\//, "")
+            var path = decodeURIComponent(workDirDialog.fileUrl.toString().replace(/^file:\/{2,3}/, ""))
+            if (Qt.platform.os === "windows") {
+                if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                    path = path.substring(1)
+                path = path.replace(/\//g, "\\")
+            }
             newTaskWorkDirInput.text = path
         }
     }
