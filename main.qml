@@ -1447,13 +1447,6 @@ ApplicationWindow {
                                                 if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
                                                     path = path.substring(1)
                                                 path = path.replace(/\//g, "\\")
-                                            } else {
-                                                var home = $MainViewController.userHomePath()
-                                                if (home && path.indexOf(home) === 0) {
-                                                    path = path.substring(home.length)
-                                                    if (path.length > 0 && path.charAt(0) === "/")
-                                                        path = path.substring(1)
-                                                }
                                             }
                                             dropdownSelectionWorkSpace.absolutePath = path
                                             var parts = path.replace(/\\/g, "/").split("/")

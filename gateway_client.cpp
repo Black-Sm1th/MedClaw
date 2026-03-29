@@ -2647,18 +2647,6 @@ void GatewayClient::setPendingChatFiles(const QVariantList &files)
     m_pendingChatFiles = files;
 }
 
-static QString expandWorkspaceToLocalAbsolute(const QString &ws)
-{
-    QString p = ws.trimmed();
-    if (p.isEmpty())
-        return QString();
-    if (p.startsWith(QStringLiteral("~/")))
-        p = QDir::homePath() + p.mid(1);
-    else if (QDir::isRelativePath(p))
-        p = QDir::homePath() + QLatin1Char('/') + p;
-    return QDir::cleanPath(p);
-}
-
 static void copySingleFile(const QString &srcPath, const QString &destDir)
 {
     const QFileInfo srcInfo(srcPath);
@@ -2706,9 +2694,12 @@ void GatewayClient::resolveAndCopyFiles(const QVariantList &files,
     if (files.isEmpty() || workspace.trimmed().isEmpty())
         return;
 
-    const QString uploadDir = expandWorkspaceToLocalAbsolute(workspace);
-    if (uploadDir.isEmpty())
-        return;
+    QString ws = workspace;
+    if (ws.startsWith(QStringLiteral("~/")))
+        ws = QDir::homePath() + ws.mid(1);
+    ws = QDir::cleanPath(ws);
+
+    const QString uploadDir = ws;
     QDir().mkpath(uploadDir);
 
     for (const QVariant &v : files) {

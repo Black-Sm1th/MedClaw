@@ -23,7 +23,6 @@ public:
                                           const QString &workspaceForNewAgent = QString());
 
     Q_INVOKABLE QString fileSizeHuman(const QString &fileUrl) const;
-    Q_INVOKABLE QString userHomePath() const;
 
     Q_INVOKABLE QVariantList listFolderFiles(const QString &folderUrl) const;
 

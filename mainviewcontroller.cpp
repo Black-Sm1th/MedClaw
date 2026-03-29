@@ -61,11 +61,6 @@ void MainViewController::sendMessageWithFiles(const QString &text,
     }
 }
 
-QString MainViewController::userHomePath() const
-{
-    return QDir::homePath();
-}
-
 QString MainViewController::fileSizeHuman(const QString &fileUrl) const
 {
     QString path = fileUrl;
@@ -172,13 +167,9 @@ QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
 
 QString MainViewController::resolveWorkspacePath(const QString &ws)
 {
-    QString p = ws.trimmed();
-    if (p.isEmpty())
-        return QString();
+    QString p = ws;
     if (p.startsWith(QStringLiteral("~/")))
         p = QDir::homePath() + p.mid(1);
-    else if (QDir::isRelativePath(p))
-        p = QDir::homePath() + QLatin1Char('/') + p;
     return QDir::cleanPath(p);
 }
 
