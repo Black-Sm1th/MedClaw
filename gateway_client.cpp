@@ -904,6 +904,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     // ══════════════════════════════════════════════════════════════
     if (event == QLatin1String("chat") || event == QLatin1String("agent")
         || event == QLatin1String("session.tool")) {
+        if (!eventAppliesToCurrentUiSession(payload))
+            return;
         if (handleStructuredChatEvent(payload))
             return;
     }
@@ -2721,4 +2723,42 @@ void GatewayClient::resolveAndCopyFiles(const QVariantList &files,
             copySingleFile(srcPath, uploadDir);
         }
     }
+}
+
+QString GatewayClient::extractPayloadSessionKey(const QJsonObject &payload) const
+{
+    auto pick = [](const QJsonObject &o) -> QString {
+        const QString s = o.value(QStringLiteral("sessionKey")).toString().trimmed();
+        return s;
+    };
+
+    QString sk = pick(payload);
+    if (!sk.isEmpty())
+        return sk;
+
+    const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
+    sk = pick(data);
+    if (!sk.isEmpty())
+        return sk;
+
+    QString aid = payload.value(QStringLiteral("agentId")).toString().trimmed();
+    if (aid.isEmpty())
+        aid = data.value(QStringLiteral("agentId")).toString().trimmed();
+    if (!aid.isEmpty())
+        return QStringLiteral("agent:%1:main").arg(aid);
+
+    return QString();
+}
+
+bool GatewayClient::eventAppliesToCurrentUiSession(const QJsonObject &payload) const
+{
+    const QString cur = m_session.currentSessionKey().trimmed();
+    if (cur.isEmpty())
+        return false;
+
+    const QString evt = extractPayloadSessionKey(payload);
+    if (evt.isEmpty())
+        return false;
+
+    return evt == cur;
 }

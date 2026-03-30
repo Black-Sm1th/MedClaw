@@ -223,13 +223,9 @@ ApplicationWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         window.leftSelectedIndex = index
-                                        if (modelData === "新建任务") {
-                                            leftMidPanel.activeAgentId = ""
-                                            chatModel.clear()
-                                            wsClient.clearActiveAgentContext()
-                                        }else{
-                                            leftMidPanel.activeAgentId = ""
-                                        }
+                                        leftMidPanel.activeAgentId = ""
+                                        chatModel.clear()
+                                        wsClient.clearActiveAgentContext()
                                     }
                                 }
                             }
@@ -276,15 +272,14 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if(modelData !== "history"){
+                                        if (modelData !== "history")
                                             window.leftSelectedIndex = index
-                                        }
-                                        if (modelData === "新建任务") {
+                                        if (modelData === "history") {
+                                            // 仅打开任务列表，不切换会话（与展开侧栏任务区一致）
+                                        } else {
                                             leftMidPanel.activeAgentId = ""
                                             chatModel.clear()
                                             wsClient.clearActiveAgentContext()
-                                        }else{
-                                            leftMidPanel.activeAgentId = ""
                                         }
                                     }
                                 }

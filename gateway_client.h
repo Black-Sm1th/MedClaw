@@ -553,6 +553,11 @@ private:
      */
     QString sendRequest(const QString &method, const QJsonObject &params);
 
+    /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
+    QString extractPayloadSessionKey(const QJsonObject &payload) const;
+    /// 当前 UI 是否应展示该会话的推送（无选中会话则一律不展示）
+    bool eventAppliesToCurrentUiSession(const QJsonObject &payload) const;
+
     // ═══════════════════════════════════════════════════════════════
     //  成员变量
     // ═══════════════════════════════════════════════════════════════
