@@ -173,6 +173,11 @@ QVariantList GatewayClient::modelList() const { return m_modelList; }
 /// 获取当前会话的模型信息
 QVariantMap GatewayClient::currentModel() const { return m_currentModel; }
 
+QString GatewayClient::pendingSessionModelId() const
+{
+    return m_pendingSessionModelId;
+}
+
 QVariantList GatewayClient::mcpList() const
 {
     return m_mcpList;
@@ -192,17 +197,28 @@ void GatewayClient::setState(ConnectionState state)
     }
 }
 
-/// 委托给 WsSession 切换会话，成功则发射信号
+/// 委托给 WsSession 切换会话；若已连接且会话非空，查询该会话当前模型（sessions.patch model:null）
 void GatewayClient::setCurrentSessionKey(const QString &key)
 {
-    if (m_session.setCurrentSessionKey(key))
-        emit currentSessionChanged();
+    if (!m_session.setCurrentSessionKey(key))
+        return;
+    if (m_state == Connected && !m_session.currentSessionKey().trimmed().isEmpty()) {
+        if (!m_pendingSessionModelId.isEmpty())
+            patchSessionModel(m_pendingSessionModelId);
+        else
+            patchSessionModel(QString());
+    }
+    emit currentSessionChanged();
 }
 
 void GatewayClient::clearActiveAgentContext()
 {
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
+    if (!m_pendingSessionModelId.isEmpty()) {
+        m_pendingSessionModelId.clear();
+        emit pendingSessionModelIdChanged();
+    }
     if (m_session.setCurrentSessionKey(QString()))
         emit currentSessionChanged();
 }
@@ -703,6 +719,10 @@ void GatewayClient::onDisconnected()
              << "pendingBeforeClear=" << m_pendingRequests.size();
     m_session.setStreaming(false);
     m_pendingRequests.clear();
+    if (!m_pendingSessionModelId.isEmpty()) {
+        m_pendingSessionModelId.clear();
+        emit pendingSessionModelIdChanged();
+    }
     clearPendingCronDedicatedAgent();
     m_sidebarTitleHistReqAgent.clear();
     m_sidebarTitleHistReqBatch.clear();
@@ -1883,7 +1903,14 @@ void GatewayClient::patchSessionModel(const QString &modelId)
         return;
     }
     if (m_session.currentSessionKey().trimmed().isEmpty()) {
-        qDebug() << "[Gateway] patchSessionModel skipped (no active session)";
+        if (!modelId.isEmpty()) {
+            if (m_pendingSessionModelId != modelId) {
+                m_pendingSessionModelId = modelId;
+                emit pendingSessionModelIdChanged();
+            }
+            qDebug().noquote() << "[Gateway] patchSessionModel deferred (no session), pending:"
+                               << modelId;
+        }
         return;
     }
 
@@ -1900,6 +1927,11 @@ void GatewayClient::patchSessionModel(const QString &modelId)
                        << (modelId.isEmpty() ? "null (query)" : modelId)
                        << "session:" << m_session.currentSessionKey();
     sendRequest(QStringLiteral("sessions.patch"), params);
+
+    if (!modelId.isEmpty() && !m_pendingSessionModelId.isEmpty()) {
+        m_pendingSessionModelId.clear();
+        emit pendingSessionModelIdChanged();
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1944,7 +1976,10 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
     if (shouldLoadHistory)
         loadChatHistory(sessionKey);
     refreshSessions();
-    patchSessionModel(QString());
+    if (!m_pendingSessionModelId.isEmpty())
+        patchSessionModel(m_pendingSessionModelId);
+    else
+        patchSessionModel(QString());
     refreshToolsCatalog(agentId.trimmed());
 }
 

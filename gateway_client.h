@@ -87,6 +87,9 @@ class GatewayClient : public QObject
                NOTIFY modelListChanged)
     Q_PROPERTY(QVariantMap currentModel READ currentModel
                NOTIFY currentModelChanged)
+    /// 无会话时用户选择的模型 id，首条消息创建会话后会通过 sessions.patch 应用
+    Q_PROPERTY(QString pendingSessionModelId READ pendingSessionModelId
+               NOTIFY pendingSessionModelIdChanged)
     /// OpenClaw 配置中的 mcp.servers（来自 config.get）
     Q_PROPERTY(QVariantList mcpList READ mcpList
                NOTIFY mcpListChanged)
@@ -148,6 +151,8 @@ public:
     QVariantList modelList() const;
     /// 获取当前会话的模型信息
     QVariantMap currentModel() const;
+    /// 无会话时待应用的模型 id（与 pendingSessionModelId 属性同源）
+    QString pendingSessionModelId() const;
 
     /// 已配置的 MCP 服务器列表（展示用）
     QVariantList mcpList() const;
@@ -432,6 +437,7 @@ signals:
     // ── 模型管理 ──
     void modelListChanged();              ///< 可用模型列表更新
     void currentModelChanged();           ///< 当前会话模型信息变更
+    void pendingSessionModelIdChanged();  ///< 无会话时待选模型变更
     void mcpListChanged();                ///< MCP 服务器列表更新
     void toolListChanged();               ///< 工具目录列表更新
 
@@ -622,6 +628,7 @@ private:
     // ── 模型管理 ──
     QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）
     QVariantMap  m_currentModel;       ///< 当前会话模型信息（sessions.patch 响应）
+    QString m_pendingSessionModelId;   ///< 尚无 session 时用户选择的模型，有 session 后 patch
 
     QString        m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
     QVariantList   m_mcpList;          ///< mcp.servers 展示列表

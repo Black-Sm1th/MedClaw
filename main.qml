@@ -1451,15 +1451,94 @@ ApplicationWindow {
                                         }
                                     }
                                 }
-                                DropdownSelect {
-                                    id: dropdownSelectionModel
+                                Item {
+                                    id: modelPickerWrap
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 137
+                                    width: 220
                                     height: 36
-                                    model: ["Qwen3-32B"]
-                                    icon: "qrc:/images/ai.png"
-                                    iconSize: 16
-                                    currentIndex: 0
+                                    property var modelIds: []
+
+                                    function rebuildFromGateway() {
+                                        var list = wsClient.modelList || []
+                                        var labels = []
+                                        var ids = []
+                                        for (var i = 0; i < list.length; i++) {
+                                            var m = list[i]
+                                            var mid = m.id || ""
+                                            if (!mid)
+                                                continue
+                                            var nm = m.name || mid
+                                            var pv = m.provider || ""
+                                            labels.push(pv ? (nm + " (" + pv + ")") : nm)
+                                            ids.push(mid)
+                                        }
+                                        modelIds = ids
+                                        if (labels.length === 0) {
+                                            dropdownSelectionModel.model = [qsTr("无可用模型")]
+                                            dropdownSelectionModel.currentIndex = 0
+                                            return
+                                        }
+                                        dropdownSelectionModel.model = labels
+                                        if (dropdownSelectionModel.currentIndex >= labels.length)
+                                            dropdownSelectionModel.currentIndex = 0
+                                        syncIndexFromGateway()
+                                    }
+
+                                    function syncIndexFromGateway() {
+                                        var cur = ""
+                                        if (wsClient.currentSessionKey && wsClient.currentSessionKey.length > 0) {
+                                            var cm = wsClient.currentModel || {}
+                                            cur = cm.model || ""
+                                        } else {
+                                            cur = wsClient.pendingSessionModelId || ""
+                                        }
+                                        var ids = modelIds
+                                        if (!cur || ids.length === 0) {
+                                            dropdownSelectionModel.currentIndex = 0
+                                            return
+                                        }
+                                        for (var j = 0; j < ids.length; j++) {
+                                            if (ids[j] === cur) {
+                                                dropdownSelectionModel.currentIndex = j
+                                                return
+                                            }
+                                        }
+                                    }
+
+                                    readonly property bool modelPickerEnabled: wsClient.connectionState === 3
+
+                                    Connections {
+                                        target: wsClient
+                                        function onModelListChanged() { modelPickerWrap.rebuildFromGateway() }
+                                        function onCurrentModelChanged() { modelPickerWrap.syncIndexFromGateway() }
+                                        function onCurrentSessionChanged() { modelPickerWrap.syncIndexFromGateway() }
+                                        function onPendingSessionModelIdChanged() { modelPickerWrap.syncIndexFromGateway() }
+                                    }
+
+                                    DropdownSelect {
+                                        id: dropdownSelectionModel
+                                        anchors.fill: parent
+                                        model: [qsTr("加载中…")]
+                                        icon: "qrc:/images/ai.png"
+                                        iconSize: 16
+                                        currentIndex: 0
+                                        popupMaxWidth: 320
+                                        popupMaxHeight: 280
+                                        onSelected: function(index, text) {
+                                            if (modelPickerWrap.modelIds.length === 0)
+                                                return
+                                            if (index < 0 || index >= modelPickerWrap.modelIds.length)
+                                                return
+                                            wsClient.patchSessionModel(modelPickerWrap.modelIds[index])
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        visible: !modelPickerWrap.modelPickerEnabled
+                                        hoverEnabled: false
+                                        onClicked: {}
+                                    }
                                 }
                                 Item {
                                     id: dropdownSelectionSkill
