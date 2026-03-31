@@ -28,6 +28,37 @@ ApplicationWindow {
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
 
+    /// 若整段里出现第二对「()」，只保留到第一对括号结束（含前面文字与第一对括号）
+    function trimToFirstParenPairOnly(s) {
+        if (!s || s.length < 2)
+            return s || ""
+        var first = s.indexOf("(")
+        if (first < 0)
+            return s
+        var depth = 0
+        var i
+        for (i = first; i < s.length; i++) {
+            var c = s.charAt(i)
+            if (c === "(")
+                depth++
+            else if (c === ")") {
+                depth--
+                if (depth === 0)
+                    break
+            }
+        }
+        if (i >= s.length)
+            return s
+        if (s.indexOf("(", i + 1) < 0)
+            return s
+        return s.substring(0, i + 1).trim()
+    }
+
+    function modelDisplayLabel(nm, pv) {
+        var raw = pv ? (nm + " (" + pv + ")") : nm
+        return trimToFirstParenPairOnly(raw)
+    }
+
     // 启动时自动连接（地址与 AppData/config.json 中 serverUrl 一致，由 C++ 加载）
     Component.onCompleted: {
         wsClient.connectToServer(wsClient.serverUrl)
@@ -221,9 +252,9 @@ ApplicationWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         window.leftSelectedIndex = index
-                                        leftMidPanel.activeAgentId = ""
-                                        chatModel.clear()
-                                        wsClient.clearActiveAgentContext()
+                                            leftMidPanel.activeAgentId = ""
+                                            chatModel.clear()
+                                            wsClient.clearActiveAgentContext()
                                     }
                                 }
                             }
@@ -271,7 +302,7 @@ ApplicationWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         if (modelData !== "history")
-                                            window.leftSelectedIndex = index
+                                        window.leftSelectedIndex = index
                                         if (modelData === "history") {
                                             // 仅打开任务列表，不切换会话（与展开侧栏任务区一致）
                                         } else {
@@ -598,7 +629,7 @@ ApplicationWindow {
                         attachmentModel.clear()
                         $MainViewController.sendMessageWithFiles(msg, files, wsPath)
                     } else {
-                        $MainViewController.sendMessage(msg, wsPath)
+                    $MainViewController.sendMessage(msg, wsPath)
                     }
                 }
 
@@ -1056,10 +1087,10 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             sourceSize.width: 32
                                             sourceSize.height: 32
-                                            Rectangle {
+                                        Rectangle {
                                                 anchors.fill: parent
-                                                radius: 6
-                                                color: "transparent"
+                                            radius: 6
+                                            color: "transparent"
                                                 border.color: (model.isImage && model.filePath)
                                                               ? "#0A000000" : "transparent"
                                                 border.width: 1
@@ -1126,13 +1157,13 @@ ApplicationWindow {
                                             color: "#FFFFFF"
                                             anchors.centerIn: parent
                                         }
-                                        MouseArea {
+                                            MouseArea {
                                             id: attachDelMouse
-                                            anchors.fill: parent
-                                            anchors.margins: -4
+                                                anchors.fill: parent
+                                                anchors.margins: -4
                                             hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: attachmentModel.remove(index)
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: attachmentModel.remove(index)
                                         }
                                     }
                                 }
@@ -1439,9 +1470,9 @@ ApplicationWindow {
                                             var url = folderDialogWorkSpace.fileUrl.toString()
                                             var path = decodeURIComponent(url.replace(/^file:\/{2,3}/, ""))
                                             if (Qt.platform.os === "windows") {
-                                                if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
-                                                    path = path.substring(1)
-                                                path = path.replace(/\//g, "\\")
+                                            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                                                path = path.substring(1)
+                                            path = path.replace(/\//g, "\\")
                                             }else if(Qt.platform.os === "linux"){
                                                 path = "/" + path
                                             }
@@ -1469,7 +1500,7 @@ ApplicationWindow {
                                                 continue
                                             var nm = m.name || mid
                                             var pv = m.provider || ""
-                                            labels.push(pv ? (nm + " (" + pv + ")") : nm)
+                                            labels.push(window.modelDisplayLabel(nm, pv))
                                             ids.push(mid)
                                         }
                                         modelIds = ids
@@ -2889,25 +2920,25 @@ ApplicationWindow {
                                                         if (s === "skipped") return "#0FF59E0B"
                                                         return "#0A000000"
                                                     }
-                                                    Label {
+                                                Label {
                                                         id: historyStatusText
                                                         anchors.centerIn: parent
-                                                        text: {
+                                                    text: {
                                                             var s = historyRow.run.status || ""
-                                                            if (s === "ok") return "成功"
-                                                            if (s === "error") return "失败"
-                                                            if (s === "skipped") return "跳过"
-                                                            return s
-                                                        }
-                                                        font.pixelSize: 11
-                                                        color: {
-                                                            var s = historyRow.run.status || ""
-                                                            if (s === "ok") return "#22C55E"
-                                                            if (s === "error") return "#EF4444"
-                                                            if (s === "skipped") return "#F59E0B"
-                                                            return "#73000000"
-                                                        }
+                                                        if (s === "ok") return "成功"
+                                                        if (s === "error") return "失败"
+                                                        if (s === "skipped") return "跳过"
+                                                        return s
                                                     }
+                                                        font.pixelSize: 11
+                                                    color: {
+                                                            var s = historyRow.run.status || ""
+                                                        if (s === "ok") return "#22C55E"
+                                                        if (s === "error") return "#EF4444"
+                                                            if (s === "skipped") return "#F59E0B"
+                                                        return "#73000000"
+                                                    }
+                                                }
                                                 }
 
                                                 Rectangle {
@@ -2924,7 +2955,7 @@ ApplicationWindow {
                                                         if (d === "delivered") return "#0F006BFF"
                                                         return "#0A000000"
                                                     }
-                                                    Label {
+                                                Label {
                                                         id: deliveryLabel
                                                         anchors.centerIn: parent
                                                         text: {
@@ -2979,11 +3010,11 @@ ApplicationWindow {
                                         Label {
                                             id: historyErrorLabel
                                             text: historyRow.run.error || ""
-                                            font.pixelSize: 12
-                                            color: "#EF4444"
+                                        font.pixelSize: 12
+                                        color: "#EF4444"
                                             visible: (historyRow.run.error || "") !== ""
                                             width: parent.width
-                                            elide: Text.ElideRight
+                                        elide: Text.ElideRight
                                             horizontalAlignment: Text.AlignRight
 
                                             ToolTip {
@@ -4807,6 +4838,11 @@ ApplicationWindow {
 
         property int settingsTabIndex: 0
 
+        onOpened: {
+            if (wsClient.connectionState === 3)
+                wsClient.refreshModels()
+        }
+
         enter: Transition {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
         }
@@ -4959,25 +4995,36 @@ ApplicationWindow {
                                 color: "#D9000000"
                             }
 
+                            Label {
+                                visible: wsClient.modelList.length === 0
+                                width: parent.width - 32
+                                wrapMode: Text.WordWrap
+                                text: wsClient.connectionState === 3
+                                      ? qsTr("暂无可用模型，请稍后重试或检查网关配置。")
+                                      : qsTr("未连接服务器，连接成功后将自动加载模型列表。")
+                                font.pixelSize: 14
+                                color: "#73000000"
+                            }
+
                             Column {
                                 width: parent.width - 32
                                 spacing: 4
 
                                 Repeater {
-                                    model: ListModel {
-                                        id: modelListModel
-                                        ListElement { name: "Qwen3-32B"; enabled: true }
-                                    }
+                                    model: wsClient.modelList
 
                                     delegate: Rectangle {
                                         width: parent.width
-                                        height: 56
+                                        height: modelRow.implicitHeight + 20
                                         radius: 8
                                         color: "transparent"
 
                                         Row {
+                                            id: modelRow
                                             anchors.left: parent.left
                                             anchors.leftMargin: 16
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 16
                                             anchors.verticalCenter: parent.verticalCenter
                                             spacing: 8
 
@@ -4988,39 +5035,52 @@ ApplicationWindow {
                                                 fillMode: Image.PreserveAspectFit
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
-                                            Label {
-                                                text: model.name
-                                                font.pixelSize: 14
-                                                color: "#D9000000"
+                                            Column {
+                                                spacing: 2
+                                                width: parent.width - 28 - 8 - 60
                                                 anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                        }
 
-                                        Switch {
-                                            id: modelItemSwitch
-                                            checked: model.enabled
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: 16
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: modelItemSwitch.toggle()
+                                                Label {
+                                                    width: parent.width
+                                                    wrapMode: Text.WordWrap
+                                                    text: {
+                                                        var nm = modelData.name || modelData.id || ""
+                                                        var pv = modelData.provider || ""
+                                                        return window.modelDisplayLabel(nm, pv)
+                                                    }
+                                                    font.pixelSize: 14
+                                                    color: "#D9000000"
+                                                }
+                                                Label {
+                                                    visible: (modelData.id || "") !== ""
+                                                    width: parent.width
+                                                    elide: Text.ElideMiddle
+                                                    text: modelData.id || ""
+                                                    font.pixelSize: 12
+                                                    color: "#73000000"
+                                                }
                                             }
-                                            indicator: Rectangle {
-                                                implicitWidth: 44
-                                                implicitHeight: 22
-                                                x: modelItemSwitch.leftPadding
-                                                y: parent.height / 2 - height / 2
-                                                radius: 12
-                                                color: modelItemSwitch.checked ? "#006BFF" : "#D9D9D9"
-                                                Behavior on color { ColorAnimation { duration: 150 } }
-                                                Rectangle {
-                                                    x: modelItemSwitch.checked ? parent.width - width - 3 : 3
+
+                                            Switch {
+                                                id: settingsModelSwitch
+                                                enabled: false
+                                                checked: true
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                indicator: Rectangle {
+                                                    implicitWidth: 44
+                                                    implicitHeight: 22
+                                                    x: settingsModelSwitch.leftPadding
                                                     y: parent.height / 2 - height / 2
-                                                    width: 18; height: 18; radius: 9
-                                                    color: "#FFFFFF"
-                                                    Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                                    radius: 12
+                                                    color: settingsModelSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                                    Rectangle {
+                                                        x: settingsModelSwitch.checked ? parent.width - width - 3 : 3
+                                                        y: parent.height / 2 - height / 2
+                                                        width: 18; height: 18; radius: 9
+                                                        color: "#FFFFFF"
+                                                        Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                                    }
                                                 }
                                             }
                                         }
