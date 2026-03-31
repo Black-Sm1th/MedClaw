@@ -16,8 +16,6 @@ ApplicationWindow {
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
-    // 默认 WebSocket 服务器地址（与 TestChatClient.qml 保持一致）
-    property string wsServerUrl: "ws://127.0.0.1:18789"
     /// 非空表示「编辑」已有定时任务；空为新建
     property string editingCronJobId: ""
     property string editingCronPayloadKind: "agentTurn"
@@ -30,9 +28,9 @@ ApplicationWindow {
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
 
-    // 启动时自动连接 WebSocket 服务器
+    // 启动时自动连接（地址与 AppData/config.json 中 serverUrl 一致，由 C++ 加载）
     Component.onCompleted: {
-        wsClient.connectToServer(wsServerUrl)
+        wsClient.connectToServer(wsClient.serverUrl)
     }
     Connections{
         target: wsClient

@@ -52,8 +52,8 @@ ApplicationWindow {
     //  测试服务器配置
     // ═══════════════════════════════════════════════════════════════
 
-    /// 默认 WebSocket 服务器地址
-    property string testServerUrl: "ws://127.0.0.1:18789"
+    /// 与 AppData/config.json 中 serverUrl 一致（由 GatewayClient / WsConfig 加载）
+    readonly property string testServerUrl: wsClient.serverUrl
 
     // ═══════════════════════════════════════════════════════════════
     //  操作日志模型

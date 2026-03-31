@@ -7,6 +7,10 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <cstring>
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -14,22 +18,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 WsConfig::WsConfig()
-    // ── 服务器默认配置 ──
+    // ── 占位；loadOrCreatePersistentConfig() 从 AppData/config.json 覆盖 ──
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
-// ── Token：Linux ARM 部署使用独立 Token ──
-#if defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM)
-    , m_token(QStringLiteral("25e30855b27e123e31731de3769e4149380b8a5f89f3f5b5"))
-#else
-    , m_token(QStringLiteral("a692e8cd0ad1869373800915e7b23f3ac0e9329d011ee91c"))
-#endif
-// ── 客户端身份（需与 Gateway 白名单中的 client.id 匹配） ──
-// Windows 部署的 OpenClaw-CN 使用 clawdbot-control-ui
-// Linux 部署的标准 OpenClaw 使用 openclaw-control-ui   //新版本已经全部改为 openclaw-control-ui了
-#if defined(Q_OS_LINUX)
+    , m_token(QStringLiteral(
+          "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
-#else
-    , m_clientId(QStringLiteral("openclaw-control-ui"))
-#endif
     , m_clientVersion(QStringLiteral("dev"))
 // ── 平台标识：编译期自动检测 ──
 #if defined(Q_OS_WIN)
@@ -56,11 +49,87 @@ WsConfig::WsConfig()
     // ── Ed25519 密钥初始值 ──
     , m_hasKeys(false)
 {
+    loadOrCreatePersistentConfig();
+
     memset(m_ed25519Pk, 0, sizeof(m_ed25519Pk));
     memset(m_ed25519Sk, 0, sizeof(m_ed25519Sk));
 
     // 在构造阶段即生成设备密钥，确保后续握手时密钥可用
     initDeviceKeys();
+}
+
+void WsConfig::loadOrCreatePersistentConfig()
+{
+    static const QString kDefaultServer =
+        QStringLiteral("ws://127.0.0.1:18789");
+    static const QString kDefaultToken = QStringLiteral(
+        "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63");
+    static const QString kDefaultClientId =
+        QStringLiteral("openclaw-control-ui");
+    const QString base = QStringLiteral("AppData/config/");
+    QDir().mkpath(base);
+    const QString path = base + QStringLiteral("config.json");
+
+    auto writeDefaults = [&](const QJsonObject &o) {
+        QFile out(path);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            qWarning() << "[WsConfig] cannot write" << path;
+            return;
+        }
+        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+        out.close();
+        qDebug().noquote() << "[WsConfig] wrote" << path;
+    };
+
+    QFile f(path);
+    if (!f.exists()) {
+        m_serverUrl = kDefaultServer;
+        m_token     = kDefaultToken;
+        m_clientId  = kDefaultClientId;
+        QJsonObject o;
+        o[QStringLiteral("serverUrl")] = m_serverUrl;
+        o[QStringLiteral("token")]     = m_token;
+        o[QStringLiteral("clientId")]  = m_clientId;
+        writeDefaults(o);
+        return;
+    }
+
+    if (!f.open(QIODevice::ReadOnly)) {
+        qWarning() << "[WsConfig] cannot read" << path;
+        return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject()) {
+        qWarning() << "[WsConfig] invalid JSON in" << path;
+        return;
+    }
+
+    const QJsonObject o = doc.object();
+    if (o.contains(QStringLiteral("serverUrl"))) {
+        const QString u = o.value(QStringLiteral("serverUrl")).toString().trimmed();
+        if (!u.isEmpty())
+            m_serverUrl = u;
+    }
+    if (o.contains(QStringLiteral("token"))) {
+        const QString t = o.value(QStringLiteral("token")).toString().trimmed();
+        if (!t.isEmpty())
+            m_token = t;
+    }
+    if (o.contains(QStringLiteral("clientId"))) {
+        const QString c = o.value(QStringLiteral("clientId")).toString().trimmed();
+        if (!c.isEmpty())
+            m_clientId = c;
+    }
+
+    if (m_serverUrl.isEmpty())
+        m_serverUrl = kDefaultServer;
+    if (m_token.isEmpty())
+        m_token = kDefaultToken;
+    if (m_clientId.isEmpty())
+        m_clientId = kDefaultClientId;
+
+    qDebug().noquote() << "[WsConfig] loaded" << path << "serverUrl=" << m_serverUrl;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

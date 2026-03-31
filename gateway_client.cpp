@@ -105,6 +105,8 @@ GatewayClient::~GatewayClient()
 
 int GatewayClient::connectionState() const { return m_state; }
 
+QString GatewayClient::serverUrl() const { return m_config.serverUrl(); }
+
 /// 将连接状态枚举转换为用户可读的中文描述
 QString GatewayClient::statusText() const
 {

@@ -25,7 +25,7 @@ class WsConfig
 {
 public:
     /**
-     * @brief 构造函数 —— 初始化默认配置并生成 Ed25519 设备密钥对
+     * @brief 构造函数 —— 从「用户主目录/AppData/config.json」加载或创建默认配置，并生成 Ed25519 设备密钥对
      *
      * 自动调用 initDeviceKeys() 完成以下工作：
      *   1. 使用内嵌 TweetNaCl 实现生成 Ed25519 公私钥对
@@ -76,6 +76,12 @@ public:
     QJsonObject buildConnectParams(const QString &challengeNonce) const;
 
 private:
+    /**
+     * @brief 从「用户主目录/AppData/config.json」读取 serverUrl、token、clientId；
+     *        若文件不存在则创建并写入默认值。
+     */
+    void loadOrCreatePersistentConfig();
+
     /**
      * @brief 初始化 Ed25519 设备密钥对
      *

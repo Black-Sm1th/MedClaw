@@ -93,6 +93,8 @@ class GatewayClient : public QObject
     /// tools.catalog 展平后的工具列表（含 enabled，与 config 中 deny 对齐）
     Q_PROPERTY(QVariantList toolList READ toolList
                NOTIFY toolListChanged)
+    /// 与 AppData/config.json 中 serverUrl 一致（握手 token/clientId 亦来自该文件）
+    Q_PROPERTY(QString serverUrl READ serverUrl CONSTANT)
 
 public:
     /**
@@ -118,6 +120,9 @@ public:
     // ═══════════════════════════════════════════════════════════════
     //  属性访问器（供 QML 绑定）
     // ═══════════════════════════════════════════════════════════════
+
+    /// WebSocket 服务器地址（来自 config.json）
+    QString serverUrl() const;
 
     /// 获取当前连接状态（枚举值）
     int connectionState() const;
