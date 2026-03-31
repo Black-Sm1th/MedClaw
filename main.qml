@@ -677,7 +677,7 @@ ApplicationWindow {
                                     wrapMode: Text.Wrap
                                     font.pixelSize: 16
                                     anchors.centerIn: parent
-                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                     color: chatBubble.isUser ? "#E5000000" : "#D9000000"
                                     textFormat: Text.MarkdownText
                                 }
@@ -819,7 +819,7 @@ ApplicationWindow {
                                                 text: toolArgs || ""
                                                 wrapMode: Text.Wrap
                                                 font.pixelSize: 12
-                                                font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0"
+                                                font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                 color: "#374151"
                                                 textFormat: Text.MarkdownText
                                             }
@@ -842,7 +842,7 @@ ApplicationWindow {
                                                 text: toolResultText || ""
                                                 wrapMode: Text.Wrap
                                                 font.pixelSize: 12
-                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                 color: isError ? "#DC2626" : "#374151"
                                                 textFormat: Text.MarkdownText
                                             }
@@ -981,7 +981,7 @@ ApplicationWindow {
                                         text: content || ""
                                         wrapMode: Text.Wrap
                                         font.pixelSize: 12
-                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                         color: isError ? "#DC2626" : "#374151"
                                         textFormat: Text.MarkdownText
                                     }
