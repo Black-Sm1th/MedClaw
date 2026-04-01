@@ -249,6 +249,13 @@ public:
      */
     Q_INVOKABLE void installSkillFromMarket(const QString &folderName);
 
+    /// 将 ZIP 复制到 skillsStoragePath 后解压到同名子目录（本地操作，无需已连接网关）
+    Q_INVOKABLE void addSkillFromZip(const QString &zipFilePath);
+    /// 将所选文件夹递归复制到 skillsStoragePath（与文件夹同名）
+    Q_INVOKABLE void addSkillFromFolder(const QString &folderPath);
+    /// 在 skillsStoragePath 下执行 git clone（需系统已安装 git）
+    Q_INVOKABLE void addSkillFromGit(const QString &cloneUrl);
+
     // ── 定时任务管理 ──
 
     /// 刷新定时任务列表（发送 cron.list RPC）

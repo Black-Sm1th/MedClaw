@@ -24,8 +24,46 @@
 #include <QUrl>
 #include <QUuid>
 #include <QNetworkRequest>
+#include <QProcess>
 #include <algorithm>
 #include <limits>
+
+namespace {
+
+QString escapePowerShellSingleQuoted(const QString &s)
+{
+    QString out = s;
+    out.replace(QLatin1Char('\''), QLatin1String("''"));
+    return out;
+}
+
+QString normalizeGitCloneUrl(QString raw)
+{
+    raw = raw.trimmed();
+    if (raw.isEmpty())
+        return raw;
+    if (raw.startsWith(QStringLiteral("git@")))
+        return raw;
+    if (!raw.toLower().contains(QStringLiteral("github.com")))
+        return raw;
+    const QUrl u(raw);
+    if (!u.isValid())
+        return raw;
+    QString path = u.path();
+    const int treePos = path.indexOf(QStringLiteral("/tree/"));
+    if (treePos > 0)
+        path = path.left(treePos);
+    const int blobPos = path.indexOf(QStringLiteral("/blob/"));
+    if (blobPos > 0)
+        path = path.left(blobPos);
+    QUrl clean = u;
+    clean.setPath(path);
+    clean.setQuery(QString());
+    clean.setFragment(QString());
+    return clean.toString();
+}
+
+} // namespace
 
 /// 帧类型常量：事件帧
 static const QLatin1String T_EVENT("event");
@@ -2046,6 +2084,217 @@ bool GatewayClient::copyDirectoryRecursive(const QString &srcDir, const QString 
         }
     }
     return true;
+}
+
+void GatewayClient::addSkillFromZip(const QString &zipPathRaw)
+{
+    const QString zipNative = QDir::fromNativeSeparators(zipPathRaw.trimmed());
+    QFileInfo zipInfo(zipNative);
+    if (!zipInfo.exists() || !zipInfo.isFile()) {
+        emit errorOccurred(QStringLiteral(
+            "ZIP \u6587\u4ef6\u65e0\u6548\u6216\u4e0d\u5b58\u5728"));
+        return;
+    }
+    if (zipInfo.suffix().compare(QStringLiteral("zip"), Qt::CaseInsensitive) != 0) {
+        emit errorOccurred(QStringLiteral(
+            "\u8bf7\u9009\u62e9 .zip \u6587\u4ef6"));
+        return;
+    }
+
+    const QString dstRoot = expandTildePath(m_config.skillsStoragePath()).trimmed();
+    if (dstRoot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u672a\u914d\u7f6e\u6280\u80fd\u5b58\u653e\u8def\u5f84"));
+        return;
+    }
+    if (!QDir().mkpath(dstRoot)) {
+        emit errorOccurred(QStringLiteral(
+            "\u65e0\u6cd5\u521b\u5efa\u6280\u80fd\u5b58\u653e\u76ee\u5f55"));
+        return;
+    }
+
+    const QString zipName = zipInfo.fileName();
+    const QString destZip = QDir(dstRoot).filePath(zipName);
+    if (QFile::exists(destZip)) {
+        if (!QFile::remove(destZip)) {
+            emit errorOccurred(QStringLiteral(
+                "\u65e0\u6cd5\u8986\u76d6\u5df2\u5b58\u5728\u7684 ZIP"));
+            return;
+        }
+    }
+    if (!QFile::copy(zipInfo.absoluteFilePath(), destZip)) {
+        emit errorOccurred(QStringLiteral(
+            "\u590d\u5236 ZIP \u5230\u6280\u80fd\u76ee\u5f55\u5931\u8d25"));
+        return;
+    }
+
+    const QString extractDir = QDir(dstRoot).filePath(zipInfo.completeBaseName());
+    if (QDir(extractDir).exists()) {
+        if (!QDir(extractDir).removeRecursively()) {
+            QFile::remove(destZip);
+            emit errorOccurred(QStringLiteral(
+                "\u65e0\u6cd5\u6e05\u7a7a\u76ee\u6807\u89e3\u538b\u76ee\u5f55"));
+            return;
+        }
+    }
+    if (!QDir().mkpath(extractDir)) {
+        QFile::remove(destZip);
+        emit errorOccurred(QStringLiteral(
+            "\u65e0\u6cd5\u521b\u5efa\u89e3\u538b\u76ee\u5f55"));
+        return;
+    }
+
+    auto *proc = new QProcess(this);
+    QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                       this, [this, proc, destZip, extractDir](int exitCode,
+                                                                QProcess::ExitStatus exitStatus) {
+                           const QByteArray errBytes = proc->readAllStandardError();
+                           const QByteArray outBytes = proc->readAllStandardOutput();
+                           proc->deleteLater();
+                           const QString msg =
+                               QString::fromUtf8(errBytes + outBytes).trimmed();
+                           if (exitCode != 0 || exitStatus != QProcess::NormalExit) {
+                               QFile::remove(destZip);
+                               QDir(extractDir).removeRecursively();
+                               emit errorOccurred(msg.isEmpty()
+                                                      ? QStringLiteral(
+                                                            "\u89e3\u538b\u5931\u8d25")
+                                                      : msg);
+                               return;
+                           }
+                           refreshSkillMarketFolders();
+                           if (m_state == Connected)
+                               refreshSkills();
+                       });
+
+#ifdef Q_OS_WIN
+    const QString ps =
+        QStringLiteral("Expand-Archive -LiteralPath '%1' -DestinationPath '%2' -Force")
+            .arg(escapePowerShellSingleQuoted(QDir::toNativeSeparators(destZip)),
+                 escapePowerShellSingleQuoted(QDir::toNativeSeparators(extractDir)));
+    proc->start(QStringLiteral("powershell"),
+                  QStringList() << QStringLiteral("-NoProfile") << QStringLiteral("-NonInteractive")
+                                << QStringLiteral("-Command") << ps);
+#else
+    proc->start(QStringLiteral("tar"),
+                QStringList() << QStringLiteral("-xf") << destZip << QStringLiteral("-C")
+                              << extractDir);
+#endif
+    if (!proc->waitForStarted(5000)) {
+        proc->deleteLater();
+        QFile::remove(destZip);
+        QDir(extractDir).removeRecursively();
+        emit errorOccurred(QStringLiteral(
+#ifdef Q_OS_WIN
+            "\u65e0\u6cd5\u542f\u52a8 PowerShell \u89e3\u538b"
+#else
+            "\u65e0\u6cd5\u542f\u52a8 tar \u89e3\u538b\uff08\u8bf7\u786e\u8ba4\u7cfb\u7edf\u5df2\u5b89\u88c5 tar\uff09"
+#endif
+        ));
+    }
+}
+
+void GatewayClient::addSkillFromFolder(const QString &folderPathRaw)
+{
+    const QString src = QDir::fromNativeSeparators(folderPathRaw.trimmed());
+    if (src.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u6587\u4ef6\u5939\u8def\u5f84\u65e0\u6548"));
+        return;
+    }
+    const QFileInfo srcFi(src);
+    if (!srcFi.exists() || !srcFi.isDir()) {
+        emit errorOccurred(QStringLiteral(
+            "\u6587\u4ef6\u5939\u4e0d\u5b58\u5728"));
+        return;
+    }
+    const QString name = srcFi.fileName();
+    if (name.isEmpty() || name == QLatin1String(".") || name == QLatin1String("..")) {
+        emit errorOccurred(QStringLiteral(
+            "\u65e0\u6548\u7684\u6587\u4ef6\u5939\u540d"));
+        return;
+    }
+
+    const QString dstRoot = expandTildePath(m_config.skillsStoragePath()).trimmed();
+    if (dstRoot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u672a\u914d\u7f6e\u6280\u80fd\u5b58\u653e\u8def\u5f84"));
+        return;
+    }
+    if (!QDir().mkpath(dstRoot)) {
+        emit errorOccurred(QStringLiteral(
+            "\u65e0\u6cd5\u521b\u5efa\u6280\u80fd\u5b58\u653e\u76ee\u5f55"));
+        return;
+    }
+
+    const QString dst = QDir(dstRoot).filePath(name);
+    if (QDir(dst).exists()) {
+        if (!QDir(dst).removeRecursively()) {
+            emit errorOccurred(QStringLiteral(
+                "\u65e0\u6cd5\u6e05\u7a7a\u76ee\u6807\u76ee\u5f55"));
+            return;
+        }
+    }
+
+    if (!copyDirectoryRecursive(srcFi.absoluteFilePath(), dst)) {
+        emit errorOccurred(QStringLiteral(
+            "\u590d\u5236\u6587\u4ef6\u5939\u5931\u8d25"));
+        return;
+    }
+    refreshSkillMarketFolders();
+    if (m_state == Connected)
+        refreshSkills();
+}
+
+void GatewayClient::addSkillFromGit(const QString &urlRaw)
+{
+    const QString url = normalizeGitCloneUrl(urlRaw);
+    if (url.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u8bf7\u8f93\u5165\u6709\u6548\u7684\u4ed3\u5e93\u5730\u5740"));
+        return;
+    }
+
+    const QString dstRoot = expandTildePath(m_config.skillsStoragePath()).trimmed();
+    if (dstRoot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u672a\u914d\u7f6e\u6280\u80fd\u5b58\u653e\u8def\u5f84"));
+        return;
+    }
+    if (!QDir().mkpath(dstRoot)) {
+        emit errorOccurred(QStringLiteral(
+            "\u65e0\u6cd5\u521b\u5efa\u6280\u80fd\u5b58\u653e\u76ee\u5f55"));
+        return;
+    }
+
+    auto *proc = new QProcess(this);
+    QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                       this, [this, proc](int exitCode, QProcess::ExitStatus exitStatus) {
+                           const QByteArray errBytes = proc->readAllStandardError();
+                           const QByteArray outBytes = proc->readAllStandardOutput();
+                           proc->deleteLater();
+                           if (exitCode != 0 || exitStatus != QProcess::NormalExit) {
+                               const QString msg =
+                                   QString::fromUtf8(errBytes + outBytes).trimmed();
+                               emit errorOccurred(msg.isEmpty()
+                                                      ? QStringLiteral("git clone \u5931\u8d25")
+                                                      : msg);
+                               return;
+                           }
+                           refreshSkillMarketFolders();
+                           if (m_state == Connected)
+                               refreshSkills();
+                       });
+
+    proc->setProgram(QStringLiteral("git"));
+    proc->setArguments(QStringList() << QStringLiteral("clone") << url);
+    proc->setWorkingDirectory(dstRoot);
+    proc->start();
+    if (!proc->waitForStarted(5000)) {
+        proc->deleteLater();
+        emit errorOccurred(QStringLiteral(
+            "\u65e0\u6cd5\u542f\u52a8 git\uff0c\u8bf7\u786e\u8ba4\u5df2\u5b89\u88c5 Git \u5e76\u5728 PATH \u4e2d"));
+    }
 }
 
 void GatewayClient::requestGatewayRestartViaConfigPatch()

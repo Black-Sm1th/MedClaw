@@ -54,6 +54,19 @@ ApplicationWindow {
         return s.substring(0, i + 1).trim()
     }
 
+    /// FileDialog.fileUrl → 本地路径（与定时任务工作目录选择逻辑一致）
+    function localFilePathFromUrl(fileUrl) {
+        var path = decodeURIComponent(fileUrl.toString().replace(/^file:\/{2,3}/, ""))
+        if (Qt.platform.os === "windows") {
+            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                path = path.substring(1)
+            path = path.replace(/\//g, "\\")
+        } else if (Qt.platform.os === "linux" || Qt.platform.os === "osx") {
+            path = "/" + path
+        }
+        return path
+    }
+
     function modelDisplayLabel(nm, pv) {
         var raw = pv ? (nm + " (" + pv + ")") : nm
         return trimToFirstParenPairOnly(raw)
@@ -4377,6 +4390,7 @@ ApplicationWindow {
         nameFilters: ["ZIP files (*.zip)"]
         selectMultiple: false
         onAccepted: {
+            wsClient.addSkillFromZip(window.localFilePathFromUrl(zipFileDialog.fileUrl))
         }
     }
 
@@ -4385,6 +4399,7 @@ ApplicationWindow {
         title: qsTr("选择文件夹")
         selectFolder: true
         onAccepted: {
+            wsClient.addSkillFromFolder(window.localFilePathFromUrl(folderDialog.fileUrl))
         }
     }
 
@@ -4524,6 +4539,7 @@ ApplicationWindow {
                             text: qsTr("导入")
                             fontSize: 14
                             onClicked: {
+                                wsClient.addSkillFromGit(githubUrlInput.text)
                                 githubImportDialog.close()
                             }
                         }
