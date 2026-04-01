@@ -22,6 +22,8 @@ WsConfig::WsConfig()
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
     , m_token(QStringLiteral(
           "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63"))
+    , m_skillMarketPath(QStringLiteral("~/skills"))
+    , m_skillsStoragePath(QStringLiteral("~/medclaw/MedClaw/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
     , m_clientVersion(QStringLiteral("dev"))
 // ── 平台标识：编译期自动检测 ──
@@ -66,6 +68,10 @@ void WsConfig::loadOrCreatePersistentConfig()
         "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63");
     static const QString kDefaultClientId =
         QStringLiteral("openclaw-control-ui");
+    static const QString kDefaultSkillMarketPath =
+        QStringLiteral("~/skills");
+    static const QString kDefaultSkillsStoragePath =
+        QStringLiteral("~/medclaw/MedClaw/skills");
     const QString base = QStringLiteral("AppData/config/");
     QDir().mkpath(base);
     const QString path = base + QStringLiteral("config.json");
@@ -87,9 +93,11 @@ void WsConfig::loadOrCreatePersistentConfig()
         m_token     = kDefaultToken;
         m_clientId  = kDefaultClientId;
         QJsonObject o;
-        o[QStringLiteral("serverUrl")] = m_serverUrl;
-        o[QStringLiteral("token")]     = m_token;
-        o[QStringLiteral("clientId")]  = m_clientId;
+        o[QStringLiteral("serverUrl")]        = m_serverUrl;
+        o[QStringLiteral("token")]            = m_token;
+        o[QStringLiteral("clientId")]         = m_clientId;
+        o[QStringLiteral("skillMarketPath")]  = m_skillMarketPath;
+        o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
         writeDefaults(o);
         return;
     }
@@ -105,22 +113,37 @@ void WsConfig::loadOrCreatePersistentConfig()
         return;
     }
 
-    const QJsonObject o = doc.object();
-    if (o.contains(QStringLiteral("serverUrl"))) {
-        const QString u = o.value(QStringLiteral("serverUrl")).toString().trimmed();
+    QJsonObject merged = doc.object();
+    bool mergedDirty = false;
+    if (merged.value(QStringLiteral("skillMarketPath")).toString().trimmed().isEmpty()) {
+        merged[QStringLiteral("skillMarketPath")] = kDefaultSkillMarketPath;
+        mergedDirty = true;
+    }
+    if (merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed().isEmpty()) {
+        merged[QStringLiteral("skillsStoragePath")] = kDefaultSkillsStoragePath;
+        mergedDirty = true;
+    }
+    if (mergedDirty)
+        writeDefaults(merged);
+
+    if (merged.contains(QStringLiteral("serverUrl"))) {
+        const QString u = merged.value(QStringLiteral("serverUrl")).toString().trimmed();
         if (!u.isEmpty())
             m_serverUrl = u;
     }
-    if (o.contains(QStringLiteral("token"))) {
-        const QString t = o.value(QStringLiteral("token")).toString().trimmed();
+    if (merged.contains(QStringLiteral("token"))) {
+        const QString t = merged.value(QStringLiteral("token")).toString().trimmed();
         if (!t.isEmpty())
             m_token = t;
     }
-    if (o.contains(QStringLiteral("clientId"))) {
-        const QString c = o.value(QStringLiteral("clientId")).toString().trimmed();
+    if (merged.contains(QStringLiteral("clientId"))) {
+        const QString c = merged.value(QStringLiteral("clientId")).toString().trimmed();
         if (!c.isEmpty())
             m_clientId = c;
     }
+
+    m_skillMarketPath = merged.value(QStringLiteral("skillMarketPath")).toString().trimmed();
+    m_skillsStoragePath = merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed();
 
     if (m_serverUrl.isEmpty())
         m_serverUrl = kDefaultServer;
@@ -128,6 +151,10 @@ void WsConfig::loadOrCreatePersistentConfig()
         m_token = kDefaultToken;
     if (m_clientId.isEmpty())
         m_clientId = kDefaultClientId;
+    if (m_skillMarketPath.isEmpty())
+        m_skillMarketPath = kDefaultSkillMarketPath;
+    if (m_skillsStoragePath.isEmpty())
+        m_skillsStoragePath = kDefaultSkillsStoragePath;
 
     qDebug().noquote() << "[WsConfig] loaded" << path << "serverUrl=" << m_serverUrl;
 }
@@ -141,6 +168,12 @@ void    WsConfig::setServerUrl(const QString &url) { m_serverUrl = url; }
 
 QString WsConfig::token()         const { return m_token; }
 void    WsConfig::setToken(const QString &token) { m_token = token; }
+
+QString WsConfig::skillMarketPath() const { return m_skillMarketPath; }
+void    WsConfig::setSkillMarketPath(const QString &path) { m_skillMarketPath = path; }
+
+QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
+void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }
 
 QString WsConfig::deviceId()      const { return m_deviceId; }
 bool    WsConfig::hasDeviceKeys() const { return m_hasKeys; }

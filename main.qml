@@ -2954,7 +2954,7 @@ ApplicationWindow {
                                                         var d = historyRow.run.deliveryStatus || ""
                                                         if (d === "delivered") return "#0F006BFF"
                                                         return "#0A000000"
-                                                    }
+                                                }
                                                 Label {
                                                         id: deliveryLabel
                                                         anchors.centerIn: parent
@@ -3390,80 +3390,109 @@ ApplicationWindow {
                         visible: skillSettingTaskTab.currentIndex === 1
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
-                        Grid {
-                            id: skillMarketGrid
-                            columns: 2
-                            spacing: 12
+                        Connections {
+                            target: skillSettingTaskTab
+                            function onCurrentIndexChanged() {
+                                if (skillSettingTaskTab.currentIndex === 1 && window.leftSelectedIndex === 2)
+                                    wsClient.refreshSkillMarketFolders()
+                            }
+                        }
+                        Connections {
+                            target: window
+                            function onLeftSelectedIndexChanged() {
+                                if (window.leftSelectedIndex === 2 && skillSettingTaskTab.currentIndex === 1)
+                                    wsClient.refreshSkillMarketFolders()
+                            }
+                        }
+
+                        Column {
                             width: skillMarketScrollView.width
+                            spacing: 12
 
-                            property real cellWidth: (width - spacing) / 2
+                            Label {
+                                visible: wsClient.skillMarketFolders.length === 0
+                                width: parent.width
+                                wrapMode: Text.WordWrap
+                                text: qsTr("暂无技能")
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                font.pixelSize: 14
+                                color: "#73000000"
+                            }
 
-                            Repeater {
-                                model: ListModel {
-                                    ListElement { title: "深度问数"; desc: "数据分析，图表生成，清洗数据"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "生信分析"; desc: "单细胞数据分析，空间转录数据分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "pdf"; desc: "PDF 文本提取、表单填写与文档处理"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "note-taker"; desc: "自动笔记整理与知识沉淀"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "docx"; desc: "Word 文档创建、编辑与格式分析"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "file-organizer"; desc: "本地文件智能分类与整理"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "pptx"; desc: "演示文稿编辑与内容生成"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                    ListElement { title: "xlsx"; desc: "电子表格创建、公式计算与可视化"; icon: "qrc:/images/skillIcon.png"; installed: false }
-                                }
+                            Grid {
+                                id: skillMarketGrid
+                                columns: 2
+                                spacing: 12
+                                width: skillMarketScrollView.width
 
-                                delegate: Rectangle {
-                                    width: skillMarketGrid.cellWidth
-                                    height: 100
-                                    radius: 8
-                                    border.color: "#E6E7EB"
-                                    border.width: 1
-                                    color: "#FFFFFF"
+                                property real cellWidth: (width - spacing) / 2
 
-                                    Column {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-                                        spacing: 12
+                                Repeater {
+                                    model: wsClient.skillMarketFolders
 
-                                        Row {
+                                    delegate: Rectangle {
+                                        width: skillMarketGrid.cellWidth
+                                        height: 100
+                                        radius: 8
+                                        border.color: "#E6E7EB"
+                                        border.width: 1
+                                        color: "#FFFFFF"
+
+                                        Column {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 20
+                                            anchors.top: parent.top
+                                            anchors.topMargin: 20
                                             spacing: 12
-                                            height: 28
-                                            Image {
-                                                width: 28
+                                            width: parent.width - 40
+
+                                            Row {
+                                                spacing: 12
                                                 height: 28
-                                                source: model.icon
-                                                fillMode: Image.PreserveAspectFit
+                                                width: parent.width
+                                                Image {
+                                                    width: 28
+                                                    height: 28
+                                                    source: "qrc:/images/skillIcon.png"
+                                                    fillMode: Image.PreserveAspectFit
+                                                }
+                                                Label {
+                                                    text: modelData.folderName || ""
+                                                    font.pixelSize: 16
+                                                    font.weight: Font.Bold
+                                                    color: "#D9000000"
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    elide: Text.ElideRight
+                                                    width: parent.width - 28 - 12
+                                                }
                                             }
                                             Label {
-                                                text: model.title
-                                                font.pixelSize: 16
-                                                font.weight: Font.Bold
-                                                color: "#D9000000"
-                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: qsTr("来自技能市场目录的文件夹")
+                                                font.pixelSize: 14
+                                                color: "#73000000"
                                             }
                                         }
-                                        Label {
-                                            text: model.desc
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                        }
-                                    }
 
-                                    CustomButton {
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-                                        width: 80
-                                        height: 36
-                                        buttonRadius: 8
-                                        fontSize: 14
-                                        iconSource: model.installed ? "" : "qrc:/images/download.png"
-                                        text: model.installed ? "已安装" : "安装"
-                                        backgroundColor: "#006BFF"
-                                        textColor: "#FFFFFF"
-                                        borderWidth: 0
-                                        enabled: !model.installed
+                                        CustomButton {
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 20
+                                            anchors.top: parent.top
+                                            anchors.topMargin: 20
+                                            width: 80
+                                            height: 36
+                                            buttonRadius: 8
+                                            fontSize: 14
+                                            iconSource: (modelData.installed || false) ? "" : "qrc:/images/download.png"
+                                            text: (modelData.installed || false) ? qsTr("已安装") : qsTr("安装")
+                                            backgroundColor: "#006BFF"
+                                            textColor: "#FFFFFF"
+                                            borderWidth: 0
+                                            enabled: !(modelData.installed || false) && !wsClient.skillInstallBusy
+                                                       && wsClient.connectionState === 3
+                                            onClicked: {
+                                                wsClient.installSkillFromMarket(modelData.folderName || "")
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -3592,7 +3621,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignHCenter
                                 topPadding: 40
                                 text: toolsScrollContent.currentSourceFilter === "plugin"
-                                      ? qsTr("暂无深度工具，请通过插件扩展添加")
+                                      ? qsTr("暂无深度问数工具")
                                       : qsTr("暂无其他工具")
                                 font.pixelSize: 14
                                 color: "#73000000"
@@ -5040,7 +5069,7 @@ ApplicationWindow {
                                                 width: parent.width - 28 - 8 - 60
                                                 anchors.verticalCenter: parent.verticalCenter
 
-                                                Label {
+                                            Label {
                                                     width: parent.width
                                                     wrapMode: Text.WordWrap
                                                     text: {
@@ -5048,8 +5077,8 @@ ApplicationWindow {
                                                         var pv = modelData.provider || ""
                                                         return window.modelDisplayLabel(nm, pv)
                                                     }
-                                                    font.pixelSize: 14
-                                                    color: "#D9000000"
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
                                                 }
                                                 Label {
                                                     visible: (modelData.id || "") !== ""
@@ -5058,28 +5087,28 @@ ApplicationWindow {
                                                     text: modelData.id || ""
                                                     font.pixelSize: 12
                                                     color: "#73000000"
-                                                }
                                             }
+                                        }
 
-                                            Switch {
+                                        Switch {
                                                 id: settingsModelSwitch
                                                 enabled: false
                                                 checked: true
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                indicator: Rectangle {
-                                                    implicitWidth: 44
-                                                    implicitHeight: 22
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            indicator: Rectangle {
+                                                implicitWidth: 44
+                                                implicitHeight: 22
                                                     x: settingsModelSwitch.leftPadding
-                                                    y: parent.height / 2 - height / 2
-                                                    radius: 12
+                                                y: parent.height / 2 - height / 2
+                                                radius: 12
                                                     color: settingsModelSwitch.checked ? "#006BFF" : "#D9D9D9"
-                                                    Behavior on color { ColorAnimation { duration: 150 } }
-                                                    Rectangle {
+                                                Behavior on color { ColorAnimation { duration: 150 } }
+                                                Rectangle {
                                                         x: settingsModelSwitch.checked ? parent.width - width - 3 : 3
-                                                        y: parent.height / 2 - height / 2
-                                                        width: 18; height: 18; radius: 9
-                                                        color: "#FFFFFF"
-                                                        Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                                    y: parent.height / 2 - height / 2
+                                                    width: 18; height: 18; radius: 9
+                                                    color: "#FFFFFF"
+                                                    Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                                     }
                                                 }
                                             }

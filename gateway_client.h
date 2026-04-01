@@ -98,6 +98,11 @@ class GatewayClient : public QObject
                NOTIFY toolListChanged)
     /// 与 AppData/config.json 中 serverUrl 一致（握手 token/clientId 亦来自该文件）
     Q_PROPERTY(QString serverUrl READ serverUrl CONSTANT)
+    /// 技能市场：skillMarketPath 下每个子文件夹一项 { folderName, installed }
+    Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
+               NOTIFY skillMarketFoldersChanged)
+    /// 正在安装技能（复制 + 请求网关重启）
+    Q_PROPERTY(bool skillInstallBusy READ skillInstallBusy NOTIFY skillInstallBusyChanged)
 
 public:
     /**
@@ -158,6 +163,9 @@ public:
     QVariantList mcpList() const;
     /// 运行时工具目录（tools.catalog + deny 状态）
     QVariantList toolList() const;
+
+    QVariantList skillMarketFolders() const;
+    bool skillInstallBusy() const;
 
     // ═══════════════════════════════════════════════════════════════
     //  QML 可调用方法（Q_INVOKABLE）
@@ -231,6 +239,15 @@ public:
 
     /// 启用/禁用指定技能（发送 skills.update RPC）
     Q_INVOKABLE void setSkillEnabled(const QString &skillKey, bool enabled);
+
+    /// 扫描配置中 skillMarketPath 子文件夹并刷新 skillMarketFolders
+    Q_INVOKABLE void refreshSkillMarketFolders();
+
+    /**
+     * @brief 将技能市场某文件夹复制到 skillsStoragePath，并通过 config.patch 触发网关重启
+     * @note 重启会导致断线；客户端会在短暂延迟后自动重连
+     */
+    Q_INVOKABLE void installSkillFromMarket(const QString &folderName);
 
     // ── 定时任务管理 ──
 
@@ -438,6 +455,8 @@ signals:
     void modelListChanged();              ///< 可用模型列表更新
     void currentModelChanged();           ///< 当前会话模型信息变更
     void pendingSessionModelIdChanged();  ///< 无会话时待选模型变更
+    void skillMarketFoldersChanged();     ///< 技能市场目录列表更新
+    void skillInstallBusyChanged();       ///< 技能安装进行中状态变更
     void mcpListChanged();                ///< MCP 服务器列表更新
     void toolListChanged();               ///< 工具目录列表更新
 
@@ -630,6 +649,11 @@ private:
     QVariantMap  m_currentModel;       ///< 当前会话模型信息（sessions.patch 响应）
     QString m_pendingSessionModelId;   ///< 尚无 session 时用户选择的模型，有 session 后 patch
 
+    QString m_lastConnectedWsUrl;      ///< 最近一次 connectToServer 的 URL（用于安装技能后自动重连）
+    bool m_pendingReconnectAfterDisconnect = false; ///< config.patch 触发网关重启后等待断线重连
+    bool m_skillInstallBusy = false; ///< 技能安装流程进行中
+    QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
+
     QString        m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
     QVariantList   m_mcpList;          ///< mcp.servers 展示列表
 
@@ -638,6 +662,10 @@ private:
 
     QHash<QString, QString> m_agentWorkspaceById; ///< agents.list[].id → workspace
     QString                 m_agentsDefaultWorkspace; ///< agents.defaults.workspace
+
+    void requestGatewayRestartViaConfigPatch();
+    static QString expandTildePath(const QString &path);
+    static bool copyDirectoryRecursive(const QString &srcDir, const QString &dstDir);
 };
 
 #endif // GATEWAY_CLIENT_H

@@ -170,6 +170,10 @@ QString GatewayClient::defaultAgentId() const
 /// 获取可用模型列表
 QVariantList GatewayClient::modelList() const { return m_modelList; }
 
+QVariantList GatewayClient::skillMarketFolders() const { return m_skillMarketFolders; }
+
+bool GatewayClient::skillInstallBusy() const { return m_skillInstallBusy; }
+
 /// 获取当前会话的模型信息
 QVariantMap GatewayClient::currentModel() const { return m_currentModel; }
 
@@ -644,6 +648,8 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
  */
 void GatewayClient::connectToServer(const QString &url)
 {
+    m_lastConnectedWsUrl = url;
+
     if (m_state != Disconnected)
         m_socket->close();
 
@@ -687,6 +693,11 @@ void GatewayClient::connectToServer(const QString &url)
  */
 void GatewayClient::disconnectFromServer()
 {
+    m_pendingReconnectAfterDisconnect = false;
+    if (m_skillInstallBusy) {
+        m_skillInstallBusy = false;
+        emit skillInstallBusyChanged();
+    }
     m_socket->close();
 }
 
@@ -728,6 +739,21 @@ void GatewayClient::onDisconnected()
     m_sidebarTitleHistReqBatch.clear();
     m_agentFirstUserTitleDebounce.stop();
     setState(Disconnected);
+
+    if (m_pendingReconnectAfterDisconnect) {
+        m_pendingReconnectAfterDisconnect = false;
+        const QString url = m_lastConnectedWsUrl.isEmpty()
+            ? m_config.serverUrl() : m_lastConnectedWsUrl;
+        QTimer::singleShot(500, this, [this, url]() {
+            if (m_state != Disconnected)
+                return;
+            qDebug().noquote() << "[Gateway] auto-reconnect after gateway restart" << url;
+            connectToServer(url);
+        });
+    } else if (m_skillInstallBusy) {
+        m_skillInstallBusy = false;
+        emit skillInstallBusyChanged();
+    }
 }
 
 /**
@@ -1089,6 +1115,15 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_sidebarTitleHistReqAgent.remove(id);
         m_sidebarTitleHistReqBatch.remove(id);
 
+        if (method == QLatin1String("config.patch")) {
+            if (m_pendingReconnectAfterDisconnect)
+                m_pendingReconnectAfterDisconnect = false;
+            if (m_skillInstallBusy) {
+                m_skillInstallBusy = false;
+                emit skillInstallBusyChanged();
+            }
+        }
+
         emit errorOccurred(errMsg);
         return;
     }
@@ -1109,11 +1144,16 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         // 握手成功：切换到 Connected，自动加载所有初始数据
         qDebug() << "[Gateway] handshake complete!";
         setState(Connected);
+        if (m_skillInstallBusy) {
+            m_skillInstallBusy = false;
+            emit skillInstallBusyChanged();
+        }
         refreshAgents();
         refreshSessions();
         refreshModels();
         refreshMcpList();
         refreshToolsCatalog(QString());
+        refreshSkillMarketFolders();
         if (!m_session.currentSessionKey().trimmed().isEmpty())
             patchSessionModel(QString());
         return;
@@ -1870,6 +1910,140 @@ void GatewayClient::setSkillEnabled(const QString &skillKey, bool enabled)
     }
     sendRequest(QStringLiteral("skills.update"),
                 m_skill.buildSkillUpdateParams(skillKey, enabled));
+}
+
+QString GatewayClient::expandTildePath(const QString &path)
+{
+    QString p = path.trimmed();
+    if (p.startsWith(QLatin1String("~/")))
+        return QDir::homePath() + QLatin1Char('/') + p.mid(2);
+    if (p == QLatin1String("~"))
+        return QDir::homePath();
+    return p;
+}
+
+bool GatewayClient::copyDirectoryRecursive(const QString &srcDir, const QString &dstDir)
+{
+    QDir src(srcDir);
+    if (!src.exists())
+        return false;
+    if (!QDir().mkpath(dstDir))
+        return false;
+    const QFileInfoList list =
+        src.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo &fi : list) {
+        const QString dstPath = dstDir + QLatin1Char('/') + fi.fileName();
+        if (fi.isDir()) {
+            if (!copyDirectoryRecursive(fi.absoluteFilePath(), dstPath))
+                return false;
+        } else {
+            if (QFile::exists(dstPath) && !QFile::remove(dstPath))
+                return false;
+            if (!QFile::copy(fi.absoluteFilePath(), dstPath))
+                return false;
+        }
+    }
+    return true;
+}
+
+void GatewayClient::requestGatewayRestartViaConfigPatch()
+{
+    if (m_state != Connected)
+        return;
+    if (m_configSnapshotHash.isEmpty() || m_lastConfigSnapshot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u914d\u7f6e\u672a\u52a0\u8f7d\uff0c\u8bf7\u7a0d\u5019\u518d\u8bd5\u6216\u5237\u65b0\u8fde\u63a5"));
+        return;
+    }
+    QJsonObject skills = m_lastConfigSnapshot.value(QStringLiteral("skills")).toObject();
+    QJsonObject load = skills.value(QStringLiteral("load")).toObject();
+    int deb = load.value(QStringLiteral("watchDebounceMs")).toInt(0);
+    if (deb <= 0)
+        deb = 500;
+    load.insert(QStringLiteral("watchDebounceMs"), deb + 1);
+    skills.insert(QStringLiteral("load"), load);
+    QJsonObject top;
+    top.insert(QStringLiteral("skills"), skills);
+    QJsonObject reqParams;
+    reqParams[QStringLiteral("raw")] =
+        QString::fromUtf8(QJsonDocument(top).toJson(QJsonDocument::Compact));
+    reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+    sendRequest(QStringLiteral("config.patch"), reqParams);
+}
+
+void GatewayClient::refreshSkillMarketFolders()
+{
+    m_skillMarketFolders.clear();
+    const QString base = expandTildePath(m_config.skillMarketPath()).trimmed();
+    const QString storage = expandTildePath(m_config.skillsStoragePath()).trimmed();
+    if (base.isEmpty()) {
+        emit skillMarketFoldersChanged();
+        return;
+    }
+    QDir dir(base);
+    if (!dir.exists()) {
+        emit skillMarketFoldersChanged();
+        return;
+    }
+    const QFileInfoList list = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo &fi : list) {
+        if (!fi.isDir())
+            continue;
+        const QString name = fi.fileName();
+        QVariantMap m;
+        m[QStringLiteral("folderName")] = name;
+        m[QStringLiteral("installed")] = QDir(storage + QLatin1Char('/') + name).exists();
+        m_skillMarketFolders.append(m);
+    }
+    emit skillMarketFoldersChanged();
+}
+
+void GatewayClient::installSkillFromMarket(const QString &folderName)
+{
+    const QString name = folderName.trimmed();
+    if (name.isEmpty())
+        return;
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    if (m_skillInstallBusy)
+        return;
+    if (m_configSnapshotHash.isEmpty() || m_lastConfigSnapshot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u914d\u7f6e\u672a\u52a0\u8f7d\uff0c\u8bf7\u7a0d\u5019\u518d\u8bd5"));
+        return;
+    }
+    const QString srcRoot = expandTildePath(m_config.skillMarketPath());
+    const QString dstRoot = expandTildePath(m_config.skillsStoragePath());
+    const QString src = srcRoot + QLatin1Char('/') + name;
+    const QString dst = dstRoot + QLatin1Char('/') + name;
+    if (!QDir(src).exists()) {
+        emit errorOccurred(QStringLiteral(
+            "\u6280\u80fd\u6587\u4ef6\u5939\u4e0d\u5b58\u5728"));
+        return;
+    }
+    QDir().mkpath(dstRoot);
+    if (QDir(dst).exists()) {
+        if (!QDir(dst).removeRecursively()) {
+            emit errorOccurred(QStringLiteral(
+                "\u65e0\u6cd5\u6e05\u9664\u76ee\u6807\u76ee\u5f55"));
+            return;
+        }
+    }
+    m_skillInstallBusy = true;
+    emit skillInstallBusyChanged();
+    if (!copyDirectoryRecursive(src, dst)) {
+        m_skillInstallBusy = false;
+        emit skillInstallBusyChanged();
+        emit errorOccurred(QStringLiteral(
+            "\u590d\u5236\u6280\u80fd\u6587\u4ef6\u5931\u8d25"));
+        return;
+    }
+    m_pendingReconnectAfterDisconnect = true;
+    requestGatewayRestartViaConfigPatch();
+    refreshSkillMarketFolders();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
