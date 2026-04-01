@@ -694,6 +694,7 @@ void GatewayClient::connectToServer(const QString &url)
 void GatewayClient::disconnectFromServer()
 {
     m_pendingReconnectAfterDisconnect = false;
+    m_pendingReconnectDelayMs = 0;
     if (m_skillInstallBusy) {
         m_skillInstallBusy = false;
         emit skillInstallBusyChanged();
@@ -744,7 +745,13 @@ void GatewayClient::onDisconnected()
         m_pendingReconnectAfterDisconnect = false;
         const QString url = m_lastConnectedWsUrl.isEmpty()
             ? m_config.serverUrl() : m_lastConnectedWsUrl;
-        QTimer::singleShot(500, this, [this, url]() {
+        // shutdown 事件里的 restartExpectedMs 表示网关大致多久后恢复监听；500ms 过短会导致「连接被拒绝」
+        int delayMs = m_pendingReconnectDelayMs;
+        m_pendingReconnectDelayMs = 0;
+        if (delayMs <= 0)
+            delayMs = 2000;
+        qDebug().noquote() << "[Gateway] auto-reconnect scheduled in" << delayMs << "ms" << url;
+        QTimer::singleShot(delayMs, this, [this, url]() {
             if (m_state != Disconnected)
                 return;
             qDebug().noquote() << "[Gateway] auto-reconnect after gateway restart" << url;
@@ -900,6 +907,18 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     // ── ② tick / heartbeat：心跳（当前忽略） ──
     if (event == QLatin1String("tick")
         || event == QLatin1String("heartbeat")) {
+        return;
+    }
+
+    // 网关即将重启：payload.restartExpectedMs 为大致恢复时间，用于断线后延迟重连
+    if (event == QLatin1String("shutdown")) {
+        const int expected =
+            payload.value(QStringLiteral("restartExpectedMs")).toInt(0);
+        if (expected > 0) {
+            m_pendingReconnectDelayMs = expected + 800;
+            qDebug().noquote() << "[Gateway] shutdown event restartExpectedMs=" << expected
+                               << "→ reconnect delay" << m_pendingReconnectDelayMs << "ms";
+        }
         return;
     }
 

@@ -650,6 +650,8 @@ private:
     QString m_pendingSessionModelId;   ///< 尚无 session 时用户选择的模型，有 session 后 patch
 
     QString m_lastConnectedWsUrl;      ///< 最近一次 connectToServer 的 URL（用于安装技能后自动重连）
+    /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费
+    int m_pendingReconnectDelayMs = 0;
     bool m_pendingReconnectAfterDisconnect = false; ///< config.patch 触发网关重启后等待断线重连
     bool m_skillInstallBusy = false; ///< 技能安装流程进行中
     QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
