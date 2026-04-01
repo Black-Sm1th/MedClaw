@@ -1832,11 +1832,21 @@ ApplicationWindow {
                                                                 anchors.leftMargin: 8
 
                                                                 Image {
-                                                                    source: modelData.icon || "qrc:/images/skillIcon.png"
                                                                     width: 20; height: 20
-                                                                    anchors.verticalCenter: parent.verticalCenter
+                                                                    visible: !modelData.emoji
+                                                                    source: "qrc:/images/skillIcon.png"
                                                                     fillMode: Image.PreserveAspectFit
-                                                                    sourceSize: Qt.size(20, 20)
+                                                                    anchors.verticalCenter: parent.verticalCenter
+                                                                }
+                                                                Label {
+                                                                    width: 20
+                                                                    height: 20
+                                                                    visible: modelData.emoji
+                                                                    font.pixelSize: 14
+                                                                    text: modelData.emoji
+                                                                    horizontalAlignment: Text.AlignHCenter
+                                                                    verticalAlignment: Text.AlignVCenter
+                                                                    anchors.verticalCenter: parent.verticalCenter
                                                                 }
                                                                 Text {
                                                                     id: skilPopNameLabel
@@ -3291,8 +3301,18 @@ ApplicationWindow {
                                             Image {
                                                 width: 28
                                                 height: 28
-                                                source: modelData.icon || "qrc:/images/skillIcon.png"
+                                                visible: !modelData.emoji
+                                                source: "qrc:/images/skillIcon.png"
                                                 fillMode: Image.PreserveAspectFit
+                                            }
+                                            Label {
+                                                width: 28
+                                                height: 28
+                                                visible: modelData.emoji
+                                                font.pixelSize: 20
+                                                text: modelData.emoji
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
                                             }
                                             Label {
                                                 id: skillNameLabel
