@@ -3055,6 +3055,8 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 2
                 property string skillSearchText: ""
+                /// 与技能页 Tab 同步，供顶部搜索框占位符使用（避免引用尚未创建的 TabBar）
+                property int skillTabForSearch: 0
 
                 function filteredSkillList() {
                     var list = wsClient.skillList
@@ -3066,6 +3068,19 @@ ApplicationWindow {
                         var desc = (list[i].description || "").toLowerCase()
                         if (name.indexOf(kw) >= 0 || desc.indexOf(kw) >= 0)
                             result.push(list[i])
+                    }
+                    return result
+                }
+                function filteredSkillMarketFolders() {
+                    var list = wsClient.skillMarketFolders
+                    if (!skillSearchText) return list
+                    var kw = skillSearchText.toLowerCase()
+                    var result = []
+                    for (var i = 0; i < list.length; i++) {
+                        var item = list[i]
+                        var name = (item.folderName || "").toLowerCase()
+                        if (name.indexOf(kw) >= 0)
+                            result.push(item)
                     }
                     return result
                 }
@@ -3100,7 +3115,9 @@ ApplicationWindow {
                                 inputWidth: skillSettingTitleRec.width
                                 icon: "qrc:/images/search.png"
                                 iconSize: 16
-                                placeholderText: "搜索技能"
+                                placeholderText: skillSettingRec.skillTabForSearch === 1
+                                                ? qsTr("搜索技能市场")
+                                                : qsTr("搜索已安装技能")
                                 onTextChanged: skillSettingRec.skillSearchText = text
                             }
                         }
@@ -3220,6 +3237,8 @@ ApplicationWindow {
                         id: skillSettingTaskTab
                         lineWidth: parent.width - 120
                         tabs: [ { text: "已安装", badge: wsClient.skillList.length }, { text: "技能市场" }]
+                        onCurrentIndexChanged: skillSettingRec.skillTabForSearch = currentIndex
+                        Component.onCompleted: skillSettingRec.skillTabForSearch = currentIndex
                     }
                     ScrollView {
                         id: skillScrollView
@@ -3410,10 +3429,12 @@ ApplicationWindow {
                             spacing: 12
 
                             Label {
-                                visible: wsClient.skillMarketFolders.length === 0
+                                visible: skillSettingRec.filteredSkillMarketFolders().length === 0
                                 width: parent.width
                                 wrapMode: Text.WordWrap
-                                text: qsTr("暂无技能")
+                                text: wsClient.skillMarketFolders.length === 0
+                                      ? qsTr("暂无技能")
+                                      : qsTr("无匹配结果")
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 font.pixelSize: 14
                                 color: "#73000000"
@@ -3428,7 +3449,7 @@ ApplicationWindow {
                                 property real cellWidth: (width - spacing) / 2
 
                                 Repeater {
-                                    model: wsClient.skillMarketFolders
+                                    model: skillSettingRec.filteredSkillMarketFolders()
 
                                     delegate: Rectangle {
                                         width: skillMarketGrid.cellWidth
