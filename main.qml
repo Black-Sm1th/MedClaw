@@ -1835,6 +1835,7 @@ ApplicationWindow {
                                                                     width: 20; height: 20
                                                                     visible: !modelData.emoji
                                                                     source: "qrc:/images/skillIcon.png"
+
                                                                     fillMode: Image.PreserveAspectFit
                                                                     anchors.verticalCenter: parent.verticalCenter
                                                                 }
@@ -1847,6 +1848,7 @@ ApplicationWindow {
                                                                     horizontalAlignment: Text.AlignHCenter
                                                                     verticalAlignment: Text.AlignVCenter
                                                                     anchors.verticalCenter: parent.verticalCenter
+                                                                    font.family: "Noto Color Emoji"
                                                                 }
                                                                 Text {
                                                                     id: skilPopNameLabel
@@ -3313,6 +3315,7 @@ ApplicationWindow {
                                                 text: modelData.emoji
                                                 horizontalAlignment: Text.AlignHCenter
                                                 verticalAlignment: Text.AlignVCenter
+                                                font.family: "Noto Color Emoji"
                                             }
                                             Label {
                                                 id: skillNameLabel
