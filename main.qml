@@ -3487,11 +3487,11 @@ ApplicationWindow {
                                                     width: parent.width - 28 - 12
                                                 }
                                             }
-                                            Label {
-                                                text: qsTr("来自技能市场目录的文件夹")
-                                                font.pixelSize: 14
-                                                color: "#73000000"
-                                            }
+                                            // Label {
+                                            //     text: qsTr("来自技能市场目录的文件夹")
+                                            //     font.pixelSize: 14
+                                            //     color: "#73000000"
+                                            // }
                                         }
 
                                         CustomButton {
