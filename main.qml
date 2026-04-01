@@ -3443,7 +3443,6 @@ ApplicationWindow {
 
                             Label {
                                 visible: skillSettingRec.filteredSkillMarketFolders().length === 0
-                                width: parent.width
                                 wrapMode: Text.WordWrap
                                 text: wsClient.skillMarketFolders.length === 0
                                       ? qsTr("暂无技能")

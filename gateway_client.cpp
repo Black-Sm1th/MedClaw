@@ -2178,13 +2178,7 @@ void GatewayClient::addSkillFromZip(const QString &zipPathRaw)
         proc->deleteLater();
         QFile::remove(destZip);
         QDir(extractDir).removeRecursively();
-        emit errorOccurred(QStringLiteral(
-#ifdef Q_OS_WIN
-            "\u65e0\u6cd5\u542f\u52a8 PowerShell \u89e3\u538b"
-#else
-            "\u65e0\u6cd5\u542f\u52a8 tar \u89e3\u538b\uff08\u8bf7\u786e\u8ba4\u7cfb\u7edf\u5df2\u5b89\u88c5 tar\uff09"
-#endif
-        ));
+        emit errorOccurred(QStringLiteral("\u65e0\u6cd5\u542f\u52a8"));
     }
 }
 
