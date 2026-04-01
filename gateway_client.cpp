@@ -744,7 +744,6 @@ void GatewayClient::disconnectFromServer()
 {
     m_userRequestedDisconnect = true;
     m_autoReconnectFailureCount = 0;
-    m_pendingReconnectAfterDisconnect = false;
     m_pendingReconnectDelayMs = 0;
     if (m_skillInstallBusy) {
         m_skillInstallBusy = false;
@@ -834,14 +833,11 @@ void GatewayClient::onDisconnected()
 
     int delayMs = 0;
     bool pendingDelayed = false;
-    if (m_pendingReconnectAfterDisconnect) {
-        m_pendingReconnectAfterDisconnect = false;
+    if (m_pendingReconnectDelayMs > 0) {
         delayMs = m_pendingReconnectDelayMs;
         m_pendingReconnectDelayMs = 0;
-        if (delayMs <= 0)
-            delayMs = 2000;
         pendingDelayed = true;
-        qDebug().noquote() << "[Gateway] auto-reconnect (post gateway restart) scheduled in"
+        qDebug().noquote() << "[Gateway] auto-reconnect (post shutdown delay) scheduled in"
                            << delayMs << "ms" << url;
     }
 
@@ -1254,8 +1250,6 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_sidebarTitleHistReqBatch.remove(id);
 
         if (method == QLatin1String("config.patch")) {
-            if (m_pendingReconnectAfterDisconnect)
-                m_pendingReconnectAfterDisconnect = false;
             if (m_skillInstallBusy) {
                 m_skillInstallBusy = false;
                 emit skillInstallBusyChanged();
@@ -2297,31 +2291,6 @@ void GatewayClient::addSkillFromGit(const QString &urlRaw)
     }
 }
 
-void GatewayClient::requestGatewayRestartViaConfigPatch()
-{
-    if (m_state != Connected)
-        return;
-    if (m_configSnapshotHash.isEmpty() || m_lastConfigSnapshot.isEmpty()) {
-        emit errorOccurred(QStringLiteral(
-            "\u914d\u7f6e\u672a\u52a0\u8f7d\uff0c\u8bf7\u7a0d\u5019\u518d\u8bd5\u6216\u5237\u65b0\u8fde\u63a5"));
-        return;
-    }
-    QJsonObject skills = m_lastConfigSnapshot.value(QStringLiteral("skills")).toObject();
-    QJsonObject load = skills.value(QStringLiteral("load")).toObject();
-    int deb = load.value(QStringLiteral("watchDebounceMs")).toInt(0);
-    if (deb <= 0)
-        deb = 500;
-    load.insert(QStringLiteral("watchDebounceMs"), deb + 1);
-    skills.insert(QStringLiteral("load"), load);
-    QJsonObject top;
-    top.insert(QStringLiteral("skills"), skills);
-    QJsonObject reqParams;
-    reqParams[QStringLiteral("raw")] =
-        QString::fromUtf8(QJsonDocument(top).toJson(QJsonDocument::Compact));
-    reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
-    sendRequest(QStringLiteral("config.patch"), reqParams);
-}
-
 void GatewayClient::refreshSkillMarketFolders()
 {
     m_skillMarketFolders.clear();
@@ -2361,11 +2330,6 @@ void GatewayClient::installSkillFromMarket(const QString &folderName)
     }
     if (m_skillInstallBusy)
         return;
-    if (m_configSnapshotHash.isEmpty() || m_lastConfigSnapshot.isEmpty()) {
-        emit errorOccurred(QStringLiteral(
-            "\u914d\u7f6e\u672a\u52a0\u8f7d\uff0c\u8bf7\u7a0d\u5019\u518d\u8bd5"));
-        return;
-    }
     const QString srcRoot = expandTildePath(m_config.skillMarketPath());
     const QString dstRoot = expandTildePath(m_config.skillsStoragePath());
     const QString src = srcRoot + QLatin1Char('/') + name;
@@ -2392,9 +2356,10 @@ void GatewayClient::installSkillFromMarket(const QString &folderName)
             "\u590d\u5236\u6280\u80fd\u6587\u4ef6\u5931\u8d25"));
         return;
     }
-    m_pendingReconnectAfterDisconnect = true;
-    requestGatewayRestartViaConfigPatch();
+    m_skillInstallBusy = false;
+    emit skillInstallBusyChanged();
     refreshSkillMarketFolders();
+    refreshSkills();
 }
 
 // ═══════════════════════════════════════════════════════════════════════

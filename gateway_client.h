@@ -244,8 +244,7 @@ public:
     Q_INVOKABLE void refreshSkillMarketFolders();
 
     /**
-     * @brief 将技能市场某文件夹复制到 skillsStoragePath，并通过 config.patch 触发网关重启
-     * @note 重启会导致断线；客户端会在短暂延迟后自动重连
+     * @brief 将技能市场某文件夹复制到 skillsStoragePath；本地完成后刷新 skills.status，不重启网关
      */
     Q_INVOKABLE void installSkillFromMarket(const QString &folderName);
 
@@ -656,10 +655,9 @@ private:
     QVariantMap  m_currentModel;       ///< 当前会话模型信息（sessions.patch 响应）
     QString m_pendingSessionModelId;   ///< 尚无 session 时用户选择的模型，有 session 后 patch
 
-    QString m_lastConnectedWsUrl;      ///< 最近一次 connectToServer 的 URL（用于安装技能后自动重连）
+    QString m_lastConnectedWsUrl;      ///< 最近一次 connectToServer 的 URL（自动重连用）
     /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费
     int m_pendingReconnectDelayMs = 0;
-    bool m_pendingReconnectAfterDisconnect = false; ///< config.patch 触发网关重启后等待断线重连
     /// 自动重连：非用户主动断开时尝试恢复；失败后间隔 1s 再试，累计失败达上限后停止
     static constexpr int kMaxAutoReconnectFailures = 10;
     bool m_userRequestedDisconnect = false;         ///< disconnectFromServer() 触发的断开，不自动重连
@@ -678,7 +676,6 @@ private:
     QHash<QString, QString> m_agentWorkspaceById; ///< agents.list[].id → workspace
     QString                 m_agentsDefaultWorkspace; ///< agents.defaults.workspace
 
-    void requestGatewayRestartViaConfigPatch();
     void scheduleAutoReconnectConnect(const QString &url, int delayMs);
     static QString expandTildePath(const QString &path);
     static bool copyDirectoryRecursive(const QString &srcDir, const QString &dstDir);
