@@ -12,6 +12,7 @@
  *   7. 业务方法（会话管理、历史加载、聊天发送）
  */
 #include "gateway_client.h"
+#include <QAbstractSocket>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -96,6 +97,8 @@ GatewayClient::GatewayClient(QObject *parent)
  */
 GatewayClient::~GatewayClient()
 {
+    m_userRequestedDisconnect = true;
+    m_autoReconnectFailureCount = 0;
     m_socket->close();
 }
 
@@ -648,10 +651,18 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
  */
 void GatewayClient::connectToServer(const QString &url)
 {
-    m_lastConnectedWsUrl = url;
+    const bool fromAuto = m_connectFromAutoReconnect;
+    m_connectFromAutoReconnect = false;
 
-    if (m_state != Disconnected)
+    m_userRequestedDisconnect = false;
+    m_lastConnectedWsUrl = url;
+    if (!fromAuto)
+        m_autoReconnectFailureCount = 0;
+
+    if (m_state != Disconnected) {
+        m_skipAutoReconnectOnNextDisconnect = true;
         m_socket->close();
+    }
 
     m_challengeNonce.clear();
     m_pendingRequests.clear();
@@ -693,6 +704,8 @@ void GatewayClient::connectToServer(const QString &url)
  */
 void GatewayClient::disconnectFromServer()
 {
+    m_userRequestedDisconnect = true;
+    m_autoReconnectFailureCount = 0;
     m_pendingReconnectAfterDisconnect = false;
     m_pendingReconnectDelayMs = 0;
     if (m_skillInstallBusy) {
@@ -724,11 +737,25 @@ void GatewayClient::onConnected()
  *   2. 清空所有 pending 请求（不再等待响应）
  *   3. 状态切换到 Disconnected
  */
+void GatewayClient::scheduleAutoReconnectConnect(const QString &url, int delayMs)
+{
+    QTimer::singleShot(delayMs, this, [this, url]() {
+        if (m_state != Disconnected)
+            return;
+        if (m_userRequestedDisconnect)
+            return;
+        m_connectFromAutoReconnect = true;
+        connectToServer(url);
+    });
+}
+
 void GatewayClient::onDisconnected()
 {
     qDebug() << "[Gateway][TRACE][DISCONNECTED]"
              << "socket=" << reinterpret_cast<quintptr>(m_socket)
              << "pendingBeforeClear=" << m_pendingRequests.size();
+    const ConnectionState prevState = m_state;
+
     m_session.setStreaming(false);
     m_pendingRequests.clear();
     if (!m_pendingSessionModelId.isEmpty()) {
@@ -739,25 +766,75 @@ void GatewayClient::onDisconnected()
     m_sidebarTitleHistReqAgent.clear();
     m_sidebarTitleHistReqBatch.clear();
     m_agentFirstUserTitleDebounce.stop();
+
     setState(Disconnected);
 
+    if (m_skipAutoReconnectOnNextDisconnect) {
+        m_skipAutoReconnectOnNextDisconnect = false;
+        return;
+    }
+
+    if (m_userRequestedDisconnect) {
+        m_userRequestedDisconnect = false;
+        m_autoReconnectFailureCount = 0;
+        if (m_skillInstallBusy) {
+            m_skillInstallBusy = false;
+            emit skillInstallBusyChanged();
+        }
+        return;
+    }
+
+    const QString url = m_lastConnectedWsUrl.isEmpty()
+        ? m_config.serverUrl() : m_lastConnectedWsUrl;
+    if (url.trimmed().isEmpty()) {
+        if (m_skillInstallBusy) {
+            m_skillInstallBusy = false;
+            emit skillInstallBusyChanged();
+        }
+        return;
+    }
+
+    int delayMs = 0;
+    bool pendingDelayed = false;
     if (m_pendingReconnectAfterDisconnect) {
         m_pendingReconnectAfterDisconnect = false;
-        const QString url = m_lastConnectedWsUrl.isEmpty()
-            ? m_config.serverUrl() : m_lastConnectedWsUrl;
-        // shutdown 事件里的 restartExpectedMs 表示网关大致多久后恢复监听；500ms 过短会导致「连接被拒绝」
-        int delayMs = m_pendingReconnectDelayMs;
+        delayMs = m_pendingReconnectDelayMs;
         m_pendingReconnectDelayMs = 0;
         if (delayMs <= 0)
             delayMs = 2000;
-        qDebug().noquote() << "[Gateway] auto-reconnect scheduled in" << delayMs << "ms" << url;
-        QTimer::singleShot(delayMs, this, [this, url]() {
-            if (m_state != Disconnected)
-                return;
-            qDebug().noquote() << "[Gateway] auto-reconnect after gateway restart" << url;
-            connectToServer(url);
-        });
-    } else if (m_skillInstallBusy) {
+        pendingDelayed = true;
+        qDebug().noquote() << "[Gateway] auto-reconnect (post gateway restart) scheduled in"
+                           << delayMs << "ms" << url;
+    }
+
+    if (prevState == Connected || pendingDelayed) {
+        m_autoReconnectFailureCount = 0;
+        if (!pendingDelayed)
+            delayMs = 0;
+        scheduleAutoReconnectConnect(url, delayMs);
+        return;
+    }
+
+    if (prevState == Connecting || prevState == Handshaking) {
+        m_autoReconnectFailureCount += 1;
+        if (m_autoReconnectFailureCount >= kMaxAutoReconnectFailures) {
+            qWarning().noquote()
+                << "[Gateway] auto-reconnect gave up after"
+                << kMaxAutoReconnectFailures << "failed attempts" << url;
+            if (m_skillInstallBusy) {
+                m_skillInstallBusy = false;
+                emit skillInstallBusyChanged();
+            }
+            return;
+        }
+        qDebug().noquote() << "[Gateway] auto-reconnect retry in 1000ms (fail"
+                           << m_autoReconnectFailureCount << "/" << kMaxAutoReconnectFailures << ")"
+                           << url;
+        scheduleAutoReconnectConnect(url, 1000);
+        return;
+    }
+
+    if (m_skillInstallBusy) {
         m_skillInstallBusy = false;
         emit skillInstallBusyChanged();
     }
@@ -780,7 +857,11 @@ void GatewayClient::onSocketError(QAbstractSocket::SocketError error)
                << "pending=" << m_pendingRequests.size()
                << "error=" << m_socket->errorString();
     emit errorOccurred(m_socket->errorString());
-    setState(Disconnected);
+    // 不在此处 setState(Disconnected)，保留 Connecting/Handshaking/Connected
+    // 供 onDisconnected 判断断线前阶段并走自动重连逻辑。
+    // 少数情况下仅 error 不触发 disconnected，强制 abort 以统一进入 onDisconnected。
+    if (m_socket->state() != QAbstractSocket::UnconnectedState)
+        m_socket->abort();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -915,7 +996,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         const int expected =
             payload.value(QStringLiteral("restartExpectedMs")).toInt(0);
         if (expected > 0) {
-            m_pendingReconnectDelayMs = expected + 800;
+            m_pendingReconnectDelayMs = expected + 8000;
             qDebug().noquote() << "[Gateway] shutdown event restartExpectedMs=" << expected
                                << "→ reconnect delay" << m_pendingReconnectDelayMs << "ms";
         }
@@ -1158,10 +1239,12 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 errMsg = errVal.toString();
             qWarning() << "[Gateway] connect failed:" << errMsg;
             emit errorOccurred(errMsg);
+            m_socket->abort();
             return;
         }
         // 握手成功：切换到 Connected，自动加载所有初始数据
         qDebug() << "[Gateway] handshake complete!";
+        m_autoReconnectFailureCount = 0;
         setState(Connected);
         if (m_skillInstallBusy) {
             m_skillInstallBusy = false;

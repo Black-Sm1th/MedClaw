@@ -653,6 +653,12 @@ private:
     /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费
     int m_pendingReconnectDelayMs = 0;
     bool m_pendingReconnectAfterDisconnect = false; ///< config.patch 触发网关重启后等待断线重连
+    /// 自动重连：非用户主动断开时尝试恢复；失败后间隔 1s 再试，累计失败达上限后停止
+    static constexpr int kMaxAutoReconnectFailures = 10;
+    bool m_userRequestedDisconnect = false;         ///< disconnectFromServer() 触发的断开，不自动重连
+    bool m_skipAutoReconnectOnNextDisconnect = false; ///< connectToServer 为换新连接而 close 旧 socket
+    bool m_connectFromAutoReconnect = false;        ///< 当前 connectToServer 由自动重连定时器发起
+    int m_autoReconnectFailureCount = 0;            ///< 本轮自动重连已连续失败次数（成功或手动连接时清零）
     bool m_skillInstallBusy = false; ///< 技能安装流程进行中
     QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
 
@@ -666,6 +672,7 @@ private:
     QString                 m_agentsDefaultWorkspace; ///< agents.defaults.workspace
 
     void requestGatewayRestartViaConfigPatch();
+    void scheduleAutoReconnectConnect(const QString &url, int delayMs);
     static QString expandTildePath(const QString &path);
     static bool copyDirectoryRecursive(const QString &srcDir, const QString &dstDir);
 };
