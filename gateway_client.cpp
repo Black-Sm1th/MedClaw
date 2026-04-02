@@ -2877,6 +2877,14 @@ void GatewayClient::rebuildMcpListFromConfigObject(const QJsonObject &config)
         for (const QJsonValue &v : args)
             argLines.append(v.toString());
         e[QStringLiteral("argsText")] = argLines.join(QLatin1Char('\n'));
+
+        // env → QVariantMap，供 QML 编辑预填
+        const QJsonObject envObj = s.value(QStringLiteral("env")).toObject();
+        QVariantMap envMap;
+        for (auto eit = envObj.begin(); eit != envObj.end(); ++eit)
+            envMap.insert(eit.key(), eit.value().toVariant());
+        e[QStringLiteral("env")] = envMap;
+
         e[QStringLiteral("description")] = desc;
         if (desc.isEmpty()) {
             if (isHttp)
@@ -3142,7 +3150,8 @@ void GatewayClient::applyMcpServer(bool isEdit,
                                    const QString &stdioCommand,
                                    const QString &stdioArgsMultiline,
                                    const QString &httpUrl,
-                                   const QString &description)
+                                   const QString &description,
+                                   const QString &envJson)
 {
     if (m_state != Connected) {
         emit errorOccurred(
@@ -3185,6 +3194,12 @@ void GatewayClient::applyMcpServer(bool isEdit,
     const QString d = description.trimmed();
     if (!d.isEmpty())
         serverObj[QStringLiteral("description")] = d;
+
+    if (!envJson.trimmed().isEmpty()) {
+        const QJsonDocument envDoc = QJsonDocument::fromJson(envJson.toUtf8());
+        if (envDoc.isObject() && !envDoc.object().isEmpty())
+            serverObj[QStringLiteral("env")] = envDoc.object();
+    }
 
     QJsonObject serversPatch;
     const QString orig = originalServerName.trimmed();

@@ -407,7 +407,8 @@ public:
                                      const QString &stdioCommand,
                                      const QString &stdioArgsMultiline,
                                      const QString &httpUrl,
-                                     const QString &description);
+                                     const QString &description,
+                                     const QString &envJson = QString());
 
     /// 从配置中删除 mcp.servers 某键（merge patch null）
     Q_INVOKABLE void removeMcpServer(const QString &serverName);

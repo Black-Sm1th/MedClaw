@@ -3809,6 +3809,29 @@ ApplicationWindow {
                 id: mcpSettingRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 4
+                property string mcpSearchText: ""
+
+                function filteredMcpList() {
+                    var list = wsClient.mcpList
+                    var q = (mcpSearchText || "").trim().toLowerCase()
+                    if (!q)
+                        return list
+                    var result = []
+                    for (var i = 0; i < list.length; i++) {
+                        var e = list[i]
+                        var name = String(e.name || e.title || "").toLowerCase()
+                        var desc = String(e.description || e.desc || "").toLowerCase()
+                        var url = String(e.url || "").toLowerCase()
+                        var cmd = String(e.command || "").toLowerCase()
+                        var args = String(e.argsText || "").toLowerCase()
+                        if (name.indexOf(q) >= 0 || desc.indexOf(q) >= 0
+                                || url.indexOf(q) >= 0 || cmd.indexOf(q) >= 0
+                                || args.indexOf(q) >= 0)
+                            result.push(e)
+                    }
+                    return result
+                }
+
                 onVisibleChanged: {
                     if (visible && wsClient.connectionState === 3)
                         wsClient.refreshMcpList()
@@ -3839,11 +3862,13 @@ ApplicationWindow {
                                 color: "#A6000000"
                             }
                             SingleLineTextInput {
+                                id: mcpSearchInput
                                 inputHeight: 36
                                 inputWidth: mcpTitleRec.width
                                 icon: "qrc:/images/search.png"
                                 iconSize: 16
                                 placeholderText: qsTr("搜索 MCP")
+                                onTextChanged: mcpSettingRec.mcpSearchText = text
                             }
                         }
                         CustomButton {
@@ -3894,8 +3919,19 @@ ApplicationWindow {
                                 wrapMode: Text.WordWrap
                             }
 
+                            Label {
+                                visible: wsClient.mcpList.length > 0 && mcpSettingRec.filteredMcpList().length === 0
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                topPadding: 40
+                                text: qsTr("未找到匹配的 MCP 服务，请尝试其他关键词")
+                                font.pixelSize: 14
+                                color: "#73000000"
+                                wrapMode: Text.WordWrap
+                            }
+
                             Repeater {
-                                model: wsClient.mcpList
+                                model: mcpSettingRec.filteredMcpList()
 
                                 delegate: Rectangle {
                                     width: mcpInstalledGrid.cellWidth
@@ -4604,6 +4640,40 @@ ApplicationWindow {
 
         property bool isEdit: false
 
+        onOpened: {
+            if (isEdit && window.mcpEditEntry) {
+                var e = window.mcpEditEntry
+                mcpNameInput.text = e.name || ""
+                mcpDescInput.text = e.description || ""
+                mcpTransportSelect.currentIndex = e.transportHttp ? 1 : 0
+                // 匹配命令下拉
+                var cmdList = ["node", "npx", "uvx", "python"]
+                var ci = cmdList.indexOf(e.command || "")
+                mcpCommandSelect.currentIndex = ci >= 0 ? ci : 0
+                mcpArgsInput.text = e.argsText || ""
+                mcpHttpUrlInput.text = e.url || ""
+                // 恢复环境变量
+                envVarModel.clear()
+                var envMap = e.env || {}
+                var keys = Object.keys(envMap)
+                if (keys.length > 0) {
+                    for (var i = 0; i < keys.length; i++)
+                        envVarModel.append({ key: keys[i], value: String(envMap[keys[i]]) })
+                } else {
+                    envVarModel.append({ key: "", value: "" })
+                }
+            } else {
+                mcpNameInput.text = ""
+                mcpDescInput.text = ""
+                mcpTransportSelect.currentIndex = 0
+                mcpCommandSelect.currentIndex = 0
+                mcpArgsInput.text = ""
+                mcpHttpUrlInput.text = ""
+                envVarModel.clear()
+                envVarModel.append({ key: "", value: "" })
+            }
+        }
+
         enter: Transition {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
         }
@@ -4762,6 +4832,34 @@ ApplicationWindow {
                         Column {
                             width: parent.width - 48
                             spacing: 8
+                            visible: mcpTransportSelect.currentIndex === 1
+                            Row {
+                                spacing: 2
+                                Label {
+                                    text: qsTr("服务地址")
+                                    font.pixelSize: 14
+                                    color: "#D9000000"
+                                }
+                                Label {
+                                    text: "*"
+                                    font.pixelSize: 14
+                                    color: "#FF4D4F"
+                                }
+                            }
+                            SingleLineTextInput {
+                                id: mcpHttpUrlInput
+                                width: parent.width
+                                inputHeight: 40
+                                inputRadius: 8
+                                fontSize: 14
+                                placeholderText: qsTr("https://example.com/mcp")
+                            }
+                        }
+
+                        Column {
+                            width: parent.width - 48
+                            spacing: 8
+                            visible: mcpTransportSelect.currentIndex === 0
                             Row {
                                 spacing: 2
                                 Label {
@@ -4790,6 +4888,7 @@ ApplicationWindow {
                         Column {
                             width: parent.width - 48
                             spacing: 8
+                            visible: mcpTransportSelect.currentIndex === 0
                             Label {
                                 text: qsTr("参数")
                                 font.pixelSize: 14
@@ -4806,6 +4905,7 @@ ApplicationWindow {
                         Column {
                             width: parent.width - 48
                             spacing: 8
+                            visible: mcpTransportSelect.currentIndex === 0
                             Label {
                                 text: qsTr("环境变量")
                                 font.pixelSize: 14
@@ -4835,6 +4935,11 @@ ApplicationWindow {
                                             inputRadius: 8
                                             fontSize: 14
                                             placeholderText: qsTr("键")
+                                            text: model.key
+                                            onTextChanged: {
+                                                if (index >= 0 && index < envVarModel.count)
+                                                    envVarModel.setProperty(index, "key", text)
+                                            }
                                         }
                                         SingleLineTextInput {
                                             width: (parent.width - 96) / 2
@@ -4842,6 +4947,11 @@ ApplicationWindow {
                                             inputRadius: 8
                                             fontSize: 14
                                             placeholderText: qsTr("值")
+                                            text: model.value
+                                            onTextChanged: {
+                                                if (index >= 0 && index < envVarModel.count)
+                                                    envVarModel.setProperty(index, "value", text)
+                                            }
                                         }
                                         CustomButton{
                                             width: 36
@@ -4907,7 +5017,30 @@ ApplicationWindow {
                             borderWidth: 0
                             text: qsTr("保存")
                             fontSize: 14
-                            onClicked: mcpServiceDialog.close()
+                            onClicked: {
+                                var envObj = {}
+                                for (var i = 0; i < envVarModel.count; i++) {
+                                    var k = envVarModel.get(i).key.trim()
+                                    var v = envVarModel.get(i).value
+                                    if (k.length > 0)
+                                        envObj[k] = v
+                                }
+                                var envStr = Object.keys(envObj).length > 0
+                                    ? JSON.stringify(envObj) : ""
+
+                                wsClient.applyMcpServer(
+                                    mcpServiceDialog.isEdit,
+                                    mcpServiceDialog.isEdit ? (window.mcpEditEntry ? (window.mcpEditEntry.name || "") : "") : "",
+                                    mcpNameInput.text,
+                                    mcpTransportSelect.currentIndex === 1,
+                                    mcpCommandSelect.currentText,
+                                    mcpArgsInput.text,
+                                    mcpHttpUrlInput.text,
+                                    mcpDescInput.text,
+                                    envStr
+                                )
+                                mcpServiceDialog.close()
+                            }
                         }
                         CustomButton {
                             width: 96
@@ -4919,6 +5052,104 @@ ApplicationWindow {
                             text: qsTr("取消")
                             fontSize: 14
                             onClicked: mcpServiceDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: deleteMcpPopup
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 0
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
+        }
+
+        Overlay.modal: Rectangle {
+            color: "#40000000"
+        }
+        background: Rectangle {
+            color: "transparent"
+        }
+
+        contentItem: Item {
+            anchors.fill: parent
+            MouseArea {
+                anchors.fill: parent
+                onClicked: deleteMcpPopup.close()
+            }
+            Rectangle {
+                width: 400
+                height: deleteMcpCol.implicitHeight
+                anchors.centerIn: parent
+                radius: 16
+                color: "#FFFFFF"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {}
+                }
+
+                Column {
+                    id: deleteMcpCol
+                    width: parent.width
+                    padding: 24
+                    spacing: 20
+
+                    Label {
+                        text: qsTr("确认删除")
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                        color: "#D9000000"
+                    }
+
+                    Label {
+                        text: qsTr("确定要删除此 MCP 服务吗？此操作不可撤销。")
+                        font.pixelSize: 14
+                        color: "#A6000000"
+                        wrapMode: Text.Wrap
+                        width: parent.width - 48
+                    }
+
+                    Row {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        spacing: 12
+                        layoutDirection: Qt.RightToLeft
+
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#FF4D4F"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: qsTr("删除")
+                            fontSize: 14
+                            onClicked: {
+                                wsClient.removeMcpServer(window.pendingDeleteMcpName)
+                                deleteMcpPopup.close()
+                            }
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
+                            borderWidth: 1
+                            text: qsTr("取消")
+                            fontSize: 14
+                            onClicked: deleteMcpPopup.close()
                         }
                     }
                 }
