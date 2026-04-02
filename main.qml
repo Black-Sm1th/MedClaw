@@ -1848,7 +1848,7 @@ ApplicationWindow {
                                                                     horizontalAlignment: Text.AlignHCenter
                                                                     verticalAlignment: Text.AlignVCenter
                                                                     anchors.verticalCenter: parent.verticalCenter
-                                                                    font.family: "Noto Color Emoji"
+                                                                    font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                                 }
                                                                 Text {
                                                                     id: skilPopNameLabel
@@ -3315,7 +3315,7 @@ ApplicationWindow {
                                                 text: modelData.emoji
                                                 horizontalAlignment: Text.AlignHCenter
                                                 verticalAlignment: Text.AlignVCenter
-                                                font.family: "Noto Color Emoji"
+                                                font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                             }
                                             Label {
                                                 id: skillNameLabel
