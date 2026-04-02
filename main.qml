@@ -1989,6 +1989,7 @@ ApplicationWindow {
                                     function saveToolChanges() {
                                         var aid = leftMidPanel.activeAgentId
                                         if (aid === "") {
+                                            wsClient.setPendingNewAgentToolSelection(selectedToolIds)
                                             toolPopup2.close()
                                             return
                                         }

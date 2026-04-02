@@ -224,7 +224,13 @@ public:
      * @param workspace 工作空间路径
      */
     Q_INVOKABLE void createAgent(const QString &name,
-                                  const QString &workspace);
+                                  const QString &workspace,
+                                  bool applyPendingToolSelection = true);
+
+    /**
+     * @brief 尚无 agent 时用户在工具弹窗点「保存」：记录将启用的 toolId，待首个 agent 创建后与 profile=full 一并写入 config
+     */
+    Q_INVOKABLE void setPendingNewAgentToolSelection(const QVariantList &enabledToolIds);
 
     /**
      * @brief 删除 Agent（agents.delete RPC）
@@ -621,7 +627,11 @@ private:
     QString m_pendingCreateName;       ///< agents.create 待确认名称
     QString m_pendingCreateWorkspace;  ///< agents.create 使用的 workspace 路径
     QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
-    QString m_pendingProfileFullAgentId; ///< agents.create 后待设置 tools.profile="full" 的 agentId
+    QString m_pendingProfileFullAgentId; ///< agents.create 后待设置 tools.profile=full + deny 的 agentId
+    QStringList m_pendingNewAgentEnabledToolIds; ///< 新建 agent 前用户在弹窗中选中的工具（空且未 set 表示用「全选」）
+    bool m_pendingNewAgentToolPolicySet = false; ///< 用户是否已点过保存（无 agent 时）
+    /// 刚创建完 agent、config.get 尚未写入 deny 前，切到该 agent 时不要清空待应用的 tool 选择
+    QString m_expectingToolPolicyApplyForAgentId;
 
     /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;

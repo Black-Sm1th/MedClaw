@@ -1360,6 +1360,13 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         }
 
         const bool doBootstrap = !bootstrapMsg.isEmpty() && !agentId.isEmpty();
+
+        if (!agentId.isEmpty()) {
+            m_pendingProfileFullAgentId = agentId;
+            m_expectingToolPolicyApplyForAgentId = agentId;
+            refreshMcpList();
+        }
+
         if (doBootstrap) {
             m_newAgentSidebarId    = agentId;
             m_newAgentSidebarTitle = bootstrapMsg.left(120);
@@ -1373,11 +1380,6 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             doBootstrap);
         refreshAgents();
         refreshSessions();
-
-        if (!agentId.isEmpty()) {
-            m_pendingProfileFullAgentId = agentId;
-            refreshMcpList();
-        }
 
         if (doBootstrap) {
             if (!m_pendingChatFiles.isEmpty()) {
@@ -1960,8 +1962,13 @@ void GatewayClient::refreshAgents()
  * 服务端 normalizeAgentId(name) 生成 agentId
  */
 void GatewayClient::createAgent(const QString &name,
-                                 const QString &workspace)
+                                 const QString &workspace,
+                                 bool applyPendingToolSelection)
 {
+    if (!applyPendingToolSelection) {
+        m_pendingNewAgentToolPolicySet = false;
+        m_pendingNewAgentEnabledToolIds.clear();
+    }
     if (m_state != Connected) {
         emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
         return;
@@ -1987,6 +1994,17 @@ void GatewayClient::createAgent(const QString &name,
     qDebug().noquote() << "[Gateway] agents.create:" << name
                        << "workspace:" << ws;
     sendRequest(QStringLiteral("agents.create"), params);
+}
+
+void GatewayClient::setPendingNewAgentToolSelection(const QVariantList &enabledToolIds)
+{
+    m_pendingNewAgentEnabledToolIds.clear();
+    m_pendingNewAgentToolPolicySet = true;
+    for (const QVariant &v : enabledToolIds) {
+        const QString tid = v.toString().trimmed();
+        if (!tid.isEmpty())
+            m_pendingNewAgentEnabledToolIds.append(tid);
+    }
 }
 
 /**
@@ -2447,6 +2465,11 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
         return;
     }
 
+    if (agentId.trimmed() != m_expectingToolPolicyApplyForAgentId) {
+        m_pendingNewAgentToolPolicySet = false;
+        m_pendingNewAgentEnabledToolIds.clear();
+    }
+
     const QString sessionKey = resolveChatSessionKeyForAgentId(agentId.trimmed());
 
     qDebug().noquote() << "[Gateway] switchAgent:" << agentId
@@ -2532,7 +2555,7 @@ void GatewayClient::sendChatMessage(const QString &message,
         m_pendingAgentCreateForChat = true;
         const QString autoName = QStringLiteral("task-%1")
             .arg(QDateTime::currentMSecsSinceEpoch());
-        createAgent(autoName, workspaceForNewAgent);
+        createAgent(autoName, workspaceForNewAgent, true);
         return;
     }
 
@@ -2593,7 +2616,7 @@ void GatewayClient::addCronJob(const QString &name,
         return;
     }
     const QString agentName = cronDedicatedAgentDisplayName(name);
-    createAgent(agentName, QString());
+    createAgent(agentName, QString(), false);
     prepareCronJobWithDedicatedAgent(
         1, name, message, cronExpr,
         tz.isEmpty() ? QStringLiteral("Asia/Shanghai") : tz, 0, QString());
@@ -2620,7 +2643,7 @@ void GatewayClient::addIntervalJob(const QString &name,
         return;
     }
     const QString agentName = cronDedicatedAgentDisplayName(name);
-    createAgent(agentName, QString());
+    createAgent(agentName, QString(), false);
     prepareCronJobWithDedicatedAgent(2, name, message, QString(), QString(),
                                      intervalSec, QString());
 }
@@ -2649,7 +2672,7 @@ void GatewayClient::addOneTimeJob(const QString &name,
         return;
     }
     const QString agentName = cronDedicatedAgentDisplayName(name);
-    createAgent(agentName, QString());
+    createAgent(agentName, QString(), false);
     prepareCronJobWithDedicatedAgent(3, name, message, QString(), QString(), 0,
                                      dateTime);
 }
@@ -2855,51 +2878,52 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
     mergeWorkspaceIntoAgentIdentity();
 
+    QString toolPolicyAgentId;
     if (!m_pendingProfileFullAgentId.isEmpty()) {
         const QString aid = m_pendingProfileFullAgentId;
         m_pendingProfileFullAgentId.clear();
 
-        QJsonObject cfg = m_lastConfigSnapshot;
-
-        QJsonObject globalTools = cfg.value(QStringLiteral("tools")).toObject();
-        globalTools[QStringLiteral("profile")] = QStringLiteral("full");
-        cfg[QStringLiteral("tools")] = globalTools;
-
-        QJsonObject agentsObj = cfg.value(QStringLiteral("agents")).toObject();
-        QJsonArray list = agentsObj.value(QStringLiteral("list")).toArray();
-        int idx = -1;
-        for (int i = 0; i < list.count(); ++i) {
-            if (list[i].toObject().value(QStringLiteral("id")).toString().trimmed() == aid) {
-                idx = i;
-                break;
+        QStringList enabledIds;
+        if (m_pendingNewAgentToolPolicySet) {
+            enabledIds = m_pendingNewAgentEnabledToolIds;
+            m_pendingNewAgentToolPolicySet = false;
+            m_pendingNewAgentEnabledToolIds.clear();
+        } else {
+            for (const QVariant &tv : m_tools.toolList()) {
+                const QString tid =
+                    tv.toMap().value(QStringLiteral("toolId")).toString().trimmed();
+                if (!tid.isEmpty())
+                    enabledIds.append(tid);
             }
         }
-        QJsonObject entry = (idx >= 0) ? list[idx].toObject() : QJsonObject();
-        if (idx < 0)
-            entry[QStringLiteral("id")] = aid;
-        QJsonObject t = entry.value(QStringLiteral("tools")).toObject();
-        t[QStringLiteral("profile")] = QStringLiteral("full");
-        entry[QStringLiteral("tools")] = t;
-        if (idx >= 0)
-            list[idx] = entry;
-        else
-            list.append(entry);
-        agentsObj[QStringLiteral("list")] = list;
-        cfg[QStringLiteral("agents")] = agentsObj;
 
-        const QByteArray cfgJson = QJsonDocument(cfg).toJson(QJsonDocument::Compact);
-        QJsonObject reqParams;
-        reqParams[QStringLiteral("raw")] = QString::fromUtf8(cfgJson);
-        if (!m_configSnapshotHash.isEmpty())
-            reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
-        sendRequest(QStringLiteral("config.set"), reqParams);
-        qDebug() << "[Gateway] set tools.profile=full for new agent" << aid;
+        QJsonObject cfg = m_lastConfigSnapshot;
+        cfg = m_tools.buildFullConfigWithBatchToolPolicy(cfg, aid, enabledIds);
+        if (!cfg.isEmpty()) {
+            m_lastConfigSnapshot = cfg;
+            const QByteArray cfgJson = QJsonDocument(cfg).toJson(QJsonDocument::Compact);
+            QJsonObject reqParams;
+            reqParams[QStringLiteral("raw")] = QString::fromUtf8(cfgJson);
+            if (!m_configSnapshotHash.isEmpty())
+                reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+            sendRequest(QStringLiteral("config.set"), reqParams);
+            m_tools.batchSetLocalToolEnabled(enabledIds);
+            toolPolicyAgentId = aid;
+            qDebug() << "[Gateway] set tools.profile=full + deny for new agent" << aid
+                     << "enabledCount=" << enabledIds.size();
+        } else {
+            qWarning() << "[Gateway] buildFullConfigWithBatchToolPolicy failed for new agent" << aid;
+        }
+        m_expectingToolPolicyApplyForAgentId.clear();
     }
 
     if (!m_tools.toolList().isEmpty()) {
-        QString aid = m_tools.catalogAgentId().trimmed();
-        if (aid.isEmpty())
-            aid = m_defaultAgentId;
+        QString aid = toolPolicyAgentId.trimmed();
+        if (aid.isEmpty()) {
+            aid = m_tools.catalogAgentId().trimmed();
+            if (aid.isEmpty())
+                aid = m_defaultAgentId;
+        }
         qDebug() << "[ConfigGet→ToolPolicy] applying policy for agent=" << aid
                  << "snapshotHash=" << m_configSnapshotHash;
         m_tools.applyToolPolicyFromConfig(m_lastConfigSnapshot, aid);
