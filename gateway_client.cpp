@@ -260,6 +260,7 @@ void GatewayClient::clearActiveAgentContext()
 {
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
+    m_pendingBootstrapChatMessage.clear();
     if (!m_pendingSessionModelId.isEmpty()) {
         m_pendingSessionModelId.clear();
         emit pendingSessionModelIdChanged();
@@ -706,6 +707,7 @@ void GatewayClient::connectToServer(const QString &url)
     m_pendingRequests.clear();
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
+    m_pendingBootstrapChatMessage.clear();
     clearPendingCronDedicatedAgent();
     m_sidebarTitleHistReqAgent.clear();
     m_sidebarTitleHistReqBatch.clear();
@@ -1238,6 +1240,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_pendingCreateWorkspace.clear();
             m_pendingAgentCreateForChat = false;
             m_pendingFirstChatMessage.clear();
+            m_pendingBootstrapChatMessage.clear();
             m_pendingChatFiles.clear();
             clearPendingCronDedicatedAgent();
         }
@@ -1389,7 +1392,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 resolveAndCopyFiles(m_pendingChatFiles, ws);
                 m_pendingChatFiles.clear();
             }
-            sendChatMessage(bootstrapMsg);
+            // 延迟到 config.set（deny 列表）发送后再发 chat.send，
+            // 否则首条消息处理时 deny 列表尚未生效
+            m_pendingBootstrapChatMessage = bootstrapMsg;
         }
         m_pendingCreateWorkspace.clear();
 
@@ -2951,6 +2956,14 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
                  << "snapshotHash=" << m_configSnapshotHash;
         m_tools.applyToolPolicyFromConfig(m_lastConfigSnapshot, aid);
         emit toolListChanged();
+    }
+
+    // config.set（deny 列表）已发送，此时再发出延迟的首条消息，
+    // 保证 gateway 先处理 config.set 再处理 chat.send
+    if (!m_pendingBootstrapChatMessage.isEmpty()) {
+        const QString msg = m_pendingBootstrapChatMessage;
+        m_pendingBootstrapChatMessage.clear();
+        sendChatMessage(msg);
     }
 }
 

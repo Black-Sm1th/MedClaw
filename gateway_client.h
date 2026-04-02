@@ -638,6 +638,9 @@ private:
     bool m_pendingAgentCreateForChat = false;
     QVariantList m_pendingChatFiles;
 
+    /// agents.create 完成后，需等 config.set（deny 列表）发送完才发出的首条消息
+    QString m_pendingBootstrapChatMessage;
+
     /// 新建 agent 时暂存首句 + 时间，agents.list 回来后注入侧栏
     QString m_newAgentSidebarId;
     QString m_newAgentSidebarTitle;
