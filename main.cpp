@@ -52,6 +52,24 @@ int main(int argc, char *argv[])
         chatModel.addToolResult(name, content, id, isError);
     });
 
+    // 工具结果补拉完成：原地合并完整文本（不清空聊天模型，避免闪烁）
+    QObject::connect(&wsClient, &GatewayClient::toolResultsRefreshed,
+                     [&chatModel](const QVariantList &messages) {
+        for (const QVariant &v : messages) {
+            const QVariantMap m = v.toMap();
+            if (m.value(QStringLiteral("msgType")).toString() != QLatin1String("toolResult"))
+                continue;
+            const QString tcId = m.value(QStringLiteral("toolCallId")).toString();
+            if (tcId.isEmpty())
+                continue;
+            chatModel.addToolResult(
+                m.value(QStringLiteral("toolName")).toString(),
+                m.value(QStringLiteral("content")).toString(),
+                tcId,
+                m.value(QStringLiteral("isError")).toBool());
+        }
+    });
+
     // 新会话创建成功：清空聊天记录并显示系统提示
     QObject::connect(&wsClient, &GatewayClient::sessionCreated,
                      [&chatModel]() {

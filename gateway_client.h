@@ -440,6 +440,7 @@ signals:
     void currentSessionChanged();    ///< 当前活跃会话切换
     void sessionCreated();           ///< 新会话创建成功
     void historyLoaded(const QVariantList &messages); ///< 历史消息加载完成
+    void toolResultsRefreshed(const QVariantList &messages); ///< 工具结果补拉完成（原地合并）
 
     // ── 技能管理 ──
     void skillListChanged();         ///< 技能列表更新
@@ -662,6 +663,10 @@ private:
     QMap<QString, quint64> m_sidebarTitleHistReqBatch;
     quint64 m_sidebarTitleBatchGen = 0;
     QTimer m_agentFirstUserTitleDebounce;
+
+    /// 收到 toolResult 后防抖补拉历史；仅更新 toolResult 文本，不清空聊天模型
+    QTimer m_toolResultRefreshTimer;
+    QSet<QString> m_toolResultRefreshReqIds;
 
     // ── 模型管理 ──
     QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）

@@ -102,6 +102,16 @@ GatewayClient::GatewayClient(QObject *parent)
     connect(&m_agentFirstUserTitleDebounce, &QTimer::timeout, this,
             &GatewayClient::flushAgentListFirstUserTitles);
 
+    m_toolResultRefreshTimer.setSingleShot(true);
+    m_toolResultRefreshTimer.setInterval(600);
+    connect(&m_toolResultRefreshTimer, &QTimer::timeout, this, [this]() {
+        if (m_state != Connected) return;
+        const QString reqId = sendRequest(
+            QStringLiteral("chat.history"),
+            m_session.buildChatHistoryParams(m_session.currentSessionKey(), 500));
+        m_toolResultRefreshReqIds.insert(reqId);
+    });
+
     m_socket->setMaxAllowedIncomingFrameSize(std::numeric_limits<quint64>::max());
     m_socket->setMaxAllowedIncomingMessageSize(std::numeric_limits<quint64>::max());
 
@@ -747,6 +757,8 @@ void GatewayClient::disconnectFromServer()
     m_userRequestedDisconnect = true;
     m_autoReconnectFailureCount = 0;
     m_pendingReconnectDelayMs = 0;
+    m_toolResultRefreshTimer.stop();
+    m_toolResultRefreshReqIds.clear();
     if (m_skillInstallBusy) {
         m_skillInstallBusy = false;
         emit skillInstallBusyChanged();
@@ -1113,13 +1125,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
                            << "contentLen:" << r.content.length();
         emit toolResultReceived(r.toolName, r.content,
                                 r.toolCallId, r.toolIsError);
-        // 网关在非 full verbose 下会剥掉 data.result；此时补拉一次历史以同步正文
-        if (r.content.trimmed().isEmpty()) {
-            QTimer::singleShot(200, this, [this]() {
-                if (m_state == Connected)
-                    loadChatHistory(QString(), 500);
-            });
-        }
+        // 防抖补拉历史，原地合并完整 toolResult 文本
+        m_toolResultRefreshTimer.start();
         return;
     }
 
@@ -1489,7 +1496,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         return;
     }
 
-    // chat.history 响应 → 侧栏首句预取 或 当前会话历史
+    // chat.history 响应 → 侧栏首句预取 / 工具结果补拉 / 当前会话历史
     if (method == QLatin1String("chat.history")) {
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
@@ -1503,6 +1510,12 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 if (!first.isEmpty())
                     setAgentListSidebarTitle(sidebarAgent, first);
             }
+            return;
+        }
+
+        // 工具结果补拉：仅原地合并 toolResult 文本，不清空聊天模型
+        if (m_toolResultRefreshReqIds.remove(id)) {
+            emit toolResultsRefreshed(history);
             return;
         }
 
@@ -1783,13 +1796,8 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
         }
         emit toolResultReceived(tName, resultText, tcId, isErr);
 
-        // 内容为空或过短时补拉历史获取完整正文（与 parseEvent 路径一致）
-        if (resultText.trimmed().isEmpty()) {
-            QTimer::singleShot(200, this, [this]() {
-                if (m_state == Connected)
-                    loadChatHistory(QString(), 500);
-            });
-        }
+        // 防抖补拉历史，原地合并完整 toolResult 文本
+        m_toolResultRefreshTimer.start();
         return true;
     }
 
@@ -2497,6 +2505,10 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
         m_pendingNewAgentToolPolicySet = false;
         m_pendingNewAgentEnabledToolIds.clear();
     }
+
+    // 切换会话时取消未完成的工具结果补拉
+    m_toolResultRefreshTimer.stop();
+    m_toolResultRefreshReqIds.clear();
 
     const QString sessionKey = resolveChatSessionKeyForAgentId(agentId.trimmed());
 
