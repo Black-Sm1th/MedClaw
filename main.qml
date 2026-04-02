@@ -67,6 +67,12 @@ ApplicationWindow {
         return path
     }
 
+    /// Markdown / 富文本中的超链接点击（需 Text.textFormat 为 MarkdownText 等）
+    function openMarkdownLink(link) {
+        if (link && String(link).length > 0)
+            Qt.openUrlExternally(link)
+    }
+
     function modelDisplayLabel(nm, pv) {
         var raw = pv ? (nm + " (" + pv + ")") : nm
         return trimToFirstParenPairOnly(raw)
@@ -724,6 +730,7 @@ ApplicationWindow {
                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                     color: chatBubble.isUser ? "#E5000000" : "#D9000000"
                                     textFormat: Text.MarkdownText
+                                    onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                 }
                             }
                         }
@@ -866,6 +873,7 @@ ApplicationWindow {
                                                 font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                 color: "#374151"
                                                 textFormat: Text.MarkdownText
+                                                onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                             }
                                         }
 
@@ -889,6 +897,7 @@ ApplicationWindow {
                                                 font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                 color: isError ? "#DC2626" : "#374151"
                                                 textFormat: Text.MarkdownText
+                                                onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                             }
                                         }
 
@@ -1028,6 +1037,7 @@ ApplicationWindow {
                                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                         color: isError ? "#DC2626" : "#374151"
                                         textFormat: Text.MarkdownText
+                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                     }
                                 }
                             }
