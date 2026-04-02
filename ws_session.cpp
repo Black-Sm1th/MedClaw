@@ -42,6 +42,19 @@ QString extractToolOutputFromDataObject(const QJsonObject &data)
     if (!text.isEmpty())
         return text;
 
+    const QJsonValue outputVal = data.value(QStringLiteral("output"));
+    if (!outputVal.isNull()) {
+        if (outputVal.isString() && !outputVal.toString().isEmpty())
+            return outputVal.toString();
+        if (outputVal.isArray()) {
+            const QString fromArr = textFromContentArray(outputVal.toArray());
+            if (!fromArr.isEmpty())
+                return fromArr;
+        }
+        if (outputVal.isObject())
+            return QString::fromUtf8(QJsonDocument(outputVal.toObject()).toJson(QJsonDocument::Compact));
+    }
+
     const QJsonValue resultVal = data.value(QStringLiteral("result"));
     if (!resultVal.isNull()) {
         if (resultVal.isString())
@@ -232,8 +245,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
             } else {
                 resultText = m.value(QStringLiteral("content")).toString();
             }
-            if (resultText.length() > 2000)
-                resultText = resultText.left(2000) + QStringLiteral("\n... (truncated)");
+            if (resultText.length() > 50000)
+                resultText = resultText.left(50000) + QStringLiteral("\n... (truncated)");
 
             QVariantMap entry;
             entry[QStringLiteral("role")]       = QStringLiteral("tool");

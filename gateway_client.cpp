@@ -1749,19 +1749,42 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
         } else {
             resultText = contentVal.toString();
         }
-        if (resultText.length() > 2000)
-            resultText = resultText.left(2000) + QStringLiteral("\n...(truncated)");
+
+        // content 为空时尝试 output / result 等备选字段
+        if (resultText.isEmpty()) {
+            const QJsonValue outVal = msg.value(QStringLiteral("output"));
+            if (outVal.isString())
+                resultText = outVal.toString();
+            else if (outVal.isObject())
+                resultText = QString::fromUtf8(
+                    QJsonDocument(outVal.toObject()).toJson(QJsonDocument::Compact));
+        }
+        if (resultText.isEmpty()) {
+            const QJsonValue resVal = msg.value(QStringLiteral("result"));
+            if (resVal.isString())
+                resultText = resVal.toString();
+            else if (resVal.isObject())
+                resultText = QString::fromUtf8(
+                    QJsonDocument(resVal.toObject()).toJson(QJsonDocument::Compact));
+        }
 
         qDebug().noquote() << "[Gateway] chat → toolResult:" << tName
                            << "error:" << isErr
                            << "len:" << resultText.length();
 
-        // 如果之前在 streaming，先结束
         if (m_session.isStreaming()) {
             m_session.setStreaming(false);
             emit streamingFinished();
         }
         emit toolResultReceived(tName, resultText, tcId, isErr);
+
+        // 内容为空或过短时补拉历史获取完整正文（与 parseEvent 路径一致）
+        if (resultText.trimmed().isEmpty()) {
+            QTimer::singleShot(200, this, [this]() {
+                if (m_state == Connected)
+                    loadChatHistory(QString(), 500);
+            });
+        }
         return true;
     }
 
