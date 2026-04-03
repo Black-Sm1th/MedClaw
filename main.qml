@@ -5171,6 +5171,10 @@ ApplicationWindow {
         onOpened: {
             if (wsClient.connectionState === 3)
                 wsClient.refreshModels()
+            memorySwitch.checked = wsClient.memoryEnabled
+            llmSwitch.checked = wsClient.llmJudgmentEnabled
+            sandboxPage.sandboxMode = wsClient.sandboxMode
+            wsClient.loadMemoryEntries()
         }
 
         enter: Transition {
@@ -5564,12 +5568,34 @@ ApplicationWindow {
                                     text: "+ 新增"
                                     fontSize: 14
                                     anchors.right: parent.right
+                                    onClicked: {
+                                        memoryEditPopup.editId = ""
+                                        memoryEditPopup.open()
+                                    }
                                 }
                             }
 
                             Column {
                                 width: parent.width - 32
                                 spacing: 4
+
+                                property string memorySearchText: ""
+
+                                function filteredMemoryEntries() {
+                                    var list = wsClient.memoryEntries
+                                    var q = (memorySearchText || "").trim().toLowerCase()
+                                    if (!q) return list
+                                    var result = []
+                                    for (var i = 0; i < list.length; i++) {
+                                        var e = list[i]
+                                        var t = String(e.title || "").toLowerCase()
+                                        var c = String(e.content || "").toLowerCase()
+                                        if (t.indexOf(q) >= 0 || c.indexOf(q) >= 0)
+                                            result.push(e)
+                                    }
+                                    return result
+                                }
+
                                 SingleLineTextInput {
                                     width: parent.width
                                     inputHeight: 36
@@ -5578,11 +5604,21 @@ ApplicationWindow {
                                     iconSize: 16
                                     fontSize: 14
                                     placeholderText: qsTr("搜索记忆内容/来源")
+                                    onTextChanged: parent.memorySearchText = text
                                 }
+
+                                Label {
+                                    visible: wsClient.memoryEntries.length === 0
+                                    width: parent.width
+                                    topPadding: 20
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: qsTr("暂无记忆条目，点击「+ 新增」添加")
+                                    font.pixelSize: 14
+                                    color: "#73000000"
+                                }
+
                                 Repeater {
-                                    model: ListModel {
-                                        id: memoryListModel
-                                    }
+                                    model: parent.filteredMemoryEntries()
 
                                     delegate: Rectangle {
                                         width: parent.width
@@ -5596,22 +5632,35 @@ ApplicationWindow {
                                         Row {
                                             anchors.left: parent.left
                                             anchors.leftMargin: 16
+                                            anchors.right: memoryItemActions.left
+                                            anchors.rightMargin: 8
                                             anchors.verticalCenter: parent.verticalCenter
                                             spacing: 12
+                                            clip: true
                                             Label {
-                                                text: model.memTitle
-                                                font.pixelSize: 16
+                                                text: modelData.title || ""
+                                                font.pixelSize: 14
+                                                font.weight: Font.DemiBold
                                                 color: "#D9000000"
+                                                elide: Text.ElideRight
+                                                width: Math.min(implicitWidth, 200)
                                             }
                                             Label {
-                                                text: model.memDate
-                                                font.pixelSize: 16
+                                                text: modelData.content || ""
+                                                font.pixelSize: 13
                                                 color: "#73000000"
-                                                anchors.baseline: parent.children[0].baseline
+                                                elide: Text.ElideRight
+                                                width: Math.min(implicitWidth, 180)
+                                            }
+                                            Label {
+                                                text: modelData.date || ""
+                                                font.pixelSize: 12
+                                                color: "#40000000"
                                             }
                                         }
 
                                         Row {
+                                            id: memoryItemActions
                                             anchors.right: parent.right
                                             anchors.rightMargin: 16
                                             anchors.verticalCenter: parent.verticalCenter
@@ -5620,9 +5669,18 @@ ApplicationWindow {
 
                                             ImageButton {
                                                 source: "qrc:/images/edit.png"
+                                                onClicked: {
+                                                    memoryEditPopup.editId = modelData.id || ""
+                                                    memoryEditPopup.editTitle = modelData.title || ""
+                                                    memoryEditPopup.editContent = modelData.content || ""
+                                                    memoryEditPopup.open()
+                                                }
                                             }
                                             ImageButton {
                                                 source: "qrc:/images/delete.png"
+                                                onClicked: {
+                                                    wsClient.deleteMemoryEntry(modelData.id || "")
+                                                }
                                             }
                                         }
                                     }
@@ -5837,7 +5895,14 @@ ApplicationWindow {
                             borderWidth: 0
                             text: qsTr("保存")
                             fontSize: 14
-                            onClicked: settingsDialog.close()
+                            onClicked: {
+                                wsClient.saveGeneralSettings(
+                                    memorySwitch.checked,
+                                    llmSwitch.checked,
+                                    sandboxPage.sandboxMode
+                                )
+                                settingsDialog.close()
+                            }
                         }
                         CustomButton {
                             width: 96
@@ -5849,6 +5914,162 @@ ApplicationWindow {
                             text: qsTr("取消")
                             fontSize: 14
                             onClicked: settingsDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: memoryEditPopup
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 0
+        z: 200
+
+        property string editId: ""
+        property string editTitle: ""
+        property string editContent: ""
+        property bool isEdit: editId.length > 0
+
+        onOpened: {
+            memEditTitleInput.text = isEdit ? editTitle : ""
+            memEditContentInput.text = isEdit ? editContent : ""
+        }
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
+        }
+        Overlay.modal: Rectangle {
+            color: "#40000000"
+        }
+        background: Rectangle {
+            color: "transparent"
+        }
+
+        contentItem: Item {
+            anchors.fill: parent
+            MouseArea {
+                anchors.fill: parent
+                onClicked: memoryEditPopup.close()
+            }
+            Rectangle {
+                width: 480
+                height: memEditCol.implicitHeight
+                anchors.centerIn: parent
+                radius: 16
+                color: "#FFFFFF"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {}
+                }
+
+                Column {
+                    id: memEditCol
+                    width: parent.width
+                    padding: 24
+                    spacing: 16
+
+                    Label {
+                        text: memoryEditPopup.isEdit ? qsTr("编辑记忆") : qsTr("新增记忆")
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                        color: "#D9000000"
+                    }
+
+                    Column {
+                        width: parent.width - 48
+                        spacing: 8
+                        Row {
+                            spacing: 2
+                            Label {
+                                text: qsTr("标题")
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                            }
+                            Label {
+                                text: "*"
+                                font.pixelSize: 14
+                                color: "#FF4D4F"
+                            }
+                        }
+                        SingleLineTextInput {
+                            id: memEditTitleInput
+                            width: parent.width
+                            inputHeight: 40
+                            inputRadius: 8
+                            fontSize: 14
+                            placeholderText: qsTr("如：我的名字、偏好语言")
+                        }
+                    }
+
+                    Column {
+                        width: parent.width - 48
+                        spacing: 8
+                        Row {
+                            spacing: 2
+                            Label {
+                                text: qsTr("内容")
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                            }
+                            Label {
+                                text: "*"
+                                font.pixelSize: 14
+                                color: "#FF4D4F"
+                            }
+                        }
+                        MultiLineTextInput {
+                            id: memEditContentInput
+                            width: parent.width
+                            inputHeight: 100
+                            placeholderText: qsTr("记忆的具体内容")
+                        }
+                    }
+
+                    Row {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 0
+                        spacing: 12
+                        layoutDirection: Qt.RightToLeft
+
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: qsTr("保存")
+                            fontSize: 14
+                            onClicked: {
+                                var t = memEditTitleInput.text.trim()
+                                var c = memEditContentInput.text.trim()
+                                if (t.length === 0) return
+                                if (memoryEditPopup.isEdit)
+                                    wsClient.updateMemoryEntry(memoryEditPopup.editId, t, c)
+                                else
+                                    wsClient.addMemoryEntry(t, c)
+                                memoryEditPopup.close()
+                            }
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
+                            borderWidth: 1
+                            text: qsTr("取消")
+                            fontSize: 14
+                            onClicked: memoryEditPopup.close()
                         }
                     }
                 }

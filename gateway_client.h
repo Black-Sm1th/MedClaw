@@ -104,6 +104,15 @@ class GatewayClient : public QObject
     /// 正在安装技能（复制 + 请求网关重启）
     Q_PROPERTY(bool skillInstallBusy READ skillInstallBusy NOTIFY skillInstallBusyChanged)
 
+    /// 设置 — 记忆开关（来自 agents.defaults.memorySearch.enabled）
+    Q_PROPERTY(bool memoryEnabled READ memoryEnabled NOTIFY memoryEnabledChanged)
+    /// 设置 — LLM 二级判定开关（本地存储）
+    Q_PROPERTY(bool llmJudgmentEnabled READ llmJudgmentEnabled NOTIFY llmJudgmentEnabledChanged)
+    /// 设置 — 沙箱模式 0=auto 1=local(off) 2=sandbox-only(all)
+    Q_PROPERTY(int sandboxMode READ sandboxMode NOTIFY sandboxModeChanged)
+    /// 设置 — 记忆条目列表（本地 JSON）
+    Q_PROPERTY(QVariantList memoryEntries READ memoryEntries NOTIFY memoryEntriesChanged)
+
 public:
     /**
      * @brief 连接状态枚举
@@ -413,6 +422,20 @@ public:
     /// 从配置中删除 mcp.servers 某键（merge patch null）
     Q_INVOKABLE void removeMcpServer(const QString &serverName);
 
+    // ── 设置：记忆 / 沙箱 ──
+    bool memoryEnabled() const { return m_memoryEnabled; }
+    bool llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }
+    int  sandboxMode() const { return m_sandboxMode; }
+    QVariantList memoryEntries() const { return m_memoryEntries; }
+
+    /// 保存通用设置（记忆开关 + LLM 判定 + 沙箱模式）→ config.patch
+    Q_INVOKABLE void saveGeneralSettings(bool memoryEnabled, bool llmJudgment, int sandboxMode);
+    /// 刷新本地记忆条目列表
+    Q_INVOKABLE void loadMemoryEntries();
+    Q_INVOKABLE void addMemoryEntry(const QString &title, const QString &content);
+    Q_INVOKABLE void updateMemoryEntry(const QString &id, const QString &title, const QString &content);
+    Q_INVOKABLE void deleteMemoryEntry(const QString &id);
+
 signals:
     // ── 连接状态 ──
     void connectionStateChanged();  ///< 连接状态发生变化
@@ -455,6 +478,13 @@ signals:
     void cronJobUpdated(const QString &jobId); ///< 任务更新成功
     void cronRunTriggered(const QString &jobId); ///< 手动触发成功
     void cronRunsLoaded(const QVariantList &runs); ///< 执行记录加载完成
+
+    // ── 设置 ──
+    void memoryEnabledChanged();
+    void llmJudgmentEnabledChanged();
+    void sandboxModeChanged();
+    void memoryEntriesChanged();
+    void settingsSaved();
 
     // ── Agent 管理 ──
     void agentIdentityChanged();     ///< Agent 身份信息更新
@@ -685,6 +715,14 @@ private:
     int m_autoReconnectFailureCount = 0;            ///< 本轮自动重连已连续失败次数（成功或手动连接时清零）
     bool m_skillInstallBusy = false; ///< 技能安装流程进行中
     QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
+
+    // ── 设置状态 ──
+    bool m_memoryEnabled = true;
+    bool m_llmJudgmentEnabled = false;
+    int  m_sandboxMode = 0;
+    QVariantList m_memoryEntries;
+    void parseSettingsFromConfig();
+    void saveMemoryEntriesToDisk();
 
     QString        m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
     QVariantList   m_mcpList;          ///< mcp.servers 展示列表

@@ -2925,6 +2925,7 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     rebuildMcpListFromConfigObject(m_lastConfigSnapshot);
     rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
     mergeWorkspaceIntoAgentIdentity();
+    parseSettingsFromConfig();
 
     QString toolPolicyAgentId;
     if (!m_pendingProfileFullAgentId.isEmpty()) {
@@ -3369,4 +3370,186 @@ bool GatewayClient::eventAppliesToCurrentUiSession(const QJsonObject &payload) c
         return false;
 
     return evt == cur;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  设置：记忆 / 沙箱 / 记忆条目管理
+// ═══════════════════════════════════════════════════════════════════════
+
+void GatewayClient::parseSettingsFromConfig()
+{
+    if (m_lastConfigSnapshot.isEmpty())
+        return;
+
+    const QJsonObject agents =
+        m_lastConfigSnapshot.value(QStringLiteral("agents")).toObject();
+    const QJsonObject defaults =
+        agents.value(QStringLiteral("defaults")).toObject();
+
+    // memorySearch.enabled（默认 true）
+    const QJsonObject memSearch =
+        defaults.value(QStringLiteral("memorySearch")).toObject();
+    const bool newMem = memSearch.contains(QStringLiteral("enabled"))
+        ? memSearch.value(QStringLiteral("enabled")).toBool(true)
+        : true;
+    if (m_memoryEnabled != newMem) {
+        m_memoryEnabled = newMem;
+        emit memoryEnabledChanged();
+    }
+
+    // sandbox.mode → 0=auto(non-main) 1=local(off) 2=all
+    const QJsonObject sandbox =
+        defaults.value(QStringLiteral("sandbox")).toObject();
+    const QString modeStr =
+        sandbox.value(QStringLiteral("mode")).toString().trimmed();
+    int newSb = 0;
+    if (modeStr == QLatin1String("off"))
+        newSb = 1;
+    else if (modeStr == QLatin1String("all"))
+        newSb = 2;
+    if (m_sandboxMode != newSb) {
+        m_sandboxMode = newSb;
+        emit sandboxModeChanged();
+    }
+
+    // LLM judgment（本地）
+    const bool newLlm = m_config.llmJudgmentEnabled();
+    if (m_llmJudgmentEnabled != newLlm) {
+        m_llmJudgmentEnabled = newLlm;
+        emit llmJudgmentEnabledChanged();
+    }
+}
+
+void GatewayClient::saveGeneralSettings(bool memEnabled, bool llmEnabled, int sbMode)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("尚未连接到服务器"));
+        return;
+    }
+
+    // 构建 config.patch payload
+    QJsonObject memSearch;
+    memSearch[QStringLiteral("enabled")] = memEnabled;
+    QJsonObject sandboxObj;
+    switch (sbMode) {
+    case 1:  sandboxObj[QStringLiteral("mode")] = QStringLiteral("off");      break;
+    case 2:  sandboxObj[QStringLiteral("mode")] = QStringLiteral("all");      break;
+    default: sandboxObj[QStringLiteral("mode")] = QStringLiteral("non-main"); break;
+    }
+    QJsonObject defaults;
+    defaults[QStringLiteral("memorySearch")] = memSearch;
+    defaults[QStringLiteral("sandbox")]      = sandboxObj;
+    QJsonObject agents;
+    agents[QStringLiteral("defaults")] = defaults;
+    QJsonObject rawTop;
+    rawTop[QStringLiteral("agents")] = agents;
+
+    QJsonObject params;
+    params[QStringLiteral("raw")] =
+        QString::fromUtf8(QJsonDocument(rawTop).toJson(QJsonDocument::Compact));
+    if (!m_configSnapshotHash.isEmpty())
+        params[QStringLiteral("baseHash")] = m_configSnapshotHash;
+    sendRequest(QStringLiteral("config.patch"), params);
+
+    // 更新本地状态
+    if (m_memoryEnabled != memEnabled) {
+        m_memoryEnabled = memEnabled;
+        emit memoryEnabledChanged();
+    }
+    if (m_sandboxMode != sbMode) {
+        m_sandboxMode = sbMode;
+        emit sandboxModeChanged();
+    }
+
+    // LLM 判定：本地持久化
+    if (m_llmJudgmentEnabled != llmEnabled) {
+        m_llmJudgmentEnabled = llmEnabled;
+        m_config.setLlmJudgmentEnabled(llmEnabled);
+        emit llmJudgmentEnabledChanged();
+    }
+
+    emit settingsSaved();
+    qDebug() << "[Settings] saved: memory=" << memEnabled
+             << "llm=" << llmEnabled << "sandbox=" << sbMode;
+}
+
+// ── 记忆条目 CRUD（本地 JSON）──
+
+static QString memoryEntriesFilePath()
+{
+    static const QString p =
+        QStringLiteral("AppData/config/memory_entries.json");
+    return p;
+}
+
+void GatewayClient::loadMemoryEntries()
+{
+    m_memoryEntries.clear();
+    QFile f(memoryEntriesFilePath());
+    if (f.open(QIODevice::ReadOnly)) {
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        f.close();
+        if (doc.isArray()) {
+            const QJsonArray arr = doc.array();
+            for (const QJsonValue &v : arr) {
+                if (v.isObject())
+                    m_memoryEntries.append(v.toObject().toVariantMap());
+            }
+        }
+    }
+    emit memoryEntriesChanged();
+}
+
+void GatewayClient::saveMemoryEntriesToDisk()
+{
+    QDir().mkpath(QStringLiteral("AppData/config"));
+    QJsonArray arr;
+    for (const QVariant &v : m_memoryEntries)
+        arr.append(QJsonObject::fromVariantMap(v.toMap()));
+    QFile f(memoryEntriesFilePath());
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        f.write(QJsonDocument(arr).toJson(QJsonDocument::Indented));
+}
+
+void GatewayClient::addMemoryEntry(const QString &title, const QString &content)
+{
+    QVariantMap e;
+    e[QStringLiteral("id")] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    e[QStringLiteral("title")] = title.trimmed();
+    e[QStringLiteral("content")] = content.trimmed();
+    e[QStringLiteral("date")] =
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+    m_memoryEntries.append(e);
+    saveMemoryEntriesToDisk();
+    emit memoryEntriesChanged();
+}
+
+void GatewayClient::updateMemoryEntry(const QString &id, const QString &title,
+                                       const QString &content)
+{
+    for (int i = 0; i < m_memoryEntries.size(); ++i) {
+        QVariantMap e = m_memoryEntries[i].toMap();
+        if (e.value(QStringLiteral("id")).toString() == id) {
+            e[QStringLiteral("title")] = title.trimmed();
+            e[QStringLiteral("content")] = content.trimmed();
+            e[QStringLiteral("date")] =
+                QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+            m_memoryEntries[i] = e;
+            saveMemoryEntriesToDisk();
+            emit memoryEntriesChanged();
+            return;
+        }
+    }
+}
+
+void GatewayClient::deleteMemoryEntry(const QString &id)
+{
+    for (int i = 0; i < m_memoryEntries.size(); ++i) {
+        if (m_memoryEntries[i].toMap().value(QStringLiteral("id")).toString() == id) {
+            m_memoryEntries.removeAt(i);
+            saveMemoryEntriesToDisk();
+            emit memoryEntriesChanged();
+            return;
+        }
+    }
 }

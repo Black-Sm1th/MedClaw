@@ -55,6 +55,10 @@ public:
     QString skillsStoragePath() const;
     void setSkillsStoragePath(const QString &path);
 
+    /// LLM 二级判定开关（本地持久化，OpenClaw 无原生支持）
+    bool llmJudgmentEnabled() const;
+    void setLlmJudgmentEnabled(bool enabled);
+
     // ═══════════════════════════════════════════════════════════════
     //  设备密钥信息
     // ═══════════════════════════════════════════════════════════════
@@ -120,6 +124,7 @@ private:
 
     QString m_skillMarketPath;  ///< 技能市场文件夹路径（~ 表示用户主目录，由调用方展开）
     QString m_skillsStoragePath; ///< 存放技能路径
+    bool    m_llmJudgmentEnabled = false;
 
     // ── 客户端身份标识（需与 Gateway 白名单匹配） ──
     QString m_clientId;         ///< 客户端标识符（如 clawdbot-control-ui）

@@ -144,6 +144,7 @@ void WsConfig::loadOrCreatePersistentConfig()
 
     m_skillMarketPath = merged.value(QStringLiteral("skillMarketPath")).toString().trimmed();
     m_skillsStoragePath = merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed();
+    m_llmJudgmentEnabled = merged.value(QStringLiteral("llmJudgmentEnabled")).toBool(false);
 
     if (m_serverUrl.isEmpty())
         m_serverUrl = kDefaultServer;
@@ -174,6 +175,25 @@ void    WsConfig::setSkillMarketPath(const QString &path) { m_skillMarketPath = 
 
 QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
 void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }
+
+bool    WsConfig::llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }
+void    WsConfig::setLlmJudgmentEnabled(bool enabled)
+{
+    m_llmJudgmentEnabled = enabled;
+    const QString path = QStringLiteral("AppData/config/config.json");
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return;
+    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject())
+        return;
+    QJsonObject o = doc.object();
+    o[QStringLiteral("llmJudgmentEnabled")] = enabled;
+    QFile out(path);
+    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+}
 
 QString WsConfig::deviceId()      const { return m_deviceId; }
 bool    WsConfig::hasDeviceKeys() const { return m_hasKeys; }
