@@ -3511,7 +3511,7 @@ ApplicationWindow {
                                             anchors.top: parent.top
                                             anchors.topMargin: 20
                                             spacing: 12
-                                            width: parent.width - 40
+                                            width: parent.width - 40 - 80 - 12
 
                                             Row {
                                                 spacing: 12
