@@ -422,6 +422,9 @@ public:
     /// 从配置中删除 mcp.servers 某键（merge patch null）
     Q_INVOKABLE void removeMcpServer(const QString &serverName);
 
+    /// 将 UTF-8 文本写入本地文件（测试页导出技能列表等）
+    Q_INVOKABLE bool saveTextToFile(const QString &localPath, const QString &content);
+
     // ── 设置：记忆 / 沙箱 ──
     bool memoryEnabled() const { return m_memoryEnabled; }
     bool llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }

@@ -3249,6 +3249,18 @@ void GatewayClient::removeMcpServer(const QString &serverName)
     sendRequest(QStringLiteral("config.patch"), params);
 }
 
+bool GatewayClient::saveTextToFile(const QString &localPath, const QString &content)
+{
+    const QString p = localPath.trimmed();
+    if (p.isEmpty())
+        return false;
+    QFile f(p);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    const QByteArray utf8 = content.toUtf8();
+    return f.write(utf8) == utf8.size();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  文件附件：暂存 & 复制到工作空间
 // ═══════════════════════════════════════════════════════════════════════
