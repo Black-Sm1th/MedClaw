@@ -6037,7 +6037,7 @@ ApplicationWindow {
 
                     Row {
                         anchors.right: parent.right
-                        anchors.rightMargin: 0
+                        anchors.rightMargin: 24
                         spacing: 12
                         layoutDirection: Qt.RightToLeft
 
