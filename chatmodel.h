@@ -62,6 +62,7 @@ public:
                                     bool isError = false);
     Q_INVOKABLE void appendToLastMessage(const QString &text);
     Q_INVOKABLE void clear();
+    Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
 
     void beginStreaming();
     void appendStreamChunk(const QString &chunk);

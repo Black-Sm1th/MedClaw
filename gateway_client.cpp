@@ -103,7 +103,7 @@ GatewayClient::GatewayClient(QObject *parent)
             &GatewayClient::flushAgentListFirstUserTitles);
 
     m_toolResultRefreshTimer.setSingleShot(true);
-    m_toolResultRefreshTimer.setInterval(600);
+    m_toolResultRefreshTimer.setInterval(300);
     connect(&m_toolResultRefreshTimer, &QTimer::timeout, this, [this]() {
         if (m_state != Connected) return;
         const QString reqId = sendRequest(
@@ -1092,14 +1092,43 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  session.tool 事件单独处理（用 stream=tool 格式，无 role 字段）
+    //  直接走 parseEvent，跳过 handleStructuredChatEvent（永远不匹配）
+    //  session key 检查用宽松模式：payload 无 key 时默认通过
+    // ══════════════════════════════════════════════════════════════
+    if (event == QLatin1String("session.tool")) {
+        if (!eventAppliesToCurrentUiSession(payload, true))
+            return;
+
+        const WsEventResult tr = m_session.parseEvent(event, payload);
+        if (tr.ignore) return;
+
+        if (tr.isToolCall) {
+            qDebug().noquote() << "[Gateway] session.tool → call:" << tr.toolName
+                               << "id:" << tr.toolCallId;
+            emit toolCallReceived(tr.toolName, tr.toolArgs, tr.toolCallId);
+            return;
+        }
+        if (tr.isToolResult) {
+            qDebug().noquote() << "[Gateway] session.tool → result:" << tr.toolName
+                               << "error:" << tr.toolIsError
+                               << "contentLen:" << tr.content.length();
+            emit toolResultReceived(tr.toolName, tr.content,
+                                    tr.toolCallId, tr.toolIsError);
+            m_toolResultRefreshTimer.start();
+            return;
+        }
+        return;
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  agent/chat 事件优先做结构化消息解析
     //  有些模型 / 网关会在 agent 事件里直接附带完整 message 对象，
     //  其中 content 数组包含 text / toolCall / toolResult。
     //  为了兼容这两种情况，agent / chat 都先走一遍结构化解析，
     //  如果检测到工具调用/结果则直接返回，不再走流式 delta 逻辑。
     // ══════════════════════════════════════════════════════════════
-    if (event == QLatin1String("chat") || event == QLatin1String("agent")
-        || event == QLatin1String("session.tool")) {
+    if (event == QLatin1String("chat") || event == QLatin1String("agent")) {
         if (!eventAppliesToCurrentUiSession(payload))
             return;
         if (handleStructuredChatEvent(payload))
@@ -1125,7 +1154,6 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
                            << "contentLen:" << r.content.length();
         emit toolResultReceived(r.toolName, r.content,
                                 r.toolCallId, r.toolIsError);
-        // 防抖补拉历史，原地合并完整 toolResult 文本
         m_toolResultRefreshTimer.start();
         return;
     }
@@ -3385,17 +3413,29 @@ QString GatewayClient::extractPayloadSessionKey(const QJsonObject &payload) cons
     return QString();
 }
 
-bool GatewayClient::eventAppliesToCurrentUiSession(const QJsonObject &payload) const
+bool GatewayClient::eventAppliesToCurrentUiSession(
+    const QJsonObject &payload, bool allowIfKeyMissing) const
 {
     const QString cur = m_session.currentSessionKey().trimmed();
     if (cur.isEmpty())
-        return false;
+        return allowIfKeyMissing;
 
     const QString evt = extractPayloadSessionKey(payload);
     if (evt.isEmpty())
-        return false;
+        return allowIfKeyMissing;
 
-    return evt == cur;
+    if (evt == cur)
+        return true;
+
+    // 宽松匹配：只比较 agent ID 部分（忽略尾部 session segment）
+    // 例如 "agent:main:main" 与 "agent:main:abc123" 视为同一 agent
+    const QStringList curParts = cur.split(QLatin1Char(':'));
+    const QStringList evtParts = evt.split(QLatin1Char(':'));
+    if (curParts.size() >= 2 && evtParts.size() >= 2
+        && curParts[0] == evtParts[0] && curParts[1] == evtParts[1])
+        return true;
+
+    return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -632,8 +632,11 @@ private:
 
     /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
     QString extractPayloadSessionKey(const QJsonObject &payload) const;
-    /// 当前 UI 是否应展示该会话的推送（无选中会话则一律不展示）
-    bool eventAppliesToCurrentUiSession(const QJsonObject &payload) const;
+    /// 当前 UI 是否应展示该会话的推送
+    /// @param allowIfKeyMissing  若 payload 中无 sessionKey，是否默认允许
+    bool eventAppliesToCurrentUiSession(
+        const QJsonObject &payload,
+        bool allowIfKeyMissing = false) const;
 
     // ═══════════════════════════════════════════════════════════════
     //  成员变量

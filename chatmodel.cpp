@@ -144,6 +144,15 @@ void ChatModel::clear()
     emit countChanged();
 }
 
+bool ChatModel::hasToolCallId(const QString &toolCallId) const
+{
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        if (m_messages[i].toolCallId == toolCallId)
+            return true;
+    }
+    return false;
+}
+
 // ── Streaming ────────────────────────────────────────────────────────
 
 void ChatModel::beginStreaming()
