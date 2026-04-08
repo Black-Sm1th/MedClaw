@@ -1636,6 +1636,15 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // config.set → 全量写入成功（不触发重启），刷新配置快照
     if (method == QLatin1String("config.set")) {
         qDebug() << "[Gateway] config.set ok, follow-up config.get";
+
+        // config.set 已被服务端处理完毕，deny 列表已生效，
+        // 此时可以安全地发出新 agent 的首条消息
+        if (!m_pendingBootstrapChatMessage.isEmpty()) {
+            const QString msg = m_pendingBootstrapChatMessage;
+            m_pendingBootstrapChatMessage.clear();
+            sendChatMessage(msg);
+        }
+
         refreshMcpList();
         return;
     }
@@ -2979,9 +2988,14 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
         emit toolListChanged();
     }
 
-    // config.set（deny 列表）已发送，此时再发出延迟的首条消息，
-    // 保证 gateway 先处理 config.set 再处理 chat.send
-    if (!m_pendingBootstrapChatMessage.isEmpty()) {
+    // 如果刚才为新 agent 发送了 config.set（deny 列表），
+    // 则 chat.send 必须延迟到 config.set 响应确认后再发，
+    // 否则 gateway 可能并发处理导致 deny 未生效。
+    // 仅在没有发出 config.set 的路径下直接发送。
+    if (!toolPolicyAgentId.isEmpty()) {
+        // config.set 已发出，m_pendingBootstrapChatMessage 保留不动，
+        // 等 config.set 响应到达后再发送（见 config.set 响应处理分支）
+    } else if (!m_pendingBootstrapChatMessage.isEmpty()) {
         const QString msg = m_pendingBootstrapChatMessage;
         m_pendingBootstrapChatMessage.clear();
         sendChatMessage(msg);
