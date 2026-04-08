@@ -854,50 +854,98 @@ ApplicationWindow {
                                         spacing: 8
 
                                         Rectangle {
+                                            id: toolArgsRect
                                             width: parent.width
                                             visible: toolArgs && String(toolArgs).length > 0
-                                            height: visible ? Math.min(toolArgsText.implicitHeight + 20, 200) : 0
+                                            readonly property real _toolArgsPad: 10
+                                            readonly property real _toolArgsMaxH: 200
+                                            height: visible ? toolArgsText.contentHeight + 2 * _toolArgsPad + 2 : 0
                                             radius: 8
                                             color: "#F3F4F6"
                                             border.width: 1
                                             border.color: "#E5E7EB"
                                             clip: true
 
-                                            Text {
-                                                id: toolArgsText
+                                            Flickable {
+                                                id: toolArgsFlick
                                                 anchors.fill: parent
-                                                anchors.margins: 10
-                                                text: toolArgs || ""
-                                                wrapMode: Text.Wrap
-                                                font.pixelSize: 12
-                                                font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                color: "#374151"
-                                                textFormat: Text.MarkdownText
-                                                onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                                                anchors.margins: 1
+                                                clip: true
+                                                flickableDirection: Flickable.HorizontalAndVertical
+                                                contentWidth: toolArgsText.width + 2 * toolArgsRect._toolArgsPad
+                                                contentHeight: toolArgsText.contentHeight + 2 * toolArgsRect._toolArgsPad
+                                                boundsBehavior: Flickable.StopAtBounds
+
+                                                ScrollBar.horizontal: ScrollBar {
+                                                    policy: ScrollBar.AsNeeded
+                                                }
+                                                ScrollBar.vertical: ScrollBar {
+                                                    policy: ScrollBar.AsNeeded
+                                                }
+
+                                                Text {
+                                                    id: toolArgsText
+                                                    x: toolArgsRect._toolArgsPad
+                                                    y: toolArgsRect._toolArgsPad
+                                                    width: Math.max(
+                                                               implicitWidth,
+                                                               toolArgsFlick.width - 2 * toolArgsRect._toolArgsPad)
+                                                    text: toolArgs || ""
+                                                    wrapMode: Text.Wrap
+                                                    font.pixelSize: 12
+                                                    font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                                                    color: "#374151"
+                                                    textFormat: Text.MarkdownText
+                                                    onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                                                }
                                             }
                                         }
 
                                         Rectangle {
+                                            id: toolResultRect
                                             width: parent.width
                                             visible: hasToolResult && String(toolResultText).length > 0
-                                            height: visible ? Math.min(toolResultBody.implicitHeight + 20, 320) : 0
+                                            readonly property real _toolResPad: 10
+                                            readonly property real _toolResMaxH: 320
+                                            height: visible ? toolResultBody.contentHeight + 2 * _toolResPad + 2 : 0
                                             radius: 8
                                             color: "#F3F4F6"
                                             border.width: 1
                                             border.color: isError ? "#FECACA" : "#E5E7EB"
                                             clip: true
 
-                                            Text {
-                                                id: toolResultBody
+                                            Flickable {
+                                                id: toolResultFlick
                                                 anchors.fill: parent
-                                                anchors.margins: 10
-                                                text: toolResultText || ""
-                                                wrapMode: Text.Wrap
-                                                font.pixelSize: 12
-                                                font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                color: isError ? "#DC2626" : "#374151"
-                                                textFormat: Text.MarkdownText
-                                                onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                                                anchors.margins: 1
+                                                clip: true
+                                                flickableDirection: Flickable.HorizontalAndVertical
+                                                contentWidth: toolResultBody.width + 2 * toolResultRect._toolResPad
+                                                contentHeight: toolResultBody.contentHeight + 2 * toolResultRect._toolResPad
+                                                boundsBehavior: Flickable.StopAtBounds
+
+                                                ScrollBar.horizontal: ScrollBar {
+                                                    policy: ScrollBar.AsNeeded
+                                                }
+                                                ScrollBar.vertical: ScrollBar {
+                                                    policy: ScrollBar.AsNeeded
+                                                }
+
+                                                Text {
+                                                    id: toolResultBody
+                                                    x: toolResultRect._toolResPad
+                                                    y: toolResultRect._toolResPad
+                                                    width: Math.max(
+                                                               implicitWidth,
+                                                               toolResultFlick.width - 2 * toolResultRect._toolResPad)
+                                                    text: toolResultText || ""
+                                                    wrapMode: Text.Wrap
+                                                    font.pixelSize: 12
+                                                    font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                                                    color: isError ? "#DC2626" : "#374151"
+                                                    textFormat: Text.MarkdownText
+                                                    onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                                                }
                                             }
                                         }
 
