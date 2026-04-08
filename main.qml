@@ -728,7 +728,7 @@ ApplicationWindow {
                                 radius: 12
                                 color: chatBubble.isUser ? "#EBEDF0" : "transparent"
 
-                                Text {
+                                TextEdit {
                                     id: bubbleText
                                     text: content
                                     width: Math.min(implicitWidth, chatBubble.isUser ? chatBubble.width * 0.75 - 32 : chatBubble.width)
@@ -738,8 +738,8 @@ ApplicationWindow {
                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                     color: chatBubble.isUser ? "#E5000000" : "#D9000000"
                                     textFormat: Text.MarkdownText
-                                    // readOnly: true
-                                    // selectByMouse: true
+                                    readOnly: true
+                                    selectByMouse: true
                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                 }
                             }
