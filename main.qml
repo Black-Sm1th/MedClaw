@@ -728,7 +728,7 @@ ApplicationWindow {
                                 radius: 12
                                 color: chatBubble.isUser ? "#EBEDF0" : "transparent"
 
-                                Text {
+                                TextEdit {
                                     id: bubbleText
                                     text: content
                                     width: Math.min(implicitWidth, chatBubble.isUser ? chatBubble.width * 0.75 - 32 : chatBubble.width)
@@ -738,6 +738,8 @@ ApplicationWindow {
                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                     color: chatBubble.isUser ? "#E5000000" : "#D9000000"
                                     textFormat: Text.MarkdownText
+                                    readOnly: true
+                                    selectByMouse: true
                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                 }
                             }
@@ -895,7 +897,7 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 anchors.margins: 1
                                                 clip: true
-                                                flickableDirection: Flickable.HorizontalAndVertical
+                                                flickableDirection: Flickable.AutoFlickIfNeeded
                                                 contentWidth: toolArgsText.width + 2 * toolArgsRect._toolArgsPad
                                                 contentHeight: toolArgsText.contentHeight + 2 * toolArgsRect._toolArgsPad
                                                 boundsBehavior: Flickable.StopAtBounds
@@ -907,7 +909,7 @@ ApplicationWindow {
                                                     policy: ScrollBar.AsNeeded
                                                 }
 
-                                                Text {
+                                                TextEdit {
                                                     id: toolArgsText
                                                     x: toolArgsRect._toolArgsPad
                                                     y: toolArgsRect._toolArgsPad
@@ -919,6 +921,8 @@ ApplicationWindow {
                                                     font.pixelSize: 12
                                                     font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                     color: "#374151"
+                                                    selectByMouse: true
+                                                    readOnly: true
                                                     textFormat: Text.MarkdownText
                                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                                 }
@@ -943,7 +947,7 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 anchors.margins: 1
                                                 clip: true
-                                                flickableDirection: Flickable.HorizontalAndVertical
+                                                flickableDirection: Flickable.AutoFlickIfNeeded
                                                 contentWidth: toolResultBody.width + 2 * toolResultRect._toolResPad
                                                 contentHeight: toolResultBody.contentHeight + 2 * toolResultRect._toolResPad
                                                 boundsBehavior: Flickable.StopAtBounds
@@ -955,7 +959,7 @@ ApplicationWindow {
                                                     policy: ScrollBar.AsNeeded
                                                 }
 
-                                                Text {
+                                                TextEdit {
                                                     id: toolResultBody
                                                     x: toolResultRect._toolResPad
                                                     y: toolResultRect._toolResPad
@@ -968,6 +972,8 @@ ApplicationWindow {
                                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                     color: isError ? "#DC2626" : "#374151"
                                                     textFormat: Text.MarkdownText
+                                                    readOnly: true
+                                                    selectByMouse: true
                                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                                 }
                                             }
@@ -1101,7 +1107,7 @@ ApplicationWindow {
                                             color: "#D9000000"
                                         }
                                     }
-                                    Text {
+                                    TextEdit {
                                         width: parent.width
                                         text: content || ""
                                         wrapMode: Text.Wrap
@@ -1109,6 +1115,8 @@ ApplicationWindow {
                                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                         color: isError ? "#DC2626" : "#374151"
                                         textFormat: Text.MarkdownText
+                                        readOnly: true
+                                        selectByMouse: true
                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                     }
                                 }
