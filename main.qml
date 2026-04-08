@@ -696,15 +696,23 @@ ApplicationWindow {
 
                     delegate: Item {
                         width: chatListView.width
+                        readonly property bool isCompactionMarker: {
+                            var c = String(content || "").trim().toLowerCase()
+                            return msgType !== "toolCall"
+                                && msgType !== "toolResult"
+                                && msgRole !== "user"
+                                && c === "compaction"
+                        }
                         height: {
                             if (msgType === "toolCall") return toolBlockRoot.height
                             if (msgType === "toolResult") return orphanToolResultRoot.height
+                            if (isCompactionMarker) return compactionDivider.height
                             return chatBubble.height
                         }
 
                         Rectangle {
                             id: chatBubble
-                            visible: msgType !== "toolCall" && msgType !== "toolResult"
+                            visible: msgType !== "toolCall" && msgType !== "toolResult" && !parent.isCompactionMarker
                             width: parent.width
                             height: visible ? bubbleInner.height + 4 : 0
                             color: "transparent"
@@ -732,6 +740,22 @@ ApplicationWindow {
                                     textFormat: Text.MarkdownText
                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                 }
+                            }
+                        }
+
+                        Rectangle {
+                            id: compactionDivider
+                            visible: parent.isCompactionMarker
+                            width: parent.width
+                            height: visible ? 20 : 0
+                            color: "transparent"
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                height: 1
+                                color: "#14000000"
                             }
                         }
 
