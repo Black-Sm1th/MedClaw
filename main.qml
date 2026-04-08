@@ -73,53 +73,6 @@ ApplicationWindow {
             Qt.openUrlExternally(link)
     }
 
-    /// 轻量 Markdown -> HTML（用于提升 QML Text 的渲染质量）
-    function markdownToRichText(md) {
-        var s = String(md || "")
-        if (s.length === 0)
-            return ""
-
-        function esc(x) {
-            return String(x)
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/\"/g, "&quot;")
-        }
-
-        s = esc(s)
-
-        // ```code``` 块
-        s = s.replace(/```([\s\S]*?)```/g, function(_, code) {
-            return '<pre style="background:#0B1020;color:#E5E7EB;padding:10px 12px;border-radius:8px;white-space:pre-wrap;line-height:1.45;">'
-                + code
-                + '</pre>'
-        })
-
-        // 行内代码
-        s = s.replace(/`([^`\n]+)`/g, '<code style="background:#F3F4F6;color:#111827;padding:1px 6px;border-radius:4px;">$1</code>')
-
-        // 链接 [text](url)
-        s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" style="color:#2563EB;text-decoration:none;">$1</a>')
-
-        // 标题
-        s = s.replace(/^###\s+(.+)$/gm, '<h3 style="margin:10px 0 6px 0;font-size:16px;color:#111827;">$1</h3>')
-        s = s.replace(/^##\s+(.+)$/gm, '<h2 style="margin:12px 0 8px 0;font-size:18px;color:#111827;">$1</h2>')
-        s = s.replace(/^#\s+(.+)$/gm, '<h1 style="margin:14px 0 10px 0;font-size:20px;color:#111827;">$1</h1>')
-
-        // 粗体 / 斜体
-        s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-        s = s.replace(/\*([^*\n]+)\*/g, '<i>$1</i>')
-
-        // 列表项（简单）
-        s = s.replace(/^[-*]\s+(.+)$/gm, '&#8226; $1')
-
-        // 换行
-        s = s.replace(/\n/g, '<br/>')
-
-        return '<div style="font-family:\'Alibaba PuHuiTi 3.0\',\'Segoe UI\',sans-serif;font-size:12px;line-height:1.6;color:#374151;">' + s + '</div>'
-    }
-
     function modelDisplayLabel(nm, pv) {
         var raw = pv ? (nm + " (" + pv + ")") : nm
         return trimToFirstParenPairOnly(raw)
@@ -769,14 +722,14 @@ ApplicationWindow {
 
                                 Text {
                                     id: bubbleText
-                                    text: window.markdownToRichText(content || "")
+                                    text: content
                                     width: Math.min(implicitWidth, chatBubble.isUser ? chatBubble.width * 0.75 - 32 : chatBubble.width)
                                     wrapMode: Text.Wrap
                                     font.pixelSize: 16
                                     anchors.centerIn: parent
                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                     color: chatBubble.isUser ? "#E5000000" : "#D9000000"
-                                    textFormat: Text.RichText
+                                    textFormat: Text.MarkdownText
                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                 }
                             }
@@ -937,12 +890,12 @@ ApplicationWindow {
                                                     width: Math.max(
                                                                implicitWidth,
                                                                toolArgsFlick.width - 2 * toolArgsRect._toolArgsPad)
-                                                    text: window.markdownToRichText(toolArgs || "")
+                                                    text: toolArgs || ""
                                                     wrapMode: Text.Wrap
                                                     font.pixelSize: 12
                                                     font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                     color: "#374151"
-                                                    textFormat: Text.RichText
+                                                    textFormat: Text.MarkdownText
                                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                                 }
                                             }
@@ -985,12 +938,12 @@ ApplicationWindow {
                                                     width: Math.max(
                                                                implicitWidth,
                                                                toolResultFlick.width - 2 * toolResultRect._toolResPad)
-                                                    text: window.markdownToRichText(toolResultText || "")
+                                                    text: toolResultText || ""
                                                     wrapMode: Text.Wrap
                                                     font.pixelSize: 12
                                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                     color: isError ? "#DC2626" : "#374151"
-                                                    textFormat: Text.RichText
+                                                    textFormat: Text.MarkdownText
                                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                                 }
                                             }
@@ -1126,12 +1079,12 @@ ApplicationWindow {
                                     }
                                     Text {
                                         width: parent.width
-                                        text: window.markdownToRichText(content || "")
+                                        text: content || ""
                                         wrapMode: Text.Wrap
                                         font.pixelSize: 12
                                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                         color: isError ? "#DC2626" : "#374151"
-                                        textFormat: Text.RichText
+                                        textFormat: Text.MarkdownText
                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                     }
                                 }
