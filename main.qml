@@ -706,13 +706,38 @@ ApplicationWindow {
                         height: {
                             if (msgType === "toolCall") return toolBlockRoot.height
                             if (msgType === "toolResult") return orphanToolResultRoot.height
+                            if (msgType === "replyWaiting") return replyWaitRoot.height
                             if (isCompactionMarker) return compactionDivider.height
                             return chatBubble.height
                         }
 
+                        Item {
+                            id: replyWaitRoot
+                            visible: msgType === "replyWaiting"
+                            width: parent.width
+                            height: visible ? 36 : 0
+
+                            property int dotPhase: 0
+                            Timer {
+                                interval: 400
+                                running: replyWaitRoot.visible
+                                repeat: true
+                                onTriggered: replyWaitRoot.dotPhase = (replyWaitRoot.dotPhase + 1) % 3
+                            }
+                            Text {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: replyWaitRoot.dotPhase === 0 ? "."
+                                      : (replyWaitRoot.dotPhase === 1 ? ".." : "...")
+                                font.pixelSize: 20
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                color: "#66000000"
+                            }
+                        }
+
                         Rectangle {
                             id: chatBubble
-                            visible: msgType !== "toolCall" && msgType !== "toolResult" && !parent.isCompactionMarker
+                            visible: msgType !== "toolCall" && msgType !== "toolResult" && msgType !== "replyWaiting" && !parent.isCompactionMarker
                             width: parent.width
                             height: visible ? bubbleInner.height + 4 : 0
                             color: "transparent"

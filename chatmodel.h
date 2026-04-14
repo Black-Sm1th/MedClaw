@@ -10,8 +10,9 @@
  *
  * msgType 取值：
  *   "text"       — 普通文本消息（用户 / 助手 / 系统）
- *   "toolCall"   — 工具调用（助手发起的 function call）
- *   "toolResult" — 工具执行结果
+ *   "toolCall"     — 工具调用（助手发起的 function call）
+ *   "toolResult"   — 工具执行结果
+ *   "replyWaiting" — 已发送、等待助手首条回复（UI 省略号动画）
  */
 struct ChatMessage {
     QString role;         // "user" | "assistant" | "system" | "tool"
@@ -64,6 +65,11 @@ public:
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
 
+    /// 发送成功后显示「等待回复」占位（会先移除已有的 replyWaiting）
+    Q_INVOKABLE void showReplyWaiting();
+    /// 收到助手流式/文本/工具调用等首条反馈时移除占位
+    Q_INVOKABLE void clearReplyWaiting();
+
     void beginStreaming();
     void appendStreamChunk(const QString &chunk);
     void endStreaming();
@@ -73,6 +79,8 @@ signals:
     void countChanged();
 
 private:
+    void removeAllReplyWaiting();
+
     QVector<ChatMessage> m_messages;
     bool m_streaming = false;
 };

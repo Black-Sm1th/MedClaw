@@ -27,8 +27,10 @@ void MainViewController::sendMessage(const QString &text,
 
     m_chatModel->addMessage(QStringLiteral("user"), text);
 
-    if (m_wsClient)
+    if (m_wsClient) {
         m_wsClient->sendChatMessage(text, QString(), workspaceForNewAgent);
+        m_chatModel->showReplyWaiting();
+    }
 }
 
 void MainViewController::sendMessageWithFiles(const QString &text,
@@ -52,10 +54,12 @@ void MainViewController::sendMessageWithFiles(const QString &text,
 
         m_chatModel->addMessage(QStringLiteral("user"), text);
         m_wsClient->sendChatMessage(text);
+        m_chatModel->showReplyWaiting();
     } else if (!files.isEmpty()) {
         m_wsClient->setPendingChatFiles(files);
         m_chatModel->addMessage(QStringLiteral("user"), text);
         m_wsClient->sendChatMessage(text, QString(), workspaceForNewAgent);
+        m_chatModel->showReplyWaiting();
     } else {
         sendMessage(text, workspaceForNewAgent);
     }

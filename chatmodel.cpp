@@ -70,6 +70,7 @@ void ChatModel::addToolCall(const QString &toolName,
                              const QString &toolArgs,
                              const QString &toolCallId)
 {
+    removeAllReplyWaiting();
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
@@ -144,6 +145,42 @@ void ChatModel::clear()
     emit countChanged();
 }
 
+void ChatModel::removeAllReplyWaiting()
+{
+    bool any = false;
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        if (m_messages[i].msgType == QStringLiteral("replyWaiting")) {
+            any = true;
+            beginRemoveRows(QModelIndex(), i, i);
+            m_messages.removeAt(i);
+            endRemoveRows();
+        }
+    }
+    if (any)
+        emit countChanged();
+}
+
+void ChatModel::showReplyWaiting()
+{
+    removeAllReplyWaiting();
+    const int idx = m_messages.count();
+    beginInsertRows(QModelIndex(), idx, idx);
+    ChatMessage msg;
+    msg.role       = QStringLiteral("assistant");
+    msg.content    = QString();
+    msg.timestamp  = QDateTime::currentDateTime();
+    msg.msgType    = QStringLiteral("replyWaiting");
+    msg.isError    = false;
+    m_messages.append(msg);
+    endInsertRows();
+    emit countChanged();
+}
+
+void ChatModel::clearReplyWaiting()
+{
+    removeAllReplyWaiting();
+}
+
 bool ChatModel::hasToolCallId(const QString &toolCallId) const
 {
     for (int i = m_messages.count() - 1; i >= 0; --i) {
@@ -157,6 +194,7 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
 
 void ChatModel::beginStreaming()
 {
+    removeAllReplyWaiting();
     if (!m_streaming) {
         m_streaming = true;
         addMessage(QStringLiteral("assistant"), QString());

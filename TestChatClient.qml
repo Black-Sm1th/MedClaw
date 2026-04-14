@@ -126,6 +126,7 @@ ApplicationWindow {
         // 先在 chatModel 中添加用户消息，再通过 maincontrol 发送
         chatModel.addMessage("user", text)
         wsClient.sendChatMessage(text)
+        chatModel.showReplyWaiting()
         testMessageInput.text = ""
     }
 
@@ -1610,13 +1611,37 @@ ApplicationWindow {
                             height: {
                                 if (msgType === "toolCall") return testToolCallBox.height
                                 if (msgType === "toolResult") return testToolResBox.height
+                                if (msgType === "replyWaiting") return testReplyWaitRoot.height
                                 return testTextBox.height
+                            }
+
+                            Item {
+                                id: testReplyWaitRoot
+                                visible: msgType === "replyWaiting"
+                                width: parent.width
+                                height: visible ? 32 : 0
+                                property int dotPhase: 0
+                                Timer {
+                                    interval: 400
+                                    running: testReplyWaitRoot.visible
+                                    repeat: true
+                                    onTriggered: testReplyWaitRoot.dotPhase = (testReplyWaitRoot.dotPhase + 1) % 3
+                                }
+                                Label {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: testReplyWaitRoot.dotPhase === 0 ? "."
+                                          : (testReplyWaitRoot.dotPhase === 1 ? ".." : "...")
+                                    font.pixelSize: 16
+                                    color: "#999999"
+                                }
                             }
 
                             // ═══ 普通文本气泡 ═══
                             Rectangle {
                                 id: testTextBox
-                                visible: msgType !== "toolCall" && msgType !== "toolResult"
+                                visible: msgType !== "toolCall" && msgType !== "toolResult" && msgType !== "replyWaiting"
                                 width: parent.width
                                 height: visible ? (testBubbleInner.height + 4) : 0
 
