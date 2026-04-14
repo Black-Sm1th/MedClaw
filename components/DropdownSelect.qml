@@ -22,6 +22,17 @@ Item {
     property int alignment: Qt.AlignHCenter
     property string icon: ""
     property int iconSize: 16
+    /// 弹出层最大宽度（不小于按钮宽度）
+    property int popupMaxWidth: 320
+    /// 弹出层内容区最大高度，超出则出现纵向滚动条
+    property int popupMaxHeight: 280
+
+    readonly property int contentListHeight: {
+        var n = model.length
+        if (n <= 0)
+            return itemHeight
+        return n * itemHeight + Math.max(0, n - 1) * 2
+    }
 
     signal selected(int index, string text)
 
@@ -72,6 +83,8 @@ Item {
                 Text {
                     id: displayText
                     text: root.currentText
+                    width: Math.max(0, root.width - (root.icon !== "" ? root.iconSize + 6 : 0) - 28)
+                    elide: Text.ElideMiddle
                     font.pixelSize: root.fontSize
                     font.family: "Alibaba PuHuiTi 3.0"
                     color: root.textColor
@@ -138,7 +151,7 @@ Item {
     Popup {
         id: popup
         x: 0
-        width: Math.max(root.width, maxItemWidth + 16)
+        width: Math.min(root.popupMaxWidth, Math.max(root.width, maxItemWidth + 16))
         padding: 4
 
         property real maxItemWidth: 0
@@ -146,7 +159,8 @@ Item {
         function calcY() {
             var globalPos = root.mapToItem(null, 0, 0)
             var windowH = root.Window.height || 800
-            var popupH = root.model.length * root.itemHeight + 12
+            var scrollH = Math.min(root.popupMaxHeight, Math.max(root.itemHeight, root.contentListHeight))
+            var popupH = scrollH + padding * 2
             if (globalPos.y + root.height + 4 + popupH > windowH)
                 return -popupH - 4
             return root.height + 4
@@ -162,59 +176,72 @@ Item {
             border.width: 1
         }
 
-        contentItem: Column {
-            spacing: 2
+        contentItem: ScrollView {
+            id: popupScroll
+            clip: true
+            width: popup.width - 8
+            height: Math.min(root.popupMaxHeight, Math.max(root.itemHeight, root.contentListHeight))
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-            Repeater {
-                model: root.model
+            Column {
+                id: popupColumn
+                spacing: 2
+                width: popup.width - 8
 
-                delegate: Rectangle {
-                    width: popup.width - 8
-                    height: root.itemHeight
-                    radius: 6
-                    color: itemMouse.pressed ? root.pressedColor
-                         : index === root.currentIndex ? root.selectedItemColor
-                         : itemMouse.containsMouse ? root.hoverColor
-                         : "transparent"
+                Repeater {
+                    model: root.model
 
-                    Behavior on color {
-                        ColorAnimation { duration: 100 }
-                    }
+                    delegate: Rectangle {
+                        width: popupColumn.width
+                        height: root.itemHeight
+                        radius: 6
+                        color: itemMouse.pressed ? root.pressedColor
+                             : index === root.currentIndex ? root.selectedItemColor
+                             : itemMouse.containsMouse ? root.hoverColor
+                             : "transparent"
 
-                    Row {
-                        spacing: 6
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
-
-                        Image {
-                            source: root.icon
-                            width: root.iconSize
-                            height: root.iconSize
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: root.icon !== ""
-                            fillMode: Image.PreserveAspectFit
-                            sourceSize: Qt.size(root.iconSize, root.iconSize)
+                        Behavior on color {
+                            ColorAnimation { duration: 100 }
                         }
 
-                        Text {
-                            text: modelData
-                            font.pixelSize: root.fontSize
-                            font.family: "Alibaba PuHuiTi 3.0"
-                            color: root.textColor
+                        Row {
+                            spacing: 6
                             anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8
+                            width: parent.width - 16
 
-                    MouseArea {
-                        id: itemMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.currentIndex = index
-                            root.selected(index, modelData)
-                            popup.close()
+                            Image {
+                                source: root.icon
+                                width: root.iconSize
+                                height: root.iconSize
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.icon !== ""
+                                fillMode: Image.PreserveAspectFit
+                                sourceSize: Qt.size(root.iconSize, root.iconSize)
+                            }
+
+                            Text {
+                                text: modelData
+                                width: Math.max(0, parent.width - (root.icon !== "" ? root.iconSize + 6 : 0))
+                                elide: Text.ElideRight
+                                font.pixelSize: root.fontSize
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                color: root.textColor
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+
+                        MouseArea {
+                            id: itemMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.currentIndex = index
+                                root.selected(index, modelData)
+                                popup.close()
+                            }
                         }
                     }
                 }

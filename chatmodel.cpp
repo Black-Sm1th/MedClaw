@@ -25,6 +25,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case ToolArgsRole:   return msg.toolArgs;
     case ToolCallIdRole: return msg.toolCallId;
     case IsErrorRole:    return msg.isError;
+    case ToolResultTextRole: return msg.toolResultText;
+    case HasToolResultRole:  return msg.hasToolResult;
     }
     return QVariant();
 }
@@ -39,7 +41,9 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { ToolNameRole,   "toolName"   },
         { ToolArgsRole,   "toolArgs"   },
         { ToolCallIdRole, "toolCallId" },
-        { IsErrorRole,    "isError"    }
+        { IsErrorRole,    "isError"    },
+        { ToolResultTextRole, "toolResultText" },
+        { HasToolResultRole,  "hasToolResult"  }
     };
 }
 
@@ -77,6 +81,8 @@ void ChatModel::addToolCall(const QString &toolName,
     msg.toolArgs   = toolArgs;
     msg.toolCallId = toolCallId;
     msg.isError    = false;
+    msg.hasToolResult = false;
+    msg.toolResultText.clear();
     m_messages.append(msg);
     endInsertRows();
     emit countChanged();
@@ -89,6 +95,22 @@ void ChatModel::addToolResult(const QString &toolName,
                                const QString &toolCallId,
                                bool isError)
 {
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        if (m_messages[i].msgType == QStringLiteral("toolCall")
+            && m_messages[i].toolCallId == toolCallId) {
+            m_messages[i].toolResultText = content;
+            m_messages[i].hasToolResult = true;
+            m_messages[i].isError = isError;
+            const QModelIndex idx = index(i);
+            emit dataChanged(
+                idx,
+                idx,
+                { IsErrorRole, ToolResultTextRole, HasToolResultRole });
+            emit messagePayloadChanged();
+            return;
+        }
+    }
+
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
@@ -113,6 +135,7 @@ void ChatModel::appendToLastMessage(const QString &text)
     m_messages[last].content += text;
     const QModelIndex idx = index(last);
     emit dataChanged(idx, idx, { ContentRole });
+    emit messagePayloadChanged();
 }
 
 void ChatModel::clear()
@@ -121,6 +144,15 @@ void ChatModel::clear()
     m_messages.clear();
     endResetModel();
     emit countChanged();
+}
+
+bool ChatModel::hasToolCallId(const QString &toolCallId) const
+{
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        if (m_messages[i].toolCallId == toolCallId)
+            return true;
+    }
+    return false;
 }
 
 // ── Streaming ────────────────────────────────────────────────────────

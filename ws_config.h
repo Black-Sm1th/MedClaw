@@ -25,7 +25,7 @@ class WsConfig
 {
 public:
     /**
-     * @brief 构造函数 —— 初始化默认配置并生成 Ed25519 设备密钥对
+     * @brief 构造函数 —— 从「用户主目录/AppData/config.json」加载或创建默认配置，并生成 Ed25519 设备密钥对
      *
      * 自动调用 initDeviceKeys() 完成以下工作：
      *   1. 使用内嵌 TweetNaCl 实现生成 Ed25519 公私钥对
@@ -46,6 +46,18 @@ public:
     QString token() const;
     /// 设置身份认证 Token
     void setToken(const QString &token);
+
+    /// 技能市场文件夹路径（JSON：skillMarketPath，默认 ~/skills）
+    QString skillMarketPath() const;
+    void setSkillMarketPath(const QString &path);
+
+    /// 存放技能路径（JSON：skillsStoragePath，默认 ~/medclaw/MedClaw/skills）
+    QString skillsStoragePath() const;
+    void setSkillsStoragePath(const QString &path);
+
+    /// LLM 二级判定开关（本地持久化，OpenClaw 无原生支持）
+    bool llmJudgmentEnabled() const;
+    void setLlmJudgmentEnabled(bool enabled);
 
     // ═══════════════════════════════════════════════════════════════
     //  设备密钥信息
@@ -77,6 +89,12 @@ public:
 
 private:
     /**
+     * @brief 从 AppData/config/config.json 读取 serverUrl、token、clientId、skillMarketPath、skillsStoragePath；
+     *        若文件不存在则创建并写入默认值；缺省键会补全并写回。
+     */
+    void loadOrCreatePersistentConfig();
+
+    /**
      * @brief 初始化 Ed25519 设备密钥对
      *
      * 使用内嵌纯 C++ 实现（基于 TweetNaCl，SHA-512 由 Qt 提供）。
@@ -103,6 +121,10 @@ private:
     // ── 服务器与认证 ──
     QString m_serverUrl;        ///< WebSocket 服务器地址
     QString m_token;            ///< 身份认证 Token
+
+    QString m_skillMarketPath;  ///< 技能市场文件夹路径（~ 表示用户主目录，由调用方展开）
+    QString m_skillsStoragePath; ///< 存放技能路径
+    bool    m_llmJudgmentEnabled = false;
 
     // ── 客户端身份标识（需与 Gateway 白名单匹配） ──
     QString m_clientId;         ///< 客户端标识符（如 clawdbot-control-ui）

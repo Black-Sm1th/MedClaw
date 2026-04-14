@@ -40,6 +40,7 @@ int WsSkill::parseSkillsStatusResponse(const QJsonObject &payload)
         entry[QStringLiteral("source")]      = s.value(QStringLiteral("source")).toString();
         entry[QStringLiteral("bundled")]     = s.value(QStringLiteral("bundled")).toBool(false);
         entry[QStringLiteral("homepage")]    = s.value(QStringLiteral("homepage")).toString();
+        entry[QStringLiteral("emoji")]       = s.value(QStringLiteral("emoji")).toString();
         entry[QStringLiteral("always")]      = always;
         entry[QStringLiteral("disabled")]    = disabled;
         entry[QStringLiteral("enabled")]     = !disabled;

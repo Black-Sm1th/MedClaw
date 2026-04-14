@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QCoreApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QFontDatabase>
@@ -49,6 +50,37 @@ int main(int argc, char *argv[])
                      [&chatModel](const QString &name, const QString &content,
                                   const QString &id, bool isError) {
         chatModel.addToolResult(name, content, id, isError);
+    });
+
+    // 工具结果补拉完成：原地合并完整文本（不清空聊天模型，避免闪烁）
+    // 同时补插实时事件中漏掉的 toolCall 条目
+    QObject::connect(&wsClient, &GatewayClient::toolResultsRefreshed,
+                     [&chatModel](const QVariantList &messages) {
+        for (const QVariant &v : messages) {
+            const QVariantMap m = v.toMap();
+            const QString mtype = m.value(QStringLiteral("msgType")).toString();
+            const QString tcId  = m.value(QStringLiteral("toolCallId")).toString();
+            if (tcId.isEmpty())
+                continue;
+
+            if (mtype == QLatin1String("toolCall")) {
+                if (!chatModel.hasToolCallId(tcId))
+                    chatModel.addToolCall(
+                        m.value(QStringLiteral("toolName")).toString(),
+                        m.value(QStringLiteral("toolArgs")).toString(),
+                        tcId);
+            } else if (mtype == QLatin1String("toolResult")) {
+                if (!chatModel.hasToolCallId(tcId))
+                    chatModel.addToolCall(
+                        m.value(QStringLiteral("toolName")).toString(),
+                        QString(), tcId);
+                chatModel.addToolResult(
+                    m.value(QStringLiteral("toolName")).toString(),
+                    m.value(QStringLiteral("content")).toString(),
+                    tcId,
+                    m.value(QStringLiteral("isError")).toBool());
+            }
+        }
     });
 
     // 新会话创建成功：清空聊天记录并显示系统提示

@@ -7,6 +7,10 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <cstring>
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -14,22 +18,13 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 WsConfig::WsConfig()
-    // ── 服务器默认配置 ──
+    // ── 占位；loadOrCreatePersistentConfig() 从 AppData/config.json 覆盖 ──
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
-// ── Token：Linux ARM 部署使用独立 Token ──
-#if defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM)
-    , m_token(QStringLiteral("25e30855b27e123e31731de3769e4149380b8a5f89f3f5b5"))
-#else
-    , m_token(QStringLiteral("ac07de8b0e5e599bbdfb72f9664c73ca20cd49540d88d21f"))
-#endif
-// ── 客户端身份（需与 Gateway 白名单中的 client.id 匹配） ──
-// Windows 部署的 OpenClaw-CN 使用 clawdbot-control-ui
-// Linux 部署的标准 OpenClaw 使用 openclaw-control-ui   //新版本已经全部改为 openclaw-control-ui了
-#if defined(Q_OS_LINUX)
+    , m_token(QStringLiteral(
+          "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63"))
+    , m_skillMarketPath(QStringLiteral("~/skills"))
+    , m_skillsStoragePath(QStringLiteral("~/medclaw/MedClaw/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
-#else
-    , m_clientId(QStringLiteral("openclaw-control-ui"))
-#endif
     , m_clientVersion(QStringLiteral("dev"))
 // ── 平台标识：编译期自动检测 ──
 #if defined(Q_OS_WIN)
@@ -56,11 +51,113 @@ WsConfig::WsConfig()
     // ── Ed25519 密钥初始值 ──
     , m_hasKeys(false)
 {
+    loadOrCreatePersistentConfig();
+
     memset(m_ed25519Pk, 0, sizeof(m_ed25519Pk));
     memset(m_ed25519Sk, 0, sizeof(m_ed25519Sk));
 
     // 在构造阶段即生成设备密钥，确保后续握手时密钥可用
     initDeviceKeys();
+}
+
+void WsConfig::loadOrCreatePersistentConfig()
+{
+    static const QString kDefaultServer =
+        QStringLiteral("ws://127.0.0.1:18789");
+    static const QString kDefaultToken = QStringLiteral(
+        "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63");
+    static const QString kDefaultClientId =
+        QStringLiteral("openclaw-control-ui");
+    static const QString kDefaultSkillMarketPath =
+        QStringLiteral("~/skills");
+    static const QString kDefaultSkillsStoragePath =
+        QStringLiteral("~/medclaw/MedClaw/skills");
+    const QString base = QStringLiteral("AppData/config/");
+    QDir().mkpath(base);
+    const QString path = base + QStringLiteral("config.json");
+
+    auto writeDefaults = [&](const QJsonObject &o) {
+        QFile out(path);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            qWarning() << "[WsConfig] cannot write" << path;
+            return;
+        }
+        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+        out.close();
+        qDebug().noquote() << "[WsConfig] wrote" << path;
+    };
+
+    QFile f(path);
+    if (!f.exists()) {
+        m_serverUrl = kDefaultServer;
+        m_token     = kDefaultToken;
+        m_clientId  = kDefaultClientId;
+        QJsonObject o;
+        o[QStringLiteral("serverUrl")]        = m_serverUrl;
+        o[QStringLiteral("token")]            = m_token;
+        o[QStringLiteral("clientId")]         = m_clientId;
+        o[QStringLiteral("skillMarketPath")]  = m_skillMarketPath;
+        o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
+        writeDefaults(o);
+        return;
+    }
+
+    if (!f.open(QIODevice::ReadOnly)) {
+        qWarning() << "[WsConfig] cannot read" << path;
+        return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject()) {
+        qWarning() << "[WsConfig] invalid JSON in" << path;
+        return;
+    }
+
+    QJsonObject merged = doc.object();
+    bool mergedDirty = false;
+    if (merged.value(QStringLiteral("skillMarketPath")).toString().trimmed().isEmpty()) {
+        merged[QStringLiteral("skillMarketPath")] = kDefaultSkillMarketPath;
+        mergedDirty = true;
+    }
+    if (merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed().isEmpty()) {
+        merged[QStringLiteral("skillsStoragePath")] = kDefaultSkillsStoragePath;
+        mergedDirty = true;
+    }
+    if (mergedDirty)
+        writeDefaults(merged);
+
+    if (merged.contains(QStringLiteral("serverUrl"))) {
+        const QString u = merged.value(QStringLiteral("serverUrl")).toString().trimmed();
+        if (!u.isEmpty())
+            m_serverUrl = u;
+    }
+    if (merged.contains(QStringLiteral("token"))) {
+        const QString t = merged.value(QStringLiteral("token")).toString().trimmed();
+        if (!t.isEmpty())
+            m_token = t;
+    }
+    if (merged.contains(QStringLiteral("clientId"))) {
+        const QString c = merged.value(QStringLiteral("clientId")).toString().trimmed();
+        if (!c.isEmpty())
+            m_clientId = c;
+    }
+
+    m_skillMarketPath = merged.value(QStringLiteral("skillMarketPath")).toString().trimmed();
+    m_skillsStoragePath = merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed();
+    m_llmJudgmentEnabled = merged.value(QStringLiteral("llmJudgmentEnabled")).toBool(false);
+
+    if (m_serverUrl.isEmpty())
+        m_serverUrl = kDefaultServer;
+    if (m_token.isEmpty())
+        m_token = kDefaultToken;
+    if (m_clientId.isEmpty())
+        m_clientId = kDefaultClientId;
+    if (m_skillMarketPath.isEmpty())
+        m_skillMarketPath = kDefaultSkillMarketPath;
+    if (m_skillsStoragePath.isEmpty())
+        m_skillsStoragePath = kDefaultSkillsStoragePath;
+
+    qDebug().noquote() << "[WsConfig] loaded" << path << "serverUrl=" << m_serverUrl;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -72,6 +169,31 @@ void    WsConfig::setServerUrl(const QString &url) { m_serverUrl = url; }
 
 QString WsConfig::token()         const { return m_token; }
 void    WsConfig::setToken(const QString &token) { m_token = token; }
+
+QString WsConfig::skillMarketPath() const { return m_skillMarketPath; }
+void    WsConfig::setSkillMarketPath(const QString &path) { m_skillMarketPath = path; }
+
+QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
+void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }
+
+bool    WsConfig::llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }
+void    WsConfig::setLlmJudgmentEnabled(bool enabled)
+{
+    m_llmJudgmentEnabled = enabled;
+    const QString path = QStringLiteral("AppData/config/config.json");
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return;
+    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject())
+        return;
+    QJsonObject o = doc.object();
+    o[QStringLiteral("llmJudgmentEnabled")] = enabled;
+    QFile out(path);
+    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+}
 
 QString WsConfig::deviceId()      const { return m_deviceId; }
 bool    WsConfig::hasDeviceKeys() const { return m_hasKeys; }
@@ -164,7 +286,11 @@ QJsonObject WsConfig::buildConnectParams(const QString &challengeNonce) const
     params[QStringLiteral("client")]      = client;
     params[QStringLiteral("role")]        = m_role;
     params[QStringLiteral("scopes")]      = m_scopes;
-    params[QStringLiteral("caps")]        = QJsonArray();
+    // 与 OpenClaw GATEWAY_CLIENT_CAPS.TOOL_EVENTS 一致；无此项时 chat.send 不会
+    // registerToolEventRecipient，agent 流中的 tool start/result 不会推送到本连接。
+    QJsonArray caps;
+    caps.append(QStringLiteral("tool-events"));
+    params[QStringLiteral("caps")]        = caps;
     params[QStringLiteral("auth")]        = auth;
     params[QStringLiteral("locale")]      = QStringLiteral("zh-CN");
     params[QStringLiteral("userAgent")]   = QStringLiteral("MedClaw-Qt/1.0");

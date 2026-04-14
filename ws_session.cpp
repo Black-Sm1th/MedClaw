@@ -7,12 +7,96 @@
 #include <QDebug>
 #include <QJsonDocument>
 
+namespace {
+
+QString textFromContentArray(const QJsonArray &cArr)
+{
+    QString out;
+    for (const QJsonValue &cv : cArr) {
+        const QJsonObject co = cv.toObject();
+        if (co.value(QStringLiteral("type")).toString() == QLatin1String("text")) {
+            if (!out.isEmpty())
+                out += QLatin1Char('\n');
+            out += co.value(QStringLiteral("text")).toString();
+        }
+    }
+    return out;
+}
+
+/**
+ * OpenClaw agent 流里 phase=result 时正文在 data.result（常为 { content:[{type,text}] }），
+ * 而不是顶层的 content/text；网关在非 full verbose 下会删掉 result，此时仍可能为空。
+ */
+QString extractToolOutputFromDataObject(const QJsonObject &data)
+{
+    const QJsonValue contentTop = data.value(QStringLiteral("content"));
+    if (contentTop.isString() && !contentTop.toString().isEmpty())
+        return contentTop.toString();
+    if (contentTop.isArray()) {
+        const QString fromArr = textFromContentArray(contentTop.toArray());
+        if (!fromArr.isEmpty())
+            return fromArr;
+    }
+
+    const QString text = data.value(QStringLiteral("text")).toString();
+    if (!text.isEmpty())
+        return text;
+
+    const QJsonValue outputVal = data.value(QStringLiteral("output"));
+    if (!outputVal.isNull()) {
+        if (outputVal.isString() && !outputVal.toString().isEmpty())
+            return outputVal.toString();
+        if (outputVal.isArray()) {
+            const QString fromArr = textFromContentArray(outputVal.toArray());
+            if (!fromArr.isEmpty())
+                return fromArr;
+        }
+        if (outputVal.isObject())
+            return QString::fromUtf8(QJsonDocument(outputVal.toObject()).toJson(QJsonDocument::Compact));
+    }
+
+    const QJsonValue resultVal = data.value(QStringLiteral("result"));
+    if (!resultVal.isNull()) {
+        if (resultVal.isString())
+            return resultVal.toString();
+        if (resultVal.isObject()) {
+            const QJsonObject ro = resultVal.toObject();
+            const QString fromRc = textFromContentArray(ro.value(QStringLiteral("content")).toArray());
+            if (!fromRc.isEmpty())
+                return fromRc;
+            return QString::fromUtf8(QJsonDocument(ro).toJson(QJsonDocument::Compact));
+        }
+    }
+
+    const QJsonValue partialVal = data.value(QStringLiteral("partialResult"));
+    if (!partialVal.isNull()) {
+        if (partialVal.isString())
+            return partialVal.toString();
+        if (partialVal.isObject()) {
+            const QJsonObject ro = partialVal.toObject();
+            const QString fromRc = textFromContentArray(ro.value(QStringLiteral("content")).toArray());
+            if (!fromRc.isEmpty())
+                return fromRc;
+        }
+    }
+
+    const QJsonValue metaVal = data.value(QStringLiteral("meta"));
+    if (metaVal.isString() && !metaVal.toString().isEmpty())
+        return metaVal.toString();
+    if (metaVal.isObject())
+        return QString::fromUtf8(QJsonDocument(metaVal.toObject()).toJson(QJsonDocument::Compact));
+
+    return QString();
+}
+
+} // namespace
+
 // ═══════════════════════════════════════════════════════════════════════
 //  构造
 // ═══════════════════════════════════════════════════════════════════════
 
 WsSession::WsSession()
-    : m_currentSessionKey(QStringLiteral("agent:main:main"))
+    : m_currentSessionKey(QString())
     , m_isStreaming(false)
 {
 }
@@ -60,22 +144,52 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
             s.value(QStringLiteral("sessionKey")).toString());
         if (key.isEmpty()) continue;
 
-        // 显示名称：优先 "title"，兼容 "name"，回退到 key 中间段
-        QString name = s.value(QStringLiteral("title")).toString(
-            s.value(QStringLiteral("name")).toString());
+        // 网关返回的 displayName 优先（与 sessions.list 一致）
+        QString name = s.value(QStringLiteral("displayName")).toString();
+        if (name.isEmpty()) {
+            name = s.value(QStringLiteral("title")).toString(
+                s.value(QStringLiteral("name")).toString());
+        }
         if (name.isEmpty()) {
             const QStringList parts = key.split(QLatin1Char(':'));
             name = (parts.size() >= 2) ? parts[1] : key;
         }
 
-        // 附加模型信息（如 deepseek-chat）
+        // 模型名单独存放；侧栏标题用 derivedTitle/label/displayName，不再把模型拼进 displayName
         const QString model = s.value(QStringLiteral("model")).toString();
-        if (!model.isEmpty())
-            name += QStringLiteral(" (%1)").arg(model);
+
+        qint64 updatedAt = 0;
+        const QJsonValue uVal = s.value(QStringLiteral("updatedAt"));
+        if (!uVal.isNull()) {
+            if (uVal.isDouble())
+                updatedAt = static_cast<qint64>(uVal.toDouble());
+            else if (uVal.isString())
+                updatedAt = uVal.toString().toLongLong();
+        }
+
+        qint64 startedAt = 0;
+        const QJsonValue sVal = s.value(QStringLiteral("startedAt"));
+        if (!sVal.isNull()) {
+            if (sVal.isDouble())
+                startedAt = static_cast<qint64>(sVal.toDouble());
+            else if (sVal.isString())
+                startedAt = sVal.toString().toLongLong();
+        }
+
+        const QString derivedTitle = s.value(QStringLiteral("derivedTitle")).toString();
+        const QString label = s.value(QStringLiteral("label")).toString();
 
         QVariantMap entry;
-        entry[QStringLiteral("sessionKey")]  = key;
-        entry[QStringLiteral("displayName")] = name;
+        entry[QStringLiteral("sessionKey")]   = key;
+        entry[QStringLiteral("displayName")]  = name;
+        entry[QStringLiteral("updatedAt")]    = QVariant(static_cast<qlonglong>(updatedAt));
+        entry[QStringLiteral("startedAt")]    = QVariant(static_cast<qlonglong>(startedAt));
+        if (!derivedTitle.isEmpty())
+            entry[QStringLiteral("derivedTitle")] = derivedTitle;
+        if (!label.isEmpty())
+            entry[QStringLiteral("label")] = label;
+        if (!model.isEmpty())
+            entry[QStringLiteral("model")] = model;
         m_sessions.append(entry);
     }
 
@@ -84,6 +198,8 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
         QVariantMap def;
         def[QStringLiteral("sessionKey")]  = QStringLiteral("agent:main:main");
         def[QStringLiteral("displayName")] = QStringLiteral("Main Agent");
+        def[QStringLiteral("updatedAt")]   = QVariant(static_cast<qlonglong>(0));
+        def[QStringLiteral("startedAt")]  = QVariant(static_cast<qlonglong>(0));
         m_sessions.append(def);
     }
 
@@ -129,8 +245,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
             } else {
                 resultText = m.value(QStringLiteral("content")).toString();
             }
-            if (resultText.length() > 2000)
-                resultText = resultText.left(2000) + QStringLiteral("\n... (truncated)");
+            if (resultText.length() > 50000)
+                resultText = resultText.left(50000) + QStringLiteral("\n... (truncated)");
 
             QVariantMap entry;
             entry[QStringLiteral("role")]       = QStringLiteral("tool");
@@ -263,6 +379,8 @@ QJsonObject WsSession::buildListSessionsParams() const
     params[QStringLiteral("includeGlobal")]  = true;
     params[QStringLiteral("includeUnknown")] = false;
     params[QStringLiteral("limit")]          = 120;
+    // 便于侧栏显示最近会话标题（服务端会从 transcript 推导）
+    params[QStringLiteral("includeDerivedTitles")] = true;
     return params;
 }
 
@@ -379,10 +497,7 @@ WsEventResult WsSession::parseEvent(const QString &event,
         result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
             data.value(QStringLiteral("id")).toString());
         result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
-        result.content      = data.value(QStringLiteral("content")).toString(
-            data.value(QStringLiteral("text")).toString());
-        if (result.content.isEmpty())
-            result.content = data.value(QStringLiteral("meta")).toString();
+        result.content      = extractToolOutputFromDataObject(data);
         return result;
     }
 
@@ -417,21 +532,7 @@ WsEventResult WsSession::parseEvent(const QString &event,
         result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
             data.value(QStringLiteral("id")).toString());
         result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
-        result.content      = data.value(QStringLiteral("content")).toString(
-            data.value(QStringLiteral("text")).toString());
-        if (result.content.isEmpty())
-            result.content = data.value(QStringLiteral("meta")).toString();
-        // content 可能是数组
-        if (result.content.isEmpty()) {
-            const QJsonArray cArr = data.value(QStringLiteral("content")).toArray();
-            for (const QJsonValue &cv : cArr) {
-                const QJsonObject co = cv.toObject();
-                if (co.value(QStringLiteral("type")).toString() == QLatin1String("text")) {
-                    if (!result.content.isEmpty()) result.content += QLatin1Char('\n');
-                    result.content += co.value(QStringLiteral("text")).toString();
-                }
-            }
-        }
+        result.content      = extractToolOutputFromDataObject(data);
         return result;
     }
 

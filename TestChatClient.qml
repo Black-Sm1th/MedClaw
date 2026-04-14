@@ -39,6 +39,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Dialogs 1.3
 
 ApplicationWindow {
     id: testWindow
@@ -52,8 +53,8 @@ ApplicationWindow {
     //  测试服务器配置
     // ═══════════════════════════════════════════════════════════════
 
-    /// 默认 WebSocket 服务器地址
-    property string testServerUrl: "ws://127.0.0.1:18789"
+    /// 与 AppData/config.json 中 serverUrl 一致（由 GatewayClient / WsConfig 加载）
+    readonly property string testServerUrl: wsClient.serverUrl
 
     // ═══════════════════════════════════════════════════════════════
     //  操作日志模型
@@ -218,6 +219,49 @@ ApplicationWindow {
     function testRefreshSkills() {
         testAddLog("\u25b6 testRefreshSkills() \u2192 \u83b7\u53d6\u6280\u80fd\u5217\u8868")
         wsClient.refreshSkills()
+    }
+
+    /// FileDialog.fileUrl \u2192 \u672c\u5730\u8def\u5f84\uff08\u4e0e main.qml \u4e00\u81f4\uff09
+    function localFilePathFromUrl(fileUrl) {
+        var path = decodeURIComponent(fileUrl.toString().replace(/^file:\/{2,3}/, ""))
+        if (Qt.platform.os === "windows") {
+            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                path = path.substring(1)
+            path = path.replace(/\//g, "\\")
+        } else if (Qt.platform.os === "linux" || Qt.platform.os === "osx") {
+            path = "/" + path
+        }
+        return path
+    }
+
+    /**
+     * @brief \u5c06\u5f53\u524d wsClient.skillList \u5bfc\u51fa\u4e3a TXT\uff08UTF-8\uff09
+     */
+    function testExportSkillsToTxt(savePath) {
+        var list = wsClient.skillList
+        var lines = []
+        lines.push("# MedClaw skill list export")
+        lines.push("# " + Qt.formatDateTime(new Date(), "yyyy-MM-dd HH:mm:ss"))
+        lines.push("# count: " + list.length)
+        lines.push("")
+        for (var i = 0; i < list.length; i++) {
+            var s = list[i]
+            var key = s.skillKey || ""
+            var nm = s.name || ""
+            var desc = String(s.description || "").replace(/\r/g, " ").replace(/\n/g, " ")
+            var en = s.enabled ? "on" : "off"
+            var src = s.source || ""
+            lines.push("[" + (i + 1) + "] " + key)
+            lines.push("    name: " + nm)
+            lines.push("    description: " + desc)
+            lines.push("    enabled: " + en + (src.length > 0 ? ("    source: " + src) : ""))
+            lines.push("")
+        }
+        var text = lines.join("\r\n")
+        if (wsClient.saveTextToFile(savePath, text))
+            testAddLog("\u2713 \u6280\u80fd\u5217\u8868\u5df2\u5bfc\u51fa: " + savePath)
+        else
+            testAddLog("\u2717 \u5bfc\u51fa\u5931\u8d25: " + savePath)
     }
 
     /**
@@ -1149,6 +1193,28 @@ ApplicationWindow {
                                 }
                             }
 
+                            Button {
+                                text: "\u5bfc\u51faTXT"
+                                implicitHeight: 26
+                                implicitWidth: 72
+                                font.pixelSize: 11
+                                enabled: wsClient.connectionState === 3
+                                onClicked: skillExportFileDialog.open()
+                                background: Rectangle {
+                                    radius: 4
+                                    color: parent.enabled
+                                           ? (parent.down ? "#2E7D32" : "#43A047")
+                                           : "#BDBDBD"
+                                }
+                                contentItem: Label {
+                                    text: parent.text
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 11
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
                             Item { Layout.fillWidth: true }
 
                             Label {
@@ -1902,6 +1968,22 @@ ApplicationWindow {
 
     // ═══════════════════════════════════════════════════════════════
     //  初始化
+    // ═══════════════════════════════════════════════════════════════
+    //  \u6280\u80fd\u5217\u8868\u5bfc\u51fa TXT
+    // ═══════════════════════════════════════════════════════════════
+
+    FileDialog {
+        id: skillExportFileDialog
+        title: qsTr("\u5bfc\u51fa\u6280\u80fd\u5217\u8868")
+        nameFilters: ["Text (*.txt)", "All files (*)"]
+        selectExisting: false
+        selectMultiple: false
+        onAccepted: {
+            var path = testWindow.localFilePathFromUrl(fileUrl)
+            testExportSkillsToTxt(path)
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
 
     Component.onCompleted: {

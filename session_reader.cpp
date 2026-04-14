@@ -339,9 +339,8 @@ QVariantList SessionReader::readSessionMessages(const QString &filePath)
                     resultText += co.value(QStringLiteral("text")).toString();
                 }
             }
-            // 截断过长的工具结果（防止 QML 渲染卡顿）
-            if (resultText.length() > 2000)
-                resultText = resultText.left(2000) + QStringLiteral("\n... (截断)");
+            if (resultText.length() > 50000)
+                resultText = resultText.left(50000) + QStringLiteral("\n... (truncated)");
 
             QVariantMap entry;
             entry[QStringLiteral("role")]       = QStringLiteral("tool");
@@ -543,8 +542,8 @@ QVariantList SessionReader::parseResponseFile(const QString &filePath)
             } else {
                 resultText = cv.toString();
             }
-            if (resultText.length() > 2000)
-                resultText = resultText.left(2000) + QStringLiteral("\n...(truncated)");
+            if (resultText.length() > 50000)
+                resultText = resultText.left(50000) + QStringLiteral("\n...(truncated)");
 
             QVariantMap entry;
             entry[QStringLiteral("role")]       = QStringLiteral("tool");
