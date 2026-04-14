@@ -125,6 +125,7 @@ ApplicationWindow {
 
         // 先在 chatModel 中添加用户消息，再通过 maincontrol 发送
         chatModel.addMessage("user", text)
+        chatModel.showTypingIndicator()
         wsClient.sendChatMessage(text)
         testMessageInput.text = ""
     }

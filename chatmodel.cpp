@@ -2,7 +2,11 @@
 
 ChatModel::ChatModel(QObject *parent)
     : QAbstractListModel(parent)
-{}
+{
+    m_typingTimer.setInterval(400);
+    connect(&m_typingTimer, &QTimer::timeout,
+            this, &ChatModel::advanceTypingDots);
+}
 
 int ChatModel::rowCount(const QModelIndex &parent) const
 {
@@ -51,6 +55,9 @@ QHash<int, QByteArray> ChatModel::roleNames() const
 
 void ChatModel::addMessage(const QString &role, const QString &content)
 {
+    if (role != QStringLiteral("user"))
+        hideTypingIndicator();
+
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
@@ -70,6 +77,8 @@ void ChatModel::addToolCall(const QString &toolName,
                              const QString &toolArgs,
                              const QString &toolCallId)
 {
+    hideTypingIndicator();
+
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
@@ -138,6 +147,7 @@ void ChatModel::appendToLastMessage(const QString &text)
 
 void ChatModel::clear()
 {
+    m_typingTimer.stop();
     beginResetModel();
     m_messages.clear();
     endResetModel();
@@ -153,10 +163,67 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
     return false;
 }
 
+// ── 发送后等待提示 ───────────────────────────────────────────────────
+
+void ChatModel::showTypingIndicator()
+{
+    hideTypingIndicator();
+
+    const int idx = m_messages.count();
+    beginInsertRows(QModelIndex(), idx, idx);
+    ChatMessage msg;
+    msg.role       = QStringLiteral("assistant");
+    msg.content    = QStringLiteral(".");
+    msg.timestamp  = QDateTime::currentDateTime();
+    msg.msgType    = QStringLiteral("typing");
+    msg.isError    = false;
+    m_messages.append(msg);
+    endInsertRows();
+    emit countChanged();
+
+    m_typingPhase = 0;
+    m_typingTimer.start();
+}
+
+void ChatModel::hideTypingIndicator()
+{
+    m_typingTimer.stop();
+    if (m_messages.isEmpty())
+        return;
+    if (m_messages.last().msgType != QStringLiteral("typing"))
+        return;
+    const int row = m_messages.count() - 1;
+    beginRemoveRows(QModelIndex(), row, row);
+    m_messages.removeLast();
+    endRemoveRows();
+    emit countChanged();
+}
+
+void ChatModel::advanceTypingDots()
+{
+    if (m_messages.isEmpty()
+        || m_messages.last().msgType != QStringLiteral("typing")) {
+        m_typingTimer.stop();
+        return;
+    }
+    m_typingPhase = (m_typingPhase + 1) % 3;
+    QString dots;
+    switch (m_typingPhase) {
+    case 0: dots = QStringLiteral("."); break;
+    case 1: dots = QStringLiteral(".."); break;
+    default: dots = QStringLiteral("..."); break;
+    }
+    const int row = m_messages.count() - 1;
+    m_messages[row].content = dots;
+    const QModelIndex idx = index(row);
+    emit dataChanged(idx, idx, { ContentRole });
+}
+
 // ── Streaming ────────────────────────────────────────────────────────
 
 void ChatModel::beginStreaming()
 {
+    hideTypingIndicator();
     if (!m_streaming) {
         m_streaming = true;
         addMessage(QStringLiteral("assistant"), QString());

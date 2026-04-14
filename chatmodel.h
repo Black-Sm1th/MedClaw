@@ -3,6 +3,7 @@
 
 #include <QAbstractListModel>
 #include <QDateTime>
+#include <QTimer>
 #include <QVector>
 
 /**
@@ -64,6 +65,10 @@ public:
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
 
+    /// 发送后至助手首包前的等待占位（内容在 . / .. / ... 间循环）
+    Q_INVOKABLE void showTypingIndicator();
+    Q_INVOKABLE void hideTypingIndicator();
+
     void beginStreaming();
     void appendStreamChunk(const QString &chunk);
     void endStreaming();
@@ -72,9 +77,14 @@ public:
 signals:
     void countChanged();
 
+private slots:
+    void advanceTypingDots();
+
 private:
     QVector<ChatMessage> m_messages;
     bool m_streaming = false;
+    QTimer m_typingTimer;
+    int m_typingPhase = 0;
 };
 
 #endif // CHATMODEL_H
