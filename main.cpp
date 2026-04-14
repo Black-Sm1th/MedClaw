@@ -26,7 +26,6 @@ int main(int argc, char *argv[])
         if (isDelta) {
             chatModel.appendStreamChunk(content);
         } else if (!content.isEmpty()) {
-            chatModel.clearReplyWaiting();
             chatModel.addMessage(role, content);
         }
     });
