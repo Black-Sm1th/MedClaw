@@ -3837,7 +3837,6 @@ ApplicationWindow {
                                                             anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                         Label {
-                                                            id: toolBadgeText
                                                             text: "plugin:" + (modelData.pluginId || "")
                                                             visible: modelData.pluginId !== ""
                                                             font.pixelSize: 14
