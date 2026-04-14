@@ -676,6 +676,13 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
+                Connections {
+                    target: chatModel
+                    function onMessagePayloadChanged() {
+                        if (chatListView.count > 0)
+                            Qt.callLater(function () { chatListView.positionViewAtEnd() })
+                    }
+                }
                 ListView {
                     id: chatListView
                     visible: newTaskRec.hasMessages
@@ -691,7 +698,7 @@ ApplicationWindow {
 
                     onCountChanged: {
                         if (count > 0)
-                            Qt.callLater(positionViewAtEnd)
+                            Qt.callLater(function () { chatListView.positionViewAtEnd() })
                     }
 
                     delegate: Item {

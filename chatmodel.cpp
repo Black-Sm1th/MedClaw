@@ -106,6 +106,7 @@ void ChatModel::addToolResult(const QString &toolName,
                 idx,
                 idx,
                 { IsErrorRole, ToolResultTextRole, HasToolResultRole });
+            emit messagePayloadChanged();
             return;
         }
     }
@@ -134,6 +135,7 @@ void ChatModel::appendToLastMessage(const QString &text)
     m_messages[last].content += text;
     const QModelIndex idx = index(last);
     emit dataChanged(idx, idx, { ContentRole });
+    emit messagePayloadChanged();
 }
 
 void ChatModel::clear()

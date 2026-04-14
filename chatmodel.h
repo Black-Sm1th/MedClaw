@@ -71,6 +71,8 @@ public:
 
 signals:
     void countChanged();
+    /// 行数未变但内容/展示高度变化（流式追加、工具结果合并到卡片等），供界面滚到底部
+    void messagePayloadChanged();
 
 private:
     QVector<ChatMessage> m_messages;
