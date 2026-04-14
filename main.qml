@@ -737,7 +737,7 @@ ApplicationWindow {
                                     anchors.centerIn: parent
                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                     color: chatBubble.isUser ? "#E5000000" : "#D9000000"
-                                    textFormat: msgType === "typing" ? Text.PlainText : Text.MarkdownText
+                                    textFormat: Text.MarkdownText
                                     readOnly: true
                                     selectByMouse: true
                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }

@@ -38,9 +38,6 @@ int main(int argc, char *argv[])
     QObject::connect(&wsClient, &GatewayClient::streamingFinished,
                      [&chatModel]() { chatModel.endStreaming(); });
 
-    QObject::connect(&wsClient, &GatewayClient::errorOccurred,
-                     [&chatModel](const QString &) { chatModel.hideTypingIndicator(); });
-
     // 工具调用：在 ChatModel 中插入工具卡片
     QObject::connect(&wsClient, &GatewayClient::toolCallReceived,
                      [&chatModel](const QString &name, const QString &args,

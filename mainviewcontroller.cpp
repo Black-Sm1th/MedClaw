@@ -27,10 +27,8 @@ void MainViewController::sendMessage(const QString &text,
 
     m_chatModel->addMessage(QStringLiteral("user"), text);
 
-    if (m_wsClient) {
-        m_chatModel->showTypingIndicator();
+    if (m_wsClient)
         m_wsClient->sendChatMessage(text, QString(), workspaceForNewAgent);
-    }
 }
 
 void MainViewController::sendMessageWithFiles(const QString &text,
@@ -53,12 +51,10 @@ void MainViewController::sendMessageWithFiles(const QString &text,
         m_wsClient->resolveAndCopyFiles(files, ws);
 
         m_chatModel->addMessage(QStringLiteral("user"), text);
-        m_chatModel->showTypingIndicator();
         m_wsClient->sendChatMessage(text);
     } else if (!files.isEmpty()) {
         m_wsClient->setPendingChatFiles(files);
         m_chatModel->addMessage(QStringLiteral("user"), text);
-        m_chatModel->showTypingIndicator();
         m_wsClient->sendChatMessage(text, QString(), workspaceForNewAgent);
     } else {
         sendMessage(text, workspaceForNewAgent);
