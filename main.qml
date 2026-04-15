@@ -285,7 +285,7 @@ ApplicationWindow {
                         visible: window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "技能", "工具", "MCP", "history"]
+                            model: ["新建任务", "定时任务", "技能", "工具", "MCP"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -307,8 +307,6 @@ ApplicationWindow {
                                             return "qrc:/images/category.png"
                                         }else if(modelData === "MCP"){
                                             return "qrc:/images/puzzle.png"
-                                        }else if(modelData === "history"){
-                                            return "qrc:/images/history.png"
                                         }else if(modelData === "工具"){
                                             return "qrc:/images/tools.png"
                                         }
@@ -320,15 +318,48 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (modelData !== "history")
                                         window.leftSelectedIndex = index
-                                        if (modelData === "history") {
-                                            // 仅打开任务列表，不切换会话（与展开侧栏任务区一致）
-                                        } else {
-                                            leftMidPanel.activeAgentId = ""
-                                            chatModel.clear()
-                                            wsClient.clearActiveAgentContext()
-                                        }
+                                        leftMidPanel.activeAgentId = ""
+                                        chatModel.clear()
+                                        wsClient.clearActiveAgentContext()
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            id: collapsedHistoryTrigger
+                            width: leftMidPanel.width
+                            height: 36
+                            radius: 8
+                            color: collapsedHistoryPopup.visible ? "#E6E7EB"
+                                 : collapsedHistoryTriggerMouse.containsMouse ? "#0A000000"
+                                 : "transparent"
+                            Image {
+                                anchors.centerIn: parent
+                                width: 16
+                                height: 16
+                                source: "qrc:/images/history.png"
+                            }
+                            MouseArea {
+                                id: collapsedHistoryTriggerMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (collapsedHistoryPopup.visible) {
+                                        collapsedHistoryPopup.close()
+                                    } else {
+                                        var gap = 6
+                                        var pt = collapsedHistoryTrigger.mapToItem(window.contentItem,
+                                                                                  collapsedHistoryTrigger.width + gap, 0)
+                                        var popH = Math.min(440, window.height - 24)
+                                        var ny = pt.y
+                                        if (ny + popH > window.height - 12)
+                                            ny = Math.max(12, window.height - 12 - popH)
+                                        collapsedHistoryPopup.x = pt.x
+                                        collapsedHistoryPopup.y = ny
+                                        collapsedHistoryPopup.height = popH
+                                        collapsedHistoryPopup.open()
                                     }
                                 }
                             }
@@ -473,6 +504,139 @@ ApplicationWindow {
             }
         }
     }
+
+    Popup {
+        id: collapsedHistoryPopup
+        parent: window.contentItem
+        modal: false
+        focus: true
+        padding: 12
+        width: 300
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        Connections {
+            target: window
+            function onSidebarCollapsedChanged() {
+                if (!window.sidebarCollapsed)
+                    collapsedHistoryPopup.close()
+            }
+        }
+
+        background: Rectangle {
+            radius: 10
+            color: "#FFFFFF"
+            border.width: 1
+            border.color: "#14000000"
+        }
+
+        contentItem: ScrollView {
+            id: collapsedHistoryPopupScroll
+            width: collapsedHistoryPopup.availableWidth
+            height: Math.max(120, collapsedHistoryPopup.availableHeight)
+            clip: true
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            Column {
+                spacing: 2
+                width: collapsedHistoryPopupScroll.width
+
+                Repeater {
+                    model: wsClient.agentList
+
+                    delegate: Rectangle {
+                        width: collapsedHistoryPopupScroll.width
+                        height: 55
+                        radius: 8
+                        color: {
+                            var isActive = (modelData.id === leftMidPanel.activeAgentId)
+                            if (isActive) return "#E6E7EB"
+                            if (histPopAgentMouse.containsMouse) return "#0A000000"
+                            return "transparent"
+                        }
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.right: parent.right
+                            anchors.rightMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            Row {
+                                spacing: 4
+                                width: parent.width
+                                Label {
+                                    id: histPopCronTag
+                                    visible: {
+                                        var nm = modelData.name || ""
+                                        var sk = modelData.sessionKey || ""
+                                        return (nm.indexOf("\u5b9a\u65f6-") === 0)
+                                            || (sk.indexOf(":cron:") >= 0)
+                                    }
+                                    text: qsTr("[定时]")
+                                    font.pixelSize: 14
+                                    color: "#73000000"
+                                    height: 21
+                                }
+                                Label {
+                                    text: {
+                                        var nm = modelData.name || ""
+                                        if (nm.indexOf("定时-") === 0) {
+                                            var body = nm.substring(3)
+                                            var lastDash = body.lastIndexOf("-")
+                                            if (lastDash > 0 && /^\d+$/.test(body.substring(lastDash + 1)))
+                                                return body.substring(0, lastDash)
+                                            return body
+                                        }
+                                        var t = modelData.activeSessionTitle || ""
+                                        if (t.length === 0) {
+                                            if (nm.match(/^task-\d+$/))
+                                                t = qsTr("新对话")
+                                            else
+                                                t = nm || modelData.id || ""
+                                        }
+                                        return t
+                                    }
+                                    font.pixelSize: 14
+                                    color: "#D9000000"
+                                    height: 21
+                                    elide: Text.ElideRight
+                                    width: histPopCronTag.visible
+                                           ? Math.max(0, parent.width - histPopCronTag.width - parent.spacing)
+                                           : parent.width
+                                }
+                            }
+
+                            Label {
+                                text: {
+                                    var ms = Number(modelData.activeSessionDisplayAt || 0)
+                                    if (!ms || ms <= 0) return ""
+                                    return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
+                                }
+                                font.pixelSize: 12
+                                color: "#73000000"
+                            }
+                        }
+
+                        MouseArea {
+                            id: histPopAgentMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                leftMidPanel.activeAgentId = modelData.id
+                                window.leftSelectedIndex = 6
+                                wsClient.switchAgent(modelData.id)
+                                collapsedHistoryPopup.close()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Rectangle{
         id:rightContainer
         anchors.top: parent.top
