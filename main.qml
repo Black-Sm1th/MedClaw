@@ -532,13 +532,12 @@ ApplicationWindow {
         contentItem: ScrollView {
             id: collapsedHistoryPopupScroll
             width: collapsedHistoryPopup.availableWidth
-            height: Math.min( collapsedHistoryPopup.availableHeight, historyPopupCol.height)
+            height: Math.max(120, collapsedHistoryPopup.availableHeight)
             clip: true
             ScrollBar.vertical.policy: ScrollBar.AsNeeded
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
             Column {
-                id: historyPopupCol
                 spacing: 2
                 width: collapsedHistoryPopupScroll.width
 
