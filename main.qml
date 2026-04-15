@@ -352,13 +352,8 @@ ApplicationWindow {
                                         var gap = 6
                                         var pt = collapsedHistoryTrigger.mapToItem(window.contentItem,
                                                                                   collapsedHistoryTrigger.width + gap, 0)
-                                        var popH = Math.min(440, window.height - 24)
-                                        var ny = pt.y
-                                        if (ny + popH > window.height - 12)
-                                            ny = Math.max(12, window.height - 12 - popH)
                                         collapsedHistoryPopup.x = pt.x
-                                        collapsedHistoryPopup.y = ny
-                                        collapsedHistoryPopup.height = popH
+                                        collapsedHistoryPopup._pendingAnchorY = pt.y
                                         collapsedHistoryPopup.open()
                                     }
                                 }
@@ -514,6 +509,21 @@ ApplicationWindow {
         width: 300
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+        /// 打开后根据实际高度贴底边校正 y（布局完成后再读 height）
+        property real _pendingAnchorY: 0
+        onOpened: {
+            var ph = height
+            var ny = _pendingAnchorY
+            if (ny + ph > window.height - 12)
+                ny = Math.max(12, window.height - 12 - ph)
+            collapsedHistoryPopup.y = ny
+        }
+
+        readonly property int _maxPopupH: 440
+        readonly property int _listViewportH: Math.min(_maxPopupH - 2 * padding,
+                                                         Math.max(histPopListColumn.implicitHeight, 0))
+        implicitHeight: 2 * padding + _listViewportH
+
         Connections {
             target: window
             function onSidebarCollapsedChanged() {
@@ -532,12 +542,13 @@ ApplicationWindow {
         contentItem: ScrollView {
             id: collapsedHistoryPopupScroll
             width: collapsedHistoryPopup.availableWidth
-            height: Math.max(120, collapsedHistoryPopup.availableHeight)
+            height: collapsedHistoryPopup._listViewportH
             clip: true
             ScrollBar.vertical.policy: ScrollBar.AsNeeded
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
             Column {
+                id: histPopListColumn
                 spacing: 2
                 width: collapsedHistoryPopupScroll.width
 
