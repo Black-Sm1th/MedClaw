@@ -1055,10 +1055,10 @@ ApplicationWindow {
 
                                         Rectangle {
                                             id: toolTimelineBar
-                                            width: 2
-                                            height: toolCallResultStack.height
+                                            width: 1
+                                            height: toolCallResultStack.height + toolCallResultStack.spacing
                                             radius: 1
-                                            color: "#D0D0D0"
+                                            color: "#E6E7EB"
                                         }
 
                                         Column {
