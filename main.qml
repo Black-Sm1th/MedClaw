@@ -1242,7 +1242,7 @@ ApplicationWindow {
                                             text: isError ? qsTr("任务失败") : qsTr("任务完成")
                                             font.pixelSize: 16
                                             font.family: "Alibaba PuHuiTi 3.0"
-                                            color: isError ? "#FF3D40" : "#56CA00"
+                                            color: isError ? "#FF3D40" : "#16A34A"
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                     }
