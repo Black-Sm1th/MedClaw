@@ -956,38 +956,230 @@ ApplicationWindow {
                             readonly property bool toolFail: hasToolResult && isError
                             property bool toolDetailExpanded: true
 
-                            Row {
+                            Column {
                                 id: toolBlockRow
                                 width: parent.width
-                                spacing: 10
+                                spacing: 0
 
-                                Rectangle {
-                                    id: toolTimelineBar
-                                    width: 2
-                                    height: toolBlockContent.height
-                                    radius: 1
-                                    color: "#D0D0D0"
+                                Row {
+                                    id: toolHeaderRow
+                                    width: parent.width
+                                    spacing: 8
+                                    height: 28
+
+                                    Item {
+                                        width: 20
+                                        height: 20
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        Rectangle {
+                                            id: toolHeaderRunDot
+                                            anchors.centerIn: parent
+                                            visible: toolBlockRoot.toolRunning
+                                            width: 8
+                                            height: 8
+                                            radius: 4
+                                            color: "#006BFF"
+                                        }
+                                        SequentialAnimation {
+                                            running: toolBlockRoot.toolRunning && toolBlockRoot.visible
+                                            loops: Animation.Infinite
+                                            NumberAnimation {
+                                                target: toolHeaderRunDot
+                                                property: "opacity"
+                                                from: 0.35; to: 1; duration: 650
+                                                easing.type: Easing.InOutQuad
+                                            }
+                                            NumberAnimation {
+                                                target: toolHeaderRunDot
+                                                property: "opacity"
+                                                from: 1; to: 0.35; duration: 650
+                                                easing.type: Easing.InOutQuad
+                                            }
+                                        }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            visible: toolBlockRoot.toolOk
+                                            text: "\u2713"
+                                            color: "#22C55E"
+                                            font.pixelSize: 16
+                                            font.bold: true
+                                        }
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            visible: toolBlockRoot.toolFail
+                                            width: 8
+                                            height: 8
+                                            radius: 4
+                                            color: "#EF4444"
+                                        }
+                                    }
+
+                                    Row {
+                                        spacing: 4
+                                        anchors.verticalCenter: parent.verticalCenter
+
+                                        Text {
+                                            text: toolName || qsTr("工具")
+                                            font.pixelSize: 16
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.bold: true
+                                            color: "#D9000000"
+                                        }
+
+                                        Text {
+                                            id: toolChevron
+                                            text: toolBlockRoot.toolDetailExpanded ? "\u25BE" : "\u25B8"
+                                            font.pixelSize: 14
+                                            color: "#99000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                anchors.margins: -6
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: toolBlockRoot.toolDetailExpanded = !toolBlockRoot.toolDetailExpanded
+                                            }
+                                        }
+
+                                    }
                                 }
 
                                 Column {
-                                    id: toolBlockContent
-                                    width: toolBlockRoot.width - toolTimelineBar.width - toolBlockRow.spacing
-                                    spacing: 0
+                                    width: parent.width
+                                    visible: toolBlockRoot.toolDetailExpanded
+                                    spacing: 8
 
                                     Row {
-                                        id: toolHeaderRow
+                                        id: toolBlockDetailRow
                                         width: parent.width
-                                        spacing: 8
-                                        height: 28
+                                        spacing: 10
 
+                                        Rectangle {
+                                            id: toolTimelineBar
+                                            width: 2
+                                            height: toolCallResultStack.height
+                                            radius: 1
+                                            color: "#D0D0D0"
+                                        }
+
+                                        Column {
+                                            id: toolCallResultStack
+                                            width: toolBlockRoot.width - toolTimelineBar.width - toolBlockDetailRow.spacing
+                                            spacing: 0
+
+                                            Rectangle {
+                                                id: toolArgsRect
+                                                width: parent.width
+                                                visible: toolArgs && String(toolArgs).length > 0
+                                                readonly property real _toolArgsPad: 10
+                                                readonly property real _toolArgsMaxH: 200
+                                                height: visible ? toolArgsText.contentHeight + 2 * _toolArgsPad + 2 : 0
+                                                radius: 8
+                                                color: "#F3F4F6"
+                                                border.width: 1
+                                                border.color: "#E5E7EB"
+                                                clip: true
+
+                                                Flickable {
+                                                    id: toolArgsFlick
+                                                    anchors.fill: parent
+                                                    anchors.margins: 1
+                                                    clip: true
+                                                    flickableDirection: Flickable.AutoFlickIfNeeded
+                                                    contentWidth: toolArgsText.width + 2 * toolArgsRect._toolArgsPad
+                                                    contentHeight: toolArgsText.contentHeight + 2 * toolArgsRect._toolArgsPad
+                                                    boundsBehavior: Flickable.StopAtBounds
+
+                                                    ScrollBar.horizontal: ScrollBar {
+                                                        policy: ScrollBar.AsNeeded
+                                                    }
+                                                    ScrollBar.vertical: ScrollBar {
+                                                        policy: ScrollBar.AsNeeded
+                                                    }
+
+                                                    Text {
+                                                        id: toolArgsText
+                                                        x: toolArgsRect._toolArgsPad
+                                                        y: toolArgsRect._toolArgsPad
+                                                        width: Math.max(
+                                                                   implicitWidth,
+                                                                   toolArgsFlick.width - 2 * toolArgsRect._toolArgsPad)
+                                                        text: toolArgs || ""
+                                                        wrapMode: Text.Wrap
+                                                        font.pixelSize: 14
+                                                        font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                                                        color: "#374151"
+                                                        // selectByMouse: true
+                                                        // readOnly: true
+                                                        textFormat: Text.MarkdownText
+                                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                id: toolResultRect
+                                                width: parent.width
+                                                visible: hasToolResult && String(toolResultText).length > 0
+                                                readonly property real _toolResPad: 10
+                                                readonly property real _toolResMaxH: 320
+                                                height: visible ? toolResultBody.contentHeight + 2 * _toolResPad + 2 : 0
+                                                radius: 8
+                                                color: "#F3F4F6"
+                                                border.width: 1
+                                                border.color: isError ? "#FECACA" : "#E5E7EB"
+                                                clip: true
+
+                                                Flickable {
+                                                    id: toolResultFlick
+                                                    anchors.fill: parent
+                                                    anchors.margins: 1
+                                                    clip: true
+                                                    flickableDirection: Flickable.AutoFlickIfNeeded
+                                                    contentWidth: toolResultBody.width + 2 * toolResultRect._toolResPad
+                                                    contentHeight: toolResultBody.contentHeight + 2 * toolResultRect._toolResPad
+                                                    boundsBehavior: Flickable.StopAtBounds
+
+                                                    ScrollBar.horizontal: ScrollBar {
+                                                        policy: ScrollBar.AsNeeded
+                                                    }
+                                                    ScrollBar.vertical: ScrollBar {
+                                                        policy: ScrollBar.AsNeeded
+                                                    }
+
+                                                    Text {
+                                                        id: toolResultBody
+                                                        x: toolResultRect._toolResPad
+                                                        y: toolResultRect._toolResPad
+                                                        width: Math.max(
+                                                                   implicitWidth,
+                                                                   toolResultFlick.width - 2 * toolResultRect._toolResPad)
+                                                        text: toolResultText || ""
+                                                        wrapMode: Text.Wrap
+                                                        font.pixelSize: 14
+                                                        font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                                                        color: isError ? "#DC2626" : "#374151"
+                                                        textFormat: Text.MarkdownText
+                                                        // readOnly: true
+                                                        // selectByMouse: true
+                                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Row {
+                                        width: parent.width
+                                        visible: toolBlockRoot.toolRunning
+                                        spacing: 8
+                                        height: 24
                                         Item {
                                             width: 20
                                             height: 20
                                             anchors.verticalCenter: parent.verticalCenter
                                             Rectangle {
-                                                id: toolHeaderRunDot
+                                                id: toolFooterRunDot
                                                 anchors.centerIn: parent
-                                                visible: toolBlockRoot.toolRunning
                                                 width: 8
                                                 height: 8
                                                 radius: 4
@@ -997,18 +1189,37 @@ ApplicationWindow {
                                                 running: toolBlockRoot.toolRunning && toolBlockRoot.visible
                                                 loops: Animation.Infinite
                                                 NumberAnimation {
-                                                    target: toolHeaderRunDot
+                                                    target: toolFooterRunDot
                                                     property: "opacity"
                                                     from: 0.35; to: 1; duration: 650
                                                     easing.type: Easing.InOutQuad
                                                 }
                                                 NumberAnimation {
-                                                    target: toolHeaderRunDot
+                                                    target: toolFooterRunDot
                                                     property: "opacity"
                                                     from: 1; to: 0.35; duration: 650
                                                     easing.type: Easing.InOutQuad
                                                 }
                                             }
+                                        }
+                                        Text {
+                                            text: qsTr("执行中…")
+                                            font.pixelSize: 16
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            color: "#006BFF"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+                                    Row {
+                                        width: parent.width
+                                        visible: hasToolResult
+                                        spacing: 8
+                                        height: 24
+
+                                        Item {
+                                            width: 20
+                                            height: 20
+                                            anchors.verticalCenter: parent.verticalCenter
                                             Text {
                                                 anchors.centerIn: parent
                                                 visible: toolBlockRoot.toolOk
@@ -1027,217 +1238,12 @@ ApplicationWindow {
                                             }
                                         }
 
-                                        Row {
-                                            spacing: 4
+                                        Text {
+                                            text: isError ? qsTr("任务失败") : qsTr("任务完成")
+                                            font.pixelSize: 16
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            color: isError ? "#DC2626" : "#16A34A"
                                             anchors.verticalCenter: parent.verticalCenter
-
-                                            Text {
-                                                text: toolName || qsTr("工具")
-                                                font.pixelSize: 16
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                font.bold: true
-                                                color: "#D9000000"
-                                            }
-
-                                            Text {
-                                                id: toolChevron
-                                                text: toolBlockRoot.toolDetailExpanded ? "\u25BE" : "\u25B8"
-                                                font.pixelSize: 14
-                                                color: "#99000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    anchors.margins: -6
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: toolBlockRoot.toolDetailExpanded = !toolBlockRoot.toolDetailExpanded
-                                                }
-                                            }
-
-                                        }
-                                    }
-
-                                    Column {
-                                        width: parent.width
-                                        visible: toolBlockRoot.toolDetailExpanded
-                                        spacing: 8
-
-                                        Rectangle {
-                                            id: toolArgsRect
-                                            width: parent.width
-                                            visible: toolArgs && String(toolArgs).length > 0
-                                            readonly property real _toolArgsPad: 10
-                                            readonly property real _toolArgsMaxH: 200
-                                            height: visible ? toolArgsText.contentHeight + 2 * _toolArgsPad + 2 : 0
-                                            radius: 8
-                                            color: "#F3F4F6"
-                                            border.width: 1
-                                            border.color: "#E5E7EB"
-                                            clip: true
-
-                                            Flickable {
-                                                id: toolArgsFlick
-                                                anchors.fill: parent
-                                                anchors.margins: 1
-                                                clip: true
-                                                flickableDirection: Flickable.AutoFlickIfNeeded
-                                                contentWidth: toolArgsText.width + 2 * toolArgsRect._toolArgsPad
-                                                contentHeight: toolArgsText.contentHeight + 2 * toolArgsRect._toolArgsPad
-                                                boundsBehavior: Flickable.StopAtBounds
-
-                                                ScrollBar.horizontal: ScrollBar {
-                                                    policy: ScrollBar.AsNeeded
-                                                }
-                                                ScrollBar.vertical: ScrollBar {
-                                                    policy: ScrollBar.AsNeeded
-                                                }
-
-                                                Text {
-                                                    id: toolArgsText
-                                                    x: toolArgsRect._toolArgsPad
-                                                    y: toolArgsRect._toolArgsPad
-                                                    width: Math.max(
-                                                               implicitWidth,
-                                                               toolArgsFlick.width - 2 * toolArgsRect._toolArgsPad)
-                                                    text: toolArgs || ""
-                                                    wrapMode: Text.Wrap
-                                                    font.pixelSize: 14
-                                                    font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                    color: "#374151"
-                                                    // selectByMouse: true
-                                                    // readOnly: true
-                                                    textFormat: Text.MarkdownText
-                                                    onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                                                }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            id: toolResultRect
-                                            width: parent.width
-                                            visible: hasToolResult && String(toolResultText).length > 0
-                                            readonly property real _toolResPad: 10
-                                            readonly property real _toolResMaxH: 320
-                                            height: visible ? toolResultBody.contentHeight + 2 * _toolResPad + 2 : 0
-                                            radius: 8
-                                            color: "#F3F4F6"
-                                            border.width: 1
-                                            border.color: isError ? "#FECACA" : "#E5E7EB"
-                                            clip: true
-
-                                            Flickable {
-                                                id: toolResultFlick
-                                                anchors.fill: parent
-                                                anchors.margins: 1
-                                                clip: true
-                                                flickableDirection: Flickable.AutoFlickIfNeeded
-                                                contentWidth: toolResultBody.width + 2 * toolResultRect._toolResPad
-                                                contentHeight: toolResultBody.contentHeight + 2 * toolResultRect._toolResPad
-                                                boundsBehavior: Flickable.StopAtBounds
-
-                                                ScrollBar.horizontal: ScrollBar {
-                                                    policy: ScrollBar.AsNeeded
-                                                }
-                                                ScrollBar.vertical: ScrollBar {
-                                                    policy: ScrollBar.AsNeeded
-                                                }
-
-                                                Text {
-                                                    id: toolResultBody
-                                                    x: toolResultRect._toolResPad
-                                                    y: toolResultRect._toolResPad
-                                                    width: Math.max(
-                                                               implicitWidth,
-                                                               toolResultFlick.width - 2 * toolResultRect._toolResPad)
-                                                    text: toolResultText || ""
-                                                    wrapMode: Text.Wrap
-                                                    font.pixelSize: 14
-                                                    font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                    color: isError ? "#DC2626" : "#374151"
-                                                    textFormat: Text.MarkdownText
-                                                    // readOnly: true
-                                                    // selectByMouse: true
-                                                    onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                                                }
-                                            }
-                                        }
-
-                                        Row {
-                                            width: parent.width
-                                            visible: toolBlockRoot.toolRunning
-                                            spacing: 8
-                                            height: 24
-                                            Item {
-                                                width: 20
-                                                height: 20
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                Rectangle {
-                                                    id: toolFooterRunDot
-                                                    anchors.centerIn: parent
-                                                    width: 8
-                                                    height: 8
-                                                    radius: 4
-                                                    color: "#006BFF"
-                                                }
-                                                SequentialAnimation {
-                                                    running: toolBlockRoot.toolRunning && toolBlockRoot.visible
-                                                    loops: Animation.Infinite
-                                                    NumberAnimation {
-                                                        target: toolFooterRunDot
-                                                        property: "opacity"
-                                                        from: 0.35; to: 1; duration: 650
-                                                        easing.type: Easing.InOutQuad
-                                                    }
-                                                    NumberAnimation {
-                                                        target: toolFooterRunDot
-                                                        property: "opacity"
-                                                        from: 1; to: 0.35; duration: 650
-                                                        easing.type: Easing.InOutQuad
-                                                    }
-                                                }
-                                            }
-                                            Text {
-                                                text: qsTr("执行中…")
-                                                font.pixelSize: 16
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#006BFF"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                        }
-                                        Row {
-                                            width: parent.width
-                                            visible: hasToolResult
-                                            spacing: 8
-                                            height: 24
-
-                                            Item {
-                                                width: 20
-                                                height: 20
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    visible: toolBlockRoot.toolOk
-                                                    text: "\u2713"
-                                                    color: "#22C55E"
-                                                    font.pixelSize: 16
-                                                    font.bold: true
-                                                }
-                                                Rectangle {
-                                                    anchors.centerIn: parent
-                                                    visible: toolBlockRoot.toolFail
-                                                    width: 8
-                                                    height: 8
-                                                    radius: 4
-                                                    color: "#EF4444"
-                                                }
-                                            }
-
-                                            Text {
-                                                text: isError ? qsTr("任务失败") : qsTr("任务完成")
-                                                font.pixelSize: 16
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: isError ? "#DC2626" : "#16A34A"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
                                         }
                                     }
                                 }
