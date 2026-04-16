@@ -1052,18 +1052,18 @@ ApplicationWindow {
                                         id: toolBlockDetailRow
                                         width: parent.width
                                         spacing: 10
-
+                                        leftPadding: 8
                                         Rectangle {
                                             id: toolTimelineBar
                                             width: 1
-                                            height: toolCallResultStack.height + toolCallResultStack.spacing
+                                            height: toolCallResultStack.height
                                             radius: 1
                                             color: "#E6E7EB"
                                         }
 
                                         Column {
                                             id: toolCallResultStack
-                                            width: toolBlockRoot.width - toolTimelineBar.width - toolBlockDetailRow.spacing
+                                            width: toolBlockRoot.width - toolTimelineBar.width - toolBlockDetailRow.spacing - 8
                                             spacing: 8
 
                                             Rectangle {
