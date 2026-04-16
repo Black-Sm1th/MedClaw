@@ -1000,7 +1000,7 @@ ApplicationWindow {
                                             anchors.centerIn: parent
                                             visible: toolBlockRoot.toolOk
                                             text: "\u2713"
-                                            color: "#22C55E"
+                                            color: "#56CA00"
                                             font.pixelSize: 16
                                             font.bold: true
                                         }
