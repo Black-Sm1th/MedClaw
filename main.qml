@@ -1085,7 +1085,7 @@ ApplicationWindow {
                                                     anchors.margins: 1
                                                     clip: true
                                                     flickableDirection: Flickable.AutoFlickIfNeeded
-                                                    contentWidth: toolArgsText.width + 2 * toolArgsRect._toolArgsPad
+                                                    contentWidth: toolArgsText.contentWidth + 2 * toolArgsRect._toolArgsPad
                                                     contentHeight: toolArgsText.contentHeight + 2 * toolArgsRect._toolArgsPad
                                                     boundsBehavior: Flickable.StopAtBounds
 
@@ -1135,7 +1135,7 @@ ApplicationWindow {
                                                     anchors.margins: 1
                                                     clip: true
                                                     flickableDirection: Flickable.AutoFlickIfNeeded
-                                                    contentWidth: toolResultBody.width + 2 * toolResultRect._toolResPad
+                                                    contentWidth: toolResultBody.contentWidth + 2 * toolResultRect._toolResPad
                                                     contentHeight: toolResultBody.contentHeight + 2 * toolResultRect._toolResPad
                                                     boundsBehavior: Flickable.StopAtBounds
 
