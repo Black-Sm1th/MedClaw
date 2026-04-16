@@ -1064,7 +1064,7 @@ ApplicationWindow {
                                         Column {
                                             id: toolCallResultStack
                                             width: toolBlockRoot.width - toolTimelineBar.width - toolBlockDetailRow.spacing
-                                            spacing: 0
+                                            spacing: 8
 
                                             Rectangle {
                                                 id: toolArgsRect
