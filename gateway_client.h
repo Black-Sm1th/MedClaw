@@ -98,6 +98,10 @@ class GatewayClient : public QObject
                NOTIFY toolListChanged)
     /// 与 AppData/config.json 中 serverUrl 一致（握手 token/clientId 亦来自该文件）
     Q_PROPERTY(QString serverUrl READ serverUrl CONSTANT)
+    /// 将 serverUrl 的 ws/wss 转为 http/https、去掉 path，用于 POST /tools/invoke 等 Gateway HTTP API
+    Q_PROPERTY(QString gatewayHttpBaseUrl READ gatewayHttpBaseUrl CONSTANT)
+    /// config.json 中的 gateway 认证 token（与 WebSocket 握手一致）
+    Q_PROPERTY(QString gatewayAuthToken READ gatewayAuthToken CONSTANT)
     /// 技能市场：skillMarketPath 下每个子文件夹一项 { folderName, installed }
     Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
                NOTIFY skillMarketFoldersChanged)
@@ -140,6 +144,8 @@ public:
 
     /// WebSocket 服务器地址（来自 config.json）
     QString serverUrl() const;
+    QString gatewayHttpBaseUrl() const;
+    QString gatewayAuthToken() const;
 
     /// 获取当前连接状态（枚举值）
     int connectionState() const;

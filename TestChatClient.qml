@@ -12,6 +12,7 @@
  *   ⑤ 重置对话：  testResetConversation() → wsClient.createNewSession()
  *   ⑥ 刷新会话：  testRefreshSessions()  → wsClient.refreshSessions()
  *   ⑦ 加载历史：  testLoadHistory()      → wsClient.loadHistory()
+ *   ⑧ HTTP 工具： testToolsInvokeExecLs() → POST /tools/invoke（exec + ls）
  *
  * ═══════════════════════════════════════════════════════════════
  *  maincontrol 调用说明
@@ -158,6 +159,55 @@ ApplicationWindow {
     function testLoadHistory() {
         testAddLog("▶ testLoadHistory() → 加载历史消息（WebSocket）")
         wsClient.loadHistory()
+    }
+
+    /**
+     * @brief 通过 Gateway HTTP POST /tools/invoke 单独执行 exec 工具（ls），结果写入操作日志
+     *
+     * 使用 config.json 中与 WebSocket 相同的 Bearer token；不要求当前已连上 WebSocket。
+     */
+    function testToolsInvokeExecLs() {
+        var base = wsClient.gatewayHttpBaseUrl
+        var tok = wsClient.gatewayAuthToken
+        if (!base || base.length === 0) {
+            testAddLog("⚠ testToolsInvokeExecLs() → gatewayHttpBaseUrl 为空")
+            return
+        }
+        if (!tok || tok.length === 0) {
+            testAddLog("⚠ testToolsInvokeExecLs() → config 中无 gatewayAuthToken，无法调用 /tools/invoke")
+            return
+        }
+        var url = base + "/tools/invoke"
+        testAddLog("▶ testToolsInvokeExecLs() → POST " + url + "  tool=exec  command=ls")
+
+        var xhr = new XMLHttpRequest()
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== XMLHttpRequest.DONE)
+                return
+            testAddLog("◆ tools/invoke HTTP 状态码 " + xhr.status)
+            var raw = xhr.responseText || ""
+            try {
+                var j = JSON.parse(raw)
+                if (j.ok === true)
+                    testAddLog("✓ exec(ls) 返回值: " + JSON.stringify(j.result))
+                else
+                    testAddLog("✖ tools/invoke 失败: " + JSON.stringify(j))
+            } catch (e) {
+                testAddLog("✖ 响应非 JSON 或解析失败: " + raw.substring(0, 800))
+            }
+        }
+        xhr.open("POST", url)
+        xhr.setRequestHeader("Authorization", "Bearer " + tok)
+        xhr.setRequestHeader("Content-Type", "application/json")
+
+        var body = {
+            "tool": "exec",
+            "args": { "command": "ls" }
+        }
+        var sk = wsClient.currentSessionKey
+        if (sk && sk.length > 0)
+            body.sessionKey = sk
+        xhr.send(JSON.stringify(body))
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -735,6 +785,31 @@ ApplicationWindow {
                         }
                         implicitHeight: 34
                         implicitWidth: 80
+                    }
+
+                    /// HTTP /tools/invoke：exec(ls) → testToolsInvokeExecLs()
+                    Button {
+                        text: "HTTP exec(ls)"
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeExecLs()
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("POST /tools/invoke，tool=exec，在网关侧执行 ls，结果打在下方日志")
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.enabled
+                                   ? (parent.down ? "#37474F" : "#455A64")
+                                   : "#BDBDBD"
+                        }
+                        contentItem: Label {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        implicitHeight: 34
+                        implicitWidth: 118
                     }
 
                     Item { Layout.fillWidth: true }

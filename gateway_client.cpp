@@ -158,6 +158,28 @@ int GatewayClient::connectionState() const { return m_state; }
 
 QString GatewayClient::serverUrl() const { return m_config.serverUrl(); }
 
+QString GatewayClient::gatewayHttpBaseUrl() const
+{
+    QUrl u(m_config.serverUrl());
+    const QString sch = u.scheme();
+    if (sch == QStringLiteral("ws"))
+        u.setScheme(QStringLiteral("http"));
+    else if (sch == QStringLiteral("wss"))
+        u.setScheme(QStringLiteral("https"));
+    u.setPath(QString());
+    u.setQuery(QString());
+    u.setFragment(QString());
+    QString s = u.toString();
+    while (s.endsWith(QLatin1Char('/')))
+        s.chop(1);
+    return s;
+}
+
+QString GatewayClient::gatewayAuthToken() const
+{
+    return m_config.token();
+}
+
 /// 将连接状态枚举转换为用户可读的中文描述
 QString GatewayClient::statusText() const
 {
