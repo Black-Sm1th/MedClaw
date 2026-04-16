@@ -1033,7 +1033,7 @@ ApplicationWindow {
 
                                             Text {
                                                 text: toolName || qsTr("工具")
-                                                font.pixelSize: 14
+                                                font.pixelSize: 16
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 font.bold: true
                                                 color: "#D9000000"
@@ -1042,7 +1042,7 @@ ApplicationWindow {
                                             Text {
                                                 id: toolChevron
                                                 text: toolBlockRoot.toolDetailExpanded ? "\u25BE" : "\u25B8"
-                                                font.pixelSize: 12
+                                                font.pixelSize: 14
                                                 color: "#99000000"
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 MouseArea {
@@ -1100,7 +1100,7 @@ ApplicationWindow {
                                                                toolArgsFlick.width - 2 * toolArgsRect._toolArgsPad)
                                                     text: toolArgs || ""
                                                     wrapMode: Text.Wrap
-                                                    font.pixelSize: 12
+                                                    font.pixelSize: 14
                                                     font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                     color: "#374151"
                                                     // selectByMouse: true
@@ -1150,7 +1150,7 @@ ApplicationWindow {
                                                                toolResultFlick.width - 2 * toolResultRect._toolResPad)
                                                     text: toolResultText || ""
                                                     wrapMode: Text.Wrap
-                                                    font.pixelSize: 12
+                                                    font.pixelSize: 14
                                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                     color: isError ? "#DC2626" : "#374151"
                                                     textFormat: Text.MarkdownText
@@ -1197,7 +1197,7 @@ ApplicationWindow {
                                             }
                                             Text {
                                                 text: qsTr("执行中…")
-                                                font.pixelSize: 13
+                                                font.pixelSize: 16
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#006BFF"
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -1233,7 +1233,7 @@ ApplicationWindow {
 
                                             Text {
                                                 text: isError ? qsTr("任务失败") : qsTr("任务完成")
-                                                font.pixelSize: 13
+                                                font.pixelSize: 16
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: isError ? "#DC2626" : "#16A34A"
                                                 anchors.verticalCenter: parent.verticalCenter
