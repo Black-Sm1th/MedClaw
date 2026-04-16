@@ -1107,7 +1107,7 @@ ApplicationWindow {
                                                         wrapMode: Text.Wrap
                                                         font.pixelSize: 14
                                                         font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                        color: "#374151"
+                                                        color: "#A6000000"
                                                         // selectByMouse: true
                                                         // readOnly: true
                                                         textFormat: Text.MarkdownText
@@ -1157,7 +1157,7 @@ ApplicationWindow {
                                                         wrapMode: Text.Wrap
                                                         font.pixelSize: 14
                                                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                        color: isError ? "#DC2626" : "#374151"
+                                                        color: isError ? "#FF3D40" : "#A6000000"
                                                         textFormat: Text.MarkdownText
                                                         // readOnly: true
                                                         // selectByMouse: true
@@ -1224,7 +1224,7 @@ ApplicationWindow {
                                                 anchors.centerIn: parent
                                                 visible: toolBlockRoot.toolOk
                                                 text: "\u2713"
-                                                color: "#22C55E"
+                                                color: "#56CA00"
                                                 font.pixelSize: 16
                                                 font.bold: true
                                             }
@@ -1242,7 +1242,7 @@ ApplicationWindow {
                                             text: isError ? qsTr("任务失败") : qsTr("任务完成")
                                             font.pixelSize: 16
                                             font.family: "Alibaba PuHuiTi 3.0"
-                                            color: isError ? "#DC2626" : "#16A34A"
+                                            color: isError ? "#FF3D40" : "#56CA00"
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                     }
@@ -1301,7 +1301,7 @@ ApplicationWindow {
                                         wrapMode: Text.Wrap
                                         font.pixelSize: 12
                                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                        color: isError ? "#DC2626" : "#374151"
+                                        color: isError ? "#FF3D40" : "#A6000000"
                                         textFormat: Text.MarkdownText
                                         // readOnly: true
                                         // selectByMouse: true
