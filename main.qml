@@ -1110,7 +1110,7 @@ ApplicationWindow {
                                                         color: "#A6000000"
                                                         // selectByMouse: true
                                                         // readOnly: true
-                                                        textFormat: Text.MarkdownText
+                                                        // textFormat: Text.MarkdownText
                                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                                     }
                                                 }
@@ -1158,7 +1158,7 @@ ApplicationWindow {
                                                         font.pixelSize: 14
                                                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
                                                         color: isError ? "#FF3D40" : "#A6000000"
-                                                        textFormat: Text.MarkdownText
+                                                        // textFormat: Text.MarkdownText
                                                         // readOnly: true
                                                         // selectByMouse: true
                                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
