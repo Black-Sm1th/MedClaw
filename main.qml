@@ -1276,7 +1276,7 @@ ApplicationWindow {
                                         Text {
                                             visible: !isError
                                             text: "\u2713"
-                                            color: "#22C55E"
+                                            color: "#56CA00"
                                             font.pixelSize: 14
                                             font.bold: true
                                         }
