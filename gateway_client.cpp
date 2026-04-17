@@ -1096,6 +1096,20 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         return;
     }
 
+    // OpenClaw：emitAgentEvent({ stream: "thinking", data: { text, delta } })
+    if (event == QLatin1String("agent")) {
+        const QString agentStream = payload.value(QStringLiteral("stream")).toString();
+        if (agentStream == QLatin1String("thinking")) {
+            if (!eventAppliesToCurrentUiSession(payload))
+                return;
+            const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
+            const QString text = data.value(QStringLiteral("text")).toString();
+            if (!text.isEmpty())
+                emit thinkingStreamUpdate(text);
+            return;
+        }
+    }
+
     // ── ②.5 cron 事件：定时任务状态变更推送 ──
     if (event == QLatin1String("cron")) {
         qDebug() << "[Gateway] cron event:" << payload;
@@ -1371,8 +1385,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         refreshMcpList();
         refreshToolsCatalog(QString());
         refreshSkillMarketFolders();
-        if (!m_session.currentSessionKey().trimmed().isEmpty())
+        if (!m_session.currentSessionKey().trimmed().isEmpty()) {
             patchSessionModel(QString());
+            patchSessionReasoningLevel(QStringLiteral("stream"));
+        }
         return;
     }
 
@@ -2583,6 +2599,26 @@ void GatewayClient::patchSessionModel(const QString &modelId)
     }
 }
 
+void GatewayClient::patchSessionReasoningLevel(const QString &reasoningLevel)
+{
+    if (m_state != Connected)
+        return;
+    const QString key = m_session.currentSessionKey().trimmed();
+    if (key.isEmpty())
+        return;
+    const QString lv = reasoningLevel.trimmed();
+    if (lv.isEmpty())
+        return;
+
+    QJsonObject params;
+    params[QStringLiteral("key")]            = key;
+    params[QStringLiteral("reasoningLevel")] = lv;
+
+    qDebug().noquote() << "[Gateway] sessions.patch reasoningLevel:" << lv
+                       << "session:" << key;
+    sendRequest(QStringLiteral("sessions.patch"), params);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  9. Agent 切换
 // ═══════════════════════════════════════════════════════════════════════
@@ -2638,6 +2674,8 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
         patchSessionModel(m_pendingSessionModelId);
     else
         patchSessionModel(QString());
+    // 新建 agent / 切换 agent 后默认开启推理流式，无需在 openclaw.json 里为每个 agent 写 reasoningDefault
+    patchSessionReasoningLevel(QStringLiteral("stream"));
     refreshToolsCatalog(agentId.trimmed());
 }
 

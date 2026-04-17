@@ -25,6 +25,8 @@ struct ChatMessage {
     /// 合并到 toolCall 行：收到 toolResult 后写入，不再单独插入一行
     QString toolResultText;
     bool    hasToolResult = false;
+    /// 助手「思考过程」全文（流式更新时为累计文本；与 OpenClaw agent stream=thinking 对齐）
+    QString thinkingText;
 };
 
 class ChatModel : public QAbstractListModel
@@ -43,7 +45,8 @@ public:
         ToolCallIdRole,
         IsErrorRole,
         ToolResultTextRole,
-        HasToolResultRole
+        HasToolResultRole,
+        ThinkingTextRole
     };
 
     explicit ChatModel(QObject *parent = nullptr);
@@ -63,6 +66,9 @@ public:
     Q_INVOKABLE void appendToLastMessage(const QString &text);
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
+
+    /// 当前轮次助手消息的思考过程（网关推送累计全文）
+    Q_INVOKABLE void updateStreamingThinking(const QString &fullText);
 
     void beginStreaming();
     void appendStreamChunk(const QString &chunk);

@@ -1826,7 +1826,9 @@ ApplicationWindow {
                         }
 
                         delegate: Item {
+                            id: testChatDelegateRoot
                             width: testChatListView.width
+                            property bool thinkingExpanded: true
                             height: {
                                 if (msgType === "toolCall") return testToolCallBox.height
                                 if (msgType === "toolResult") return testToolResBox.height
@@ -1838,14 +1840,14 @@ ApplicationWindow {
                                 id: testTextBox
                                 visible: msgType !== "toolCall" && msgType !== "toolResult"
                                 width: parent.width
-                                height: visible ? (testBubbleInner.height + 4) : 0
+                                height: visible ? (testAssistantCol.height + 4) : 0
 
                                 readonly property bool testIsUser: msgRole === "user"
                                 readonly property bool testIsSystem: msgRole === "system"
                                 color: "transparent"
 
-                                Rectangle {
-                                    id: testBubbleInner
+                                Column {
+                                    id: testAssistantCol
                                     anchors {
                                         left: testTextBox.testIsUser ? undefined : parent.left
                                         right: testTextBox.testIsUser ? parent.right : undefined
@@ -1853,36 +1855,101 @@ ApplicationWindow {
                                         leftMargin: testTextBox.testIsSystem ? 0 : 8
                                         rightMargin: 8
                                     }
-                                    width: Math.min(testBubbleCol.implicitWidth + 28,
-                                                    testTextBox.width * 0.75)
-                                    height: testBubbleCol.implicitHeight + 20
-                                    radius: 10
-                                    color: testTextBox.testIsSystem ? "#FFF3E0"
-                                         : testTextBox.testIsUser   ? "#1976D2"
-                                                                    : "#F0F0F0"
+                                    width: Math.min(testTextBox.width * 0.75, 560)
+                                    spacing: 8
 
-                                    ColumnLayout {
-                                        id: testBubbleCol
-                                        anchors.fill: parent
-                                        anchors.margins: 10
-                                        spacing: 2
+                                    Column {
+                                        id: testThinkingBlock
+                                        visible: !testTextBox.testIsUser && !testTextBox.testIsSystem
+                                                 && thinkingText && String(thinkingText).length > 0
+                                        width: parent.width
+                                        spacing: 6
 
-                                        Label {
-                                            text: testTextBox.testIsUser ? "You"
-                                                : testTextBox.testIsSystem ? "System"
-                                                : "Assistant"
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                            color: testTextBox.testIsUser ? "#B3FFFFFF" : "#999999"
+                                        Rectangle {
+                                            width: testThinkHdr.implicitWidth + 16
+                                            height: 28
+                                            radius: 6
+                                            color: "#E8E8E8"
+                                            Row {
+                                                id: testThinkHdr
+                                                anchors.centerIn: parent
+                                                spacing: 4
+                                                Label {
+                                                    text: testChatDelegateRoot.thinkingExpanded ? "\u25BE" : "\u25B8"
+                                                    font.pixelSize: 11
+                                                    color: "#666666"
+                                                }
+                                                Label {
+                                                    text: "\u601d\u8003\u8fc7\u7a0b"
+                                                    font.pixelSize: 11
+                                                    color: "#5C5C5C"
+                                                }
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: testChatDelegateRoot.thinkingExpanded = !testChatDelegateRoot.thinkingExpanded
+                                            }
                                         }
 
-                                        Label {
-                                            Layout.fillWidth: true
-                                            text: content
-                                            wrapMode: Text.Wrap
-                                            font.pixelSize: 13
-                                            color: testTextBox.testIsUser ? "#FFFFFF" : "#1A1A1A"
-                                            textFormat: Text.PlainText
+                                        Item {
+                                            visible: testChatDelegateRoot.thinkingExpanded
+                                            width: parent.width
+                                            height: Math.min(testThinkBody.implicitHeight + 12, 400)
+                                            clip: true
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                width: 2
+                                                color: "#D0D0D0"
+                                            }
+                                            Label {
+                                                id: testThinkBody
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 10
+                                                anchors.right: parent.right
+                                                width: parent.width - 10
+                                                text: thinkingText
+                                                wrapMode: Text.Wrap
+                                                font.pixelSize: 12
+                                                color: "#555555"
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: testBubbleInner
+                                        width: parent.width
+                                        height: testBubbleCol.implicitHeight + 20
+                                        radius: 10
+                                        color: testTextBox.testIsSystem ? "#FFF3E0"
+                                             : testTextBox.testIsUser   ? "#1976D2"
+                                                                        : "#F0F0F0"
+
+                                        ColumnLayout {
+                                            id: testBubbleCol
+                                            anchors.fill: parent
+                                            anchors.margins: 10
+                                            spacing: 2
+
+                                            Label {
+                                                text: testTextBox.testIsUser ? "You"
+                                                    : testTextBox.testIsSystem ? "System"
+                                                    : "Assistant"
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                                color: testTextBox.testIsUser ? "#B3FFFFFF" : "#999999"
+                                            }
+
+                                            Label {
+                                                Layout.fillWidth: true
+                                                text: content
+                                                wrapMode: Text.Wrap
+                                                font.pixelSize: 13
+                                                color: testTextBox.testIsUser ? "#FFFFFF" : "#1A1A1A"
+                                                textFormat: Text.PlainText
+                                            }
                                         }
                                     }
                                 }
