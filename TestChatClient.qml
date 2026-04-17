@@ -13,6 +13,8 @@
  *   ⑥ 刷新会话：  testRefreshSessions()  → wsClient.refreshSessions()
  *   ⑦ 加载历史：  testLoadHistory()      → wsClient.loadHistory()
  *   ⑧ HTTP 工具： testToolsInvokeExecLs() → POST /tools/invoke（exec + ls）
+ *   ⑨ KB 工具： testToolsInvokeKbManageListCollections() / testToolsInvokeKbSearch()
+ *              → tool=kb_manage（list_collections）/ kb_search（需 KB 集合名与 query）
  *
  * ═══════════════════════════════════════════════════════════════
  *  maincontrol 调用说明
@@ -162,36 +164,47 @@ ApplicationWindow {
     }
 
     /**
-     * @brief 通过 Gateway HTTP POST /tools/invoke 单独执行 exec 工具（ls），结果写入操作日志
+     * @brief Gateway HTTP POST /tools/invoke 的通用封装（与 openclaw 网关一致）
      *
-     * 使用 config.json 中与 WebSocket 相同的 Bearer token；不要求当前已连上 WebSocket。
+     * 请求体：{ tool, args, action? } —— 若工具 schema 含 `action` 字段，可将 action 放在 body 顶层，
+     * 网关会合并进 args（见 openclaw src/gateway/tools-invoke-http.ts mergeActionIntoArgsIfSupported）。
+     * KB 插件工具名：kb_ingest、kb_search、kb_manage（extensions/kb/index.ts）。
+     *
+     * @param tool 工具名，如 "exec"、"kb_search"、"kb_manage"
+     * @param args 传给工具的参数对象
+     * @param action 可选顶层 action（如 kb_manage 的 list_collections）
+     * @param logTag 日志前缀，便于区分多次调用
      */
-    function testToolsInvokeExecLs() {
+    function testToolsInvokeHttp(tool, args, action, logTag) {
         var base = wsClient.gatewayHttpBaseUrl
         var tok = wsClient.gatewayAuthToken
         if (!base || base.length === 0) {
-            testAddLog("⚠ testToolsInvokeExecLs() → gatewayHttpBaseUrl 为空")
+            testAddLog("⚠ [" + logTag + "] gatewayHttpBaseUrl 为空")
             return
         }
         if (!tok || tok.length === 0) {
-            testAddLog("⚠ testToolsInvokeExecLs() → config 中无 gatewayAuthToken，无法调用 /tools/invoke")
+            testAddLog("⚠ [" + logTag + "] config 中无 gatewayAuthToken，无法调用 /tools/invoke")
             return
         }
         var url = base + "/tools/invoke"
-        testAddLog("▶ testToolsInvokeExecLs() → POST " + url + "  tool=exec  command=ls")
+        testAddLog("▶ [" + logTag + "] POST " + url + "  tool=" + tool)
 
         var xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function () {
             if (xhr.readyState !== XMLHttpRequest.DONE)
                 return
-            testAddLog("◆ tools/invoke HTTP 状态码 " + xhr.status)
+            testAddLog("◆ [" + logTag + "] HTTP " + xhr.status)
             var raw = xhr.responseText || ""
             try {
                 var j = JSON.parse(raw)
-                if (j.ok === true)
-                    testAddLog("✓ exec(ls) 返回值: " + JSON.stringify(j.result))
-                else
+                if (j.ok === true) {
+                    var out = JSON.stringify(j.result)
+                    if (out.length > 4000)
+                        out = out.substring(0, 4000) + "…(truncated)"
+                    testAddLog("✓ result: " + out)
+                } else {
                     testAddLog("✖ tools/invoke 失败: " + JSON.stringify(j))
+                }
             } catch (e) {
                 testAddLog("✖ 响应非 JSON 或解析失败: " + raw.substring(0, 800))
             }
@@ -200,14 +213,52 @@ ApplicationWindow {
         xhr.setRequestHeader("Authorization", "Bearer " + tok)
         xhr.setRequestHeader("Content-Type", "application/json")
 
-        var body = {
-            "tool": "exec",
-            "args": { "command": "ls" }
-        }
+        var body = { "tool": tool, "args": args || {} }
+        if (action !== undefined && action !== null && String(action).length > 0)
+            body.action = String(action)
         var sk = wsClient.currentSessionKey
         if (sk && sk.length > 0)
             body.sessionKey = sk
         xhr.send(JSON.stringify(body))
+    }
+
+    /**
+     * @brief 通过 Gateway HTTP POST /tools/invoke 单独执行 exec 工具（ls），结果写入操作日志
+     *
+     * 使用 config.json 中与 WebSocket 相同的 Bearer token；不要求当前已连上 WebSocket。
+     */
+    function testToolsInvokeExecLs() {
+        testToolsInvokeHttp("exec", { "command": "ls" }, "", "exec(ls)")
+    }
+
+    /**
+     * @brief KB：kb_manage + list_collections（列出所有知识库集合）
+     *
+     * 依赖网关已加载 kb 插件，且当前 Agent 的 tools 策略允许 kb_manage（否则返回 404 not_found）。
+     */
+    function testToolsInvokeKbManageListCollections() {
+        testToolsInvokeHttp("kb_manage", {}, "list_collections", "kb_manage")
+    }
+
+    /**
+     * @brief KB：kb_search 语义检索（使用下方「KB集合」「KB检索」输入框）
+     */
+    function testToolsInvokeKbSearch() {
+        var coll = kbTestCollectionField.text.trim()
+        var q = kbTestQueryField.text.trim()
+        if (coll.length === 0) {
+            testAddLog("⚠ kb_search → KB集合名为空")
+            return
+        }
+        if (q.length === 0) {
+            testAddLog("⚠ kb_search → 检索 query 为空")
+            return
+        }
+        testToolsInvokeHttp("kb_search", {
+                                   "query": q,
+                                   "collection": coll,
+                                   "topK": 5
+                               }, "", "kb_search")
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -628,6 +679,50 @@ ApplicationWindow {
                     }
                 }
 
+                /// openclaw KB：/tools/invoke 的 kb_search 参数（collection + query）
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Label {
+                        text: "KB集合:"
+                        font.pixelSize: 12
+                        color: "#666666"
+                    }
+                    TextField {
+                        id: kbTestCollectionField
+                        Layout.preferredWidth: 140
+                        text: "default"
+                        placeholderText: "collection 名称"
+                        font.pixelSize: 12
+                        selectByMouse: true
+                        background: Rectangle {
+                            radius: 6
+                            border.color: kbTestCollectionField.activeFocus ? "#006BFF" : "#D0D0D0"
+                            border.width: 1
+                            color: "#FAFAFA"
+                        }
+                    }
+                    Label {
+                        text: "KB检索:"
+                        font.pixelSize: 12
+                        color: "#666666"
+                    }
+                    TextField {
+                        id: kbTestQueryField
+                        Layout.fillWidth: true
+                        placeholderText: "语义检索问题（kb_search）"
+                        font.pixelSize: 12
+                        selectByMouse: true
+                        background: Rectangle {
+                            radius: 6
+                            border.color: kbTestQueryField.activeFocus ? "#006BFF" : "#D0D0D0"
+                            border.width: 1
+                            color: "#FAFAFA"
+                        }
+                    }
+                }
+
                 // 操作按钮行
                 RowLayout {
                     Layout.fillWidth: true
@@ -805,6 +900,56 @@ ApplicationWindow {
                             text: parent.text
                             color: "#FFFFFF"
                             font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        implicitHeight: 34
+                        implicitWidth: 118
+                    }
+
+                    /// HTTP /tools/invoke：kb_manage list_collections
+                    Button {
+                        text: "HTTP kb_manage"
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbManageListCollections()
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("POST /tools/invoke，tool=kb_manage，action=list_collections")
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.enabled
+                                   ? (parent.down ? "#1B5E20" : "#2E7D32")
+                                   : "#BDBDBD"
+                        }
+                        contentItem: Label {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 12
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        implicitHeight: 34
+                        implicitWidth: 128
+                    }
+
+                    /// HTTP /tools/invoke：kb_search（使用 KB集合 + KB检索 输入）
+                    Button {
+                        text: "HTTP kb_search"
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbSearch()
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("POST /tools/invoke，tool=kb_search，args.query + collection")
+                        background: Rectangle {
+                            radius: 6
+                            color: parent.enabled
+                                   ? (parent.down ? "#004D40" : "#00695C")
+                                   : "#BDBDBD"
+                        }
+                        contentItem: Label {
+                            text: parent.text
+                            color: "#FFFFFF"
+                            font.pixelSize: 12
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
