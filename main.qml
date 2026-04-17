@@ -1052,7 +1052,7 @@ ApplicationWindow {
                                         id: toolBlockDetailRow
                                         width: parent.width
                                         spacing: 10
-                                        leftPadding: 8
+                                        leftPadding: 9
                                         Rectangle {
                                             id: toolTimelineBar
                                             width: 1
