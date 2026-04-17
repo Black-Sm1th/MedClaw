@@ -2194,23 +2194,17 @@ QString GatewayClient::expandTildePath(const QString &path)
 
 QString GatewayClient::skillMarketCategoryScanRoot() const
 {
-    const QString marketBase = expandTildePath(m_config.skillMarketPath()).trimmed();
     const QVariantList cats = m_config.skillMarketCategories();
     if (cats.isEmpty())
-        return marketBase;
+        return QString();
     int idx = m_skillMarketCategoryIndex;
     if (idx < 0 || idx >= cats.size())
         idx = 0;
     const QVariantMap entry = cats.at(idx).toMap();
     const QString rel = entry.value(QStringLiteral("path")).toString().trimmed();
     if (rel.isEmpty() || rel == QLatin1Char('.') || rel == QStringLiteral("."))
-        return marketBase;
-    const QString expanded = expandTildePath(rel).trimmed();
-    if (QDir::isAbsolutePath(expanded))
-        return expanded;
-    if (marketBase.isEmpty())
         return QString();
-    return QDir(marketBase).filePath(expanded);
+    return expandTildePath(rel).trimmed();
 }
 
 bool GatewayClient::copyDirectoryRecursive(const QString &srcDir, const QString &dstDir)

@@ -38,17 +38,19 @@ void parseSkillMarketCategoriesFromJson(const QJsonArray &arr, QVariantList *out
             continue;
         const QJsonObject o = v.toObject();
         const QString name = o.value(QStringLiteral("name")).toString().trimmed();
-        if (name.isEmpty())
+        const QString path = o.value(QStringLiteral("path")).toString().trimmed();
+        if (name.isEmpty() || path.isEmpty() || path == QLatin1Char('.')
+            || path == QStringLiteral("."))
             continue;
         QVariantMap m;
         m[QStringLiteral("name")] = name;
-        m[QStringLiteral("path")] = o.value(QStringLiteral("path")).toString();
+        m[QStringLiteral("path")] = path;
         out->append(m);
     }
     if (out->isEmpty()) {
         QVariantMap m;
         m[QStringLiteral("name")] = QStringLiteral("\u5168\u90e8");
-        m[QStringLiteral("path")] = QString();
+        m[QStringLiteral("path")] = QStringLiteral("~/skills");
         out->append(m);
     }
 }
@@ -64,7 +66,6 @@ WsConfig::WsConfig()
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
     , m_token(QStringLiteral(
           "a38eee0215d92267ee55c9ecf2dcdb6c2ee1e613a00c6d26"))
-    , m_skillMarketPath(QStringLiteral("~/skills"))
     , m_skillsStoragePath(QStringLiteral("~/MedClaw/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
     , m_clientVersion(QStringLiteral("dev"))
@@ -110,8 +111,6 @@ void WsConfig::loadOrCreatePersistentConfig()
         "a38eee0215d92267ee55c9ecf2dcdb6c2ee1e613a00c6d26");
     static const QString kDefaultClientId =
         QStringLiteral("openclaw-control-ui");
-    static const QString kDefaultSkillMarketPath =
-        QStringLiteral("~/skills");
     static const QString kDefaultSkillsStoragePath =
         QStringLiteral("~/MedClaw/skills");
     const QString base = QStringLiteral("AppData/config/");
@@ -138,7 +137,6 @@ void WsConfig::loadOrCreatePersistentConfig()
         o[QStringLiteral("serverUrl")]        = m_serverUrl;
         o[QStringLiteral("token")]            = m_token;
         o[QStringLiteral("clientId")]         = m_clientId;
-        o[QStringLiteral("skillMarketPath")]  = m_skillMarketPath;
         o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
         o[QStringLiteral("skillMarketCategories")] = defaultSkillMarketCategoryArray();
         writeDefaults(o);
@@ -160,10 +158,6 @@ void WsConfig::loadOrCreatePersistentConfig()
 
     QJsonObject merged = doc.object();
     bool mergedDirty = false;
-    if (merged.value(QStringLiteral("skillMarketPath")).toString().trimmed().isEmpty()) {
-        merged[QStringLiteral("skillMarketPath")] = kDefaultSkillMarketPath;
-        mergedDirty = true;
-    }
     if (merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed().isEmpty()) {
         merged[QStringLiteral("skillsStoragePath")] = kDefaultSkillsStoragePath;
         mergedDirty = true;
@@ -196,7 +190,6 @@ void WsConfig::loadOrCreatePersistentConfig()
             m_clientId = c;
     }
 
-    m_skillMarketPath = merged.value(QStringLiteral("skillMarketPath")).toString().trimmed();
     m_skillsStoragePath = merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed();
     m_llmJudgmentEnabled = merged.value(QStringLiteral("llmJudgmentEnabled")).toBool(false);
 
@@ -206,8 +199,6 @@ void WsConfig::loadOrCreatePersistentConfig()
         m_token = kDefaultToken;
     if (m_clientId.isEmpty())
         m_clientId = kDefaultClientId;
-    if (m_skillMarketPath.isEmpty())
-        m_skillMarketPath = kDefaultSkillMarketPath;
     if (m_skillsStoragePath.isEmpty())
         m_skillsStoragePath = kDefaultSkillsStoragePath;
 
@@ -225,9 +216,6 @@ void    WsConfig::setServerUrl(const QString &url) { m_serverUrl = url; }
 
 QString WsConfig::token()         const { return m_token; }
 void    WsConfig::setToken(const QString &token) { m_token = token; }
-
-QString WsConfig::skillMarketPath() const { return m_skillMarketPath; }
-void    WsConfig::setSkillMarketPath(const QString &path) { m_skillMarketPath = path; }
 
 QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
 void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }

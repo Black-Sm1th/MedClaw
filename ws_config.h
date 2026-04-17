@@ -48,18 +48,13 @@ public:
     /// 设置身份认证 Token
     void setToken(const QString &token);
 
-    /// 技能市场文件夹路径（JSON：skillMarketPath，默认 ~/skills）
-    QString skillMarketPath() const;
-    void setSkillMarketPath(const QString &path);
-
     /// 存放技能路径（JSON：skillsStoragePath，默认 ~/medclaw/MedClaw/skills）
     QString skillsStoragePath() const;
     void setSkillsStoragePath(const QString &path);
 
     /**
      * 技能市场分类（JSON：skillMarketCategories，数组项 { "name", "path" }）
-     * path 为空或 "." 表示 skillMarketPath 根目录；否则若为相对路径则拼在 skillMarketPath 下；
-     * 绝对路径（含 ~/）则按路径解析。
+     * path 为该分类下技能目录的绝对路径，可使用 ~/ 表示用户主目录。
      */
     QVariantList skillMarketCategories() const;
 
@@ -97,7 +92,7 @@ public:
 
 private:
     /**
-     * @brief 从 AppData/config/config.json 读取 serverUrl、token、clientId、skillMarketPath、skillsStoragePath；
+     * @brief 从 AppData/config/config.json 读取 serverUrl、token、clientId、skillsStoragePath、skillMarketCategories；
      *        若文件不存在则创建并写入默认值；缺省键会补全并写回。
      */
     void loadOrCreatePersistentConfig();
@@ -130,7 +125,6 @@ private:
     QString m_serverUrl;        ///< WebSocket 服务器地址
     QString m_token;            ///< 身份认证 Token
 
-    QString m_skillMarketPath;  ///< 技能市场文件夹路径（~ 表示用户主目录，由调用方展开）
     QString m_skillsStoragePath; ///< 存放技能路径
     QVariantList m_skillMarketCategories; ///< 技能市场分类（name + path）
     bool    m_llmJudgmentEnabled = false;

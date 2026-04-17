@@ -102,7 +102,7 @@ class GatewayClient : public QObject
     Q_PROPERTY(QString gatewayHttpBaseUrl READ gatewayHttpBaseUrl CONSTANT)
     /// config.json 中的 gateway 认证 token（与 WebSocket 握手一致）
     Q_PROPERTY(QString gatewayAuthToken READ gatewayAuthToken CONSTANT)
-    /// 技能市场：skillMarketPath 下每个子文件夹一项 { folderName, installed }
+    /// 技能市场：当前 skillMarketCategories 选中项 path 下每个子文件夹一项 { folderName, installed }
     Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
                NOTIFY skillMarketFoldersChanged)
     /// 技能市场分类（来自 config.json skillMarketCategories）
@@ -269,7 +269,7 @@ public:
     /// 启用/禁用指定技能（发送 skills.update RPC）
     Q_INVOKABLE void setSkillEnabled(const QString &skillKey, bool enabled);
 
-    /// 扫描配置中 skillMarketPath 子文件夹并刷新 skillMarketFolders
+    /// 扫描当前技能市场分类 path 下子文件夹并刷新 skillMarketFolders
     Q_INVOKABLE void refreshSkillMarketFolders();
 
     /**
