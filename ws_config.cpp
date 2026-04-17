@@ -25,17 +25,8 @@ QJsonArray defaultSkillMarketCategoryArray()
         o[QStringLiteral("path")] = path;
         a.append(o);
     };
-    add(QStringLiteral("\u5168\u90e8"), QString());
-    add(QStringLiteral("\u63a8\u8350"), QStringLiteral("recommended"));
-    add(QStringLiteral("\u4e34\u5e8a\u4e0e\u533b\u7597"), QStringLiteral("clinical"));
-    add(QStringLiteral("\u836f\u7269\u53d1\u73b0\u4e0e\u5b89\u5168"),
-        QStringLiteral("drug-discovery"));
-    add(QStringLiteral("\u751f\u7269\u4fe1\u606f\u5b66"), QStringLiteral("bioinformatics"));
-    add(QStringLiteral("\u7ec4\u5b66\u5de5\u5177"), QStringLiteral("omics"));
-    add(QStringLiteral("\u86cb\u767d\u8d28\u8bbe\u8ba1"), QStringLiteral("protein-design"));
-    add(QStringLiteral("\u533b\u7597\u5668\u68b0\u76d1\u7ba1"), QStringLiteral("device-regulation"));
-    add(QStringLiteral("\u5065\u5eb7\u4e0e\u4fdd\u5065"), QStringLiteral("wellness"));
-    add(QStringLiteral("\u5176\u4ed6\u6269\u5c55"), QStringLiteral("extensions"));
+    add(QStringLiteral("Medical-Skills"), QStringLiteral("/home/poc-henan/Medical-Skills"));
+    add(QStringLiteral("Scientific-Skills"), QStringLiteral("/home/poc-henan/Scientific-Skills"));
     return a;
 }
 
@@ -72,7 +63,7 @@ WsConfig::WsConfig()
     // ── 占位；loadOrCreatePersistentConfig() 从 AppData/config.json 覆盖 ──
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
     , m_token(QStringLiteral(
-          "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63"))
+          "a38eee0215d92267ee55c9ecf2dcdb6c2ee1e613a00c6d26"))
     , m_skillMarketPath(QStringLiteral("~/skills"))
     , m_skillsStoragePath(QStringLiteral("~/medclaw/MedClaw/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
