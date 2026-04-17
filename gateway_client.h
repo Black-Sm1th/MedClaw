@@ -399,12 +399,6 @@ public:
      */
     Q_INVOKABLE void patchSessionModel(const QString &modelId = QString());
 
-    /**
-     * @brief 设置当前会话的推理展示级别（sessions.patch reasoningLevel）
-     * @param reasoningLevel OpenClaw: "off" | "on" | "stream"（空则不发请求）
-     */
-    Q_INVOKABLE void patchSessionReasoningLevel(const QString &reasoningLevel = QStringLiteral("stream"));
-
     /// 拉取配置快照并解析 mcp.servers（config.get）
     Q_INVOKABLE void refreshMcpList();
 
@@ -469,8 +463,6 @@ signals:
                              bool isDelta);      ///< 收到聊天消息（完整或增量）
     void streamingStarted();                     ///< 流式输出开始
     void streamingFinished();                    ///< 流式输出结束
-    /// OpenClaw agent 事件 payload.stream === "thinking" 时的累计思考全文
-    void thinkingStreamUpdate(const QString &fullText);
 
     // ── 工具调用 ──
     void toolCallReceived(const QString &toolName,

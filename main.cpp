@@ -38,12 +38,6 @@ int main(int argc, char *argv[])
     QObject::connect(&wsClient, &GatewayClient::streamingFinished,
                      [&chatModel]() { chatModel.endStreaming(); });
 
-    // 思考过程（网关 agent.stream=thinking）
-    QObject::connect(&wsClient, &GatewayClient::thinkingStreamUpdate,
-                     [&chatModel](const QString &text) {
-        chatModel.updateStreamingThinking(text);
-    });
-
     // 工具调用：在 ChatModel 中插入工具卡片
     QObject::connect(&wsClient, &GatewayClient::toolCallReceived,
                      [&chatModel](const QString &name, const QString &args,

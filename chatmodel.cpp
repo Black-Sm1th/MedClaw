@@ -27,7 +27,6 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case IsErrorRole:    return msg.isError;
     case ToolResultTextRole: return msg.toolResultText;
     case HasToolResultRole:  return msg.hasToolResult;
-    case ThinkingTextRole:   return msg.thinkingText;
     }
     return QVariant();
 }
@@ -44,25 +43,9 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { ToolCallIdRole, "toolCallId" },
         { IsErrorRole,    "isError"    },
         { ToolResultTextRole, "toolResultText" },
-        { HasToolResultRole,  "hasToolResult"  },
-        { ThinkingTextRole,   "thinkingText"   }
+        { HasToolResultRole,  "hasToolResult"  }
     };
 }
-
-namespace {
-
-QString stripReasoningLabelForDisplay(const QString &raw)
-{
-    QString t = raw.trimmed();
-    if (t.startsWith(QLatin1String("Reasoning:"), Qt::CaseInsensitive)) {
-        t = t.mid(QStringLiteral("Reasoning:").size()).trimmed();
-        if (t.startsWith(QLatin1Char('\n')))
-            t = t.mid(1);
-    }
-    return t;
-}
-
-} // namespace
 
 // ── 文本消息 ─────────────────────────────────────────────────────────
 
@@ -170,37 +153,6 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
             return true;
     }
     return false;
-}
-
-void ChatModel::updateStreamingThinking(const QString &fullText)
-{
-    const QString cleaned = stripReasoningLabelForDisplay(fullText);
-    if (cleaned.isEmpty())
-        return;
-
-    if (!m_streaming)
-        beginStreaming();
-
-    int target = -1;
-    for (int i = m_messages.count() - 1; i >= 0; --i) {
-        if (m_messages[i].role == QLatin1String("assistant")
-            && m_messages[i].msgType == QLatin1String("text")) {
-            target = i;
-            break;
-        }
-    }
-    if (target < 0) {
-        addMessage(QStringLiteral("assistant"), QString());
-        target = m_messages.count() - 1;
-    }
-
-    if (m_messages[target].thinkingText == cleaned)
-        return;
-
-    m_messages[target].thinkingText = cleaned;
-    const QModelIndex idx = index(target);
-    emit dataChanged(idx, idx, { ThinkingTextRole });
-    emit messagePayloadChanged();
 }
 
 // ── Streaming ────────────────────────────────────────────────────────

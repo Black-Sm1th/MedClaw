@@ -877,9 +877,7 @@ ApplicationWindow {
                     }
 
                     delegate: Item {
-                        id: chatDelegateRoot
                         width: chatListView.width
-                        property bool thinkingExpanded: true
                         readonly property bool isCompactionMarker: {
                             var c = String(content || "").trim().toLowerCase()
                             return msgType !== "toolCall"
@@ -898,107 +896,33 @@ ApplicationWindow {
                             id: chatBubble
                             visible: msgType !== "toolCall" && msgType !== "toolResult" && !parent.isCompactionMarker
                             width: parent.width
-                            height: visible ? assistantMsgColumn.height + 4 : 0
+                            height: visible ? bubbleInner.height + 4 : 0
                             color: "transparent"
                             readonly property bool isUser: msgRole === "user"
-                            readonly property real bubbleMaxW: Math.min(chatBubble.width * (chatBubble.isUser ? 0.75 : 0.92), 720)
 
-                            Column {
-                                id: assistantMsgColumn
+                            Rectangle {
+                                id: bubbleInner
                                 anchors.left: chatBubble.isUser ? undefined : parent.left
                                 anchors.right: chatBubble.isUser ? parent.right : undefined
                                 anchors.top: parent.top
-                                spacing: 8
-                                width: chatBubble.bubbleMaxW
+                                width: Math.min(bubbleText.implicitWidth + 32, chatBubble.isUser ? chatBubble.width * 0.75 : chatBubble.width)
+                                height: bubbleText.implicitHeight + 24
+                                radius: 12
+                                color: chatBubble.isUser ? "#EBEDF0" : "transparent"
 
-                                Column {
-                                    id: thinkingProcessBlock
-                                    visible: !chatBubble.isUser && thinkingText && String(thinkingText).length > 0
-                                    width: parent.width
-                                    spacing: 6
-
-                                    Rectangle {
-                                        id: thinkHeaderPill
-                                        width: thinkHeaderRow.implicitWidth + 16
-                                        height: 28
-                                        radius: 6
-                                        color: "#14000000"
-                                        Row {
-                                            id: thinkHeaderRow
-                                            anchors.centerIn: parent
-                                            spacing: 4
-                                            Text {
-                                                text: chatDelegateRoot.thinkingExpanded ? "\u25BE" : "\u25B8"
-                                                font.pixelSize: 12
-                                                color: "#666666"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                            Text {
-                                                text: qsTr("思考过程")
-                                                font.pixelSize: 12
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#5C5C5C"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                        }
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: chatDelegateRoot.thinkingExpanded = !chatDelegateRoot.thinkingExpanded
-                                        }
-                                    }
-
-                                    Item {
-                                        visible: chatDelegateRoot.thinkingExpanded
-                                        width: parent.width
-                                        height: Math.min(thinkingBody.contentHeight + 12, 480)
-                                        clip: true
-
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            width: 2
-                                            radius: 1
-                                            color: "#D8D8D8"
-                                        }
-                                        Text {
-                                            id: thinkingBody
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 10
-                                            anchors.right: parent.right
-                                            width: parent.width - 10
-                                            text: thinkingText
-                                            wrapMode: Text.Wrap
-                                            font.pixelSize: 13
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            color: "#5A5A5A"
-                                            textFormat: Text.PlainText
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    id: bubbleInner
-                                    width: parent.width
-                                    height: bubbleText.implicitHeight + 24
-                                    radius: 12
-                                    color: chatBubble.isUser ? "#EBEDF0" : "transparent"
-
-                                    TextEdit {
-                                        id: bubbleText
-                                        text: content
-                                        width: parent.width - 32
-                                        wrapMode: Text.Wrap
-                                        font.pixelSize: 16
-                                        anchors.centerIn: parent
-                                        font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                        color: chatBubble.isUser ? "#E5000000" : "#D9000000"
-                                        textFormat: Text.MarkdownText
-                                        readOnly: true
-                                        selectByMouse: true
-                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                                    }
+                                TextEdit {
+                                    id: bubbleText
+                                    text: content
+                                    width: Math.min(implicitWidth, chatBubble.isUser ? chatBubble.width * 0.75 - 32 : chatBubble.width)
+                                    wrapMode: Text.Wrap
+                                    font.pixelSize: 16
+                                    anchors.centerIn: parent
+                                    font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                                    color: chatBubble.isUser ? "#E5000000" : "#D9000000"
+                                    textFormat: Text.MarkdownText
+                                    readOnly: true
+                                    selectByMouse: true
+                                    onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                 }
                             }
                         }
