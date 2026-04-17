@@ -107,7 +107,7 @@ void WsConfig::loadOrCreatePersistentConfig()
     static const QString kDefaultServer =
         QStringLiteral("ws://127.0.0.1:18789");
     static const QString kDefaultToken = QStringLiteral(
-        "f22212ebdd26bcc13d041f66375c3f60617c387021ebdd63");
+        "a38eee0215d92267ee55c9ecf2dcdb6c2ee1e613a00c6d26");
     static const QString kDefaultClientId =
         QStringLiteral("openclaw-control-ui");
     static const QString kDefaultSkillMarketPath =
