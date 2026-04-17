@@ -3742,7 +3742,7 @@ ApplicationWindow {
                             id: skillMarketCategoryBar
                             anchors.top: parent.top
                             width: parent.width
-                            height: (wsClient.skillMarketCategories && wsClient.skillMarketCategories.length > 1) ? 44 : 0
+                            height: (wsClient.skillMarketCategories && wsClient.skillMarketCategories.length > 1) ? 29 : 0
                             visible: height > 0
                             clip: true
                             ScrollBar.horizontal.policy: ScrollBar.AsNeeded
@@ -3750,21 +3750,19 @@ ApplicationWindow {
 
                             Row {
                                 spacing: 8
-                                topPadding: 6
-                                bottomPadding: 6
                                 Repeater {
                                     model: wsClient.skillMarketCategories
                                     delegate: Rectangle {
-                                        height: 32
-                                        width: tagLabel.width + 24
-                                        radius: 16
-                                        color: wsClient.skillMarketCategoryIndex === index ? "#E5F0FF" : "#F0F0F2"
+                                        height: 29
+                                        width: tagLabel.width + 20
+                                        radius: 8
+                                        color: wsClient.skillMarketCategoryIndex === index ? "#0F006BFF" : "#F7F9FA"
                                         Label {
                                             id: tagLabel
                                             anchors.centerIn: parent
                                             text: (modelData && modelData.name !== undefined) ? modelData.name : ""
                                             font.pixelSize: 14
-                                            color: wsClient.skillMarketCategoryIndex === index ? "#006BFF" : "#73000000"
+                                            color: wsClient.skillMarketCategoryIndex === index ? "#006BFF" : "#A6000000"
                                             font.family: "Alibaba PuHuiTi 3.0"
                                         }
                                         MouseArea {
@@ -3781,9 +3779,9 @@ ApplicationWindow {
                         ScrollView {
                             id: skillMarketScrollView
                             anchors.top: skillMarketCategoryBar.bottom
-                            anchors.topMargin: skillMarketCategoryBar.visible ? 8 : 0
+                            anchors.topMargin: skillMarketCategoryBar.visible ? 16 : 0
                             width: parent.width
-                            height: parent.height - skillMarketCategoryBar.height - (skillMarketCategoryBar.visible ? 8 : 0)
+                            height: parent.height - skillMarketCategoryBar.height - (skillMarketCategoryBar.visible ? 16 : 0)
                             clip: true
                             ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 

@@ -65,7 +65,7 @@ WsConfig::WsConfig()
     , m_token(QStringLiteral(
           "a38eee0215d92267ee55c9ecf2dcdb6c2ee1e613a00c6d26"))
     , m_skillMarketPath(QStringLiteral("~/skills"))
-    , m_skillsStoragePath(QStringLiteral("~/medclaw/MedClaw/skills"))
+    , m_skillsStoragePath(QStringLiteral("~/MedClaw/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
     , m_clientVersion(QStringLiteral("dev"))
 // ── 平台标识：编译期自动检测 ──
@@ -113,7 +113,7 @@ void WsConfig::loadOrCreatePersistentConfig()
     static const QString kDefaultSkillMarketPath =
         QStringLiteral("~/skills");
     static const QString kDefaultSkillsStoragePath =
-        QStringLiteral("~/medclaw/MedClaw/skills");
+        QStringLiteral("~/MedClaw/skills");
     const QString base = QStringLiteral("AppData/config/");
     QDir().mkpath(base);
     const QString path = base + QStringLiteral("config.json");
