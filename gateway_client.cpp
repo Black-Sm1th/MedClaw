@@ -27,6 +27,7 @@
 #include <QProcess>
 #include <algorithm>
 #include <limits>
+#include <QVariantMap>
 
 namespace {
 
@@ -244,6 +245,28 @@ QString GatewayClient::defaultAgentId() const
 QVariantList GatewayClient::modelList() const { return m_modelList; }
 
 QVariantList GatewayClient::skillMarketFolders() const { return m_skillMarketFolders; }
+
+QVariantList GatewayClient::skillMarketCategories() const
+{
+    return m_config.skillMarketCategories();
+}
+
+int GatewayClient::skillMarketCategoryIndex() const
+{
+    return m_skillMarketCategoryIndex;
+}
+
+void GatewayClient::setSkillMarketCategoryIndex(int index)
+{
+    const QVariantList cats = m_config.skillMarketCategories();
+    const int clamped =
+        cats.isEmpty() ? 0 : qBound(0, index, static_cast<int>(cats.size()) - 1);
+    if (m_skillMarketCategoryIndex == clamped)
+        return;
+    m_skillMarketCategoryIndex = clamped;
+    emit skillMarketCategoryIndexChanged();
+    refreshSkillMarketFolders();
+}
 
 bool GatewayClient::skillInstallBusy() const { return m_skillInstallBusy; }
 
@@ -2169,6 +2192,27 @@ QString GatewayClient::expandTildePath(const QString &path)
     return p;
 }
 
+QString GatewayClient::skillMarketCategoryScanRoot() const
+{
+    const QString marketBase = expandTildePath(m_config.skillMarketPath()).trimmed();
+    const QVariantList cats = m_config.skillMarketCategories();
+    if (cats.isEmpty())
+        return marketBase;
+    int idx = m_skillMarketCategoryIndex;
+    if (idx < 0 || idx >= cats.size())
+        idx = 0;
+    const QVariantMap entry = cats.at(idx).toMap();
+    const QString rel = entry.value(QStringLiteral("path")).toString().trimmed();
+    if (rel.isEmpty() || rel == QLatin1Char('.') || rel == QStringLiteral("."))
+        return marketBase;
+    const QString expanded = expandTildePath(rel).trimmed();
+    if (QDir::isAbsolutePath(expanded))
+        return expanded;
+    if (marketBase.isEmpty())
+        return QString();
+    return QDir(marketBase).filePath(expanded);
+}
+
 bool GatewayClient::copyDirectoryRecursive(const QString &srcDir, const QString &dstDir)
 {
     QDir src(srcDir);
@@ -2400,8 +2444,17 @@ void GatewayClient::addSkillFromGit(const QString &urlRaw)
 
 void GatewayClient::refreshSkillMarketFolders()
 {
+    const QVariantList cats = m_config.skillMarketCategories();
+    if (!cats.isEmpty()) {
+        const int clamped =
+            qBound(0, m_skillMarketCategoryIndex, static_cast<int>(cats.size()) - 1);
+        if (clamped != m_skillMarketCategoryIndex) {
+            m_skillMarketCategoryIndex = clamped;
+            emit skillMarketCategoryIndexChanged();
+        }
+    }
     m_skillMarketFolders.clear();
-    const QString base = expandTildePath(m_config.skillMarketPath()).trimmed();
+    const QString base = skillMarketCategoryScanRoot().trimmed();
     const QString storage = expandTildePath(m_config.skillsStoragePath()).trimmed();
     if (base.isEmpty()) {
         emit skillMarketFoldersChanged();
@@ -2437,7 +2490,12 @@ void GatewayClient::installSkillFromMarket(const QString &folderName)
     }
     if (m_skillInstallBusy)
         return;
-    const QString srcRoot = expandTildePath(m_config.skillMarketPath());
+    const QString srcRoot = skillMarketCategoryScanRoot().trimmed();
+    if (srcRoot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u672a\u914d\u7f6e\u6280\u80fd\u5e02\u573a\u76ee\u5f55"));
+        return;
+    }
     const QString dstRoot = expandTildePath(m_config.skillsStoragePath());
     const QString src = srcRoot + QLatin1Char('/') + name;
     const QString dst = dstRoot + QLatin1Char('/') + name;

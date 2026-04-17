@@ -11,7 +11,58 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <cstring>
+
+namespace {
+
+QJsonArray defaultSkillMarketCategoryArray()
+{
+    QJsonArray a;
+    auto add = [&](const QString &name, const QString &path) {
+        QJsonObject o;
+        o[QStringLiteral("name")] = name;
+        o[QStringLiteral("path")] = path;
+        a.append(o);
+    };
+    add(QStringLiteral("\u5168\u90e8"), QString());
+    add(QStringLiteral("\u63a8\u8350"), QStringLiteral("recommended"));
+    add(QStringLiteral("\u4e34\u5e8a\u4e0e\u533b\u7597"), QStringLiteral("clinical"));
+    add(QStringLiteral("\u836f\u7269\u53d1\u73b0\u4e0e\u5b89\u5168"),
+        QStringLiteral("drug-discovery"));
+    add(QStringLiteral("\u751f\u7269\u4fe1\u606f\u5b66"), QStringLiteral("bioinformatics"));
+    add(QStringLiteral("\u7ec4\u5b66\u5de5\u5177"), QStringLiteral("omics"));
+    add(QStringLiteral("\u86cb\u767d\u8d28\u8bbe\u8ba1"), QStringLiteral("protein-design"));
+    add(QStringLiteral("\u533b\u7597\u5668\u68b0\u76d1\u7ba1"), QStringLiteral("device-regulation"));
+    add(QStringLiteral("\u5065\u5eb7\u4e0e\u4fdd\u5065"), QStringLiteral("wellness"));
+    add(QStringLiteral("\u5176\u4ed6\u6269\u5c55"), QStringLiteral("extensions"));
+    return a;
+}
+
+void parseSkillMarketCategoriesFromJson(const QJsonArray &arr, QVariantList *out)
+{
+    out->clear();
+    for (const QJsonValue &v : arr) {
+        if (!v.isObject())
+            continue;
+        const QJsonObject o = v.toObject();
+        const QString name = o.value(QStringLiteral("name")).toString().trimmed();
+        if (name.isEmpty())
+            continue;
+        QVariantMap m;
+        m[QStringLiteral("name")] = name;
+        m[QStringLiteral("path")] = o.value(QStringLiteral("path")).toString();
+        out->append(m);
+    }
+    if (out->isEmpty()) {
+        QVariantMap m;
+        m[QStringLiteral("name")] = QStringLiteral("\u5168\u90e8");
+        m[QStringLiteral("path")] = QString();
+        out->append(m);
+    }
+}
+
+} // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
 //  构造 / 初始化
@@ -98,7 +149,10 @@ void WsConfig::loadOrCreatePersistentConfig()
         o[QStringLiteral("clientId")]         = m_clientId;
         o[QStringLiteral("skillMarketPath")]  = m_skillMarketPath;
         o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
+        o[QStringLiteral("skillMarketCategories")] = defaultSkillMarketCategoryArray();
         writeDefaults(o);
+        parseSkillMarketCategoriesFromJson(defaultSkillMarketCategoryArray(),
+                                           &m_skillMarketCategories);
         return;
     }
 
@@ -122,6 +176,15 @@ void WsConfig::loadOrCreatePersistentConfig()
     if (merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed().isEmpty()) {
         merged[QStringLiteral("skillsStoragePath")] = kDefaultSkillsStoragePath;
         mergedDirty = true;
+    }
+    const QJsonValue catVal = merged.value(QStringLiteral("skillMarketCategories"));
+    QJsonArray catArr;
+    if (!catVal.isArray() || catVal.toArray().isEmpty()) {
+        catArr = defaultSkillMarketCategoryArray();
+        merged[QStringLiteral("skillMarketCategories")] = catArr;
+        mergedDirty = true;
+    } else {
+        catArr = catVal.toArray();
     }
     if (mergedDirty)
         writeDefaults(merged);
@@ -157,6 +220,8 @@ void WsConfig::loadOrCreatePersistentConfig()
     if (m_skillsStoragePath.isEmpty())
         m_skillsStoragePath = kDefaultSkillsStoragePath;
 
+    parseSkillMarketCategoriesFromJson(catArr, &m_skillMarketCategories);
+
     qDebug().noquote() << "[WsConfig] loaded" << path << "serverUrl=" << m_serverUrl;
 }
 
@@ -175,6 +240,8 @@ void    WsConfig::setSkillMarketPath(const QString &path) { m_skillMarketPath = 
 
 QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
 void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }
+
+QVariantList WsConfig::skillMarketCategories() const { return m_skillMarketCategories; }
 
 bool    WsConfig::llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }
 void    WsConfig::setLlmJudgmentEnabled(bool enabled)

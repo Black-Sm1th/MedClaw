@@ -105,6 +105,11 @@ class GatewayClient : public QObject
     /// 技能市场：skillMarketPath 下每个子文件夹一项 { folderName, installed }
     Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
                NOTIFY skillMarketFoldersChanged)
+    /// 技能市场分类（来自 config.json skillMarketCategories）
+    Q_PROPERTY(QVariantList skillMarketCategories READ skillMarketCategories CONSTANT)
+    /// 当前选中的技能市场分类下标（切换时重新扫描该分类 path 下子目录）
+    Q_PROPERTY(int skillMarketCategoryIndex READ skillMarketCategoryIndex
+               WRITE setSkillMarketCategoryIndex NOTIFY skillMarketCategoryIndexChanged)
     /// 正在安装技能（复制 + 请求网关重启）
     Q_PROPERTY(bool skillInstallBusy READ skillInstallBusy NOTIFY skillInstallBusyChanged)
 
@@ -180,6 +185,9 @@ public:
     QVariantList toolList() const;
 
     QVariantList skillMarketFolders() const;
+    QVariantList skillMarketCategories() const;
+    int skillMarketCategoryIndex() const;
+    void setSkillMarketCategoryIndex(int index);
     bool skillInstallBusy() const;
 
     // ═══════════════════════════════════════════════════════════════
@@ -509,6 +517,7 @@ signals:
     void currentModelChanged();           ///< 当前会话模型信息变更
     void pendingSessionModelIdChanged();  ///< 无会话时待选模型变更
     void skillMarketFoldersChanged();     ///< 技能市场目录列表更新
+    void skillMarketCategoryIndexChanged(); ///< 技能市场当前分类变更
     void skillInstallBusyChanged();       ///< 技能安装进行中状态变更
     void mcpListChanged();                ///< MCP 服务器列表更新
     void toolListChanged();               ///< 工具目录列表更新
@@ -727,6 +736,8 @@ private:
     int m_autoReconnectFailureCount = 0;            ///< 本轮自动重连已连续失败次数（成功或手动连接时清零）
     bool m_skillInstallBusy = false; ///< 技能安装流程进行中
     QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
+    int m_skillMarketCategoryIndex = 0; ///< 当前技能市场分类下标
+    QString skillMarketCategoryScanRoot() const; ///< 当前分类下技能根目录（绝对路径）
 
     // ── 设置状态 ──
     bool m_memoryEnabled = true;

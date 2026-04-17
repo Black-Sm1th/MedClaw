@@ -3716,13 +3716,12 @@ ApplicationWindow {
                             }
                         }
                     }
-                    ScrollView {
-                        id: skillMarketScrollView
+                    Item {
+                        id: skillMarketViewWrap
                         width: parent.width - 120
                         height: skillSettingRec.height - 24 - skillSettingTitleRec.height - skillSettingTaskTab.height - 32
-                        clip: true
                         visible: skillSettingTaskTab.currentIndex === 1
-                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                        clip: true
 
                         Connections {
                             target: skillSettingTaskTab
@@ -3739,93 +3738,138 @@ ApplicationWindow {
                             }
                         }
 
-                        Column {
-                            width: skillMarketScrollView.width
-                            spacing: 12
+                        ScrollView {
+                            id: skillMarketCategoryBar
+                            anchors.top: parent.top
+                            width: parent.width
+                            height: (wsClient.skillMarketCategories && wsClient.skillMarketCategories.length > 1) ? 44 : 0
+                            visible: height > 0
+                            clip: true
+                            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
-                            Label {
-                                visible: skillSettingRec.filteredSkillMarketFolders().length === 0
-                                wrapMode: Text.WordWrap
-                                text: wsClient.skillMarketFolders.length === 0
-                                      ? qsTr("暂无技能")
-                                      : qsTr("无匹配结果")
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                font.pixelSize: 14
-                                color: "#73000000"
-                            }
-
-                            Grid {
-                                id: skillMarketGrid
-                                columns: 2
-                                spacing: 12
-                                width: skillMarketScrollView.width
-
-                                property real cellWidth: (width - spacing) / 2
-
+                            Row {
+                                spacing: 8
+                                topPadding: 6
+                                bottomPadding: 6
                                 Repeater {
-                                    model: skillSettingRec.filteredSkillMarketFolders()
-
+                                    model: wsClient.skillMarketCategories
                                     delegate: Rectangle {
-                                        width: skillMarketGrid.cellWidth
-                                        height: 100
-                                        radius: 8
-                                        border.color: "#E6E7EB"
-                                        border.width: 1
-                                        color: "#FFFFFF"
+                                        height: 32
+                                        width: tagLabel.width + 24
+                                        radius: 16
+                                        color: wsClient.skillMarketCategoryIndex === index ? "#E5F0FF" : "#F0F0F2"
+                                        Label {
+                                            id: tagLabel
+                                            anchors.centerIn: parent
+                                            text: (modelData && modelData.name !== undefined) ? modelData.name : ""
+                                            font.pixelSize: 14
+                                            color: wsClient.skillMarketCategoryIndex === index ? "#006BFF" : "#73000000"
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: wsClient.skillMarketCategoryIndex = index
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
-                                        Column {
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 20
-                                            anchors.top: parent.top
-                                            anchors.topMargin: 20
-                                            spacing: 12
-                                            width: parent.width - 40 - 80 - 12
+                        ScrollView {
+                            id: skillMarketScrollView
+                            anchors.top: skillMarketCategoryBar.bottom
+                            anchors.topMargin: skillMarketCategoryBar.visible ? 8 : 0
+                            width: parent.width
+                            height: parent.height - skillMarketCategoryBar.height - (skillMarketCategoryBar.visible ? 8 : 0)
+                            clip: true
+                            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
-                                            Row {
+                            Column {
+                                width: skillMarketScrollView.width
+                                spacing: 12
+
+                                Label {
+                                    visible: skillSettingRec.filteredSkillMarketFolders().length === 0
+                                    wrapMode: Text.WordWrap
+                                    text: wsClient.skillMarketFolders.length === 0
+                                          ? qsTr("暂无技能")
+                                          : qsTr("无匹配结果")
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    font.pixelSize: 14
+                                    color: "#73000000"
+                                }
+
+                                Grid {
+                                    id: skillMarketGrid
+                                    columns: 2
+                                    spacing: 12
+                                    width: skillMarketScrollView.width
+
+                                    property real cellWidth: (width - spacing) / 2
+
+                                    Repeater {
+                                        model: skillSettingRec.filteredSkillMarketFolders()
+
+                                        delegate: Rectangle {
+                                            width: skillMarketGrid.cellWidth
+                                            height: 100
+                                            radius: 8
+                                            border.color: "#E6E7EB"
+                                            border.width: 1
+                                            color: "#FFFFFF"
+
+                                            Column {
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 20
+                                                anchors.top: parent.top
+                                                anchors.topMargin: 20
                                                 spacing: 12
-                                                height: 28
-                                                width: parent.width
-                                                Image {
-                                                    width: 28
+                                                width: parent.width - 40 - 80 - 12
+
+                                                Row {
+                                                    spacing: 12
                                                     height: 28
-                                                    source: "qrc:/images/skillIcon.png"
-                                                    fillMode: Image.PreserveAspectFit
-                                                }
-                                                Label {
-                                                    text: modelData.folderName || ""
-                                                    font.pixelSize: 16
-                                                    font.weight: Font.Bold
-                                                    color: "#D9000000"
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    elide: Text.ElideRight
-                                                    width: parent.width - 28 - 12
+                                                    width: parent.width
+                                                    Image {
+                                                        width: 28
+                                                        height: 28
+                                                        source: "qrc:/images/skillIcon.png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                    }
+                                                    Label {
+                                                        text: modelData.folderName || ""
+                                                        font.pixelSize: 16
+                                                        font.weight: Font.Bold
+                                                        color: "#D9000000"
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        elide: Text.ElideRight
+                                                        width: parent.width - 28 - 12
+                                                    }
                                                 }
                                             }
-                                            // Label {
-                                            //     text: qsTr("来自技能市场目录的文件夹")
-                                            //     font.pixelSize: 14
-                                            //     color: "#73000000"
-                                            // }
-                                        }
 
-                                        CustomButton {
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: 20
-                                            anchors.top: parent.top
-                                            anchors.topMargin: 20
-                                            width: 80
-                                            height: 36
-                                            buttonRadius: 8
-                                            fontSize: 14
-                                            iconSource: (modelData.installed || false) ? "" : "qrc:/images/download.png"
-                                            text: (modelData.installed || false) ? qsTr("已安装") : qsTr("安装")
-                                            backgroundColor: "#006BFF"
-                                            textColor: "#FFFFFF"
-                                            borderWidth: 0
-                                            enabled: !(modelData.installed || false) && !wsClient.skillInstallBusy
-                                                       && wsClient.connectionState === 3
-                                            onClicked: {
-                                                wsClient.installSkillFromMarket(modelData.folderName || "")
+                                            CustomButton {
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 20
+                                                anchors.top: parent.top
+                                                anchors.topMargin: 20
+                                                width: 80
+                                                height: 36
+                                                buttonRadius: 8
+                                                fontSize: 14
+                                                iconSource: (modelData.installed || false) ? "" : "qrc:/images/download.png"
+                                                text: (modelData.installed || false) ? qsTr("已安装") : qsTr("安装")
+                                                backgroundColor: "#006BFF"
+                                                textColor: "#FFFFFF"
+                                                borderWidth: 0
+                                                enabled: !(modelData.installed || false) && !wsClient.skillInstallBusy
+                                                           && wsClient.connectionState === 3
+                                                onClicked: {
+                                                    wsClient.installSkillFromMarket(modelData.folderName || "")
+                                                }
                                             }
                                         }
                                     }

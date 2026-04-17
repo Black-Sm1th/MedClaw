@@ -19,6 +19,7 @@
 #include <QString>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QVariantList>
 #include <cstdint>
 
 class WsConfig
@@ -54,6 +55,13 @@ public:
     /// 存放技能路径（JSON：skillsStoragePath，默认 ~/medclaw/MedClaw/skills）
     QString skillsStoragePath() const;
     void setSkillsStoragePath(const QString &path);
+
+    /**
+     * 技能市场分类（JSON：skillMarketCategories，数组项 { "name", "path" }）
+     * path 为空或 "." 表示 skillMarketPath 根目录；否则若为相对路径则拼在 skillMarketPath 下；
+     * 绝对路径（含 ~/）则按路径解析。
+     */
+    QVariantList skillMarketCategories() const;
 
     /// LLM 二级判定开关（本地持久化，OpenClaw 无原生支持）
     bool llmJudgmentEnabled() const;
@@ -124,6 +132,7 @@ private:
 
     QString m_skillMarketPath;  ///< 技能市场文件夹路径（~ 表示用户主目录，由调用方展开）
     QString m_skillsStoragePath; ///< 存放技能路径
+    QVariantList m_skillMarketCategories; ///< 技能市场分类（name + path）
     bool    m_llmJudgmentEnabled = false;
 
     // ── 客户端身份标识（需与 Gateway 白名单匹配） ──
