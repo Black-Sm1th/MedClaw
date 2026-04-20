@@ -2086,6 +2086,9 @@ void GatewayClient::createAgent(const QString &name,
     if (!applyPendingToolSelection) {
         m_pendingNewAgentToolPolicySet = false;
         m_pendingNewAgentEnabledToolIds.clear();
+        m_pendingNewAgentSkillPolicySet = false;
+        m_pendingNewAgentSkillNames.clear();
+        emit pendingNewAgentSkillPolicyChanged();
     }
     if (m_state != Connected) {
         emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
@@ -2123,6 +2126,26 @@ void GatewayClient::setPendingNewAgentToolSelection(const QVariantList &enabledT
         if (!tid.isEmpty())
             m_pendingNewAgentEnabledToolIds.append(tid);
     }
+}
+
+void GatewayClient::setPendingNewAgentSkillSelection(const QVariantList &skillNames)
+{
+    m_pendingNewAgentSkillNames.clear();
+    m_pendingNewAgentSkillPolicySet = true;
+    for (const QVariant &v : skillNames) {
+        const QString s = v.toString().trimmed();
+        if (!s.isEmpty())
+            m_pendingNewAgentSkillNames.append(s);
+    }
+    emit pendingNewAgentSkillPolicyChanged();
+}
+
+QVariantList GatewayClient::pendingNewAgentSkillNames() const
+{
+    QVariantList out;
+    for (const QString &s : m_pendingNewAgentSkillNames)
+        out.append(s);
+    return out;
 }
 
 /**
@@ -2180,6 +2203,117 @@ void GatewayClient::setSkillEnabled(const QString &skillKey, bool enabled)
     }
     sendRequest(QStringLiteral("skills.update"),
                 m_skill.buildSkillUpdateParams(skillKey, enabled));
+}
+
+QStringList GatewayClient::allSkillNamesFromStatus() const
+{
+    QStringList names;
+    for (const QVariant &v : m_skill.skillList()) {
+        const QVariantMap m = v.toMap();
+        QString n = m.value(QStringLiteral("name")).toString().trimmed();
+        if (n.isEmpty())
+            n = m.value(QStringLiteral("skillKey")).toString().trimmed();
+        if (!n.isEmpty())
+            names.append(n);
+    }
+    return names;
+}
+
+QStringList GatewayClient::selectedSkillNamesForAgent(const QString &agentId) const
+{
+    const QString aid = agentId.trimmed();
+    const QStringList allNames = allSkillNamesFromStatus();
+    if (aid.isEmpty())
+        return allNames;
+
+    const QJsonArray list =
+        m_lastConfigSnapshot.value(QStringLiteral("agents")).toObject()
+            .value(QStringLiteral("list")).toArray();
+    QJsonObject agentEntry;
+    bool found = false;
+    for (const QJsonValue &jv : list) {
+        const QJsonObject o = jv.toObject();
+        if (o.value(QStringLiteral("id")).toString().trimmed() == aid) {
+            agentEntry = o;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return allNames;
+
+    const QJsonValue skVal = agentEntry.value(QStringLiteral("skills"));
+    if (!agentEntry.contains(QStringLiteral("skills")) || skVal.isNull()
+        || skVal.isUndefined()) {
+        return allNames;
+    }
+    if (!skVal.isArray())
+        return allNames;
+
+    QStringList out;
+    for (const QJsonValue &v : skVal.toArray()) {
+        const QString s = v.toString().trimmed();
+        if (!s.isEmpty())
+            out.append(s);
+    }
+    return out;
+}
+
+void GatewayClient::setAgentSkillEnabled(const QString &agentId, const QString &skillName,
+                                         bool enabled)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    QString aid = agentId.trimmed();
+    if (aid.isEmpty())
+        aid = m_defaultAgentId.trimmed();
+    const QString skill = skillName.trimmed();
+    if (skill.isEmpty()) {
+        emit errorOccurred(QStringLiteral("skillName \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+    if (aid.isEmpty()) {
+        emit errorOccurred(
+            QStringLiteral("\u65e0\u6cd5\u786e\u5b9a agent\uff0c\u8bf7\u5148\u9009\u4e2d\u4f1a\u8bdd\u6216 agent"));
+        return;
+    }
+    if (m_configSnapshotHash.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u914d\u7f6e\u5feb\u7167\u672a\u52a0\u8f7d\uff0c\u8bf7\u5148\u5237\u65b0\u8fde\u63a5"));
+        return;
+    }
+    if (m_lastConfigSnapshot.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u914d\u7f6e\u5feb\u7167\u672a\u52a0\u8f7d\uff0c\u8bf7\u5148\u5237\u65b0\u8fde\u63a5\u6216 MCP \u5217\u8868"));
+        return;
+    }
+    const QStringList allNames = allSkillNamesFromStatus();
+    if (allNames.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u6280\u80fd\u5217\u8868\u672a\u52a0\u8f7d\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5"));
+        return;
+    }
+    const QJsonObject fullCfg =
+        m_tools.buildFullConfigWithSkillToggle(m_lastConfigSnapshot, aid, allNames, skill, enabled);
+    if (fullCfg.isEmpty()) {
+        emit errorOccurred(QStringLiteral(
+            "\u672a\u627e\u5230\u6307\u5b9a agent\uff0c\u65e0\u6cd5\u66f4\u65b0\u6280\u80fd\u5217\u8868"));
+        return;
+    }
+
+    const QByteArray cfgJson = QJsonDocument(fullCfg).toJson(QJsonDocument::Compact);
+    qDebug() << "[SkillSave] agentId=" << aid << "hash=" << m_configSnapshotHash
+             << "configSize=" << cfgJson.size();
+
+    QJsonObject reqParams;
+    reqParams[QStringLiteral("raw")] = QString::fromUtf8(cfgJson);
+    if (!m_configSnapshotHash.isEmpty())
+        reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+
+    sendRequest(QStringLiteral("config.set"), reqParams);
 }
 
 QString GatewayClient::expandTildePath(const QString &path)
@@ -2615,6 +2749,9 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
     if (agentId.trimmed() != m_expectingToolPolicyApplyForAgentId) {
         m_pendingNewAgentToolPolicySet = false;
         m_pendingNewAgentEnabledToolIds.clear();
+        m_pendingNewAgentSkillPolicySet = false;
+        m_pendingNewAgentSkillNames.clear();
+        emit pendingNewAgentSkillPolicyChanged();
     }
 
     // 切换会话时取消未完成的工具结果补拉
@@ -3059,6 +3196,19 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
 
         QJsonObject cfg = m_lastConfigSnapshot;
         cfg = m_tools.buildFullConfigWithBatchToolPolicy(cfg, aid, enabledIds);
+        if (!cfg.isEmpty() && m_pendingNewAgentSkillPolicySet) {
+            const QJsonObject withSkills = m_tools.buildFullConfigWithAgentSkillsAllowlist(
+                cfg, aid, m_pendingNewAgentSkillNames);
+            if (!withSkills.isEmpty()) {
+                cfg = withSkills;
+            } else {
+                qWarning() << "[Gateway] buildFullConfigWithAgentSkillsAllowlist failed for new agent"
+                           << aid;
+            }
+            m_pendingNewAgentSkillPolicySet = false;
+            m_pendingNewAgentSkillNames.clear();
+            emit pendingNewAgentSkillPolicyChanged();
+        }
         if (!cfg.isEmpty()) {
             m_lastConfigSnapshot = cfg;
             const QByteArray cfgJson = QJsonDocument(cfg).toJson(QJsonDocument::Compact);
@@ -3073,6 +3223,11 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
                      << "enabledCount=" << enabledIds.size();
         } else {
             qWarning() << "[Gateway] buildFullConfigWithBatchToolPolicy failed for new agent" << aid;
+            if (m_pendingNewAgentSkillPolicySet) {
+                m_pendingNewAgentSkillPolicySet = false;
+                m_pendingNewAgentSkillNames.clear();
+                emit pendingNewAgentSkillPolicyChanged();
+            }
         }
         m_expectingToolPolicyApplyForAgentId.clear();
     }
@@ -3102,6 +3257,8 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
         m_pendingBootstrapChatMessage.clear();
         sendChatMessage(msg);
     }
+
+    emit skillListChanged();
 }
 
 void GatewayClient::rebuildAgentWorkspaceMapFromConfigObject(

@@ -3,6 +3,8 @@
  */
 #include "ws_tools.h"
 
+#include <algorithm>
+
 #include <QDebug>
 #include <QJsonValue>
 #include <QSet>
@@ -212,6 +214,123 @@ QJsonObject WsTools::buildToolToggleMergePatch(const QJsonObject &fullConfig,
     QJsonObject root;
     root[QStringLiteral("agents")] = agents;
     return root;
+}
+
+QJsonObject WsTools::buildFullConfigWithSkillToggle(const QJsonObject &fullConfig,
+                                                    const QString &agentId,
+                                                    const QStringList &allSkillNames,
+                                                    const QString &skillName,
+                                                    const bool enabled) const
+{
+    const QString aid = agentId.trimmed();
+    const QString skill = skillName.trimmed();
+    if (aid.isEmpty() || skill.isEmpty())
+        return QJsonObject();
+
+    QJsonObject result = fullConfig;
+    QJsonObject agentsObj = result.value(QStringLiteral("agents")).toObject();
+    QJsonArray list = agentsObj.value(QStringLiteral("list")).toArray();
+
+    int idx = -1;
+    for (int i = 0; i < list.count(); ++i) {
+        if (list[i].toObject().value(QStringLiteral("id")).toString().trimmed() == aid) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx < 0)
+        return QJsonObject();
+
+    QJsonObject agentEntry = list[idx].toObject();
+
+    QStringList base;
+    const QJsonValue skVal = agentEntry.value(QStringLiteral("skills"));
+    if (!agentEntry.contains(QStringLiteral("skills")) || skVal.isNull()
+        || skVal.isUndefined()) {
+        base = allSkillNames;
+    } else if (skVal.isArray()) {
+        base = jsonStringList(skVal.toArray());
+    } else {
+        base = allSkillNames;
+    }
+
+    QSet<QString> next;
+    for (const QString &s : base) {
+        const QString t = s.trimmed();
+        if (!t.isEmpty())
+            next.insert(t);
+    }
+    if (enabled)
+        next.insert(skill);
+    else
+        next.remove(skill);
+
+    QStringList sorted;
+    sorted.reserve(next.size());
+    for (const QString &s : next)
+        sorted.append(s);
+    std::sort(sorted.begin(), sorted.end());
+
+    QJsonArray skillsArr;
+    for (const QString &s : sorted)
+        skillsArr.append(s);
+
+    agentEntry[QStringLiteral("skills")] = skillsArr;
+    list[idx] = agentEntry;
+    agentsObj[QStringLiteral("list")] = list;
+    result[QStringLiteral("agents")] = agentsObj;
+
+    qDebug() << "[SkillSave] agentId=" << aid << "skill=" << skill << "enabled=" << enabled
+             << "skillsCount=" << skillsArr.size();
+    return result;
+}
+
+QJsonObject WsTools::buildFullConfigWithAgentSkillsAllowlist(const QJsonObject &fullConfig,
+                                                             const QString &agentId,
+                                                             const QStringList &enabledSkillNames) const
+{
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty())
+        return QJsonObject();
+
+    QJsonObject result = fullConfig;
+    QJsonObject agentsObj = result.value(QStringLiteral("agents")).toObject();
+    QJsonArray list = agentsObj.value(QStringLiteral("list")).toArray();
+
+    int idx = -1;
+    for (int i = 0; i < list.count(); ++i) {
+        if (list[i].toObject().value(QStringLiteral("id")).toString().trimmed() == aid) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx < 0)
+        return QJsonObject();
+
+    QJsonObject agentEntry = list[idx].toObject();
+
+    QSet<QString> seen;
+    QStringList sorted;
+    for (const QString &s : enabledSkillNames) {
+        const QString t = s.trimmed();
+        if (t.isEmpty() || seen.contains(t))
+            continue;
+        seen.insert(t);
+        sorted.append(t);
+    }
+    std::sort(sorted.begin(), sorted.end());
+
+    QJsonArray skillsArr;
+    for (const QString &s : sorted)
+        skillsArr.append(s);
+
+    agentEntry[QStringLiteral("skills")] = skillsArr;
+    list[idx] = agentEntry;
+    agentsObj[QStringLiteral("list")] = list;
+    result[QStringLiteral("agents")] = agentsObj;
+
+    qDebug() << "[SkillSave] allowlist agentId=" << aid << "count=" << skillsArr.size();
+    return result;
 }
 
 void WsTools::setLocalToolEnabled(const QString &toolId, const bool enabled)

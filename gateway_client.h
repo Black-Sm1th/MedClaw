@@ -96,6 +96,9 @@ class GatewayClient : public QObject
     /// tools.catalog 展平后的工具列表（含 enabled，与 config 中 deny 对齐）
     Q_PROPERTY(QVariantList toolList READ toolList
                NOTIFY toolListChanged)
+    /// 尚无侧栏 agent 时用户在聊天栏勾选技能后的暂存（待 agents.create 后写入 config）
+    Q_PROPERTY(bool pendingNewAgentSkillPolicySet READ pendingNewAgentSkillPolicySet
+               NOTIFY pendingNewAgentSkillPolicyChanged)
     /// 与 AppData/config.json 中 serverUrl 一致（握手 token/clientId 亦来自该文件）
     Q_PROPERTY(QString serverUrl READ serverUrl CONSTANT)
     /// 将 serverUrl 的 ws/wss 转为 http/https、去掉 path，用于 POST /tools/invoke 等 Gateway HTTP API
@@ -256,6 +259,13 @@ public:
     Q_INVOKABLE void setPendingNewAgentToolSelection(const QVariantList &enabledToolIds);
 
     /**
+     * @brief 尚无 agent 时在聊天栏勾选技能：暂存白名单，待 agents.create 后与工具策略一并 config.set
+     */
+    Q_INVOKABLE void setPendingNewAgentSkillSelection(const QVariantList &skillNames);
+    Q_INVOKABLE QVariantList pendingNewAgentSkillNames() const;
+    bool pendingNewAgentSkillPolicySet() const { return m_pendingNewAgentSkillPolicySet; }
+
+    /**
      * @brief 删除 Agent（agents.delete RPC）
      * @param agentId    要删除的 agent ID
      * @param deleteFiles 是否同时删除 workspace/sessions 文件，默认 true
@@ -266,8 +276,18 @@ public:
     /// 获取所有技能状态（发送 skills.status RPC）
     Q_INVOKABLE void refreshSkills();
 
-    /// 启用/禁用指定技能（发送 skills.update RPC）
+    /// 启用/禁用指定技能（发送 skills.update RPC，修改全局 skills.entries）
     Q_INVOKABLE void setSkillEnabled(const QString &skillKey, bool enabled);
+
+    /**
+     * @brief 按 agents.list[].skills 更新当前 Agent 技能白名单（config.set 全量写入）
+     *
+     * 与聊天输入栏技能开关、工具批量保存、OpenClaw Web「Agents → Skills」一致；agentId 为空时用 defaultAgentId。
+     */
+    Q_INVOKABLE void setAgentSkillEnabled(const QString &agentId, const QString &skillName,
+                                          bool enabled);
+    /// 配置中该 Agent 已选技能名；无 skills 键时返回 skills.status 中的全部技能名
+    Q_INVOKABLE QStringList selectedSkillNamesForAgent(const QString &agentId) const;
 
     /// 扫描当前技能市场分类 path 下子文件夹并刷新 skillMarketFolders
     Q_INVOKABLE void refreshSkillMarketFolders();
@@ -412,7 +432,7 @@ public:
                                          bool enabled);
 
     /**
-     * @brief 批量设置工具启用状态，生成单次 config.patch
+     * @brief 批量设置工具启用状态，单次 config.set 写入完整配置
      */
     Q_INVOKABLE void batchSetAgentToolsEnabled(const QString &agentId,
                                                 const QVariantList &enabledToolIds);
@@ -521,6 +541,7 @@ signals:
     void skillInstallBusyChanged();       ///< 技能安装进行中状态变更
     void mcpListChanged();                ///< MCP 服务器列表更新
     void toolListChanged();               ///< 工具目录列表更新
+    void pendingNewAgentSkillPolicyChanged(); ///< 新建 agent 前技能暂存变更
 
 private slots:
     // ── WebSocket 事件槽函数 ──
@@ -629,6 +650,8 @@ private:
     /// 用当前 workspace 映射补全 m_agentIdentity["workspace"] 并 notify
     void mergeWorkspaceIntoAgentIdentity();
 
+    QStringList allSkillNamesFromStatus() const;
+
     /// 定时任务专用：先 agents.create 再 cron.add 时使用的显示名
     static QString makeCronDedicatedAgentName(const QString &taskTitle);
     void clearPendingCronDedicatedAgent();
@@ -683,6 +706,8 @@ private:
     QString m_pendingProfileFullAgentId; ///< agents.create 后待设置 tools.profile=full + deny 的 agentId
     QStringList m_pendingNewAgentEnabledToolIds; ///< 新建 agent 前用户在弹窗中选中的工具（空且未 set 表示用「全选」）
     bool m_pendingNewAgentToolPolicySet = false; ///< 用户是否已点过保存（无 agent 时）
+    QStringList m_pendingNewAgentSkillNames;     ///< 新建 agent 前聊天栏选中的技能名（agents.list[].skills）
+    bool m_pendingNewAgentSkillPolicySet = false; ///< 用户是否在无 agent 时改过技能勾选
     /// 刚创建完 agent、config.get 尚未写入 deny 前，切到该 agent 时不要清空待应用的 tool 选择
     QString m_expectingToolPolicyApplyForAgentId;
 

@@ -1872,18 +1872,46 @@ ApplicationWindow {
                                     property string searchText: ""
 
                                     function syncFromWsClient() {
-                                        var arr = []
-                                        var list = wsClient.skillList
-                                        for (var i = 0; i < list.length; i++) {
-                                            if (list[i].enabled)
-                                                arr.push(list[i].name || list[i].skillKey)
+                                        // 与工具开关一致：未在侧栏选中 agent 时默认全选；有暂存则显示暂存（待 agents.create 后写入）
+                                        var aid = leftMidPanel.activeAgentId || ""
+                                        if (aid === "") {
+                                            if (wsClient.pendingNewAgentSkillPolicySet) {
+                                                selectedSkills = wsClient.pendingNewAgentSkillNames()
+                                                return
+                                            }
+                                            var arr = []
+                                            var list = wsClient.skillList || []
+                                            for (var i = 0; i < list.length; i++) {
+                                                var n = list[i].name || list[i].skillKey || ""
+                                                if (n) arr.push(n)
+                                            }
+                                            selectedSkills = arr
+                                            return
                                         }
-                                        selectedSkills = arr
+                                        selectedSkills = wsClient.selectedSkillNamesForAgent(aid)
                                     }
 
                                     Connections {
                                         target: wsClient
                                         function onSkillListChanged() {
+                                            dropdownSelectionSkill.syncFromWsClient()
+                                        }
+                                    }
+                                    Connections {
+                                        target: wsClient
+                                        function onAgentIdentityChanged() {
+                                            dropdownSelectionSkill.syncFromWsClient()
+                                        }
+                                    }
+                                    Connections {
+                                        target: leftMidPanel
+                                        function onActiveAgentIdChanged() {
+                                            dropdownSelectionSkill.syncFromWsClient()
+                                        }
+                                    }
+                                    Connections {
+                                        target: wsClient
+                                        function onPendingNewAgentSkillPolicyChanged() {
                                             dropdownSelectionSkill.syncFromWsClient()
                                         }
                                     }
@@ -1905,14 +1933,12 @@ ApplicationWindow {
                                         else arr.push(name)
                                         selectedSkills = arr
 
-                                        var list = wsClient.skillList
-                                        for (var j = 0; j < list.length; j++) {
-                                            var key = list[j].skillKey || list[j].name
-                                            if ((list[j].name || key) === name) {
-                                                wsClient.setSkillEnabled(key, idx < 0)
-                                                break
-                                            }
+                                        if ((leftMidPanel.activeAgentId || "") === "") {
+                                            wsClient.setPendingNewAgentSkillSelection(arr)
+                                            return
                                         }
+                                        var aid = leftMidPanel.activeAgentId
+                                        wsClient.setAgentSkillEnabled(aid, name, idx < 0)
                                     }
 
                                     function filteredSkills() {

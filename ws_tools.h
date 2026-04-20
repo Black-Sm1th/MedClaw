@@ -37,6 +37,25 @@ public:
                                           const QString &toolId,
                                           bool enable) const;
 
+    /**
+     * @brief 在 fullConfig 上修改指定 agent 的 skills 白名单，返回完整 config
+     *
+     * 用于 config.set 全量写入（与工具批量保存一致）。语义与 OpenClaw Web UI 一致：
+     * 无 skills 键表示未限制；显式空数组表示全部关闭。
+     */
+    QJsonObject buildFullConfigWithSkillToggle(const QJsonObject &fullConfig,
+                                               const QString &agentId,
+                                               const QStringList &allSkillNames,
+                                               const QString &skillName,
+                                               bool enabled) const;
+
+    /**
+     * @brief 将指定 agent 的 skills 设为显式白名单（完整 config，用于新建 agent 后 config.set）
+     */
+    QJsonObject buildFullConfigWithAgentSkillsAllowlist(const QJsonObject &fullConfig,
+                                                        const QString &agentId,
+                                                        const QStringList &enabledSkillNames) const;
+
     void setLocalToolEnabled(const QString &toolId, bool enabled);
 
     /**
