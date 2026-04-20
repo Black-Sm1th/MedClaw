@@ -1339,6 +1339,26 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             }
         }
 
+        if (looksLikeConfigHashStaleError(errMsg)
+            && (method == QLatin1String("config.set")
+                || method == QLatin1String("config.patch"))) {
+            if (m_configHashRetryInFlight) {
+                m_configHashRetryInFlight = false;
+                m_configHashRetryAfterGet = false;
+            } else if (!m_configHashRetryAfterGet) {
+                m_configHashRetryAfterGet = true;
+                qDebug() << "[Gateway] config hash stale; scheduling config.get + retry";
+                refreshMcpList();
+                return;
+            }
+        }
+
+        if ((method == QLatin1String("config.set") || method == QLatin1String("config.patch"))
+            && m_configHashRetryInFlight) {
+            m_configHashRetryInFlight = false;
+            m_configHashRetryAfterGet = false;
+        }
+
         emit errorOccurred(errMsg);
         return;
     }
@@ -1619,6 +1639,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 }
             }
         }
+        // 服务端会改写 openclaw.json（skills.entries），使 baseHash 变化；需刷新快照否则后续 config.set 会失败
+        refreshMcpList();
         return;
     }
 
@@ -1708,6 +1730,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
     // config.set → 全量写入成功（不触发重启），刷新配置快照
     if (method == QLatin1String("config.set")) {
+        m_configHashRetryInFlight = false;
+        m_configHashRetryAfterGet = false;
         qDebug() << "[Gateway] config.set ok, follow-up config.get";
 
         // config.set 已被服务端处理完毕，deny 列表已生效，
@@ -1724,6 +1748,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
     // config.patch → Gateway 可能重启，再拉一次快照以刷新 hash / 列表
     if (method == QLatin1String("config.patch")) {
+        m_configHashRetryInFlight = false;
+        m_configHashRetryAfterGet = false;
         qDebug() << "[Gateway] config.patch ok, follow-up config.get";
         refreshMcpList();
         return;
@@ -1988,6 +2014,34 @@ QString GatewayClient::sendRequest(const QString &method,
     return reqId;
 }
 
+QString GatewayClient::sendConfigMutation(const QString &method, const QJsonObject &params)
+{
+    m_stashedConfigMutationMethod = method;
+    m_stashedConfigMutationParams = params;
+    return sendRequest(method, params);
+}
+
+bool GatewayClient::looksLikeConfigHashStaleError(const QString &errMsg)
+{
+    return errMsg.contains(QLatin1String("config changed since last load"))
+        || errMsg.contains(QLatin1String("re-run config.get"))
+        || errMsg.contains(QLatin1String("config base hash"));
+}
+
+void GatewayClient::maybeRetryStashedConfigMutationAfterGet()
+{
+    if (!m_configHashRetryAfterGet || m_stashedConfigMutationMethod.isEmpty())
+        return;
+    m_configHashRetryAfterGet = false;
+    QJsonObject p = m_stashedConfigMutationParams;
+    if (!m_configSnapshotHash.isEmpty())
+        p[QStringLiteral("baseHash")] = m_configSnapshotHash;
+    m_configHashRetryInFlight = true;
+    qDebug() << "[Gateway] retrying" << m_stashedConfigMutationMethod << "with fresh baseHash";
+    m_stashedConfigMutationParams = p;
+    sendRequest(m_stashedConfigMutationMethod, p);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  7. 业务方法（QML 调用入口）
 // ═══════════════════════════════════════════════════════════════════════
@@ -2210,6 +2264,8 @@ QStringList GatewayClient::allSkillNamesFromStatus() const
     QStringList names;
     for (const QVariant &v : m_skill.skillList()) {
         const QVariantMap m = v.toMap();
+        if (!m.value(QStringLiteral("enabled"), true).toBool())
+            continue;
         QString n = m.value(QStringLiteral("name")).toString().trimmed();
         if (n.isEmpty())
             n = m.value(QStringLiteral("skillKey")).toString().trimmed();
@@ -2313,7 +2369,7 @@ void GatewayClient::setAgentSkillEnabled(const QString &agentId, const QString &
     if (!m_configSnapshotHash.isEmpty())
         reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
 
-    sendRequest(QStringLiteral("config.set"), reqParams);
+    sendConfigMutation(QStringLiteral("config.set"), reqParams);
 }
 
 QString GatewayClient::expandTildePath(const QString &path)
@@ -3216,7 +3272,7 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
             reqParams[QStringLiteral("raw")] = QString::fromUtf8(cfgJson);
             if (!m_configSnapshotHash.isEmpty())
                 reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
-            sendRequest(QStringLiteral("config.set"), reqParams);
+            sendConfigMutation(QStringLiteral("config.set"), reqParams);
             m_tools.batchSetLocalToolEnabled(enabledIds);
             toolPolicyAgentId = aid;
             qDebug() << "[Gateway] set tools.profile=full + deny for new agent" << aid
@@ -3259,6 +3315,8 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     }
 
     emit skillListChanged();
+
+    maybeRetryStashedConfigMutationAfterGet();
 }
 
 void GatewayClient::rebuildAgentWorkspaceMapFromConfigObject(
@@ -3358,7 +3416,7 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
     if (!m_configSnapshotHash.isEmpty())
         reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
 
-    sendRequest(QStringLiteral("config.patch"), reqParams);
+    sendConfigMutation(QStringLiteral("config.patch"), reqParams);
 
     m_tools.setLocalToolEnabled(tid, enabled);
     emit toolListChanged();
@@ -3411,7 +3469,7 @@ void GatewayClient::batchSetAgentToolsEnabled(const QString &agentId,
     if (!m_configSnapshotHash.isEmpty())
         reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
 
-    sendRequest(QStringLiteral("config.set"), reqParams);
+    sendConfigMutation(QStringLiteral("config.set"), reqParams);
 
     m_tools.batchSetLocalToolEnabled(ids);
     emit toolListChanged();
@@ -3492,7 +3550,7 @@ void GatewayClient::applyMcpServer(bool isEdit,
     if (!m_configSnapshotHash.isEmpty())
         params[QStringLiteral("baseHash")] = m_configSnapshotHash;
 
-    sendRequest(QStringLiteral("config.patch"), params);
+    sendConfigMutation(QStringLiteral("config.patch"), params);
 }
 
 void GatewayClient::removeMcpServer(const QString &serverName)
@@ -3519,7 +3577,7 @@ void GatewayClient::removeMcpServer(const QString &serverName)
     if (!m_configSnapshotHash.isEmpty())
         params[QStringLiteral("baseHash")] = m_configSnapshotHash;
 
-    sendRequest(QStringLiteral("config.patch"), params);
+    sendConfigMutation(QStringLiteral("config.patch"), params);
 }
 
 bool GatewayClient::saveTextToFile(const QString &localPath, const QString &content)
@@ -3746,7 +3804,7 @@ void GatewayClient::saveGeneralSettings(bool memEnabled, bool llmEnabled, int sb
         QString::fromUtf8(QJsonDocument(rawTop).toJson(QJsonDocument::Compact));
     if (!m_configSnapshotHash.isEmpty())
         params[QStringLiteral("baseHash")] = m_configSnapshotHash;
-    sendRequest(QStringLiteral("config.patch"), params);
+    sendConfigMutation(QStringLiteral("config.patch"), params);
 
     // 更新本地状态
     if (m_memoryEnabled != memEnabled) {

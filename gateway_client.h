@@ -668,6 +668,11 @@ private:
      */
     QString sendRequest(const QString &method, const QJsonObject &params);
 
+    /// 发送 config.set / config.patch，并暂存参数供 baseHash 过期时自动 config.get 后重试一次
+    QString sendConfigMutation(const QString &method, const QJsonObject &params);
+    void maybeRetryStashedConfigMutationAfterGet();
+    static bool looksLikeConfigHashStaleError(const QString &errMsg);
+
     /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
     QString extractPayloadSessionKey(const QJsonObject &payload) const;
     /// 当前 UI 是否应展示该会话的推送
@@ -773,6 +778,11 @@ private:
     void saveMemoryEntriesToDisk();
 
     QString        m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
+    /// baseHash 不匹配时：暂存最后一次 config.set/patch 参数，先 refresh(config.get) 再重发一次
+    QString        m_stashedConfigMutationMethod;
+    QJsonObject    m_stashedConfigMutationParams;
+    bool           m_configHashRetryAfterGet = false;
+    bool           m_configHashRetryInFlight = false;
     QVariantList   m_mcpList;          ///< mcp.servers 展示列表
 
     WsTools        m_tools;            ///< tools.catalog 与 tools 策略展平

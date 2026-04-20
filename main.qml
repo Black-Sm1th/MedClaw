@@ -1882,6 +1882,8 @@ ApplicationWindow {
                                             var arr = []
                                             var list = wsClient.skillList || []
                                             for (var i = 0; i < list.length; i++) {
+                                                if (list[i].enabled === false)
+                                                    continue
                                                 var n = list[i].name || list[i].skillKey || ""
                                                 if (n) arr.push(n)
                                             }
@@ -1942,7 +1944,14 @@ ApplicationWindow {
                                     }
 
                                     function filteredSkills() {
-                                        var list = wsClient.skillList
+                                        var list = wsClient.skillList || []
+                                        var enabledOnly = []
+                                        for (var j = 0; j < list.length; j++) {
+                                            if (list[j].enabled === false)
+                                                continue
+                                            enabledOnly.push(list[j])
+                                        }
+                                        list = enabledOnly
                                         if (!searchText) return list
                                         var result = []
                                         for (var i = 0; i < list.length; i++) {
@@ -3697,47 +3706,55 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    // Switch {
-                                    //     id: skillSwitch
-                                    //     checked: modelData.enabled
-                                    //     anchors.right: parent.right
-                                    //     anchors.rightMargin: 20
-                                    //     anchors.top: parent.top
-                                    //     anchors.topMargin: 20
+                                    Switch {
+                                        id: skillSwitch
+                                        checked: modelData.enabled
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 20
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 20
+                                        hoverEnabled: true
 
-                                    //     MouseArea {
-                                    //         anchors.fill: parent
-                                    //         cursorShape: Qt.PointingHandCursor
-                                    //         onClicked: {
-                                    //         }
-                                    //     }
+                                        onClicked: {
+                                            var key = modelData.skillKey || modelData.name || ""
+                                            if (key.length > 0)
+                                                wsClient.setSkillEnabled(key, skillSwitch.checked)
+                                        }
 
-                                    //     indicator: Rectangle {
-                                    //         implicitWidth: 44
-                                    //         implicitHeight: 22
-                                    //         x: skillSwitch.leftPadding
-                                    //         y: parent.height / 2 - height / 2
-                                    //         radius: 12
-                                    //         color: skillSwitch.checked ? "#006BFF" : "#1F000000"
+                                        indicator: Rectangle {
+                                            implicitWidth: 44
+                                            implicitHeight: 22
+                                            x: skillSwitch.leftPadding
+                                            y: parent.height / 2 - height / 2
+                                            radius: 12
+                                            color: skillSwitch.checked ? "#006BFF" : "#1F000000"
 
-                                    //         Behavior on color {
-                                    //             ColorAnimation { duration: 150 }
-                                    //         }
+                                            Behavior on color {
+                                                ColorAnimation { duration: 150 }
+                                            }
 
-                                    //         Rectangle {
-                                    //             x: skillSwitch.checked ? parent.width - width - 3 : 3
-                                    //             y: parent.height / 2 - height / 2
-                                    //             width: 18
-                                    //             height: 18
-                                    //             radius: 9
-                                    //             color: "#FFFFFF"
+                                            Rectangle {
+                                                x: skillSwitch.checked ? parent.width - width - 3 : 3
+                                                y: parent.height / 2 - height / 2
+                                                width: 18
+                                                height: 18
+                                                radius: 9
+                                                color: "#FFFFFF"
 
-                                    //             Behavior on x {
-                                    //                 NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-                                    //             }
-                                    //         }
-                                    //     }
-                                    // }
+                                                Behavior on x {
+                                                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            z: 1
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                        }
+                                    }
                                 }
                             }
                         }
