@@ -2297,17 +2297,17 @@ ApplicationWindow {
                                         if (idx >= 0) arr.splice(idx, 1)
                                         else arr.push(toolId)
                                         selectedToolIds = arr
+                                        applyToolSelectionImmediately()
                                     }
 
-                                    function saveToolChanges() {
+                                    /// 勾选/取消后立即同步到网关（或暂存到首个 agent 创建时写入）
+                                    function applyToolSelectionImmediately() {
                                         var aid = leftMidPanel.activeAgentId
                                         if (aid === "") {
                                             wsClient.setPendingNewAgentToolSelection(selectedToolIds)
-                                            toolPopup2.close()
                                             return
                                         }
                                         wsClient.batchSetAgentToolsEnabled(aid, selectedToolIds)
-                                        toolPopup2.close()
                                     }
 
                                     function filteredTools() {
@@ -2418,32 +2418,20 @@ ApplicationWindow {
                                         contentItem: Column {
                                             spacing: 6
                                             width: toolPopup2.width - 16
-
                                             Row {
                                                 width: parent.width
                                                 spacing: 6
-                                                leftPadding: 12
-                                                Text {
-                                                    text: qsTr("工具")
-                                                    font.pixelSize: 12
-                                                    font.family: "Alibaba PuHuiTi 3.0"
-                                                    color: "#73000000"
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                }
 
-                                                Item { width: parent.width - 14 * 2 - toolSaveBtn.width - toolSettingBtn2.width - 6 * 2 - 12; height: 1 }
-
-                                                CustomButton {
-                                                    id: toolSaveBtn
-                                                    text: qsTr("保存")
-                                                    buttonWidth: 44
-                                                    buttonHeight: 24
-                                                    buttonRadius: 4
-                                                    fontSize: 14
-                                                    backgroundColor: "#006BFF"
-                                                    textColor: "#FFFFFF"
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    onClicked: dropdownSelectionTool.saveToolChanges()
+                                                SingleLineTextInput {
+                                                    id: toolSearchInput2
+                                                    inputWidth: parent.width - toolSettingBtn2.width - 6
+                                                    inputHeight: 32
+                                                    inputRadius: 6
+                                                    icon: "qrc:/images/search.png"
+                                                    iconSize: 14
+                                                    fontSize: 13
+                                                    placeholderText: qsTr("搜索工具")
+                                                    onTextChanged: dropdownSelectionTool.toolSearchText = text
                                                 }
 
                                                 ImageButton {
@@ -2456,19 +2444,6 @@ ApplicationWindow {
                                                     }
                                                 }
                                             }
-
-                                            SingleLineTextInput {
-                                                id: toolSearchInput2
-                                                inputWidth: parent.width
-                                                inputHeight: 32
-                                                inputRadius: 6
-                                                icon: "qrc:/images/search.png"
-                                                iconSize: 14
-                                                fontSize: 13
-                                                placeholderText: qsTr("搜索工具")
-                                                onTextChanged: dropdownSelectionTool.toolSearchText = text
-                                            }
-
                                             Flickable {
                                                 id: toolListFlick2
                                                 width: parent.width
