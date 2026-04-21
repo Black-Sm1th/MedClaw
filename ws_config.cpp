@@ -25,8 +25,8 @@ QJsonArray defaultSkillMarketCategoryArray()
         o[QStringLiteral("path")] = path;
         a.append(o);
     };
-    add(QStringLiteral("Medical-Skills"), QStringLiteral("/home/poc-henan/Medical-Skills"));
-    add(QStringLiteral("Scientific-Skills"), QStringLiteral("/home/poc-henan/Scientific-Skills"));
+    add(QStringLiteral("Medical-Skills"), QStringLiteral("~/Medical-Skills"));
+    add(QStringLiteral("Scientific-Skills"), QStringLiteral("~/Scientific-Skills"));
     return a;
 }
 
@@ -65,7 +65,7 @@ WsConfig::WsConfig()
     // ── 占位；loadOrCreatePersistentConfig() 从 AppData/config.json 覆盖 ──
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
     , m_token(QStringLiteral(
-          "a38eee0215d92267ee55c9ecf2dcdb6c2ee1e613a00c6d26"))
+          "faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe"))
     , m_skillsStoragePath(QStringLiteral("~/MedClaw/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
     , m_clientVersion(QStringLiteral("dev"))
@@ -108,7 +108,7 @@ void WsConfig::loadOrCreatePersistentConfig()
     static const QString kDefaultServer =
         QStringLiteral("ws://127.0.0.1:18789");
     static const QString kDefaultToken = QStringLiteral(
-        "a38eee0215d92267ee55c9ecf2dcdb6c2ee1e613a00c6d26");
+        "faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe");
     static const QString kDefaultClientId =
         QStringLiteral("openclaw-control-ui");
     static const QString kDefaultSkillsStoragePath =
