@@ -735,6 +735,19 @@ ApplicationWindow {
                 rightPadding: 16
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
+                spacing: 0
+                Item {
+                    id: workspaceTopBarSlot
+                    width: ((window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6)
+                            && !newTaskRec.isNewTaskWelcome) ? 137 : 0
+                    height: parent.height
+                    clip: true
+                }
+                Rectangle {
+                    width: workspaceTopBarSlot.width > 0 ? 8 : 0
+                    height: 1
+                    color: "transparent"
+                }
                 ImageButton{
                     id: settingBtn
                     source: "qrc:/images/setting.png"
@@ -1481,297 +1494,10 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 spacing: 4
                                 Item {
-                                    id: dropdownSelectionWorkSpace
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 137
+                                    id: workspaceDialogSlot
+                                    width: newTaskRec.isNewTaskWelcome ? 137 : 0
                                     height: 36
-
-                                    property string currentText: qsTr("workspace")
-                                    property string absolutePath: ""
-                                    property var recentFolders: []
-
-                                    readonly property bool pickerLocked: newTaskRec.hasMessages || window.leftSelectedIndex === 6
-
-                                    readonly property string displayText: {
-                                        if (pickerLocked) {
-                                            var w = ""
-                                            if (wsClient.agentIdentity)
-                                                w = wsClient.agentIdentity.workspace || ""
-                                            w = String(w).replace(/\\/g, "/")
-                                            if (!w)
-                                                return qsTr("workspace")
-                                            var segs = w.split("/")
-                                            return segs[segs.length - 1] || w
-                                        }
-                                        return currentText
-                                    }
-
-                                    function resetPicker() {
-                                        absolutePath = ""
-                                        currentText = qsTr("workspace")
-                                    }
-
-                                    Connections {
-                                        target: chatModel
-                                        function onCountChanged() {
-                                            if (chatModel.count === 0)
-                                                dropdownSelectionWorkSpace.resetPicker()
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        id: wsButton
-                                        anchors.fill: parent
-                                        radius: 8
-                                        opacity: dropdownSelectionWorkSpace.pickerLocked ? 0.85 : 1
-                                        color: wsMouseArea.pressed ? "#14000000"
-                                             : wsMouseArea.containsMouse ? "#0A000000"
-                                             : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                                        ToolTip.visible: wsMouseArea.containsMouse
-                                                         && dropdownSelectionWorkSpace.pickerLocked
-                                                         && (wsClient.agentIdentity && (wsClient.agentIdentity.workspace || "").length > 0)
-                                        ToolTip.text: wsClient.agentIdentity ? (wsClient.agentIdentity.workspace || "") : ""
-                                        ToolTip.delay: 400
-
-                                        Row {
-                                            spacing: 6
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.horizontalCenterOffset: dropdownSelectionWorkSpace.pickerLocked ? 0 : (-wsChevron.width / 2 - 2)
-
-                                            Image {
-                                                source: "qrc:/images/folder.png"
-                                                width: 16; height: 16
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(16, 16)
-                                            }
-                                            Text {
-                                                text: dropdownSelectionWorkSpace.displayText
-                                                width: Math.min(implicitWidth, 90)
-                                                elide: Text.ElideMiddle
-                                                font.pixelSize: 14
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#D9000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                        }
-
-                                        Canvas {
-                                            id: wsChevron
-                                            visible: !dropdownSelectionWorkSpace.pickerLocked
-                                            width: 16; height: 16
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: 12
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            rotation: wsPopup.visible ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                ctx.reset()
-                                                ctx.strokeStyle = "#80000000"
-                                                ctx.lineWidth = 1.5
-                                                ctx.lineCap = "round"
-                                                ctx.lineJoin = "round"
-                                                ctx.beginPath()
-                                                ctx.moveTo(4, 6)
-                                                ctx.lineTo(8, 10)
-                                                ctx.lineTo(12, 6)
-                                                ctx.stroke()
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: wsMouseArea
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: dropdownSelectionWorkSpace.pickerLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (dropdownSelectionWorkSpace.pickerLocked)
-                                                    return
-                                                wsPopup.visible ? wsPopup.close() : wsPopup.open()
-                                            }
-                                        }
-                                    }
-
-                                    Popup {
-                                        id: wsPopup
-                                        x: 0
-                                        width: 200
-                                        padding: 8
-
-                                        function calcY() {
-                                            var globalPos = dropdownSelectionWorkSpace.mapToItem(null, 0, 0)
-                                            var windowH = window.height
-                                            var popupH = contentItem.implicitHeight + padding * 2
-                                            // 如果底部空间不足，则显示在上方
-                                            if (globalPos.y + dropdownSelectionWorkSpace.height + 4 + popupH > windowH)
-                                                return -popupH - 4
-                                            return dropdownSelectionWorkSpace.height + 4
-                                        }
-
-                                        y: calcY()
-                                        onAboutToShow: y = calcY()
-
-                                        background: Rectangle {
-                                            radius: 8
-                                            color: "#FFFFFF"
-                                            border.color: "#14000000"
-                                            border.width: 1
-                                            layer.enabled: true
-                                            layer.effect: DropShadow {
-                                                transparentBorder: true
-                                                radius: 12
-                                                samples: 25
-                                                color: "#1A000000"
-                                            }
-                                        }
-
-                                        contentItem: Column {
-                                            spacing: 0
-
-                                            Rectangle {
-                                                width: wsPopup.width - 16
-                                                height: 36
-                                                radius: 6
-                                                color: wsOpenMouse.pressed ? "#14000000"
-                                                     : wsOpenMouse.containsMouse ? "#0A000000"
-                                                     : "transparent"
-                                                Behavior on color { ColorAnimation { duration: 100 } }
-
-                                                Row {
-                                                    spacing: 8
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    anchors.left: parent.left
-                                                    anchors.leftMargin: 12
-
-                                                    Image {
-                                                        source: "qrc:/images/folder.png"
-                                                        width: 18; height: 18
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        fillMode: Image.PreserveAspectFit
-                                                        sourceSize: Qt.size(18, 18)
-                                                    }
-                                                    Text {
-                                                        text: qsTr("打开文件夹")
-                                                        font.pixelSize: 14
-                                                        font.family: "Alibaba PuHuiTi 3.0"
-                                                        color: "#D9000000"
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: wsOpenMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        wsPopup.close()
-                                                        folderDialogWorkSpace.open()
-                                                    }
-                                                }
-                                            }
-                                            Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
-                                            Rectangle {
-                                                width: wsPopup.width - 16
-                                                height: 1
-                                                color: "#EBEDF0"
-                                                anchors.horizontalCenter: parent.horizontalCenter
-                                                visible: dropdownSelectionWorkSpace.recentFolders.length > 0
-                                            }
-
-                                            Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0 }
-
-                                            Text {
-                                                text: qsTr("最近")
-                                                font.pixelSize: 12
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#73000000"
-                                                leftPadding: 12
-                                                visible: dropdownSelectionWorkSpace.recentFolders.length > 0
-                                            }
-
-                                            Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
-
-                                            Repeater {
-                                                visible: dropdownSelectionWorkSpace.recentFolders.length > 0
-                                                model: dropdownSelectionWorkSpace.recentFolders
-                                                delegate: Rectangle {
-                                                    width: wsPopup.width - 8
-                                                    height: 36
-                                                    radius: 6
-                                                    color: recentMouse.pressed ? "#14000000"
-                                                         : recentMouse.containsMouse ? "#0A000000"
-                                                         : "transparent"
-                                                    Behavior on color { ColorAnimation { duration: 100 } }
-
-                                                    Row {
-                                                        spacing: 8
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        anchors.left: parent.left
-                                                        anchors.leftMargin: 12
-
-                                                        Image {
-                                                            source: "qrc:/images/folder.png"
-                                                            width: 18; height: 18
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                            fillMode: Image.PreserveAspectFit
-                                                            sourceSize: Qt.size(18, 18)
-                                                        }
-                                                        Text {
-                                                            text: modelData
-                                                            font.pixelSize: 14
-                                                            font.family: "Alibaba PuHuiTi 3.0"
-                                                            color: "#D9000000"
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: recentMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            dropdownSelectionWorkSpace.currentText = modelData
-                                                            wsPopup.close()
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        enter: Transition {
-                                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
-                                            NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
-                                        }
-                                        exit: Transition {
-                                            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
-                                        }
-                                    }
-
-                                    FileDialog {
-                                        id: folderDialogWorkSpace
-                                        title: qsTr("选择文件夹")
-                                        selectFolder: true
-                                        onAccepted: {
-                                            var url = folderDialogWorkSpace.fileUrl.toString()
-                                            var path = decodeURIComponent(url.replace(/^file:\/{2,3}/, ""))
-                                            if (Qt.platform.os === "windows") {
-                                            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
-                                                path = path.substring(1)
-                                            path = path.replace(/\//g, "\\")
-                                            }else if(Qt.platform.os === "linux"){
-                                                path = "/" + path
-                                            }
-                                            dropdownSelectionWorkSpace.absolutePath = path
-                                            var parts = path.replace(/\\/g, "/").split("/")
-                                            dropdownSelectionWorkSpace.currentText = parts[parts.length - 1] || path
-                                        }
-                                    }
+                                    anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Item {
                                     id: modelPickerWrap
@@ -1844,6 +1570,7 @@ ApplicationWindow {
                                         icon: "qrc:/images/ai.png"
                                         iconSize: 16
                                         currentIndex: 0
+                                        alignment: Qt.AlignLeft
                                         popupMaxWidth: 320
                                         popupMaxHeight: 280
                                         onSelected: function(index, text) {
@@ -2575,7 +2302,7 @@ ApplicationWindow {
                                     }
                                 }
                                 Rectangle{
-                                    width: parent.width - dropdownSelectionWorkSpace.width - dropdownSelectionSkill.width - dropdownSelectionTool.width - dropdownSelectionModel.width - inputLeftRow.width - 5 * 4
+                                    width: parent.width - workspaceDialogSlot.width - dropdownSelectionSkill.width - dropdownSelectionTool.width - dropdownSelectionModel.width - inputLeftRow.width - 5 * 4
                                     height: 1
                                 }
                                 Row{
@@ -2713,6 +2440,353 @@ ApplicationWindow {
                     }
                 }
             }
+
+            Item {
+                id: workspaceHiddenSlot
+                width: 1
+                height: 1
+                visible: false
+                anchors.top: parent.top
+                anchors.left: parent.left
+            }
+
+            Item {
+                id: dropdownSelectionWorkSpace
+                width: 137
+                height: 36
+                z: 10
+
+                readonly property string wsPlaceState: newTaskRec.isNewTaskWelcome ? "dialog"
+                    : ((window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6) ? "topbar" : "hidden")
+
+                state: wsPlaceState
+
+                states: [
+                    State {
+                        name: "dialog"
+                        PropertyChanges { target: dropdownSelectionWorkSpace; visible: true }
+                        ParentChange {
+                            target: dropdownSelectionWorkSpace
+                            parent: workspaceDialogSlot
+                        }
+                        AnchorChanges {
+                            target: dropdownSelectionWorkSpace
+                            anchors.left: workspaceDialogSlot.left
+                            anchors.right: workspaceDialogSlot.right
+                            anchors.top: workspaceDialogSlot.top
+                            anchors.bottom: workspaceDialogSlot.bottom
+                        }
+                    },
+                    State {
+                        name: "topbar"
+                        PropertyChanges { target: dropdownSelectionWorkSpace; visible: true }
+                        ParentChange {
+                            target: dropdownSelectionWorkSpace
+                            parent: workspaceTopBarSlot
+                        }
+                        AnchorChanges {
+                            target: dropdownSelectionWorkSpace
+                            anchors.verticalCenter: workspaceTopBarSlot.verticalCenter
+                            anchors.horizontalCenter: workspaceTopBarSlot.horizontalCenter
+                        }
+                    },
+                    State {
+                        name: "hidden"
+                        PropertyChanges { target: dropdownSelectionWorkSpace; visible: false }
+                        ParentChange {
+                            target: dropdownSelectionWorkSpace
+                            parent: workspaceHiddenSlot
+                        }
+                    }
+                ]
+
+                property string currentText: qsTr("workspace")
+                property string absolutePath: ""
+                property var recentFolders: []
+
+                readonly property bool pickerLocked: newTaskRec.hasMessages || window.leftSelectedIndex === 6
+
+                readonly property string displayText: {
+                    if (pickerLocked) {
+                        var w = ""
+                        if (wsClient.agentIdentity)
+                            w = wsClient.agentIdentity.workspace || ""
+                        w = String(w).replace(/\\/g, "/")
+                        if (!w)
+                            return qsTr("workspace")
+                        var segs = w.split("/")
+                        return segs[segs.length - 1] || w
+                    }
+                    return currentText
+                }
+
+                function resetPicker() {
+                    absolutePath = ""
+                    currentText = qsTr("workspace")
+                }
+
+                Connections {
+                    target: chatModel
+                    function onCountChanged() {
+                        if (chatModel.count === 0)
+                            dropdownSelectionWorkSpace.resetPicker()
+                    }
+                }
+
+                Rectangle {
+                    id: wsButton
+                    anchors.fill: parent
+                    radius: 8
+                    opacity: dropdownSelectionWorkSpace.pickerLocked ? 0.85 : 1
+                    color: wsMouseArea.pressed ? "#14000000"
+                         : wsMouseArea.containsMouse ? "#0A000000"
+                         : "transparent"
+                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                    ToolTip.visible: wsMouseArea.containsMouse
+                                     && dropdownSelectionWorkSpace.pickerLocked
+                                     && (wsClient.agentIdentity && (wsClient.agentIdentity.workspace || "").length > 0)
+                    ToolTip.text: wsClient.agentIdentity ? (wsClient.agentIdentity.workspace || "") : ""
+                    ToolTip.delay: 400
+
+                    Row {
+                        spacing: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.horizontalCenterOffset: dropdownSelectionWorkSpace.pickerLocked ? 0 : (-wsChevron.width / 2 - 2)
+
+                        Image {
+                            source: "qrc:/images/folder.png"
+                            width: 16; height: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            fillMode: Image.PreserveAspectFit
+                            sourceSize: Qt.size(16, 16)
+                        }
+                        Text {
+                            text: dropdownSelectionWorkSpace.displayText
+                            width: Math.min(implicitWidth, 90)
+                            elide: Text.ElideMiddle
+                            font.pixelSize: 14
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            color: "#D9000000"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    Canvas {
+                        id: wsChevron
+                        visible: !dropdownSelectionWorkSpace.pickerLocked
+                        width: 16; height: 16
+                        anchors.right: parent.right
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        rotation: wsPopup.visible ? 180 : 0
+                        Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            ctx.strokeStyle = "#80000000"
+                            ctx.lineWidth = 1.5
+                            ctx.lineCap = "round"
+                            ctx.lineJoin = "round"
+                            ctx.beginPath()
+                            ctx.moveTo(4, 6)
+                            ctx.lineTo(8, 10)
+                            ctx.lineTo(12, 6)
+                            ctx.stroke()
+                        }
+                    }
+
+                    MouseArea {
+                        id: wsMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: dropdownSelectionWorkSpace.pickerLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
+                        onClicked: {
+                            if (dropdownSelectionWorkSpace.pickerLocked)
+                                return
+                            wsPopup.visible ? wsPopup.close() : wsPopup.open()
+                        }
+                    }
+                }
+
+                Popup {
+                    id: wsPopup
+                    x: 0
+                    width: 200
+                    padding: 8
+
+                    function calcY() {
+                        var globalPos = dropdownSelectionWorkSpace.mapToItem(null, 0, 0)
+                        var windowH = window.height
+                        var popupH = contentItem.implicitHeight + padding * 2
+                        if (globalPos.y + dropdownSelectionWorkSpace.height + 4 + popupH > windowH)
+                            return -popupH - 4
+                        return dropdownSelectionWorkSpace.height + 4
+                    }
+
+                    y: calcY()
+                    onAboutToShow: y = calcY()
+
+                    background: Rectangle {
+                        radius: 8
+                        color: "#FFFFFF"
+                        border.color: "#14000000"
+                        border.width: 1
+                        layer.enabled: true
+                        layer.effect: DropShadow {
+                            transparentBorder: true
+                            radius: 12
+                            samples: 25
+                            color: "#1A000000"
+                        }
+                    }
+
+                    contentItem: Column {
+                        spacing: 0
+
+                        Rectangle {
+                            width: wsPopup.width - 16
+                            height: 36
+                            radius: 6
+                            color: wsOpenMouse.pressed ? "#14000000"
+                                 : wsOpenMouse.containsMouse ? "#0A000000"
+                                 : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Row {
+                                spacing: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
+
+                                Image {
+                                    source: "qrc:/images/folder.png"
+                                    width: 18; height: 18
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    fillMode: Image.PreserveAspectFit
+                                    sourceSize: Qt.size(18, 18)
+                                }
+                                Text {
+                                    text: qsTr("打开文件夹")
+                                    font.pixelSize: 14
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    color: "#D9000000"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            MouseArea {
+                                id: wsOpenMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    wsPopup.close()
+                                    folderDialogWorkSpace.open()
+                                }
+                            }
+                        }
+                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
+                        Rectangle {
+                            width: wsPopup.width - 16
+                            height: 1
+                            color: "#EBEDF0"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
+                        }
+
+                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0 }
+
+                        Text {
+                            text: qsTr("最近")
+                            font.pixelSize: 12
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            color: "#73000000"
+                            leftPadding: 12
+                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
+                        }
+
+                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
+
+                        Repeater {
+                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
+                            model: dropdownSelectionWorkSpace.recentFolders
+                            delegate: Rectangle {
+                                width: wsPopup.width - 8
+                                height: 36
+                                radius: 6
+                                color: recentMouse.pressed ? "#14000000"
+                                     : recentMouse.containsMouse ? "#0A000000"
+                                     : "transparent"
+                                Behavior on color { ColorAnimation { duration: 100 } }
+
+                                Row {
+                                    spacing: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 12
+
+                                    Image {
+                                        source: "qrc:/images/folder.png"
+                                        width: 18; height: 18
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        fillMode: Image.PreserveAspectFit
+                                        sourceSize: Qt.size(18, 18)
+                                    }
+                                    Text {
+                                        text: modelData
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        color: "#D9000000"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: recentMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        dropdownSelectionWorkSpace.currentText = modelData
+                                        wsPopup.close()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    enter: Transition {
+                        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                        NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                    }
+                    exit: Transition {
+                        NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                    }
+                }
+
+                FileDialog {
+                    id: folderDialogWorkSpace
+                    title: qsTr("选择文件夹")
+                    selectFolder: true
+                    onAccepted: {
+                        var url = folderDialogWorkSpace.fileUrl.toString()
+                        var path = decodeURIComponent(url.replace(/^file:\/{2,3}/, ""))
+                        if (Qt.platform.os === "windows") {
+                        if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                            path = path.substring(1)
+                        path = path.replace(/\//g, "\\")
+                        }else if(Qt.platform.os === "linux"){
+                            path = "/" + path
+                        }
+                        dropdownSelectionWorkSpace.absolutePath = path
+                        var parts = path.replace(/\\/g, "/").split("/")
+                        dropdownSelectionWorkSpace.currentText = parts[parts.length - 1] || path
+                    }
+                }
+            }
+
             Rectangle{
                 id: scheduledTaskRec
                 anchors.fill: parent

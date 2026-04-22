@@ -68,7 +68,6 @@ Item {
                 anchors.left: root.alignment === Qt.AlignLeft ? parent.left : undefined
                 anchors.horizontalCenter: root.alignment === Qt.AlignHCenter ? parent.horizontalCenter : undefined
                 anchors.horizontalCenterOffset: root.alignment === Qt.AlignHCenter ? -chevron.width / 2 - 2 : 0
-
                 Image {
                     id: displayIcon
                     source: root.icon
@@ -83,7 +82,7 @@ Item {
                 Text {
                     id: displayText
                     text: root.currentText
-                    width: Math.max(0, root.width - (root.icon !== "" ? root.iconSize + 6 : 0) - 28)
+                    width: Math.max(0, root.width - (root.icon !== "" ? root.iconSize + 6 : 0) - 44)
                     elide: Text.ElideMiddle
                     font.pixelSize: root.fontSize
                     font.family: "Alibaba PuHuiTi 3.0"
