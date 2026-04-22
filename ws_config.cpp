@@ -55,6 +55,71 @@ void parseSkillMarketCategoriesFromJson(const QJsonArray &arr, QVariantList *out
     }
 }
 
+static QVariantList jsonArrayToVariantList(const QJsonArray &arr)
+{
+    QVariantList out;
+    for (const QJsonValue &v : arr) {
+        if (v.isString())
+            out.append(v.toString());
+        else if (v.isDouble())
+            out.append(v.toDouble());
+        else if (v.isBool())
+            out.append(v.toBool());
+        else if (v.isObject())
+            out.append(v.toObject().toVariantMap());
+        else if (v.isArray())
+            out.append(QVariant(jsonArrayToVariantList(v.toArray())));
+    }
+    return out;
+}
+
+void parseShortcutsFromJson(const QJsonArray &arr, QVariantList *out)
+{
+    out->clear();
+    for (const QJsonValue &v : arr) {
+        if (!v.isObject())
+            continue;
+        const QJsonObject o = v.toObject();
+        const QString name = o.value(QStringLiteral("name")).toString().trimmed();
+        if (name.isEmpty())
+            continue;
+        QVariantMap top;
+        top[QStringLiteral("name")] = name;
+        top[QStringLiteral("icon")] = o.value(QStringLiteral("icon")).toString();
+        top[QStringLiteral("color")] = o.value(QStringLiteral("color")).toString();
+        const QJsonValue toolsVal = o.value(QStringLiteral("tools"));
+        if (toolsVal.isArray())
+            top[QStringLiteral("tools")] = jsonArrayToVariantList(toolsVal.toArray());
+        else
+            top[QStringLiteral("tools")] = QVariantList();
+
+        QVariantList cardsOut;
+        const QJsonArray cardsArr = o.value(QStringLiteral("cards")).toArray();
+        for (const QJsonValue &cv : cardsArr) {
+            if (!cv.isObject())
+                continue;
+            const QJsonObject co = cv.toObject();
+            const QString cname = co.value(QStringLiteral("name")).toString().trimmed();
+            if (cname.isEmpty())
+                continue;
+            QVariantMap cm;
+            cm[QStringLiteral("name")] = cname;
+            cm[QStringLiteral("description")] = co.value(QStringLiteral("description")).toString();
+            cm[QStringLiteral("icon")] = co.value(QStringLiteral("icon")).toString();
+            cm[QStringLiteral("prompt")] = co.value(QStringLiteral("prompt")).toString();
+            cm[QStringLiteral("color")] = co.value(QStringLiteral("color")).toString();
+            const QJsonValue filesVal = co.value(QStringLiteral("files"));
+            if (filesVal.isArray())
+                cm[QStringLiteral("files")] = jsonArrayToVariantList(filesVal.toArray());
+            else
+                cm[QStringLiteral("files")] = QVariantList();
+            cardsOut.append(cm);
+        }
+        top[QStringLiteral("cards")] = cardsOut;
+        out->append(top);
+    }
+}
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -139,9 +204,11 @@ void WsConfig::loadOrCreatePersistentConfig()
         o[QStringLiteral("clientId")]         = m_clientId;
         o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
         o[QStringLiteral("skillMarketCategories")] = defaultSkillMarketCategoryArray();
+        o[QStringLiteral("shortcut")] = QJsonArray();
         writeDefaults(o);
         parseSkillMarketCategoriesFromJson(defaultSkillMarketCategoryArray(),
                                            &m_skillMarketCategories);
+        parseShortcutsFromJson(QJsonArray(), &m_shortcuts);
         return;
     }
 
@@ -170,6 +237,10 @@ void WsConfig::loadOrCreatePersistentConfig()
         mergedDirty = true;
     } else {
         catArr = catVal.toArray();
+    }
+    if (!merged.contains(QStringLiteral("shortcut"))) {
+        merged[QStringLiteral("shortcut")] = QJsonArray();
+        mergedDirty = true;
     }
     if (mergedDirty)
         writeDefaults(merged);
@@ -203,6 +274,11 @@ void WsConfig::loadOrCreatePersistentConfig()
         m_skillsStoragePath = kDefaultSkillsStoragePath;
 
     parseSkillMarketCategoriesFromJson(catArr, &m_skillMarketCategories);
+    const QJsonValue shortcutVal = merged.value(QStringLiteral("shortcut"));
+    if (shortcutVal.isArray())
+        parseShortcutsFromJson(shortcutVal.toArray(), &m_shortcuts);
+    else
+        parseShortcutsFromJson(QJsonArray(), &m_shortcuts);
 
     qDebug().noquote() << "[WsConfig] loaded" << path << "serverUrl=" << m_serverUrl;
 }
@@ -221,6 +297,8 @@ QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
 void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }
 
 QVariantList WsConfig::skillMarketCategories() const { return m_skillMarketCategories; }
+
+QVariantList WsConfig::shortcuts() const { return m_shortcuts; }
 
 bool    WsConfig::llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }
 void    WsConfig::setLlmJudgmentEnabled(bool enabled)

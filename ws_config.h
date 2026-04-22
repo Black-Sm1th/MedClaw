@@ -58,6 +58,12 @@ public:
      */
     QVariantList skillMarketCategories() const;
 
+    /**
+     * 主界面快捷方式（JSON：shortcut，数组项含 name、icon、tools、cards）
+     * cards 项含 name、description、icon、prompt、files。
+     */
+    QVariantList shortcuts() const;
+
     /// LLM 二级判定开关（本地持久化，OpenClaw 无原生支持）
     bool llmJudgmentEnabled() const;
     void setLlmJudgmentEnabled(bool enabled);
@@ -127,6 +133,7 @@ private:
 
     QString m_skillsStoragePath; ///< 存放技能路径
     QVariantList m_skillMarketCategories; ///< 技能市场分类（name + path）
+    QVariantList m_shortcuts;             ///< 主界面快捷方式
     bool    m_llmJudgmentEnabled = false;
 
     // ── 客户端身份标识（需与 Gateway 白名单匹配） ──

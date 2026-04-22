@@ -817,6 +817,41 @@ ApplicationWindow {
                 property bool hasMessages: chatModel.count > 0
                 property bool isNewTaskWelcome: window.leftSelectedIndex === 0 && !hasMessages
 
+                property string activeShortcutGroupName: ""
+                property string activeShortcutGroupIcon: ""
+                property var activeShortcutCards: []
+                property var activeShortcutToolsConfig: []
+
+                function clearActiveShortcut() {
+                    activeShortcutGroupName = ""
+                    activeShortcutGroupIcon = ""
+                    activeShortcutCards = []
+                    activeShortcutToolsConfig = []
+                    dropdownSelectionTool.syncToolsFromWsClient()
+                    dropdownSelectionTool.applyToolSelectionImmediately()
+                }
+                function setActiveShortcut(sc) {
+                    if (!sc) {
+                        clearActiveShortcut()
+                        return
+                    }
+                    var cards = sc.cards || []
+                    if (cards.length === 0) {
+                        clearActiveShortcut()
+                        return
+                    }
+                    activeShortcutGroupName = sc.name || ""
+                    activeShortcutGroupIcon = sc.icon || ""
+                    activeShortcutCards = cards
+                    activeShortcutToolsConfig = sc.tools || []
+                    dropdownSelectionTool.applyShortcutTools(activeShortcutToolsConfig)
+                }
+
+                readonly property bool shortcutInlineListVisible: isNewTaskWelcome
+                                                              && activeShortcutGroupName.length > 0
+                                                              && activeShortcutCards
+                                                              && activeShortcutCards.length > 0
+
                 function doSendMessage() {
                     var msg = textInputArea.text.trim()
                     if (msg === "") return
@@ -869,6 +904,13 @@ ApplicationWindow {
                     function onMessagePayloadChanged() {
                         if (chatListView.count > 0)
                             Qt.callLater(function () { chatListView.positionViewAtEnd() })
+                    }
+                }
+                Connections {
+                    target: chatModel
+                    function onCountChanged() {
+                        if (chatModel.count > 0)
+                            newTaskRec.clearActiveShortcut()
                     }
                 }
                 ListView {
@@ -1339,7 +1381,7 @@ ApplicationWindow {
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: newTaskRec.isNewTaskWelcome
-                       ? titleCol.y + titleCol.height + 76
+                       ? titleCol.y + titleCol.height + 40
                        : newTaskRec.height - height - 24
                     Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
@@ -2001,10 +2043,50 @@ ApplicationWindow {
                                         selectedToolIds = arr
                                     }
 
+                                    function allCatalogToolIds() {
+                                        var out = []
+                                        var list = wsClient.toolList || []
+                                        for (var i = 0; i < list.length; i++) {
+                                            var tid = list[i].toolId || ""
+                                            if (tid)
+                                                out.push(tid)
+                                        }
+                                        return out
+                                    }
+
+                                    /// 按快捷方式配置的 tools 勾选工具；空数组表示全选
+                                    function applyShortcutTools(toolsFromCfg) {
+                                        var all = allCatalogToolIds()
+                                        var ids = []
+                                        if (!toolsFromCfg || toolsFromCfg.length === 0) {
+                                            ids = all.slice()
+                                        } else {
+                                            var valid = {}
+                                            for (var a = 0; a < all.length; a++)
+                                                valid[all[a]] = true
+                                            for (var k = 0; k < toolsFromCfg.length; k++) {
+                                                var entry = toolsFromCfg[k]
+                                                var tid = ""
+                                                if (typeof entry === "string")
+                                                    tid = entry.trim()
+                                                else if (entry && entry.toolId)
+                                                    tid = String(entry.toolId).trim()
+                                                if (tid && valid[tid])
+                                                    ids.push(tid)
+                                            }
+                                            if (ids.length === 0)
+                                                ids = all.slice()
+                                        }
+                                        selectedToolIds = ids
+                                        applyToolSelectionImmediately()
+                                    }
+
                                     Connections {
                                         target: wsClient
                                         function onToolListChanged() {
                                             dropdownSelectionTool.syncToolsFromWsClient()
+                                            if (newTaskRec.activeShortcutGroupName.length > 0)
+                                                dropdownSelectionTool.applyShortcutTools(newTaskRec.activeShortcutToolsConfig)
                                         }
                                     }
 
@@ -2054,11 +2136,19 @@ ApplicationWindow {
                                         id: toolButton2
                                         anchors.fill: parent
                                         radius: 8
-                                        color: toolMouseArea2.pressed ? "#14000000"
-                                             : toolMouseArea2.containsMouse ? "#0A000000"
+                                        readonly property bool toolStripHover: toolIconMouse.containsMouse
+                                                                                || toolShortcutCloseMa.containsMouse
+                                        color: (toolIconMouse.pressed || toolShortcutCloseMa.pressed) ? "#14000000"
+                                             : toolStripHover ? "#0A000000"
                                              : "transparent"
                                         Behavior on color { ColorAnimation { duration: 100 } }
-
+                                        MouseArea {
+                                            id: toolIconMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: toolPopup2.visible ? toolPopup2.close() : toolPopup2.open()
+                                        }
                                         Row {
                                             id: toolBtnRow2
                                             spacing: 6
@@ -2066,38 +2156,85 @@ ApplicationWindow {
                                             anchors.left: parent.left
                                             anchors.leftMargin: 12
 
-                                            Image {
-                                                source: "qrc:/images/tools.png"
-                                                width: 16; height: 16
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(16, 16)
+                                            Item {
+                                                id: toolOpenZone
+                                                height: 36
+                                                width: toolOpenInnerRow.width
+
+                                                Row {
+                                                    id: toolOpenInnerRow
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    spacing: 6
+
+                                                    Image {
+                                                        id: toolMainIcon
+                                                        source: "qrc:/images/tools.png"
+                                                        width: 16
+                                                        height: 16
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        fillMode: Image.PreserveAspectFit
+                                                        sourceSize: Qt.size(16, 16)
+                                                    }
+                                                    Rectangle {
+                                                        id: toolCountBadge
+                                                        visible: newTaskRec.activeShortcutGroupName.length === 0
+                                                                 && dropdownSelectionTool.selectedToolIds.length > 0
+                                                        width: toolBadgeText.width + 8
+                                                        height: 20
+                                                        radius: 10
+                                                        color: "#14000000"
+                                                        anchors.verticalCenter: parent.verticalCenter
+
+                                                        Text {
+                                                            id: toolBadgeText
+                                                            text: dropdownSelectionTool.selectedToolIds.length
+                                                            font.pixelSize: 12
+                                                            font.family: "Alibaba PuHuiTi 3.0"
+                                                            color: "#73000000"
+                                                            anchors.centerIn: parent
+                                                        }
+                                                    }
+                                                }
                                             }
+
                                             Rectangle {
-                                                visible: dropdownSelectionTool.selectedToolIds.length > 0
-                                                width: toolBadgeText.width + 8
-                                                height: 20
-                                                radius: 10
-                                                color: "#14000000"
+                                                visible: newTaskRec.activeShortcutGroupName.length > 0
+                                                width: 1
+                                                height: 8
+                                                color: "#1F000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Label {
+                                                visible: newTaskRec.activeShortcutGroupName.length > 0
+                                                text: newTaskRec.activeShortcutGroupName
+                                                font.pixelSize: 14
+                                                color: "#006BFF"
+                                                elide: Text.ElideRight
+                                                width: Math.min(implicitWidth, 120)
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Item {
+                                                width: 22
+                                                height: 22
+                                                visible: newTaskRec.activeShortcutGroupName.length > 0
                                                 anchors.verticalCenter: parent.verticalCenter
 
                                                 Text {
-                                                    id: toolBadgeText
-                                                    text: dropdownSelectionTool.selectedToolIds.length
+                                                    text: "\u2715"
+                                                    color: "#006BFF"
                                                     font.pixelSize: 12
-                                                    font.family: "Alibaba PuHuiTi 3.0"
-                                                    color: "#73000000"
                                                     anchors.centerIn: parent
                                                 }
+                                                MouseArea {
+                                                    id: toolShortcutCloseMa
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: newTaskRec.clearActiveShortcut()
+                                                }
                                             }
-                                        }
-
-                                        MouseArea {
-                                            id: toolMouseArea2
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: toolPopup2.visible ? toolPopup2.close() : toolPopup2.open()
                                         }
                                     }
 
@@ -2123,6 +2260,8 @@ ApplicationWindow {
 
                                         onAboutToShow: {
                                             dropdownSelectionTool.syncToolsFromWsClient()
+                                            if (newTaskRec.activeShortcutGroupName.length > 0)
+                                                dropdownSelectionTool.applyShortcutTools(newTaskRec.activeShortcutToolsConfig)
                                             toolSearchInput2.text = ""
                                             y = calcY()
                                         }
@@ -2433,6 +2572,209 @@ ApplicationWindow {
                                         backgroundColor: "#006BFF"
                                         iconSource: "qrc:/images/send.png"
                                         onClicked: newTaskRec.doSendMessage()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    id: shortcutInlinePanel
+                    visible: newTaskRec.shortcutInlineListVisible
+                    width: 840
+                    height: visible ? listMaxHeight : 0
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: chatInputContainer.y + chatInputContainer.height + 12
+                    readonly property real listMaxHeight: window.height - y - 56 - 12
+                    Flickable {
+                        id: shortcutInlineFlick
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        contentWidth: width
+                        contentHeight: shortcutInlineCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.VerticalFlick
+                        interactive: contentHeight > height
+
+                        ScrollBar.vertical: ScrollBar {
+                            policy: shortcutInlineFlick.contentHeight > shortcutInlineFlick.height
+                                    ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                        }
+
+                        Column {
+                            id: shortcutInlineCol
+                            width: shortcutInlineFlick.width
+                            spacing: 0
+
+                            Repeater {
+                                model: newTaskRec.activeShortcutCards || []
+
+                                delegate: Rectangle {
+                                    width: shortcutInlineCol.width
+                                    implicitHeight: inlineCardRow.implicitHeight + 24
+                                    color: inlineRowMouse.pressed ? "#EBEDF0"
+                                         : inlineRowMouse.containsMouse ? "#F7F9FA" : "transparent"
+
+                                    readonly property var card: modelData
+
+                                    Row {
+                                        id: inlineCardRow
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 12
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 12
+
+                                        Rectangle {
+                                            width: 36
+                                            height: 36
+                                            radius: 8
+                                            color: card.color ? card.color : "#0F006BFF"
+                                            anchors.verticalCenter: parent.verticalCenter
+
+                                            Image {
+                                                anchors.centerIn: parent
+                                                width: 20
+                                                height: 20
+                                                source: card && card.icon ? card.icon : ""
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(20, 20)
+                                            }
+                                        }
+
+                                        Column {
+                                            width: inlineCardRow.width - 36 - 12 - 28
+                                            spacing: 2
+                                            anchors.verticalCenter: parent.verticalCenter
+
+                                            Text {
+                                                text: card ? (card.name || "") : ""
+                                                font.pixelSize: 16
+                                                font.bold: true
+                                                color: "#D9000000"
+                                                width: parent.width
+                                                maximumLineCount: 1
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: card ? (card.description || "") : ""
+                                                font.pixelSize: 14
+                                                color: "#73000000"
+                                                width: parent.width
+                                                maximumLineCount: 1
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "\u2192"
+                                            font.pixelSize: 14
+                                            color: "#A6000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: inlineRowMouse.containsMouse
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: inlineRowMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            var p = card && card.prompt !== undefined ? card.prompt : ""
+                                            textInputArea.text = p
+                                            newTaskRec.clearActiveShortcut()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    id: welcomeShortcutStrip
+                    readonly property int shortcutCount: (wsClient.shortcutList && wsClient.shortcutList.length)
+                                                        ? wsClient.shortcutList.length : 0
+                    visible: newTaskRec.isNewTaskWelcome && shortcutCount > 0 && !newTaskRec.shortcutInlineListVisible
+                    width: 840
+                    height: visible ? 64 : 0
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: chatInputContainer.y + chatInputContainer.height + 20
+
+                    Row {
+                        id: shortcutTopRow
+                        height: parent.height
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 20
+
+                        Repeater {
+                            model: wsClient.shortcutList || []
+
+                            delegate: Rectangle {
+                                id: topShortcutCard
+                                height: 56
+                                radius: 12
+                                color: topShortcutMouse.pressed ? "#F0F2F5"
+                                     : topShortcutMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
+                                border.width: 1
+                                border.color: "#E6E7EB"
+                                readonly property int n: welcomeShortcutStrip.shortcutCount
+                                width: Math.min(220, (welcomeShortcutStrip.width - shortcutTopRow.spacing * Math.max(0, n - 1)) / Math.max(1, n))
+
+                                readonly property var sc: modelData
+
+                                Row {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 16
+                                    anchors.rightMargin: 16
+                                    spacing: 12
+
+                                    Rectangle {
+                                        width: 36
+                                        height: 36
+                                        radius: 8
+                                        color: sc.color ? sc.color : "#0F006BFF"
+                                        anchors.verticalCenter: parent.verticalCenter
+
+                                        Image {
+                                            anchors.centerIn: parent
+                                            width: 20
+                                            height: 20
+                                            source: (sc && sc.icon) ? sc.icon : ""
+                                            fillMode: Image.PreserveAspectFit
+                                            sourceSize: Qt.size(20, 20)
+                                        }
+                                    }
+
+                                    Label {
+                                        text: sc ? (sc.name || "") : ""
+                                        font.pixelSize: 16
+                                        font.bold: true
+                                        color: "#D9000000"
+                                        elide: Text.ElideRight
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: parent.width - 36 - 12 - 16 - 12
+                                    }
+
+                                    Text {
+                                        text: "\u2192"
+                                        font.pixelSize: 16
+                                        color: "#A6000000"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: topShortcutMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        newTaskRec.setActiveShortcut(sc)
                                     }
                                 }
                             }

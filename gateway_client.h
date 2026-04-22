@@ -110,6 +110,8 @@ class GatewayClient : public QObject
                NOTIFY skillMarketFoldersChanged)
     /// 技能市场分类（来自 config.json skillMarketCategories）
     Q_PROPERTY(QVariantList skillMarketCategories READ skillMarketCategories CONSTANT)
+    /// 主界面快捷方式（来自 config.json shortcut）
+    Q_PROPERTY(QVariantList shortcutList READ shortcutList CONSTANT)
     /// 当前选中的技能市场分类下标（切换时重新扫描该分类 path 下子目录）
     Q_PROPERTY(int skillMarketCategoryIndex READ skillMarketCategoryIndex
                WRITE setSkillMarketCategoryIndex NOTIFY skillMarketCategoryIndexChanged)
@@ -189,6 +191,7 @@ public:
 
     QVariantList skillMarketFolders() const;
     QVariantList skillMarketCategories() const;
+    QVariantList shortcutList() const;
     int skillMarketCategoryIndex() const;
     void setSkillMarketCategoryIndex(int index);
     bool skillInstallBusy() const;

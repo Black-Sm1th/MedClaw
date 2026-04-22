@@ -251,6 +251,11 @@ QVariantList GatewayClient::skillMarketCategories() const
     return m_config.skillMarketCategories();
 }
 
+QVariantList GatewayClient::shortcutList() const
+{
+    return m_config.shortcuts();
+}
+
 int GatewayClient::skillMarketCategoryIndex() const
 {
     return m_skillMarketCategoryIndex;
