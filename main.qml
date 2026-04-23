@@ -821,12 +821,21 @@ ApplicationWindow {
                 property string activeShortcutGroupIcon: ""
                 property var activeShortcutCards: []
                 property var activeShortcutToolsConfig: []
+                /// 已选子卡片后收起列表，但不退出快捷方式（工具勾选保持到点 ×）
+                property bool shortcutSubPanelDismissed: false
 
-                function clearActiveShortcut() {
+                /// 仅清快捷方式展示（不碰工具 pending），用于首条消息已发出、agent 尚在创建时，
+                /// 避免把 setPendingNewAgentToolSelection 覆盖成全选。
+                function clearActiveShortcutVisualOnly() {
                     activeShortcutGroupName = ""
                     activeShortcutGroupIcon = ""
                     activeShortcutCards = []
                     activeShortcutToolsConfig = []
+                    shortcutSubPanelDismissed = false
+                }
+
+                function clearActiveShortcut() {
+                    clearActiveShortcutVisualOnly()
                     dropdownSelectionTool.syncToolsFromWsClient()
                     dropdownSelectionTool.applyToolSelectionImmediately()
                 }
@@ -840,6 +849,7 @@ ApplicationWindow {
                         clearActiveShortcut()
                         return
                     }
+                    shortcutSubPanelDismissed = false
                     activeShortcutGroupName = sc.name || ""
                     activeShortcutGroupIcon = sc.icon || ""
                     activeShortcutCards = cards
@@ -849,6 +859,7 @@ ApplicationWindow {
 
                 readonly property bool shortcutInlineListVisible: isNewTaskWelcome
                                                               && activeShortcutGroupName.length > 0
+                                                              && !shortcutSubPanelDismissed
                                                               && activeShortcutCards
                                                               && activeShortcutCards.length > 0
 
@@ -910,7 +921,23 @@ ApplicationWindow {
                     target: chatModel
                     function onCountChanged() {
                         if (chatModel.count > 0)
-                            newTaskRec.clearActiveShortcut()
+                            newTaskRec.clearActiveShortcutVisualOnly()
+                    }
+                }
+                Connections {
+                    target: leftMidPanel
+                    function onActiveAgentIdChanged() {
+                        var aid = leftMidPanel.activeAgentId || ""
+                        if (aid.length > 0) {
+                            newTaskRec.clearActiveShortcutVisualOnly()
+                            return
+                        }
+                        // 回到「新建 / 无侧栏 agent」：与工具弹窗 onAboutToShow 一致，恢复全选并写回 pending
+                        dropdownSelectionTool.syncToolsFromWsClient()
+                        if (newTaskRec.activeShortcutGroupName.length > 0)
+                            dropdownSelectionTool.applyShortcutTools(newTaskRec.activeShortcutToolsConfig)
+                        else
+                            dropdownSelectionTool.applyToolSelectionImmediately()
                     }
                 }
                 ListView {
@@ -2085,7 +2112,9 @@ ApplicationWindow {
                                         target: wsClient
                                         function onToolListChanged() {
                                             dropdownSelectionTool.syncToolsFromWsClient()
-                                            if (newTaskRec.activeShortcutGroupName.length > 0)
+                                            // 仅「尚无侧栏 agent」时应用快捷方式 tools；已选中历史 agent 时勿写 config.set
+                                            var aid = leftMidPanel.activeAgentId || ""
+                                            if (newTaskRec.activeShortcutGroupName.length > 0 && aid === "")
                                                 dropdownSelectionTool.applyShortcutTools(newTaskRec.activeShortcutToolsConfig)
                                         }
                                     }
@@ -2614,9 +2643,8 @@ ApplicationWindow {
                                 delegate: Rectangle {
                                     width: shortcutInlineCol.width
                                     implicitHeight: inlineCardRow.implicitHeight + 24
-                                    color: inlineRowMouse.pressed ? "#EBEDF0"
-                                         : inlineRowMouse.containsMouse ? "#F7F9FA" : "transparent"
-
+                                    color: inlineRowMouse.containsMouse ? "#F7F9FA" : "transparent"
+                                    radius: 16
                                     readonly property var card: modelData
 
                                     Row {
@@ -2660,12 +2688,38 @@ ApplicationWindow {
                                                 elide: Text.ElideRight
                                             }
                                             Text {
+                                                id: cardDescription
                                                 text: card ? (card.description || "") : ""
                                                 font.pixelSize: 14
                                                 color: "#73000000"
                                                 width: parent.width
                                                 maximumLineCount: 1
                                                 elide: Text.ElideRight
+                                                ToolTip {
+                                                    visible: cardDescriptionHover.containsMouse && cardDescription.truncated
+                                                    text: cardDescription.text
+                                                    delay: 500
+                                                    x: 0
+                                                    y: -height - 4
+                                                    width: Math.min(implicitContentWidth + 20, cardDescription.width / 2 - 40)
+                                                    background: Rectangle {
+                                                        color: "#A6000000"
+                                                        radius: 4
+                                                    }
+                                                    contentItem: Text {
+                                                        text: cardDescription.text
+                                                        font.pixelSize: 14
+                                                        color: "#FFFFFF"
+                                                        font.family: "Alibaba PuHuiTi 3.0"
+                                                        wrapMode: Text.Wrap
+                                                    }
+                                                }
+                                                MouseArea {
+                                                    id: cardDescriptionHover
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    acceptedButtons: Qt.NoButton
+                                                }
                                             }
                                         }
 
@@ -2686,7 +2740,7 @@ ApplicationWindow {
                                         onClicked: {
                                             var p = card && card.prompt !== undefined ? card.prompt : ""
                                             textInputArea.text = p
-                                            newTaskRec.clearActiveShortcut()
+                                            newTaskRec.shortcutSubPanelDismissed = true
                                         }
                                     }
                                 }
