@@ -2698,7 +2698,7 @@ ApplicationWindow {
                                             spacing: 2
                                             anchors.verticalCenter: parent.verticalCenter
 
-                                            Text {
+                                            Label {
                                                 text: card ? (card.name || "") : ""
                                                 font.pixelSize: 16
                                                 font.bold: true
@@ -2707,7 +2707,7 @@ ApplicationWindow {
                                                 maximumLineCount: 1
                                                 elide: Text.ElideRight
                                             }
-                                            Text {
+                                            Label {
                                                 id: cardDescription
                                                 text: card ? (card.description || "") : ""
                                                 font.pixelSize: 14
