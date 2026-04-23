@@ -2643,12 +2643,32 @@ ApplicationWindow {
                                 delegate: Rectangle {
                                     width: shortcutInlineCol.width
                                     implicitHeight: inlineCardRow.implicitHeight + 24
-                                    color: inlineRowMouse.containsMouse ? "#F7F9FA" : "transparent"
+                                    color: inlineCardHover.hovered || cardDescHover.hovered ? "#F7F9FA" : "transparent"
                                     radius: 16
                                     readonly property var card: modelData
 
+                                    HoverHandler {
+                                        id: inlineCardHover
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+
+                                    // 整行点击区在下层；hover 用 HoverHandler，避免列表刚出现时多个 MouseArea.containsMouse 误判
+                                    MouseArea {
+                                        id: inlineRowMouse
+                                        anchors.fill: parent
+                                        z: 0
+                                        hoverEnabled: false
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            var p = card && card.prompt !== undefined ? card.prompt : ""
+                                            textInputArea.text = p
+                                            newTaskRec.shortcutSubPanelDismissed = true
+                                        }
+                                    }
+
                                     Row {
                                         id: inlineCardRow
+                                        z: 1
                                         anchors.left: parent.left
                                         anchors.leftMargin: 12
                                         anchors.right: parent.right
@@ -2695,8 +2715,11 @@ ApplicationWindow {
                                                 width: parent.width
                                                 maximumLineCount: 1
                                                 elide: Text.ElideRight
+                                                HoverHandler {
+                                                    id: cardDescHover
+                                                }
                                                 ToolTip {
-                                                    visible: cardDescriptionHover.containsMouse && cardDescription.truncated
+                                                    visible: cardDescHover.hovered && cardDescription.truncated
                                                     text: cardDescription.text
                                                     delay: 500
                                                     x: 0
@@ -2714,12 +2737,6 @@ ApplicationWindow {
                                                         wrapMode: Text.Wrap
                                                     }
                                                 }
-                                                MouseArea {
-                                                    id: cardDescriptionHover
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    acceptedButtons: Qt.NoButton
-                                                }
                                             }
                                         }
 
@@ -2728,19 +2745,7 @@ ApplicationWindow {
                                             font.pixelSize: 14
                                             color: "#A6000000"
                                             anchors.verticalCenter: parent.verticalCenter
-                                            visible: inlineRowMouse.containsMouse
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: inlineRowMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            var p = card && card.prompt !== undefined ? card.prompt : ""
-                                            textInputArea.text = p
-                                            newTaskRec.shortcutSubPanelDismissed = true
+                                            visible: inlineCardHover.hovered || cardDescHover.hovered
                                         }
                                     }
                                 }
