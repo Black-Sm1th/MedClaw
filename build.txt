@@ -172,11 +172,48 @@ linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
 #       build/AppDir/usr/qml 应含 QtQuick / QtGraphicalEffects
 #       build/AppDir/usr/plugins 应含 platforms/libqxcb.so
 
+# ---- 6.1 (重要) 补齐 QtQuick Controls 1 / Dialogs 1 私有目录 ----
+# 本项目 main.qml 同时 import QtQuick.Controls 2.15 和 QtQuick.Dialogs 1.3，
+# 而 Dialogs 1.x 的 FileDialog 内部用 Controls 1 的 ScrollView，
+# 进而用到 Private/PrivateWidgets。linuxdeployqt 经常漏抓这些"间接私有目录"，
+# 表现为运行时报：
+#     Type FileDialog unavailable
+#     Type ScrollView unavailable
+#     ScrollViewHelper is not a type
+# 解决：手动把整个 Controls/Dialogs/PrivateWidgets/Layouts 目录复制进 AppDir，
+# 再让 linuxdeployqt 重跑一遍以捕获新增 .so 的运行时依赖。
+
+QT_QML_DIR=$($QT_DIR/bin/qmake -query QT_INSTALL_QML)
+mkdir -p build/AppDir/usr/qml/QtQuick
+for d in Controls Dialogs PrivateWidgets Layouts Window.2 Extras; do
+    if [ -d "$QT_QML_DIR/QtQuick/$d" ]; then
+        cp -rn "$QT_QML_DIR/QtQuick/$d" build/AppDir/usr/qml/QtQuick/
+    fi
+done
+cp -rn "$QT_QML_DIR/QtQuick/Controls/Private" build/AppDir/usr/qml/QtQuick/Controls/ 2>/dev/null || true
+cp -rn "$QT_QML_DIR/QtQuick/Controls/Styles"  build/AppDir/usr/qml/QtQuick/Controls/ 2>/dev/null || true
+
+# 第二次跑 linuxdeployqt：拾取上面新增 .so 的二级依赖
+linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
+    -qmake=$QT_DIR/bin/qmake \
+    -qmldir=. \
+    -extra-plugins=iconengines,imageformats,platforminputcontexts \
+    -bundle-non-qt-libs \
+    -unsupported-allow-new-glibc \
+    -verbose=1
+
+# 如果方式 A 装的系统 Qt，请确保以下 apt 包先装好（很多发行版默认不装 Controls 1）：
+#   qml-module-qtquick-controls       qml-module-qtquick-controls2
+#   qml-module-qtquick-dialogs        qml-module-qtquick-privatewidgets
+#   qml-module-qtquick-extras         qml-module-qtquick-layouts
+#   qml-module-qtquick-window2        qml-module-qtgraphicaleffects
+
 ==============================================================
 7. 生成 AppImage（aarch64）
 ==============================================================
 
 cd /path/to/MedClaw
+rm -f build/MedClaw-aarch64.AppImage          # 旧文件先删，避免不覆盖
 ARCH=aarch64 appimagetool build/AppDir build/MedClaw-aarch64.AppImage
 
 # 不带 FUSE 的环境改用：
@@ -219,6 +256,16 @@ QT_DEBUG_PLUGINS=1 ./build/MedClaw-aarch64.AppImage
 (4) "could not load the Qt platform plugin xcb"
     多半缺少 xcb 系列运行时；apt-get install libxcb-cursor0 libxkbcommon-x11-0
     再确认 platforms/libqxcb.so 已被打进 AppDir/usr/plugins/platforms/。
+
+(5a) Type FileDialog unavailable / ScrollViewHelper is not a type
+    原因：Dialogs 1.x 的 FileDialog 内部用 Controls 1 的 ScrollView，
+        而 Controls 1 又依赖 Private、PrivateWidgets 等私有 QML 模块；
+        linuxdeployqt 经常漏抓这些"间接 Private 目录"。
+    解决：见第 6.1 节，手动 cp Controls/Dialogs/PrivateWidgets/Layouts/
+        Window.2/Extras 目录到 AppDir，再跑一次 linuxdeployqt 后重打 AppImage。
+    替代：把 main.qml 里 `import QtQuick.Dialogs 1.3` 替换成
+        `import Qt.labs.platform 1.1`，FileDialog 接口稍作适配，
+        即可彻底摆脱 Controls 1 私有目录这条链路。
 
 (5) GLIBC_X.YY not found
     打包机 glibc 比目标机新。请在与目标系统同代的 ARM64 机器
@@ -274,5 +321,24 @@ linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
     -unsupported-allow-new-glibc \
     -verbose=1
 
+# 补齐 Controls 1 / Dialogs 1 私有 QML 目录，避免运行时 FileDialog 加载失败
+QT_QML_DIR=$("$QT_DIR/bin/qmake" -query QT_INSTALL_QML)
+mkdir -p build/AppDir/usr/qml/QtQuick
+for d in Controls Dialogs PrivateWidgets Layouts Window.2 Extras; do
+    [ -d "$QT_QML_DIR/QtQuick/$d" ] && cp -rn "$QT_QML_DIR/QtQuick/$d" build/AppDir/usr/qml/QtQuick/
+done
+cp -rn "$QT_QML_DIR/QtQuick/Controls/Private" build/AppDir/usr/qml/QtQuick/Controls/ 2>/dev/null || true
+cp -rn "$QT_QML_DIR/QtQuick/Controls/Styles"  build/AppDir/usr/qml/QtQuick/Controls/ 2>/dev/null || true
+
+# 二次扫描，捕获新增 .so 的二级依赖
+linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
+    -qmake="$QT_DIR/bin/qmake" \
+    -qmldir=. \
+    -extra-plugins=iconengines,imageformats,platforminputcontexts \
+    -bundle-non-qt-libs \
+    -unsupported-allow-new-glibc \
+    -verbose=1
+
+rm -f build/MedClaw-aarch64.AppImage
 ARCH=aarch64 appimagetool build/AppDir build/MedClaw-aarch64.AppImage
 echo "Done -> build/MedClaw-aarch64.AppImage"
