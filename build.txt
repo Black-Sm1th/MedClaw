@@ -1,0 +1,43 @@
+sudo apt install -y git build-essential qtbase5-dev patchelf file wget
+git clone https://github.com/probonopd/linuxdeployqt.git
+cd linuxdeployqt && mkdir build && cd build
+qmake ..
+make -j$(nproc)
+sudo cp tools/linuxdeployqt/linuxdeployqt /usr/local/bin/
+
+
+wget -O ~/appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+chmod +x ~/appimagetool
+sudo mv ~/appimagetool /usr/local/bin/appimagetool
+
+
+cd /home/yj10/Project/MedClaw
+BUILD_DIR=/home/yj10/Project/build-MedClaw-arm64-Release   # ← 改成你实际路径
+
+rm -rf AppDir
+mkdir -p AppDir/usr/bin \
+         AppDir/usr/share/applications \
+         AppDir/usr/share/icons/hicolor/256x256/apps
+
+cp "$BUILD_DIR/MedClaw" AppDir/usr/bin/
+cp images/largeIcon.png AppDir/usr/share/icons/hicolor/256x256/apps/MedClaw.png
+cp images/largeIcon.png AppDir/MedClaw.png
+
+cat > AppDir/usr/share/applications/MedClaw.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=MedClaw
+Exec=MedClaw
+Icon=MedClaw
+Categories=Utility;
+Terminal=false
+EOF
+
+
+linuxdeployqt AppDir/usr/share/applications/MedClaw.desktop \
+    -qmldir=/home/yj10/Project/MedClaw \
+    -qmldir=/home/yj10/Project/MedClaw/components \
+    -bundle-non-qt-libs \
+    -extra-plugins=iconengines,imageformats,platforms \
+    -unsupported-allow-new-glibc \
+    -appimage
