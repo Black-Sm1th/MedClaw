@@ -1344,6 +1344,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             }
         }
 
+        // sessions.patch 失败 → 清空"用户意图"，让下拉框回退到 currentModel
+        // 显示真实的服务端状态，避免用户误以为切换成功
+        if (method == QLatin1String("sessions.patch")
+            && !m_pendingSessionModelId.isEmpty()) {
+            m_pendingSessionModelId.clear();
+            emit pendingSessionModelIdChanged();
+        }
+
         if (looksLikeConfigHashStaleError(errMsg)
             && (method == QLatin1String("config.set")
                 || method == QLatin1String("config.patch"))) {
@@ -1793,16 +1801,50 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
     // sessions.patch 响应 → 更新当前会话模型信息
     if (method == QLatin1String("sessions.patch")) {
-        m_currentModel.clear();
-        m_currentModel[QStringLiteral("model")]         =
+        // 服务端可能返回 modelOverride/providerOverride（用户意图，下次发消息会用）
+        // 以及 model/modelProvider（上一次实际运行时模型）。
+        // 选择策略：优先用 override，没有则用 runtime，确保 UI 能立刻反映刚刚的切换。
+        const QString modelOverride =
+            payload.value(QStringLiteral("modelOverride")).toString();
+        const QString providerOverride =
+            payload.value(QStringLiteral("providerOverride")).toString();
+        const QString runtimeModel =
             payload.value(QStringLiteral("model")).toString();
-        m_currentModel[QStringLiteral("modelProvider")] =
+        const QString runtimeProvider =
             payload.value(QStringLiteral("modelProvider")).toString();
 
+        QString effectiveModel    = modelOverride.isEmpty() ? runtimeModel : modelOverride;
+        QString effectiveProvider = providerOverride.isEmpty() ? runtimeProvider : providerOverride;
+
+        // modelOverride 可能本身就是 "provider/id"；拆出来便于 QML 比较。
+        if (!effectiveModel.isEmpty()) {
+            const int slashIdx = effectiveModel.indexOf(QLatin1Char('/'));
+            if (slashIdx > 0 && effectiveProvider.isEmpty())
+                effectiveProvider = effectiveModel.left(slashIdx);
+            if (slashIdx > 0 && !effectiveProvider.isEmpty()
+                && effectiveModel.startsWith(effectiveProvider + QLatin1Char('/'))) {
+                effectiveModel = effectiveModel.mid(effectiveProvider.size() + 1);
+            }
+        }
+
+        m_currentModel.clear();
+        m_currentModel[QStringLiteral("model")]            = effectiveModel;
+        m_currentModel[QStringLiteral("modelProvider")]    = effectiveProvider;
+        m_currentModel[QStringLiteral("modelOverride")]    = modelOverride;
+        m_currentModel[QStringLiteral("providerOverride")] = providerOverride;
+
         qDebug() << "[Gateway] sessions.patch →"
-                 << m_currentModel.value(QStringLiteral("modelProvider")).toString()
-                 << "/" << m_currentModel.value(QStringLiteral("model")).toString();
+                 << effectiveProvider << "/" << effectiveModel
+                 << "(override:" << providerOverride << "/" << modelOverride
+                 << ", runtime:" << runtimeProvider << "/" << runtimeModel << ")";
         emit currentModelChanged();
+
+        // 服务端已确认本次模型切换，清空 pending（用户意图），
+        // 后续 syncIndexFromGateway 会回退到 currentModel 渲染。
+        if (!m_pendingSessionModelId.isEmpty()) {
+            m_pendingSessionModelId.clear();
+            emit pendingSessionModelIdChanged();
+        }
         return;
     }
 
@@ -2737,8 +2779,14 @@ void GatewayClient::refreshModels()
  *
  * sessions.patch RPC：
  *   - modelId 为空 → params.model = null → 查询当前模型
- *   - modelId 非空 → params.model = "model-id" → 切换到指定模型
+ *   - modelId 非空 → params.model = "provider/id" → 切换到指定模型
  * 两种情况的响应都包含 modelProvider / model 字段。
+ *
+ * 关于 modelId 的格式：OpenClaw 网关要求 sessions.patch 的 model 必须是
+ * "provider/id" 全限定 ref（例如 "custom-api-deepseek-com/deepseek-v4-pro"）。
+ * 如果调用方传入的是裸 id（例如仅 "deepseek-v4-pro"），本函数会在 m_modelList
+ * 中查找对应的 provider 并自动拼出全限定 ref；若调用方已经传入了带 "/" 前缀
+ * 的全限定 ref，则原样发送。
  */
 void GatewayClient::patchSessionModel(const QString &modelId)
 {
@@ -2746,14 +2794,29 @@ void GatewayClient::patchSessionModel(const QString &modelId)
         emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
         return;
     }
+
+    // 把外部传入的 modelId 解析为 "provider/id" 全限定形式：
+    //   - 空 → 保持空（用作查询当前模型）
+    //   - 已经包含 provider 前缀 → 保留原值
+    //   - 仅裸 id → 查 m_modelList 取 provider 拼出 "provider/id"
+    const QString resolvedModelId = qualifyModelRef(modelId);
+
+    // 只要用户显式选中了某个模型（resolvedModelId 非空），就立刻把它写进
+    // m_pendingSessionModelId 表示"用户意图"。无论当前有没有 session，
+    // 也无论服务端 sessions.patch 响应何时到达，下拉框侧都会优先用 pending
+    // 渲染，避免点击瞬间因 m_currentModel 还停留在旧值/空值而被同步逻辑
+    // 拉回旧位置或重置到第 0 项。pending 会在 sessions.patch 响应处理里
+    // 被清空（详见 handleResponse 中的 "sessions.patch 响应" 分支）。
+    if (!resolvedModelId.isEmpty()
+        && m_pendingSessionModelId != resolvedModelId) {
+        m_pendingSessionModelId = resolvedModelId;
+        emit pendingSessionModelIdChanged();
+    }
+
     if (m_session.currentSessionKey().trimmed().isEmpty()) {
-        if (!modelId.isEmpty()) {
-            if (m_pendingSessionModelId != modelId) {
-                m_pendingSessionModelId = modelId;
-                emit pendingSessionModelIdChanged();
-            }
+        if (!resolvedModelId.isEmpty()) {
             qDebug().noquote() << "[Gateway] patchSessionModel deferred (no session), pending:"
-                               << modelId;
+                               << resolvedModelId;
         }
         return;
     }
@@ -2761,21 +2824,59 @@ void GatewayClient::patchSessionModel(const QString &modelId)
     QJsonObject params;
     params[QStringLiteral("key")] = m_session.currentSessionKey();
 
-    if (modelId.isEmpty()) {
+    if (resolvedModelId.isEmpty()) {
         params[QStringLiteral("model")] = QJsonValue();
     } else {
-        params[QStringLiteral("model")] = modelId;
+        params[QStringLiteral("model")] = resolvedModelId;
     }
 
     qDebug().noquote() << "[Gateway] sessions.patch model:"
-                       << (modelId.isEmpty() ? "null (query)" : modelId)
+                       << (resolvedModelId.isEmpty() ? "null (query)" : resolvedModelId)
                        << "session:" << m_session.currentSessionKey();
     sendRequest(QStringLiteral("sessions.patch"), params);
+}
 
-    if (!modelId.isEmpty() && !m_pendingSessionModelId.isEmpty()) {
-        m_pendingSessionModelId.clear();
-        emit pendingSessionModelIdChanged();
+/**
+ * @brief 把模型 id 解析为 "provider/id" 全限定 ref
+ *
+ * 规则：
+ *   - 入参为空 → 返回空（用于 sessions.patch model:null 查询）
+ *   - 入参已经含 "/" 且前缀能在 m_modelList 中匹配到某个 provider → 视为已全限定，原样返回
+ *   - 入参为裸 id 且 m_modelList 中存在同名 id → 拼出 "provider/id"
+ *   - 其他情况（找不到匹配 / provider 为空）→ 原样返回，让服务端自行匹配
+ */
+QString GatewayClient::qualifyModelRef(const QString &modelId) const
+{
+    const QString trimmed = modelId.trimmed();
+    if (trimmed.isEmpty())
+        return QString();
+
+    // 若已经是 "provider/id" 形式且 provider 段在 m_modelList 中能找到，
+    // 视作已全限定，避免重复前缀（兼容 nvidia/moonshotai/kimi-k2.5 等多级路径）
+    const int slashIdx = trimmed.indexOf(QLatin1Char('/'));
+    if (slashIdx > 0) {
+        const QString head = trimmed.left(slashIdx);
+        for (const QVariant &v : m_modelList) {
+            const QVariantMap m = v.toMap();
+            if (m.value(QStringLiteral("provider")).toString() == head)
+                return trimmed;
+        }
+        // 没匹配到 provider 前缀也直接放行，由网关决定如何解析
+        return trimmed;
     }
+
+    // 裸 id：在 m_modelList 中查同名条目并拼接 provider
+    for (const QVariant &v : m_modelList) {
+        const QVariantMap m = v.toMap();
+        if (m.value(QStringLiteral("id")).toString() != trimmed)
+            continue;
+        const QString provider =
+            m.value(QStringLiteral("provider")).toString().trimmed();
+        if (provider.isEmpty())
+            return trimmed;
+        return provider + QLatin1Char('/') + trimmed;
+    }
+    return trimmed;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

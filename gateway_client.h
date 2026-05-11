@@ -418,7 +418,10 @@ public:
 
     /**
      * @brief 查询或设置当前会话的模型（发送 sessions.patch RPC）
-     * @param modelId 为空时查询当前模型（model:null），非空时切换到指定模型
+     * @param modelId 为空时查询当前模型（model:null）；非空时切换到指定模型。
+     *                可以是裸 id（如 "deepseek-v4-pro"），内部会查 m_modelList
+     *                自动拼成 "provider/id" 全限定 ref；也可以直接传入
+     *                "provider/id" 全限定形式。
      */
     Q_INVOKABLE void patchSessionModel(const QString &modelId = QString());
 
@@ -637,6 +640,9 @@ private:
 
     /// 聊天/历史/身份使用的 sessionKey（agent 行上可有 chatSessionKey）
     QString resolveChatSessionKeyForAgentId(const QString &agentId) const;
+
+    /// 把模型 id 解析为 "provider/id" 全限定 ref，用于 sessions.patch
+    QString qualifyModelRef(const QString &modelId) const;
 
     /**
      * @brief 解析 config.get 的 payload，更新 m_configSnapshotHash、m_mcpList
