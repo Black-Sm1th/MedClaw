@@ -1575,6 +1575,16 @@ ApplicationWindow {
                                     height: 36
                                     property var modelIds: []
 
+                                    function qualifyModelRef(mid, pv) {
+                                        if (!mid)
+                                            return ""
+                                        if (!pv)
+                                            return mid
+                                        if (mid.indexOf(pv + "/") === 0)
+                                            return mid
+                                        return pv + "/" + mid
+                                    }
+
                                     function rebuildFromGateway() {
                                         var list = wsClient.modelList || []
                                         var labels = []
@@ -1587,7 +1597,7 @@ ApplicationWindow {
                                             var nm = m.name || mid
                                             var pv = m.provider || ""
                                             labels.push(window.modelDisplayLabel(nm, pv))
-                                            ids.push(mid)
+                                            ids.push(qualifyModelRef(mid, pv))
                                         }
                                         modelIds = ids
                                         if (labels.length === 0) {
@@ -1602,18 +1612,18 @@ ApplicationWindow {
                                     }
 
                                     function syncIndexFromGateway() {
-                                        var cur = ""
-                                        if (wsClient.currentSessionKey && wsClient.currentSessionKey.length > 0) {
+                                        // 优先级：pending（用户最近一次点选的模型，sessions.patch 响应到达前的"意图"）
+                                        //     →  currentModel（服务端已确认的运行时模型）
+                                        // 否则保留 DropdownSelect 当前 currentIndex，避免下拉框被中间状态拉回旧选项。
+                                        var cur = wsClient.pendingSessionModelId || ""
+                                        if (!cur && wsClient.currentSessionKey && wsClient.currentSessionKey.length > 0) {
                                             var cm = wsClient.currentModel || {}
-                                            cur = cm.model || ""
-                                        } else {
-                                            cur = wsClient.pendingSessionModelId || ""
+                                            cur = qualifyModelRef(cm.model || "",
+                                                                  cm.modelProvider || "")
                                         }
                                         var ids = modelIds
-                                        if (!cur || ids.length === 0) {
-                                            dropdownSelectionModel.currentIndex = 0
+                                        if (!cur || ids.length === 0)
                                             return
-                                        }
                                         for (var j = 0; j < ids.length; j++) {
                                             if (ids[j] === cur) {
                                                 dropdownSelectionModel.currentIndex = j
