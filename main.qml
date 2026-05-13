@@ -939,19 +939,6 @@ ApplicationWindow {
                     }
                 }
 
-                /// 工具结果合并、流式刷新等会原地改变 delegate 高度；单次 positionViewAtEnd
-                /// 若跑在布局完成之前会停在旧的几何底部，故延后到下一帧再滚一次。
-                function scrollChatToEndAfterLayout() {
-                    if (chatListView.count <= 0)
-                        return
-                    Qt.callLater(function () {
-                        chatListView.positionViewAtEnd()
-                        Qt.callLater(function () {
-                            chatListView.positionViewAtEnd()
-                        })
-                    })
-                }
-
                 Column{
                     id: titleCol
                     visible: newTaskRec.isNewTaskWelcome
@@ -979,7 +966,8 @@ ApplicationWindow {
                 Connections {
                     target: chatModel
                     function onMessagePayloadChanged() {
-                        newTaskRec.scrollChatToEndAfterLayout()
+                        if (chatListView.count > 0)
+                            Qt.callLater(function () { chatListView.positionViewAtEnd() })
                     }
                 }
                 Connections {
@@ -1020,7 +1008,7 @@ ApplicationWindow {
 
                     onCountChanged: {
                         if (count > 0)
-                            newTaskRec.scrollChatToEndAfterLayout()
+                            Qt.callLater(function () { chatListView.positionViewAtEnd() })
                     }
 
                     /// 工具卡片折叠状态记忆：key 优先用 toolCallId（稳定），
@@ -1342,12 +1330,6 @@ ApplicationWindow {
                                                         // readOnly: true
                                                         // selectByMouse: true
                                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                                                        onTextChanged: Qt.callLater(function () {
-                                                            toolResultFlick.contentY = Math.max(
-                                                                        0,
-                                                                        toolResultFlick.contentHeight
-                                                                        - toolResultFlick.height)
-                                                        })
                                                     }
                                                 }
                                             }
