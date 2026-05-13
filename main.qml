@@ -978,6 +978,13 @@ ApplicationWindow {
                     }
                 }
                 Connections {
+                    target: chatModel
+                    function onIsStreamingChanged() {
+                        if (chatModel.isStreaming && chatListView.count > 0)
+                            chatListView.scheduleScrollToEnd()
+                    }
+                }
+                Connections {
                     target: leftMidPanel
                     function onActiveAgentIdChanged() {
                         var aid = leftMidPanel.activeAgentId || ""
@@ -998,7 +1005,7 @@ ApplicationWindow {
                     visible: newTaskRec.hasMessages
                     anchors.top: parent.top
                     anchors.topMargin: 16
-                    anchors.bottom: chatInputContainer.top
+                    anchors.bottom: generatingRow.top
                     anchors.bottomMargin: 8
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -1517,6 +1524,55 @@ ApplicationWindow {
                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+
+                /// 固定在输入框上方、列表可视区域下方（不参与 ListView 滚动）
+                Item {
+                    id: generatingRow
+                    width: 840
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: chatInputContainer.top
+                    height: (newTaskRec.hasMessages && chatModel.isStreaming)
+                            ? (generatingStatusLabel.implicitHeight + 12)
+                            : 0
+                    visible: height > 0
+
+                    Connections {
+                        target: chatModel
+                        function onIsStreamingChanged() {
+                            if (!chatModel.isStreaming)
+                                generatingStatusLabel.opacity = 1
+                        }
+                    }
+
+                    Label {
+                        id: generatingStatusLabel
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("生成中...")
+                        font.pixelSize: 14
+                        font.family: window.font.family
+                        color: "#8A8F98"
+                        opacity: 1
+
+                        SequentialAnimation on opacity {
+                            running: chatModel.isStreaming && generatingRow.visible
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                from: 1.0
+                                to: 0.3
+                                duration: 700
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                from: 0.3
+                                to: 1.0
+                                duration: 700
+                                easing.type: Easing.InOutSine
                             }
                         }
                     }

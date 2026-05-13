@@ -37,6 +37,8 @@ class ChatModel : public QAbstractListModel
 {
     Q_OBJECT
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
+    /// 网关流式回复进行中（与 C++ m_streaming 一致），供 QML 显示「生成中」等
+    Q_PROPERTY(bool isStreaming READ isStreaming NOTIFY isStreamingChanged)
 
 public:
     enum Roles {
@@ -79,6 +81,7 @@ public:
 
 signals:
     void countChanged();
+    void isStreamingChanged();
     /// 行数未变但内容/展示高度变化（流式追加、工具结果合并到卡片等），供界面滚到底部
     void messagePayloadChanged();
 
