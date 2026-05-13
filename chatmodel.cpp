@@ -177,10 +177,17 @@ void ChatModel::appendToLastMessage(const QString &text)
 
 void ChatModel::clear()
 {
+    m_streamFlushTimer.stop();
+    m_streamFlushRow = -1;
+    m_streamDirty = false;
+    const bool wasStreaming = m_streaming;
+    m_streaming = false;
     beginResetModel();
     m_messages.clear();
     endResetModel();
     emit countChanged();
+    if (wasStreaming)
+        emit isStreamingChanged();
 }
 
 bool ChatModel::hasToolCallId(const QString &toolCallId) const
@@ -205,6 +212,7 @@ void ChatModel::beginStreaming()
 {
     if (!m_streaming) {
         m_streaming = true;
+        emit isStreamingChanged();
         const int idx = m_messages.count();
         beginInsertRows(QModelIndex(), idx, idx);
         ChatMessage msg;
@@ -281,6 +289,7 @@ void ChatModel::endStreaming()
 {
     if (!m_streaming) return;
     m_streaming = false;
+    emit isStreamingChanged();
     m_streamFlushTimer.stop();
     m_streamDirty = false;
     if (m_messages.isEmpty()) {

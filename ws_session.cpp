@@ -549,9 +549,11 @@ WsEventResult WsSession::parseEvent(const QString &event,
 
     result.isComplete = (phase == QLatin1String("complete"))
                      || (phase == QLatin1String("done"))
+                     || (phase == QLatin1String("end"))
                      || subEvent.contains(QLatin1String("complete"))
                      || subEvent.contains(QLatin1String("done"))
-                     || subEvent.contains(QLatin1String("finish"));
+                     || subEvent.contains(QLatin1String("finish"))
+                     || subEvent.contains(QLatin1String("end"));
 
     // ── 提取文本内容（优先级：delta > content > text） ──
     result.content = delta;
