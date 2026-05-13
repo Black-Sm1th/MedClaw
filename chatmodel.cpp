@@ -43,6 +43,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case ToolResultTextRole: return msg.toolResultText;
     case HasToolResultRole:  return msg.hasToolResult;
     case IsStreamingRole:    return msg.isStreaming;
+    case IsIntermediateRole: return msg.isIntermediate;
     }
     return QVariant();
 }
@@ -60,7 +61,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { IsErrorRole,    "isError"    },
         { ToolResultTextRole, "toolResultText" },
         { HasToolResultRole,  "hasToolResult"  },
-        { IsStreamingRole,    "isStreaming"    }
+        { IsStreamingRole,    "isStreaming"    },
+        { IsIntermediateRole, "isIntermediate" }
     };
 }
 
@@ -87,6 +89,24 @@ void ChatModel::addToolCall(const QString &toolName,
                              const QString &toolArgs,
                              const QString &toolCallId)
 {
+    // 工具调用之前的助手文本属于「工具间中间输出」，标记为斜体显示。
+    // 跳过相邻的 toolCall / toolResult 行（并行工具调用），只标记紧邻的那条助手文本。
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        const ChatMessage &m = m_messages[i];
+        if (m.msgType == QStringLiteral("toolCall")
+            || m.msgType == QStringLiteral("toolResult")) {
+            continue;
+        }
+        if (m.msgType == QStringLiteral("text")
+            && m.role == QStringLiteral("assistant")
+            && !m.isIntermediate) {
+            m_messages[i].isIntermediate = true;
+            const QModelIndex midx = index(i);
+            emit dataChanged(midx, midx, { IsIntermediateRole });
+        }
+        break;
+    }
+
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;

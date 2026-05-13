@@ -1881,7 +1881,10 @@ ApplicationWindow {
                                             text: content
                                             wrapMode: Text.Wrap
                                             font.pixelSize: 13
-                                            color: testTextBox.testIsUser ? "#FFFFFF" : "#1A1A1A"
+                                            font.italic: isIntermediate || false
+                                            color: testTextBox.testIsUser
+                                                   ? "#FFFFFF"
+                                                   : (isIntermediate ? "#666666" : "#1A1A1A")
                                             textFormat: Text.PlainText
                                         }
                                     }

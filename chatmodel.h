@@ -28,6 +28,9 @@ struct ChatMessage {
     bool    hasToolResult = false;
     /// 当前消息是否处于流式接收态（用于 QML 切换 textFormat / 走增量追加路径）
     bool    isStreaming = false;
+    /// 工具调用之间的中间助手文本（区别于最终回答）：QML 用斜体渲染。
+    /// 在新增 toolCall 时把紧邻之前的助手文本消息标记为中间态。
+    bool    isIntermediate = false;
 };
 
 class ChatModel : public QAbstractListModel
@@ -47,7 +50,8 @@ public:
         IsErrorRole,
         ToolResultTextRole,
         HasToolResultRole,
-        IsStreamingRole
+        IsStreamingRole,
+        IsIntermediateRole
     };
 
     explicit ChatModel(QObject *parent = nullptr);
