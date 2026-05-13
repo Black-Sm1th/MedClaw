@@ -258,7 +258,7 @@ ApplicationWindow {
                         visible: !window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "workflow", "skills", "MCP"]
+                            model: ["新建任务", "定时任务", "workflow", "skills"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -318,7 +318,7 @@ ApplicationWindow {
                         visible: window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "workflow", "skills", "MCP"]
+                            model: ["新建任务", "定时任务", "workflow", "skills"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -4391,212 +4391,212 @@ ApplicationWindow {
                     }
                 }
             }
-            Rectangle {
-                id: mcpSettingRec
-                anchors.fill: parent
-                visible: window.leftSelectedIndex === 4
-                property string mcpSearchText: ""
+        //     Rectangle {
+        //         id: mcpSettingRec
+        //         anchors.fill: parent
+        //         visible: window.leftSelectedIndex === 4
+        //         property string mcpSearchText: ""
 
-                function filteredMcpList() {
-                    var list = wsClient.mcpList
-                    var q = (mcpSearchText || "").trim().toLowerCase()
-                    if (!q)
-                        return list
-                    var result = []
-                    for (var i = 0; i < list.length; i++) {
-                        var e = list[i]
-                        var name = String(e.name || e.title || "").toLowerCase()
-                        var desc = String(e.description || e.desc || "").toLowerCase()
-                        var url = String(e.url || "").toLowerCase()
-                        var cmd = String(e.command || "").toLowerCase()
-                        var args = String(e.argsText || "").toLowerCase()
-                        if (name.indexOf(q) >= 0 || desc.indexOf(q) >= 0
-                                || url.indexOf(q) >= 0 || cmd.indexOf(q) >= 0
-                                || args.indexOf(q) >= 0)
-                            result.push(e)
-                    }
-                    return result
-                }
+        //         function filteredMcpList() {
+        //             var list = wsClient.mcpList
+        //             var q = (mcpSearchText || "").trim().toLowerCase()
+        //             if (!q)
+        //                 return list
+        //             var result = []
+        //             for (var i = 0; i < list.length; i++) {
+        //                 var e = list[i]
+        //                 var name = String(e.name || e.title || "").toLowerCase()
+        //                 var desc = String(e.description || e.desc || "").toLowerCase()
+        //                 var url = String(e.url || "").toLowerCase()
+        //                 var cmd = String(e.command || "").toLowerCase()
+        //                 var args = String(e.argsText || "").toLowerCase()
+        //                 if (name.indexOf(q) >= 0 || desc.indexOf(q) >= 0
+        //                         || url.indexOf(q) >= 0 || cmd.indexOf(q) >= 0
+        //                         || args.indexOf(q) >= 0)
+        //                     result.push(e)
+        //             }
+        //             return result
+        //         }
 
-                onVisibleChanged: {
-                    if (visible && wsClient.connectionState === 3)
-                        wsClient.refreshMcpList()
-                }
-                Column {
-                    anchors.fill: parent
-                    leftPadding: 60
-                    topPadding: 24
-                    rightPadding: 60
-                    spacing: 16
-                    Rectangle {
-                        id: mcpTitleRec
-                        height: mcpTitle.height
-                        width: parent.width - 120
-                        Column {
-                            id: mcpTitle
-                            spacing: 8
-                            anchors.left: parent.left
-                            Label {
-                                text: qsTr("MCP")
-                                font.pixelSize: 20
-                                font.weight: Font.Bold
-                                color: "#D9000000"
-                            }
-                            Label {
-                                text: qsTr("配置和管理 MCP（Model Context Protocol）服务器，为您的智能体扩展工具能力")
-                                font.pixelSize: 14
-                                color: "#A6000000"
-                            }
-                            SingleLineTextInput {
-                                id: mcpSearchInput
-                                inputHeight: 36
-                                inputWidth: mcpTitleRec.width
-                                icon: "qrc:/images/search.png"
-                                iconSize: 16
-                                placeholderText: qsTr("搜索 MCP")
-                                onTextChanged: mcpSettingRec.mcpSearchText = text
-                            }
-                        }
-                        CustomButton {
-                            width: 80
-                            height: 36
-                            backgroundColor: "#0F006BFF"
-                            textColor: "#006BFF"
-                            borderWidth: 0
-                            text: "+ 添加"
-                            fontSize: 14
-                            anchors.right: parent.right
-                            onClicked: {
-                                window.mcpEditEntry = null
-                                mcpServiceDialog.isEdit = false
-                                mcpServiceDialog.open()
-                            }
-                        }
-                    }
-                    TabBarView {
-                        id: mcpTab
-                        lineWidth: parent.width - 120
-                        tabs: [{ text: "已安装", badge: wsClient.mcpList.length }]
-                    }
+        //         onVisibleChanged: {
+        //             if (visible && wsClient.connectionState === 3)
+        //                 wsClient.refreshMcpList()
+        //         }
+        //         Column {
+        //             anchors.fill: parent
+        //             leftPadding: 60
+        //             topPadding: 24
+        //             rightPadding: 60
+        //             spacing: 16
+        //             Rectangle {
+        //                 id: mcpTitleRec
+        //                 height: mcpTitle.height
+        //                 width: parent.width - 120
+        //                 Column {
+        //                     id: mcpTitle
+        //                     spacing: 8
+        //                     anchors.left: parent.left
+        //                     Label {
+        //                         text: qsTr("MCP")
+        //                         font.pixelSize: 20
+        //                         font.weight: Font.Bold
+        //                         color: "#D9000000"
+        //                     }
+        //                     Label {
+        //                         text: qsTr("配置和管理 MCP（Model Context Protocol）服务器，为您的智能体扩展工具能力")
+        //                         font.pixelSize: 14
+        //                         color: "#A6000000"
+        //                     }
+        //                     SingleLineTextInput {
+        //                         id: mcpSearchInput
+        //                         inputHeight: 36
+        //                         inputWidth: mcpTitleRec.width
+        //                         icon: "qrc:/images/search.png"
+        //                         iconSize: 16
+        //                         placeholderText: qsTr("搜索 MCP")
+        //                         onTextChanged: mcpSettingRec.mcpSearchText = text
+        //                     }
+        //                 }
+        //                 CustomButton {
+        //                     width: 80
+        //                     height: 36
+        //                     backgroundColor: "#0F006BFF"
+        //                     textColor: "#006BFF"
+        //                     borderWidth: 0
+        //                     text: "+ 添加"
+        //                     fontSize: 14
+        //                     anchors.right: parent.right
+        //                     onClicked: {
+        //                         window.mcpEditEntry = null
+        //                         mcpServiceDialog.isEdit = false
+        //                         mcpServiceDialog.open()
+        //                     }
+        //                 }
+        //             }
+        //             TabBarView {
+        //                 id: mcpTab
+        //                 lineWidth: parent.width - 120
+        //                 tabs: [{ text: "已安装", badge: wsClient.mcpList.length }]
+        //             }
 
-                    ScrollView {
-                        id: mcpInstalledScrollView
-                        width: parent.width - 120
-                        height: mcpSettingRec.height - 24 - mcpTitleRec.height - mcpTab.height - 32
-                        clip: true
-                        visible: mcpTab.currentIndex === 0
-                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+        //             ScrollView {
+        //                 id: mcpInstalledScrollView
+        //                 width: parent.width - 120
+        //                 height: mcpSettingRec.height - 24 - mcpTitleRec.height - mcpTab.height - 32
+        //                 clip: true
+        //                 visible: mcpTab.currentIndex === 0
+        //                 ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
-                        Grid {
-                            id: mcpInstalledGrid
-                            columns: 2
-                            spacing: 12
-                            width: mcpInstalledScrollView.width
-                            property real cellWidth: (width - spacing) / 2
+        //                 Grid {
+        //                     id: mcpInstalledGrid
+        //                     columns: 2
+        //                     spacing: 12
+        //                     width: mcpInstalledScrollView.width
+        //                     property real cellWidth: (width - spacing) / 2
 
-                            Label {
-                                visible: wsClient.mcpList.length === 0
-                                width: parent.width
-                                horizontalAlignment: Text.AlignHCenter
-                                topPadding: 40
-                                text: qsTr("暂无 MCP 服务，请点击「+ 添加」从网关配置写入 mcp.servers")
-                                font.pixelSize: 14
-                                color: "#73000000"
-                                wrapMode: Text.WordWrap
-                            }
+        //                     Label {
+        //                         visible: wsClient.mcpList.length === 0
+        //                         width: parent.width
+        //                         horizontalAlignment: Text.AlignHCenter
+        //                         topPadding: 40
+        //                         text: qsTr("暂无 MCP 服务，请点击「+ 添加」从网关配置写入 mcp.servers")
+        //                         font.pixelSize: 14
+        //                         color: "#73000000"
+        //                         wrapMode: Text.WordWrap
+        //                     }
 
-                            Label {
-                                visible: wsClient.mcpList.length > 0 && mcpSettingRec.filteredMcpList().length === 0
-                                width: parent.width
-                                horizontalAlignment: Text.AlignHCenter
-                                topPadding: 40
-                                text: qsTr("未找到匹配的 MCP 服务，请尝试其他关键词")
-                                font.pixelSize: 14
-                                color: "#73000000"
-                                wrapMode: Text.WordWrap
-                            }
+        //                     Label {
+        //                         visible: wsClient.mcpList.length > 0 && mcpSettingRec.filteredMcpList().length === 0
+        //                         width: parent.width
+        //                         horizontalAlignment: Text.AlignHCenter
+        //                         topPadding: 40
+        //                         text: qsTr("未找到匹配的 MCP 服务，请尝试其他关键词")
+        //                         font.pixelSize: 14
+        //                         color: "#73000000"
+        //                         wrapMode: Text.WordWrap
+        //                     }
 
-                            Repeater {
-                                model: mcpSettingRec.filteredMcpList()
+        //                     Repeater {
+        //                         model: mcpSettingRec.filteredMcpList()
 
-                                delegate: Rectangle {
-                                    width: mcpInstalledGrid.cellWidth
-                                    height: 100
-                                    radius: 8
-                                    border.color: "#E6E7EB"
-                                    border.width: 1
-                                    color: "#FFFFFF"
+        //                         delegate: Rectangle {
+        //                             width: mcpInstalledGrid.cellWidth
+        //                             height: 100
+        //                             radius: 8
+        //                             border.color: "#E6E7EB"
+        //                             border.width: 1
+        //                             color: "#FFFFFF"
 
-                                    HoverHandler {
-                                        id: mcpCardHover
-                                    }
+        //                             HoverHandler {
+        //                                 id: mcpCardHover
+        //                             }
 
-                                    Column {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-                                        width: parent.width - 40
-                                        spacing: 12
-                                        Row {
-                                            spacing: 12
-                                            height: 28
-                                            Image {
-                                                width: 28; height: 28
-                                                source: modelData.icon || "qrc:/images/skillIcon.png"
-                                                fillMode: Image.PreserveAspectFit
-                                            }
-                                            Label {
-                                                text: modelData.title || modelData.name || ""
-                                                font.pixelSize: 16
-                                                font.weight: Font.Bold
-                                                color: "#D9000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                        }
-                                        Label {
-                                            text: modelData.desc || ""
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                            elide: Text.ElideRight
-                                            width: parent.width
-                                        }
-                                    }
+        //                             Column {
+        //                                 anchors.left: parent.left
+        //                                 anchors.leftMargin: 20
+        //                                 anchors.top: parent.top
+        //                                 anchors.topMargin: 20
+        //                                 width: parent.width - 40
+        //                                 spacing: 12
+        //                                 Row {
+        //                                     spacing: 12
+        //                                     height: 28
+        //                                     Image {
+        //                                         width: 28; height: 28
+        //                                         source: modelData.icon || "qrc:/images/skillIcon.png"
+        //                                         fillMode: Image.PreserveAspectFit
+        //                                     }
+        //                                     Label {
+        //                                         text: modelData.title || modelData.name || ""
+        //                                         font.pixelSize: 16
+        //                                         font.weight: Font.Bold
+        //                                         color: "#D9000000"
+        //                                         anchors.verticalCenter: parent.verticalCenter
+        //                                     }
+        //                                 }
+        //                                 Label {
+        //                                     text: modelData.desc || ""
+        //                                     font.pixelSize: 14
+        //                                     color: "#73000000"
+        //                                     elide: Text.ElideRight
+        //                                     width: parent.width
+        //                                 }
+        //                             }
 
-                                    Row {
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-                                        spacing: 8
-                                        height: 28
+        //                             Row {
+        //                                 anchors.right: parent.right
+        //                                 anchors.rightMargin: 20
+        //                                 anchors.top: parent.top
+        //                                 anchors.topMargin: 20
+        //                                 spacing: 8
+        //                                 height: 28
 
-                                        ImageButton {
-                                            source: "qrc:/images/edit.png"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: mcpCardHover.hovered
-                                            onClicked: {
-                                                window.mcpEditEntry = modelData
-                                                mcpServiceDialog.isEdit = true
-                                                mcpServiceDialog.open()
-                                            }
-                                        }
-                                        ImageButton {
-                                            source: "qrc:/images/delete.png"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: mcpCardHover.hovered
-                                            onClicked: {
-                                                window.pendingDeleteMcpName = modelData.name || ""
-                                                deleteMcpPopup.open()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        //                                 ImageButton {
+        //                                     source: "qrc:/images/edit.png"
+        //                                     anchors.verticalCenter: parent.verticalCenter
+        //                                     visible: mcpCardHover.hovered
+        //                                     onClicked: {
+        //                                         window.mcpEditEntry = modelData
+        //                                         mcpServiceDialog.isEdit = true
+        //                                         mcpServiceDialog.open()
+        //                                     }
+        //                                 }
+        //                                 ImageButton {
+        //                                     source: "qrc:/images/delete.png"
+        //                                     anchors.verticalCenter: parent.verticalCenter
+        //                                     visible: mcpCardHover.hovered
+        //                                     onClicked: {
+        //                                         window.pendingDeleteMcpName = modelData.name || ""
+        //                                         deleteMcpPopup.open()
+        //                                     }
+        //                                 }
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
         }
     }
 
@@ -6002,9 +6002,9 @@ ApplicationWindow {
 
                             Repeater {
                                 model: [
-                                    { text: "模型", icon: "qrc:/images/category.png" },
-                                    { text: "记忆", icon: "qrc:/images/category.png" },
-                                    { text: "沙箱", icon: "qrc:/images/category.png" }
+                                    { text: "模型", icon: "qrc:/images/category.png" }
+                                    // { text: "记忆", icon: "qrc:/images/category.png" },
+                                    // { text: "沙箱", icon: "qrc:/images/category.png" }
                                 ]
 
                                 delegate: Rectangle {
@@ -6165,449 +6165,450 @@ ApplicationWindow {
                             }
                         }
                     }
-                    ScrollView {
-                        id: settingsContentScroll2
-                        width: parent.width - settingsLeftNav.width - 1
-                        height: parent.height
-                        clip: true
-                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                        visible: settingsDialog.settingsTabIndex === 1
-                        Column {
-                            width: settingsContentScroll2.width
-                            padding: 16
-                            spacing: 20
-                            Label {
-                                text: qsTr("记忆")
-                                font.pixelSize: 16
-                                font.weight: Font.Bold
-                                color: "#D9000000"
-                            }
-                            Row {
-                                width: parent.width - 32
-                                Item {
-                                    width: parent.width - 60
-                                    height: memoryToggleCol1.height
-                                    Column {
-                                        id: memoryToggleCol1
-                                        spacing: 4
-                                        Label {
-                                            text: qsTr("启用用户记忆")
-                                            font.pixelSize: 16
-                                            color: "#D9000000"
-                                        }
-                                        Label {
-                                            text: qsTr("将稳定事实注入到系统提示词中的 <userMemories> 区块。\n建议开启后直接使用下方“记忆条目管理”，无需额外配置。")
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                            lineHeight: 1.4
-                                        }
-                                    }
-                                }
-                                Switch {
-                                    id: memorySwitch
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: memorySwitch.toggle()
-                                    }
-                                    indicator: Rectangle {
-                                        implicitWidth: 44
-                                        implicitHeight: 22
-                                        x: memorySwitch.leftPadding
-                                        y: parent.height / 2 - height / 2
-                                        radius: 12
-                                        color: memorySwitch.checked ? "#006BFF" : "#D9D9D9"
-                                        Behavior on color { ColorAnimation { duration: 150 } }
-                                        Rectangle {
-                                            x: memorySwitch.checked ? parent.width - width - 3 : 3
-                                            y: parent.height / 2 - height / 2
-                                            width: 18; height: 18; radius: 9
-                                            color: "#FFFFFF"
-                                            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                        }
-                                    }
-                                }
-                            }
-                            Row {
-                                width: parent.width - 32
-                                Item {
-                                    width: parent.width - 60
-                                    height: memoryToggleCol2.height
-                                    Column {
-                                        id: memoryToggleCol2
-                                        spacing: 4
-                                        Label {
-                                            text: qsTr("启用 LLM 二级判定")
-                                            font.pixelSize: 16
-                                            color: "#D9000000"
-                                        }
-                                        Label {
-                                            text: qsTr("仅对规则边界样本调用模型复核，提升准确率（会增加少量 API 调用）")
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                            lineHeight: 1.4
-                                        }
-                                    }
-                                }
-                                Switch {
-                                    id: llmSwitch
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: llmSwitch.toggle()
-                                    }
-                                    indicator: Rectangle {
-                                        implicitWidth: 44
-                                        implicitHeight: 22
-                                        x: llmSwitch.leftPadding
-                                        y: parent.height / 2 - height / 2
-                                        radius: 12
-                                        color: llmSwitch.checked ? "#006BFF" : "#D9D9D9"
-                                        Behavior on color { ColorAnimation { duration: 150 } }
-                                        Rectangle {
-                                            x: llmSwitch.checked ? parent.width - width - 3 : 3
-                                            y: parent.height / 2 - height / 2
-                                            width: 18; height: 18; radius: 9
-                                            color: "#FFFFFF"
-                                            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                        }
-                                    }
-                                }
-                            }
+                //     ScrollView {
+                //         id: settingsContentScroll2
+                //         width: parent.width - settingsLeftNav.width - 1
+                //         height: parent.height
+                //         clip: true
+                //         ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                //         visible: settingsDialog.settingsTabIndex === 1
+                //         Column {
+                //             width: settingsContentScroll2.width
+                //             padding: 16
+                //             spacing: 20
+                //             Label {
+                //                 text: qsTr("记忆")
+                //                 font.pixelSize: 16
+                //                 font.weight: Font.Bold
+                //                 color: "#D9000000"
+                //             }
+                //             Row {
+                //                 width: parent.width - 32
+                //                 Item {
+                //                     width: parent.width - 60
+                //                     height: memoryToggleCol1.height
+                //                     Column {
+                //                         id: memoryToggleCol1
+                //                         spacing: 4
+                //                         Label {
+                //                             text: qsTr("启用用户记忆")
+                //                             font.pixelSize: 16
+                //                             color: "#D9000000"
+                //                         }
+                //                         Label {
+                //                             text: qsTr("将稳定事实注入到系统提示词中的 <userMemories> 区块。\n建议开启后直接使用下方“记忆条目管理”，无需额外配置。")
+                //                             font.pixelSize: 14
+                //                             color: "#73000000"
+                //                             lineHeight: 1.4
+                //                         }
+                //                     }
+                //                 }
+                //                 Switch {
+                //                     id: memorySwitch
+                //                     MouseArea {
+                //                         anchors.fill: parent
+                //                         cursorShape: Qt.PointingHandCursor
+                //                         onClicked: memorySwitch.toggle()
+                //                     }
+                //                     indicator: Rectangle {
+                //                         implicitWidth: 44
+                //                         implicitHeight: 22
+                //                         x: memorySwitch.leftPadding
+                //                         y: parent.height / 2 - height / 2
+                //                         radius: 12
+                //                         color: memorySwitch.checked ? "#006BFF" : "#D9D9D9"
+                //                         Behavior on color { ColorAnimation { duration: 150 } }
+                //                         Rectangle {
+                //                             x: memorySwitch.checked ? parent.width - width - 3 : 3
+                //                             y: parent.height / 2 - height / 2
+                //                             width: 18; height: 18; radius: 9
+                //                             color: "#FFFFFF"
+                //                             Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //             Row {
+                //                 width: parent.width - 32
+                //                 Item {
+                //                     width: parent.width - 60
+                //                     height: memoryToggleCol2.height
+                //                     Column {
+                //                         id: memoryToggleCol2
+                //                         spacing: 4
+                //                         Label {
+                //                             text: qsTr("启用 LLM 二级判定")
+                //                             font.pixelSize: 16
+                //                             color: "#D9000000"
+                //                         }
+                //                         Label {
+                //                             text: qsTr("仅对规则边界样本调用模型复核，提升准确率（会增加少量 API 调用）")
+                //                             font.pixelSize: 14
+                //                             color: "#73000000"
+                //                             lineHeight: 1.4
+                //                         }
+                //                     }
+                //                 }
+                //                 Switch {
+                //                     id: llmSwitch
+                //                     MouseArea {
+                //                         anchors.fill: parent
+                //                         cursorShape: Qt.PointingHandCursor
+                //                         onClicked: llmSwitch.toggle()
+                //                     }
+                //                     indicator: Rectangle {
+                //                         implicitWidth: 44
+                //                         implicitHeight: 22
+                //                         x: llmSwitch.leftPadding
+                //                         y: parent.height / 2 - height / 2
+                //                         radius: 12
+                //                         color: llmSwitch.checked ? "#006BFF" : "#D9D9D9"
+                //                         Behavior on color { ColorAnimation { duration: 150 } }
+                //                         Rectangle {
+                //                             x: llmSwitch.checked ? parent.width - width - 3 : 3
+                //                             y: parent.height / 2 - height / 2
+                //                             width: 18; height: 18; radius: 9
+                //                             color: "#FFFFFF"
+                //                             Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                //                         }
+                //                     }
+                //                 }
+                //             }
 
-                            Rectangle {
-                                width: parent.width - 32
-                                height: 1
-                                color: "#14000000"
-                            }
+                //             Rectangle {
+                //                 width: parent.width - 32
+                //                 height: 1
+                //                 color: "#14000000"
+                //             }
 
-                            Item {
-                                width: parent.width - 32
-                                height: memoryMgmtTitle.height
+                //             Item {
+                //                 width: parent.width - 32
+                //                 height: memoryMgmtTitle.height
 
-                                Column {
-                                    id: memoryMgmtTitle
-                                    spacing: 4
-                                    Label {
-                                        text: qsTr("记忆条目管理")
-                                        font.pixelSize: 16
-                                        font.weight: Font.Bold
-                                        color: "#D9000000"
-                                    }
-                                    Label {
-                                        text: qsTr("你可以在这里查看、搜索、新增、编辑或删除记忆内容。")
-                                        font.pixelSize: 14
-                                        color: "#73000000"
-                                    }
-                                }
+                //                 Column {
+                //                     id: memoryMgmtTitle
+                //                     spacing: 4
+                //                     Label {
+                //                         text: qsTr("记忆条目管理")
+                //                         font.pixelSize: 16
+                //                         font.weight: Font.Bold
+                //                         color: "#D9000000"
+                //                     }
+                //                     Label {
+                //                         text: qsTr("你可以在这里查看、搜索、新增、编辑或删除记忆内容。")
+                //                         font.pixelSize: 14
+                //                         color: "#73000000"
+                //                     }
+                //                 }
 
-                                CustomButton {
-                                    width: 80
-                                    height: 32
-                                    backgroundColor: "#0F006BFF"
-                                    textColor: "#006BFF"
-                                    borderWidth: 0
-                                    text: "+ 新增"
-                                    fontSize: 14
-                                    anchors.right: parent.right
-                                    onClicked: {
-                                        memoryEditPopup.editId = ""
-                                        memoryEditPopup.open()
-                                    }
-                                }
-                            }
+                //                 CustomButton {
+                //                     width: 80
+                //                     height: 32
+                //                     backgroundColor: "#0F006BFF"
+                //                     textColor: "#006BFF"
+                //                     borderWidth: 0
+                //                     text: "+ 新增"
+                //                     fontSize: 14
+                //                     anchors.right: parent.right
+                //                     onClicked: {
+                //                         memoryEditPopup.editId = ""
+                //                         memoryEditPopup.open()
+                //                     }
+                //                 }
+                //             }
 
-                            Column {
-                                width: parent.width - 32
-                                spacing: 4
+                //             Column {
+                //                 width: parent.width - 32
+                //                 spacing: 4
 
-                                property string memorySearchText: ""
+                //                 property string memorySearchText: ""
 
-                                function filteredMemoryEntries() {
-                                    var list = wsClient.memoryEntries
-                                    var q = (memorySearchText || "").trim().toLowerCase()
-                                    if (!q) return list
-                                    var result = []
-                                    for (var i = 0; i < list.length; i++) {
-                                        var e = list[i]
-                                        var t = String(e.title || "").toLowerCase()
-                                        var c = String(e.content || "").toLowerCase()
-                                        if (t.indexOf(q) >= 0 || c.indexOf(q) >= 0)
-                                            result.push(e)
-                                    }
-                                    return result
-                                }
+                //                 function filteredMemoryEntries() {
+                //                     var list = wsClient.memoryEntries
+                //                     var q = (memorySearchText || "").trim().toLowerCase()
+                //                     if (!q) return list
+                //                     var result = []
+                //                     for (var i = 0; i < list.length; i++) {
+                //                         var e = list[i]
+                //                         var t = String(e.title || "").toLowerCase()
+                //                         var c = String(e.content || "").toLowerCase()
+                //                         if (t.indexOf(q) >= 0 || c.indexOf(q) >= 0)
+                //                             result.push(e)
+                //                     }
+                //                     return result
+                //                 }
 
-                                SingleLineTextInput {
-                                    width: parent.width
-                                    inputHeight: 36
-                                    inputRadius: 8
-                                    icon: "qrc:/images/search.png"
-                                    iconSize: 16
-                                    fontSize: 14
-                                    placeholderText: qsTr("搜索记忆内容/来源")
-                                    onTextChanged: parent.memorySearchText = text
-                                }
+                //                 SingleLineTextInput {
+                //                     width: parent.width
+                //                     inputHeight: 36
+                //                     inputRadius: 8
+                //                     icon: "qrc:/images/search.png"
+                //                     iconSize: 16
+                //                     fontSize: 14
+                //                     placeholderText: qsTr("搜索记忆内容/来源")
+                //                     onTextChanged: parent.memorySearchText = text
+                //                 }
 
-                                Label {
-                                    visible: wsClient.memoryEntries.length === 0
-                                    width: parent.width
-                                    topPadding: 20
-                                    horizontalAlignment: Text.AlignHCenter
-                                    text: qsTr("暂无记忆条目，点击「+ 新增」添加")
-                                    font.pixelSize: 14
-                                    color: "#73000000"
-                                }
+                //                 Label {
+                //                     visible: wsClient.memoryEntries.length === 0
+                //                     width: parent.width
+                //                     topPadding: 20
+                //                     horizontalAlignment: Text.AlignHCenter
+                //                     text: qsTr("暂无记忆条目，点击「+ 新增」添加")
+                //                     font.pixelSize: 14
+                //                     color: "#73000000"
+                //                 }
 
-                                Repeater {
-                                    model: parent.filteredMemoryEntries()
+                //                 Repeater {
+                //                     model: parent.filteredMemoryEntries()
 
-                                    delegate: Rectangle {
-                                        width: parent.width
-                                        height: 48
-                                        color: memoryItemHover.hovered ? "#F7F9FA" : "transparent"
-                                        radius: 8
-                                        HoverHandler {
-                                            id: memoryItemHover
-                                        }
+                //                     delegate: Rectangle {
+                //                         width: parent.width
+                //                         height: 48
+                //                         color: memoryItemHover.hovered ? "#F7F9FA" : "transparent"
+                //                         radius: 8
+                //                         HoverHandler {
+                //                             id: memoryItemHover
+                //                         }
 
-                                        Row {
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 16
-                                            anchors.right: memoryItemActions.left
-                                            anchors.rightMargin: 8
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            spacing: 12
-                                            clip: true
-                                            Label {
-                                                text: modelData.title || ""
-                                                font.pixelSize: 14
-                                                font.weight: Font.DemiBold
-                                                color: "#D9000000"
-                                                elide: Text.ElideRight
-                                                width: Math.min(implicitWidth, 200)
-                                            }
-                                            Label {
-                                                text: modelData.content || ""
-                                                font.pixelSize: 13
-                                                color: "#73000000"
-                                                elide: Text.ElideRight
-                                                width: Math.min(implicitWidth, 180)
-                                            }
-                                            Label {
-                                                text: modelData.date || ""
-                                                font.pixelSize: 12
-                                                color: "#40000000"
-                                            }
-                                        }
+                //                         Row {
+                //                             anchors.left: parent.left
+                //                             anchors.leftMargin: 16
+                //                             anchors.right: memoryItemActions.left
+                //                             anchors.rightMargin: 8
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             spacing: 12
+                //                             clip: true
+                //                             Label {
+                //                                 text: modelData.title || ""
+                //                                 font.pixelSize: 14
+                //                                 font.weight: Font.DemiBold
+                //                                 color: "#D9000000"
+                //                                 elide: Text.ElideRight
+                //                                 width: Math.min(implicitWidth, 200)
+                //                             }
+                //                             Label {
+                //                                 text: modelData.content || ""
+                //                                 font.pixelSize: 13
+                //                                 color: "#73000000"
+                //                                 elide: Text.ElideRight
+                //                                 width: Math.min(implicitWidth, 180)
+                //                             }
+                //                             Label {
+                //                                 text: modelData.date || ""
+                //                                 font.pixelSize: 12
+                //                                 color: "#40000000"
+                //                             }
+                //                         }
 
-                                        Row {
-                                            id: memoryItemActions
-                                            anchors.right: parent.right
-                                            anchors.rightMargin: 16
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            spacing: 4
-                                            visible: memoryItemHover.hovered
+                //                         Row {
+                //                             id: memoryItemActions
+                //                             anchors.right: parent.right
+                //                             anchors.rightMargin: 16
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             spacing: 4
+                //                             visible: memoryItemHover.hovered
 
-                                            ImageButton {
-                                                source: "qrc:/images/edit.png"
-                                                onClicked: {
-                                                    memoryEditPopup.editId = modelData.id || ""
-                                                    memoryEditPopup.editTitle = modelData.title || ""
-                                                    memoryEditPopup.editContent = modelData.content || ""
-                                                    memoryEditPopup.open()
-                                                }
-                                            }
-                                            ImageButton {
-                                                source: "qrc:/images/delete.png"
-                                                onClicked: {
-                                                    wsClient.deleteMemoryEntry(modelData.id || "")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    ScrollView {
-                        id: settingsContentScroll3
-                        width: parent.width - settingsLeftNav.width - 1
-                        height: parent.height
-                        clip: true
-                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                        visible: settingsDialog.settingsTabIndex === 2
-                        Column {
-                            id: sandboxPage
-                            width: settingsContentScroll3.width
-                            padding: 16
-                            spacing: 12
+                //                             ImageButton {
+                //                                 source: "qrc:/images/edit.png"
+                //                                 onClicked: {
+                //                                     memoryEditPopup.editId = modelData.id || ""
+                //                                     memoryEditPopup.editTitle = modelData.title || ""
+                //                                     memoryEditPopup.editContent = modelData.content || ""
+                //                                     memoryEditPopup.open()
+                //                                 }
+                //                             }
+                //                             ImageButton {
+                //                                 source: "qrc:/images/delete.png"
+                //                                 onClicked: {
+                //                                     wsClient.deleteMemoryEntry(modelData.id || "")
+                //                                 }
+                //                             }
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //         }
+                //     }
+                //     ScrollView {
+                //         id: settingsContentScroll3
+                //         width: parent.width - settingsLeftNav.width - 1
+                //         height: parent.height
+                //         clip: true
+                //         ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                //         visible: settingsDialog.settingsTabIndex === 2
+                //         Column {
+                //             id: sandboxPage
+                //             width: settingsContentScroll3.width
+                //             padding: 16
+                //             spacing: 12
 
-                            property int sandboxMode: 0
+                //             property int sandboxMode: 0
 
-                            Label {
-                                text: qsTr("沙箱")
-                                font.pixelSize: 16
-                                font.weight: Font.Bold
-                                color: "#D9000000"
-                            }
+                //             Label {
+                //                 text: qsTr("沙箱")
+                //                 font.pixelSize: 16
+                //                 font.weight: Font.Bold
+                //                 color: "#D9000000"
+                //             }
 
-                            Label {
-                                text: qsTr("执行模式")
-                                font.pixelSize: 14
-                                color: "#73000000"
-                            }
+                //             Label {
+                //                 text: qsTr("执行模式")
+                //                 font.pixelSize: 14
+                //                 color: "#73000000"
+                //             }
 
-                            Column {
-                                width: parent.width - 32
-                                spacing: 16
+                //             Column {
+                //                 width: parent.width - 32
+                //                 spacing: 16
 
-                                Column {
-                                    width: parent.width
-                                    spacing: 2
-                                    Row {
-                                        spacing: 4
-                                        Rectangle {
-                                            width: 20; height: 20
-                                            radius: 10
-                                            border.color: sandboxPage.sandboxMode === 0 ? "#006BFF" : "#D9D9D9"
-                                            border.width: 2
-                                            color: "transparent"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            Rectangle {
-                                                width: 10; height: 10; radius: 5
-                                                color: "#006BFF"
-                                                anchors.centerIn: parent
-                                                visible: sandboxPage.sandboxMode === 0
-                                            }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: sandboxPage.sandboxMode = 0
-                                            }
-                                        }
-                                        Label {
-                                            text: qsTr("自动（优先沙箱）")
-                                            font.pixelSize: 16
-                                            color: "#D9000000"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
+                //                 Column {
+                //                     width: parent.width
+                //                     spacing: 2
+                //                     Row {
+                //                         spacing: 4
+                //                         Rectangle {
+                //                             width: 20; height: 20
+                //                             radius: 10
+                //                             border.color: sandboxPage.sandboxMode === 0 ? "#006BFF" : "#D9D9D9"
+                //                             border.width: 2
+                //                             color: "transparent"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             Rectangle {
+                //                                 width: 10; height: 10; radius: 5
+                //                                 color: "#006BFF"
+                //                                 anchors.centerIn: parent
+                //                                 visible: sandboxPage.sandboxMode === 0
+                //                             }
+                //                             MouseArea {
+                //                                 anchors.fill: parent
+                //                                 cursorShape: Qt.PointingHandCursor
+                //                                 onClicked: sandboxPage.sandboxMode = 0
+                //                             }
+                //                         }
+                //                         Label {
+                //                             text: qsTr("自动（优先沙箱）")
+                //                             font.pixelSize: 16
+                //                             color: "#D9000000"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                         }
 
-                                    }
-                                    Label {
-                                        text: qsTr("优先使用内置 VM 沙箱，不可用时回退本地")
-                                        font.pixelSize: 16
-                                        color: "#73000000"
-                                        leftPadding: 24
-                                    }
-                                }
+                //                     }
+                //                     Label {
+                //                         text: qsTr("优先使用内置 VM 沙箱，不可用时回退本地")
+                //                         font.pixelSize: 16
+                //                         color: "#73000000"
+                //                         leftPadding: 24
+                //                     }
+                //                 }
 
-                                Column {
-                                    width: parent.width
-                                    spacing: 2
-                                    Row {
-                                        spacing: 4
-                                        Rectangle {
-                                            width: 20; height: 20
-                                            radius: 10
-                                            border.color: sandboxPage.sandboxMode === 1 ? "#006BFF" : "#D9D9D9"
-                                            border.width: 2
-                                            color: "transparent"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            Rectangle {
-                                                width: 10; height: 10; radius: 5
-                                                color: "#006BFF"
-                                                anchors.centerIn: parent
-                                                visible: sandboxPage.sandboxMode === 1
-                                            }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: sandboxPage.sandboxMode = 1
-                                            }
-                                        }
-                                        Label {
-                                            text: qsTr("本地运行")
-                                            font.pixelSize: 16
-                                            color: "#D9000000"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
+                //                 Column {
+                //                     width: parent.width
+                //                     spacing: 2
+                //                     Row {
+                //                         spacing: 4
+                //                         Rectangle {
+                //                             width: 20; height: 20
+                //                             radius: 10
+                //                             border.color: sandboxPage.sandboxMode === 1 ? "#006BFF" : "#D9D9D9"
+                //                             border.width: 2
+                //                             color: "transparent"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             Rectangle {
+                //                                 width: 10; height: 10; radius: 5
+                //                                 color: "#006BFF"
+                //                                 anchors.centerIn: parent
+                //                                 visible: sandboxPage.sandboxMode === 1
+                //                             }
+                //                             MouseArea {
+                //                                 anchors.fill: parent
+                //                                 cursorShape: Qt.PointingHandCursor
+                //                                 onClicked: sandboxPage.sandboxMode = 1
+                //                             }
+                //                         }
+                //                         Label {
+                //                             text: qsTr("本地运行")
+                //                             font.pixelSize: 16
+                //                             color: "#D9000000"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                         }
 
-                                    }
-                                    Label {
-                                        text: qsTr("始终在本机运行")
-                                        font.pixelSize: 16
-                                        color: "#73000000"
-                                        leftPadding: 24
-                                    }
-                                }
+                //                     }
+                //                     Label {
+                //                         text: qsTr("始终在本机运行")
+                //                         font.pixelSize: 16
+                //                         color: "#73000000"
+                //                         leftPadding: 24
+                //                     }
+                //                 }
 
-                                Column {
-                                    width: parent.width
-                                    spacing: 2
-                                    Row {
-                                        spacing: 4
-                                        Rectangle {
-                                            width: 20; height: 20
-                                            radius: 10
-                                            border.color: sandboxPage.sandboxMode === 2 ? "#006BFF" : "#D9D9D9"
-                                            border.width: 2
-                                            color: "transparent"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            Rectangle {
-                                                width: 10; height: 10; radius: 5
-                                                color: "#006BFF"
-                                                anchors.centerIn: parent
-                                                visible: sandboxPage.sandboxMode === 2
-                                            }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: sandboxPage.sandboxMode = 2
-                                            }
-                                        }
-                                        Label {
-                                            text: qsTr("仅沙箱（内置VM）")
-                                            font.pixelSize: 16
-                                            color: "#D9000000"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
+                //                 Column {
+                //                     width: parent.width
+                //                     spacing: 2
+                //                     Row {
+                //                         spacing: 4
+                //                         Rectangle {
+                //                             width: 20; height: 20
+                //                             radius: 10
+                //                             border.color: sandboxPage.sandboxMode === 2 ? "#006BFF" : "#D9D9D9"
+                //                             border.width: 2
+                //                             color: "transparent"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             Rectangle {
+                //                                 width: 10; height: 10; radius: 5
+                //                                 color: "#006BFF"
+                //                                 anchors.centerIn: parent
+                //                                 visible: sandboxPage.sandboxMode === 2
+                //                             }
+                //                             MouseArea {
+                //                                 anchors.fill: parent
+                //                                 cursorShape: Qt.PointingHandCursor
+                //                                 onClicked: sandboxPage.sandboxMode = 2
+                //                             }
+                //                         }
+                //                         Label {
+                //                             text: qsTr("仅沙箱（内置VM）")
+                //                             font.pixelSize: 16
+                //                             color: "#D9000000"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                         }
 
-                                    }
-                                    Label {
-                                        text: qsTr("要求内置 VM 沙箱可用，否则报错")
-                                        font.pixelSize: 16
-                                        color: "#73000000"
-                                        leftPadding: 24
-                                    }
-                                    Rectangle{
-                                        width: parent.width
-                                        height: 2
-                                    }
-                                    Row {
-                                        leftPadding: 24
-                                        spacing: 4
-                                        Label {
-                                            text: qsTr("未检测到沙箱VM，")
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                        }
-                                        Label {
-                                            text: qsTr("立即安装")
-                                            font.pixelSize: 14
-                                            font.underline: true
-                                            color: "#006BFF"
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {}
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                //                     }
+                //                     Label {
+                //                         text: qsTr("要求内置 VM 沙箱可用，否则报错")
+                //                         font.pixelSize: 16
+                //                         color: "#73000000"
+                //                         leftPadding: 24
+                //                     }
+                //                     Rectangle{
+                //                         width: parent.width
+                //                         height: 2
+                //                     }
+                //                     Row {
+                //                         leftPadding: 24
+                //                         spacing: 4
+                //                         Label {
+                //                             text: qsTr("未检测到沙箱VM，")
+                //                             font.pixelSize: 14
+                //                             color: "#73000000"
+                //                         }
+                //                         Label {
+                //                             text: qsTr("立即安装")
+                //                             font.pixelSize: 14
+                //                             font.underline: true
+                //                             color: "#006BFF"
+                //                             MouseArea {
+                //                                 anchors.fill: parent
+                //                                 cursorShape: Qt.PointingHandCursor
+                //                                 onClicked: {}
+                //                             }
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //         }
+                //     }
+
                 }
 
                 Item {
