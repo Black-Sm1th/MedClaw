@@ -967,7 +967,7 @@ ApplicationWindow {
                     target: chatModel
                     function onMessagePayloadChanged() {
                         if (chatListView.count > 0)
-                            Qt.callLater(function () { chatListView.positionViewAtEnd() })
+                            chatListView.scheduleScrollToEnd()
                     }
                 }
                 Connections {
@@ -1008,7 +1008,42 @@ ApplicationWindow {
 
                     onCountChanged: {
                         if (count > 0)
-                            Qt.callLater(function () { chatListView.positionViewAtEnd() })
+                            chatListView.scheduleScrollToEnd()
+                    }
+
+                    /// 「粘底」机制：
+                    /// dataChanged / 新增行触发后，delegate 的最终高度（尤其是
+                    /// toolResult 文本块的 Text.contentHeight）可能要再过一两个
+                    /// polish/render pass 才稳定，此时单次 Qt.callLater 调用的
+                    /// positionViewAtEnd() 会按旧 contentHeight 定位，从而漏掉
+                    /// 刚刚展开的工具结果。
+                    ///
+                    /// 解决：把「需要滚到底」标记成一段时间内的待办，期间任何
+                    /// contentHeight / 几何变化都会再次 positionViewAtEnd()，
+                    /// 直到布局稳定到时间窗口结束。
+                    property bool _pendingScrollToEnd: false
+                    Timer {
+                        id: scrollSettleTimer
+                        interval: 220
+                        repeat: false
+                        onTriggered: chatListView._pendingScrollToEnd = false
+                    }
+                    function scheduleScrollToEnd() {
+                        if (count <= 0) return
+                        _pendingScrollToEnd = true
+                        scrollSettleTimer.restart()
+                        Qt.callLater(function () {
+                            if (chatListView.count > 0)
+                                chatListView.positionViewAtEnd()
+                        })
+                    }
+                    onContentHeightChanged: {
+                        if (_pendingScrollToEnd && count > 0)
+                            positionViewAtEnd()
+                    }
+                    onHeightChanged: {
+                        if (_pendingScrollToEnd && count > 0)
+                            positionViewAtEnd()
                     }
 
                     /// 工具卡片折叠状态记忆：key 优先用 toolCallId（稳定），
@@ -1081,7 +1116,11 @@ ApplicationWindow {
                                     font.pixelSize: 16
                                     anchors.centerIn: parent
                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                    color: chatBubble.isUser ? "#E5000000" : "#D9000000"
+                                    // 工具间中间输出用斜体 + 淡色与最终回答区分
+                                    font.italic: isIntermediate || false
+                                    color: chatBubble.isUser
+                                           ? "#E5000000"
+                                           : (isIntermediate ? "#8C000000" : "#D9000000")
                                     textFormat: Text.MarkdownText
                                     readOnly: true
                                     selectByMouse: true
