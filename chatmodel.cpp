@@ -2,7 +2,22 @@
 
 ChatModel::ChatModel(QObject *parent)
     : QAbstractListModel(parent)
-{}
+{
+    // 起跳节流 (leading-edge throttle)：
+    //   - 第一个 chunk 立刻 flush，并启动一个节流窗口；
+    //   - 窗口期间到达的 chunk 累积进 content，置 m_streamDirty；
+    //   - 窗口到期：若 dirty → 再 flush 一次并续期；若空闲 → 定时器停掉，
+    //                等下一个 chunk 触发立刻 flush（保证下一次响应是即时的）。
+    m_streamFlushTimer.setSingleShot(true);
+    connect(&m_streamFlushTimer, &QTimer::timeout, this, [this]() {
+        if (!m_streamDirty) return;
+        flushStream();
+        if (m_streamFlushRow < 0 || m_streamFlushRow >= m_messages.count()) return;
+        const int len = m_messages[m_streamFlushRow].content.length();
+        m_streamFlushTimer.setInterval(qBound(30, len / 250, 500));
+        m_streamFlushTimer.start();
+    });
+}
 
 int ChatModel::rowCount(const QModelIndex &parent) const
 {
@@ -27,6 +42,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case IsErrorRole:    return msg.isError;
     case ToolResultTextRole: return msg.toolResultText;
     case HasToolResultRole:  return msg.hasToolResult;
+    case IsStreamingRole:    return msg.isStreaming;
     }
     return QVariant();
 }
@@ -43,7 +59,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { ToolCallIdRole, "toolCallId" },
         { IsErrorRole,    "isError"    },
         { ToolResultTextRole, "toolResultText" },
-        { HasToolResultRole,  "hasToolResult"  }
+        { HasToolResultRole,  "hasToolResult"  },
+        { IsStreamingRole,    "isStreaming"    }
     };
 }
 
@@ -156,30 +173,108 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
 }
 
 // ── Streaming ────────────────────────────────────────────────────────
+//
+// 设计要点（既要 Markdown 实时渲染、又要避免长文本时卡死）：
+//   - 每个 chunk 都全量 set + Markdown 重排 ⇒ O(N²) 卡死
+//   - 完全不 set、只 insert() ⇒ 流式中无法看到 Markdown 样式
+//   - 折中：保留 `text: content` + `textFormat: MarkdownText` 的简单 QML 绑定，
+//     在 C++ 侧用单次触发的 QTimer 把多个 chunk 合并成一次 dataChanged(ContentRole) 通知，
+//     节流间隔随内容长度自适应增长，单位时间内的重排次数被限制在常数级。
 
 void ChatModel::beginStreaming()
 {
     if (!m_streaming) {
         m_streaming = true;
-        addMessage(QStringLiteral("assistant"), QString());
+        const int idx = m_messages.count();
+        beginInsertRows(QModelIndex(), idx, idx);
+        ChatMessage msg;
+        msg.role        = QStringLiteral("assistant");
+        msg.content     = QString();
+        msg.timestamp   = QDateTime::currentDateTime();
+        msg.msgType     = QStringLiteral("text");
+        msg.isError     = false;
+        msg.isStreaming = true;
+        m_messages.append(msg);
+        endInsertRows();
+        emit countChanged();
     }
+}
+
+void ChatModel::flushStream()
+{
+    m_streamDirty = false;
+    if (m_streamFlushRow < 0 || m_streamFlushRow >= m_messages.count()) {
+        m_streamFlushRow = -1;
+        return;
+    }
+    const QModelIndex idx = index(m_streamFlushRow);
+    emit dataChanged(idx, idx, { ContentRole });
+    emit messagePayloadChanged();
 }
 
 void ChatModel::appendStreamChunk(const QString &chunk)
 {
+    if (chunk.isEmpty()) return;
     if (!m_streaming)
         beginStreaming();
     if (m_messages.isEmpty()
         || m_messages.last().role != QLatin1String("assistant")
         || m_messages.last().msgType != QLatin1String("text")) {
-        addMessage(QStringLiteral("assistant"), QString());
+        const int idx = m_messages.count();
+        beginInsertRows(QModelIndex(), idx, idx);
+        ChatMessage msg;
+        msg.role        = QStringLiteral("assistant");
+        msg.content     = QString();
+        msg.timestamp   = QDateTime::currentDateTime();
+        msg.msgType     = QStringLiteral("text");
+        msg.isError     = false;
+        msg.isStreaming = true;
+        m_messages.append(msg);
+        endInsertRows();
+        emit countChanged();
+    } else if (!m_messages.last().isStreaming) {
+        m_messages.last().isStreaming = true;
+        const QModelIndex idx = index(m_messages.count() - 1);
+        emit dataChanged(idx, idx, { IsStreamingRole });
     }
-    appendToLastMessage(chunk);
+
+    const int last = m_messages.count() - 1;
+    m_messages[last].content += chunk;
+    m_streamFlushRow = last;
+    m_streamDirty = true;
+
+    // 节流间隔随内容长度自适应增长：
+    //   < ~7KB   → 30ms  （≈33Hz，逐字打字感）
+    //   7K~125K  → 线性放宽
+    //   ≥ 125KB  → 500ms （封顶，避免长文重排吃掉整帧）
+    if (!m_streamFlushTimer.isActive()) {
+        // 起跳节流：定时器空闲时第一个 chunk 立即可见，再开始节流窗口
+        flushStream();
+        const int len = m_messages[last].content.length();
+        m_streamFlushTimer.setInterval(qBound(30, len / 250, 500));
+        m_streamFlushTimer.start();
+    }
+    // 定时器正在跑：仅累积，timeout 回调里会续期。
 }
 
 void ChatModel::endStreaming()
 {
+    if (!m_streaming) return;
     m_streaming = false;
+    m_streamFlushTimer.stop();
+    m_streamDirty = false;
+    if (m_messages.isEmpty()) {
+        m_streamFlushRow = -1;
+        return;
+    }
+    const int last = m_messages.count() - 1;
+    if (m_messages[last].isStreaming)
+        m_messages[last].isStreaming = false;
+    // 最终强制 flush 一次，确保 QML 拿到完整内容并最后一次完成 Markdown 渲染。
+    const QModelIndex idx = index(last);
+    emit dataChanged(idx, idx, { ContentRole, IsStreamingRole });
+    emit messagePayloadChanged();
+    m_streamFlushRow = -1;
 }
 
 bool ChatModel::isStreaming() const

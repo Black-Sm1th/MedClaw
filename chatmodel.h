@@ -4,6 +4,7 @@
 #include <QAbstractListModel>
 #include <QDateTime>
 #include <QVector>
+#include <QTimer>
 
 /**
  * 聊天消息数据结构
@@ -25,6 +26,8 @@ struct ChatMessage {
     /// 合并到 toolCall 行：收到 toolResult 后写入，不再单独插入一行
     QString toolResultText;
     bool    hasToolResult = false;
+    /// 当前消息是否处于流式接收态（用于 QML 切换 textFormat / 走增量追加路径）
+    bool    isStreaming = false;
 };
 
 class ChatModel : public QAbstractListModel
@@ -43,7 +46,8 @@ public:
         ToolCallIdRole,
         IsErrorRole,
         ToolResultTextRole,
-        HasToolResultRole
+        HasToolResultRole,
+        IsStreamingRole
     };
 
     explicit ChatModel(QObject *parent = nullptr);
@@ -75,8 +79,16 @@ signals:
     void messagePayloadChanged();
 
 private:
+    /// 节流刷新：仅在节流间隔到期时把当前累积的 content 发一次 dataChanged(ContentRole)，
+    /// 让 QML 中 textFormat=MarkdownText 的 TextEdit 进行一次重渲染。
+    void flushStream();
+
     QVector<ChatMessage> m_messages;
     bool m_streaming = false;
+
+    QTimer m_streamFlushTimer;      ///< 流式节流定时器（单次触发，到点后 flushStream）
+    int    m_streamFlushRow = -1;   ///< 当前正在被节流刷新的行号
+    bool   m_streamDirty    = false;///< 自上次 flush 后是否有新 chunk 累积
 };
 
 #endif // CHATMODEL_H

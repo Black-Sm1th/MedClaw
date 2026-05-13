@@ -994,6 +994,8 @@ ApplicationWindow {
 
                                 TextEdit {
                                     id: bubbleText
+                                    // 流式期间 C++ 侧已将多个 chunk 节流合并为单次 dataChanged(ContentRole)，
+                                    // 故本绑定每秒最多被重算少量几次，可以放心使用 MarkdownText 全程渲染。
                                     text: content
                                     width: Math.min(implicitWidth, chatBubble.isUser ? chatBubble.width * 0.75 - 32 : chatBubble.width)
                                     wrapMode: Text.Wrap
