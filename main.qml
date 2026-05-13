@@ -25,6 +25,11 @@ ApplicationWindow {
     property string pendingDeleteCronJobId: ""
     property string pendingDeleteCronJobName: ""
     property string pendingDeleteMcpName: ""
+    /// 右键删除 agent 流程暂存（上下文菜单 → 确认弹窗）
+    property string pendingDeleteAgentId: ""
+    property string pendingDeleteAgentName: ""
+    /// 删除定时任务时一并删除的专用 agent ID（cron.remove 成功后再发 agents.delete）
+    property string pendingDeleteCronAgentId: ""
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
 
@@ -52,6 +57,26 @@ ApplicationWindow {
         if (s.indexOf("(", i + 1) < 0)
             return s
         return s.substring(0, i + 1).trim()
+    }
+
+    /// 任务记录列表中 agent 的展示标题（与左侧列表 Label 渲染逻辑保持一致）
+    function agentDisplayTitle(agent) {
+        if (!agent) return ""
+        var nm = agent.name || ""
+        if (nm.indexOf("定时-") === 0) {
+            var body = nm.substring(3)
+            var lastDash = body.lastIndexOf("-")
+            if (lastDash > 0 && /^\d+$/.test(body.substring(lastDash + 1)))
+                return body.substring(0, lastDash)
+            return body
+        }
+        var t = agent.activeSessionTitle || ""
+        if (t.length === 0) {
+            if (nm.match(/^task-\d+$/))
+                return qsTr("新对话")
+            return nm || agent.id || ""
+        }
+        return t
     }
 
     /// FileDialog.fileUrl → 本地路径（与定时任务工作目录选择逻辑一致）
@@ -97,6 +122,12 @@ ApplicationWindow {
         }
         function onCronJobRemoved(jobId){
             wsClient.refreshCronJobs(true)
+            /// 级联删除：cron.remove 成功后，把暂存的「定时-」专用 agent 一并删除
+            if (window.pendingDeleteCronAgentId.length > 0) {
+                var aid = window.pendingDeleteCronAgentId
+                window.pendingDeleteCronAgentId = ""
+                wsClient.deleteAgent(aid, true)
+            }
         }
         function onCronJobUpdated(jobId){
             wsClient.refreshCronJobs(true)
@@ -121,6 +152,8 @@ ApplicationWindow {
                 leftMidPanel.activeAgentId = ""
                 chatModel.clear()
                 wsClient.clearActiveAgentContext()
+                /// 被删任务正在选中：跳回「新建任务」首页，与点击侧栏「新建任务」一致
+                window.leftSelectedIndex = 0
             }
         }
         function onErrorOccurred(message){
@@ -484,8 +517,18 @@ ApplicationWindow {
                                         id: agentItemMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
+                                        acceptedButtons: Qt.LeftButton | Qt.RightButton
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
+                                            if (mouse.button === Qt.RightButton) {
+                                                window.pendingDeleteAgentId = modelData.id
+                                                window.pendingDeleteAgentName = window.agentDisplayTitle(modelData)
+                                                var p = agentItemMouse.mapToItem(window.contentItem, mouse.x, mouse.y)
+                                                agentContextMenu.x = Math.min(p.x, window.width - agentContextMenu.width - 4)
+                                                agentContextMenu.y = Math.min(p.y, window.height - agentContextMenu.height - 4)
+                                                agentContextMenu.open()
+                                                return
+                                            }
                                             leftMidPanel.activeAgentId = modelData.id
                                             window.leftSelectedIndex = 6
                                             wsClient.switchAgent(modelData.id)
@@ -634,8 +677,18 @@ ApplicationWindow {
                             id: histPopAgentMouse
                             anchors.fill: parent
                             hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
+                                if (mouse.button === Qt.RightButton) {
+                                    window.pendingDeleteAgentId = modelData.id
+                                    window.pendingDeleteAgentName = window.agentDisplayTitle(modelData)
+                                    var p = histPopAgentMouse.mapToItem(window.contentItem, mouse.x, mouse.y)
+                                    agentContextMenu.x = Math.min(p.x, window.width - agentContextMenu.width - 4)
+                                    agentContextMenu.y = Math.min(p.y, window.height - agentContextMenu.height - 4)
+                                    agentContextMenu.open()
+                                    return
+                                }
                                 leftMidPanel.activeAgentId = modelData.id
                                 window.leftSelectedIndex = 6
                                 wsClient.switchAgent(modelData.id)
@@ -5209,14 +5262,74 @@ ApplicationWindow {
         }
     }
 
+    /// 任务记录右键菜单：当前仅一项「删除」
     Popup {
-        id: deleteCronJobPopup
+        id: agentContextMenu
+        parent: window.contentItem
+        padding: 4
+        width: 132
+        height: agentContextMenuCol.implicitHeight + 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#E6E7EB"
+            border.width: 1
+        }
+        contentItem: Column {
+            id: agentContextMenuCol
+            spacing: 0
+            width: parent.width
+
+            Rectangle {
+                id: agentContextDeleteItem
+                width: parent.width
+                height: 32
+                radius: 6
+                color: agentContextDeleteMouse.containsMouse ? "#0A000000" : "transparent"
+
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+
+                    Label {
+                        text: qsTr("删除")
+                        font.pixelSize: 14
+                        color: "#E54545"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                MouseArea {
+                    id: agentContextDeleteMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        agentContextMenu.close()
+                        if (window.pendingDeleteAgentId.length > 0)
+                            deleteAgentPopup.open()
+                    }
+                }
+            }
+        }
+    }
+
+    /// 删除 agent 确认弹窗（参考 deleteCronJobPopup 的视觉风格）
+    Popup {
+        id: deleteAgentPopup
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
         width: 360
         padding: 20
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: {
+            window.pendingDeleteAgentId = ""
+            window.pendingDeleteAgentName = ""
+        }
         background: Rectangle {
             radius: 12
             color: "#FFFFFF"
@@ -5229,7 +5342,7 @@ ApplicationWindow {
             Label {
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: qsTr("确定删除定时任务「") + window.pendingDeleteCronJobName + "」？"
+                text: qsTr("确定删除此任务？\n此操作将同时移除该任务的会话与工作目录文件。")
                 font.pixelSize: 15
                 color: "#D9000000"
             }
@@ -5246,8 +5359,103 @@ ApplicationWindow {
                     text: qsTr("删除")
                     fontSize: 14
                     onClicked: {
-                        if (window.pendingDeleteCronJobId)
+                        var aid = window.pendingDeleteAgentId
+                        if (aid.length > 0)
+                            wsClient.deleteAgent(aid, true)
+                        deleteAgentPopup.close()
+                    }
+                }
+                CustomButton {
+                    width: 88
+                    height: 36
+                    backgroundColor: "#F7F9FA"
+                    textColor: "#A6000000"
+                    borderColor: "#E6E7EB"
+                    borderWidth: 1
+                    text: qsTr("取消")
+                    fontSize: 14
+                    onClicked: deleteAgentPopup.close()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: deleteCronJobPopup
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 360
+        padding: 20
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        /// 查找待删除定时任务绑定的「定时-」专用 agent ID（若不存在则返回 ""）
+        function findDedicatedAgentIdForCron(jobId) {
+            if (!jobId) return ""
+            var jobs = wsClient.cronJobs
+            var aid = ""
+            for (var i = 0; i < jobs.length; i++) {
+                if (jobs[i].id === jobId) {
+                    aid = jobs[i].agentId || ""
+                    break
+                }
+            }
+            if (aid.length === 0) return ""
+            var agents = wsClient.agentList
+            for (var j = 0; j < agents.length; j++) {
+                if (agents[j].id === aid) {
+                    var nm = agents[j].name || ""
+                    return (nm.indexOf("\u5b9a\u65f6-") === 0) ? aid : ""
+                }
+            }
+            return ""
+        }
+
+        /// 打开前预计算一次，供提示文案与点击删除复用
+        property string boundAgentIdPreview: ""
+        onAboutToShow: {
+            boundAgentIdPreview = findDedicatedAgentIdForCron(window.pendingDeleteCronJobId)
+        }
+
+        background: Rectangle {
+            radius: 12
+            color: "#FFFFFF"
+            border.color: "#14000000"
+            border.width: 1
+        }
+        contentItem: Column {
+            spacing: 16
+            width: parent.width
+            Label {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: {
+                    var base = qsTr("确定删除定时任务「") + window.pendingDeleteCronJobName + qsTr("」？")
+                    if (deleteCronJobPopup.boundAgentIdPreview.length > 0)
+                        base += qsTr("\n此操作将同时删除其专用任务及其会话记录。")
+                    return base
+                }
+                font.pixelSize: 15
+                color: "#D9000000"
+            }
+            Row {
+                spacing: 12
+                layoutDirection: Qt.RightToLeft
+                anchors.right: parent.right
+                CustomButton {
+                    width: 88
+                    height: 36
+                    backgroundColor: "#E54545"
+                    textColor: "#FFFFFF"
+                    borderWidth: 0
+                    text: qsTr("删除")
+                    fontSize: 14
+                    onClicked: {
+                        if (window.pendingDeleteCronJobId) {
+                            window.pendingDeleteCronAgentId =
+                                deleteCronJobPopup.boundAgentIdPreview
                             wsClient.removeCronJob(window.pendingDeleteCronJobId)
+                        }
                         window.pendingDeleteCronJobId = ""
                         window.pendingDeleteCronJobName = ""
                         deleteCronJobPopup.close()
