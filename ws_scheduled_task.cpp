@@ -99,6 +99,17 @@ QVariantMap WsScheduledTask::jobFromJson(const QJsonObject &obj) const
     entry[QStringLiteral("deleteAfterRun")] =
         obj.value(QStringLiteral("deleteAfterRun")).toBool(false);
 
+    // ── 绑定的 Agent（"定时-" 专用 agent）：用于级联删除 ──
+    // 兼容多种 Gateway 响应布局：顶层 agentId / payload.agentId / runtime.agentId
+    QString boundAgentId = obj.value(QStringLiteral("agentId")).toString();
+    if (boundAgentId.isEmpty())
+        boundAgentId = payload.value(QStringLiteral("agentId")).toString();
+    if (boundAgentId.isEmpty()) {
+        const QJsonObject runtime = obj.value(QStringLiteral("runtime")).toObject();
+        boundAgentId = runtime.value(QStringLiteral("agentId")).toString();
+    }
+    entry[QStringLiteral("agentId")] = boundAgentId;
+
     // ── 时间戳 ──
     const double nextMs = obj.value(QStringLiteral("nextRunAtMs")).toDouble(0);
     if (nextMs > 0) {
