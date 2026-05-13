@@ -1013,6 +1013,32 @@ ApplicationWindow {
                             Qt.callLater(function () { chatListView.positionViewAtEnd() })
                     }
 
+                    /// 工具卡片折叠状态记忆：key 优先用 toolCallId（稳定），
+                    /// 缺失时回退到 "idx:<index>"。值为 true 表示「已折叠」。
+                    /// ListView 滚动时会回收/重建 delegate，局部属性会被重置，
+                    /// 故必须把状态提升到 ListView 这一层持久保存。
+                    property var toolCollapsed: ({})
+                    function isToolCollapsed(callId, idx) {
+                        var k = (callId && String(callId).length > 0)
+                                ? ("id:" + callId) : ("idx:" + idx)
+                        return toolCollapsed[k] === true
+                    }
+                    function setToolCollapsed(callId, idx, collapsed) {
+                        var k = (callId && String(callId).length > 0)
+                                ? ("id:" + callId) : ("idx:" + idx)
+                        // QML var 属性按引用比较是否变化，必须替换为新对象才能触发绑定刷新
+                        var m = Object.assign({}, toolCollapsed)
+                        if (collapsed) m[k] = true
+                        else delete m[k]
+                        toolCollapsed = m
+                    }
+                    /// 切换会话 / 删除任务时 chatModel.clear() 会触发 modelReset，
+                    /// 顺便清掉折叠记忆，避免遗留键无限累积。
+                    Connections {
+                        target: chatModel
+                        function onModelReset() { chatListView.toolCollapsed = ({}) }
+                    }
+
                     delegate: Item {
                         width: chatListView.width
                         readonly property bool isCompactionMarker: {
@@ -1093,7 +1119,10 @@ ApplicationWindow {
                             readonly property bool toolRunning: !hasToolResult
                             readonly property bool toolOk: hasToolResult && !isError
                             readonly property bool toolFail: hasToolResult && isError
-                            property bool toolDetailExpanded: true
+                            /// 折叠态由 chatListView.toolCollapsed 持久化记忆，
+                            /// 即便 delegate 滚出可视区被回收重建，状态也不会丢失。
+                            readonly property bool toolDetailExpanded:
+                                !chatListView.isToolCollapsed(toolCallId, index)
 
                             Column {
                                 id: toolBlockRow
@@ -1175,7 +1204,9 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 anchors.margins: -6
                                                 cursorShape: Qt.PointingHandCursor
-                                                onClicked: toolBlockRoot.toolDetailExpanded = !toolBlockRoot.toolDetailExpanded
+                                                onClicked: chatListView.setToolCollapsed(
+                                                               toolCallId, index,
+                                                               toolBlockRoot.toolDetailExpanded)
                                             }
                                         }
 
