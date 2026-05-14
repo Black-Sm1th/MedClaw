@@ -9,7 +9,7 @@ ApplicationWindow {
     width: 1440
     height: 800
     visible: true
-    title: qsTr("AetherMED_ClawDESK")
+    title: qsTr("CRMS AI Agent")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
@@ -952,7 +952,7 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Label{
-                        text: "AetherMED_ClawDESK"
+                        text: "CRMS AI Agent"
                         font.family: "Alimama ShuHeiTi"
                         font.pixelSize: 36
                         anchors.horizontalCenter: parent.horizontalCenter
