@@ -5,16 +5,17 @@ ChatModel::ChatModel(QObject *parent)
 {
     // 起跳节流 (leading-edge throttle)：
     //   - 第一个 chunk 立刻 flush，并启动一个节流窗口；
-    //   - 窗口期间到达的 chunk 累积进 content，置 m_streamDirty；
-    //   - 窗口到期：若 dirty → 再 flush 一次并续期；若空闲 → 定时器停掉，
-    //                等下一个 chunk 触发立刻 flush（保证下一次响应是即时的）。
+    //   - 窗口期间到达的 chunk 累积进 content + m_streamPending，置 m_streamDirty；
+    //   - 窗口到期：若 dirty → 再 flush 一次（推送 delta 给 QML insert）并续期；
+    //                若空闲 → 定时器停掉，等下一个 chunk 触发立刻 flush。
     m_streamFlushTimer.setSingleShot(true);
     connect(&m_streamFlushTimer, &QTimer::timeout, this, [this]() {
         if (!m_streamDirty) return;
         flushStream();
         if (m_streamFlushRow < 0 || m_streamFlushRow >= m_messages.count()) return;
+        // flushStream 已把 pending 合并进 content，长度即为「QML 端当前总文本长度」
         const int len = m_messages[m_streamFlushRow].content.length();
-        m_streamFlushTimer.setInterval(qBound(30, len / 250, 500));
+        m_streamFlushTimer.setInterval(streamFlushIntervalMsFor(len));
         m_streamFlushTimer.start();
     });
 }
@@ -180,6 +181,7 @@ void ChatModel::clear()
     m_streamFlushTimer.stop();
     m_streamFlushRow = -1;
     m_streamDirty = false;
+    m_streamPending.clear();
     const bool wasStreaming = m_streaming;
     m_streaming = false;
     beginResetModel();
@@ -201,12 +203,34 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
 
 // ── Streaming ────────────────────────────────────────────────────────
 //
-// 设计要点（既要 Markdown 实时渲染、又要避免长文本时卡死）：
-//   - 每个 chunk 都全量 set + Markdown 重排 ⇒ O(N²) 卡死
-//   - 完全不 set、只 insert() ⇒ 流式中无法看到 Markdown 样式
-//   - 折中：保留 `text: content` + `textFormat: MarkdownText` 的简单 QML 绑定，
-//     在 C++ 侧用单次触发的 QTimer 把多个 chunk 合并成一次 dataChanged(ContentRole) 通知，
-//     节流间隔随内容长度自适应增长，单位时间内的重排次数被限制在常数级。
+// 设计要点（既要保留 Markdown 渲染、又要避免长文本流式时卡死）：
+//
+//   - 朴素 `text: content` + `textFormat: MarkdownText` 绑定：每次 dataChanged
+//     都会触发 QTextDocument::setMarkdown(整段)，O(N) 全量 reparse + 全量 block layout，
+//     长文本下单次重排就能在主线程同步阻塞数百毫秒到几秒，整窗 UI 卡死。
+//
+//   - 当前方案（增量 insert + 终态精排）：
+//       * 流式期间：QML 端 textFormat = PlainText，且 bubbleText.text 不再 binding
+//         到 content；ChatModel 在 flush 时通过 streamFlushed(row, delta) signal
+//         把「自上次 flush 以来的新增片段」推给 QML，delegate 调用
+//         TextEdit::insert(length, delta) 局部追加，QTextDocument 只对追加段做
+//         增量 layout，不重排已有内容。
+//       * 流式结束：emit dataChanged(IsStreamingRole) 让 QML 把 textFormat 切回
+//         MarkdownText，Qt 内部会用当前完整 plain text 跑一次最终 setMarkdown 精排。
+//       * m_messages[row].content 仍持有完整累积副本，便于 delegate 滚出滚回重建、
+//         或之后 historyLoaded / 重新查看会话时一次性 onCompleted 注入完整文本。
+
+int ChatModel::streamFlushIntervalMsFor(int contentLen)
+{
+    // 自适应节流：内容越长，单次 layout / 度量 / 粘底滚动越贵，间隔越宽。
+    //   < ~7.5KB        → 30ms   （≈33Hz，逐字打字感）
+    //   7.5KB ~ 250KB   → 线性放宽
+    //   ≥ 250KB         → 1000ms （封顶，避免超长文本度量吃掉整帧）
+    const int v = contentLen / 250;
+    if (v < 30)   return 30;
+    if (v > 1000) return 1000;
+    return v;
+}
 
 void ChatModel::beginStreaming()
 {
@@ -233,8 +257,20 @@ void ChatModel::flushStream()
     m_streamDirty = false;
     if (m_streamFlushRow < 0 || m_streamFlushRow >= m_messages.count()) {
         m_streamFlushRow = -1;
+        m_streamPending.clear();
         return;
     }
+    if (!m_streamPending.isEmpty()) {
+        // 关键不变量：m_messages[row].content 始终等于「已经 emit 给 QML 的累积」，
+        // 即 QML 端 bubbleText 应当已经显示的内容。pending 是「未 emit 的尾部」。
+        // 这里先把 pending 合并进 content，再 emit；之后 onCompleted 用 content
+        // 注入新建/回收重建的 delegate 时，与后续 streamFlushed 不会有重复区段。
+        m_messages[m_streamFlushRow].content += m_streamPending;
+        emit streamFlushed(m_streamFlushRow, m_streamPending);
+        m_streamPending.clear();
+    }
+    // 仍然广播 ContentRole 变化，方便依赖整段 content 的其它绑定（粘底滚动等）感知；
+    // bubbleText 已不再 binding text=content，所以这次广播不会触发全量 setText / setMarkdown。
     const QModelIndex idx = index(m_streamFlushRow);
     emit dataChanged(idx, idx, { ContentRole });
     emit messagePayloadChanged();
@@ -267,19 +303,33 @@ void ChatModel::appendStreamChunk(const QString &chunk)
     }
 
     const int last = m_messages.count() - 1;
-    m_messages[last].content += chunk;
+    if (m_streamFlushRow >= 0
+        && m_streamFlushRow != last
+        && m_streamFlushRow < m_messages.count()
+        && !m_streamPending.isEmpty()) {
+        // 切到新一行（如 toolCall 后又开始流式）：先把上一行尚未 emit 的残余 delta
+        // 合并进上一行 content 并推送出去，否则 QML 端那一行末尾会缺最后一小段文字。
+        m_messages[m_streamFlushRow].content += m_streamPending;
+        emit streamFlushed(m_streamFlushRow, m_streamPending);
+        const QModelIndex prevIdx = index(m_streamFlushRow);
+        emit dataChanged(prevIdx, prevIdx, { ContentRole });
+    }
+    if (m_streamFlushRow != last) {
+        m_streamPending.clear();
+    }
+    // 注意：content 不在这里追加，只在 flushStream / endStreaming 把 pending
+    // 合并进去时才推进，确保 content == 「已 emit 给 QML 的累积」不变量。
+    m_streamPending += chunk;
     m_streamFlushRow = last;
     m_streamDirty = true;
 
-    // 节流间隔随内容长度自适应增长：
-    //   < ~7KB   → 30ms  （≈33Hz，逐字打字感）
-    //   7K~125K  → 线性放宽
-    //   ≥ 125KB  → 500ms （封顶，避免长文重排吃掉整帧）
+    // 节流间隔随内容长度自适应放宽，详见 streamFlushIntervalMsFor()。
     if (!m_streamFlushTimer.isActive()) {
         // 起跳节流：定时器空闲时第一个 chunk 立即可见，再开始节流窗口
         flushStream();
+        // flushStream 已把 pending 合并进 content
         const int len = m_messages[last].content.length();
-        m_streamFlushTimer.setInterval(qBound(30, len / 250, 500));
+        m_streamFlushTimer.setInterval(streamFlushIntervalMsFor(len));
         m_streamFlushTimer.start();
     }
     // 定时器正在跑：仅累积，timeout 回调里会续期。
@@ -294,16 +344,26 @@ void ChatModel::endStreaming()
     m_streamDirty = false;
     if (m_messages.isEmpty()) {
         m_streamFlushRow = -1;
+        m_streamPending.clear();
         return;
     }
     const int last = m_messages.count() - 1;
+    // 关键顺序：先把残留 delta 合并进 content + 推给 QML，让 bubbleText insert 到末尾；
+    // 之后再翻 IsStreamingRole 触发 textFormat 切到 MarkdownText，
+    // QML 端 onTextFormatChanged 会用「完整 plain markdown 源」(此时 content 已包含 pending)
+    // 重新 setText 跑一次最终 QTextDocument::setMarkdown() 精排。
+    if (m_streamFlushRow == last && !m_streamPending.isEmpty()) {
+        m_messages[last].content += m_streamPending;
+        emit streamFlushed(last, m_streamPending);
+        m_streamPending.clear();
+    }
     if (m_messages[last].isStreaming)
         m_messages[last].isStreaming = false;
-    // 最终强制 flush 一次，确保 QML 拿到完整内容并最后一次完成 Markdown 渲染。
     const QModelIndex idx = index(last);
     emit dataChanged(idx, idx, { ContentRole, IsStreamingRole });
     emit messagePayloadChanged();
     m_streamFlushRow = -1;
+    m_streamPending.clear();
 }
 
 bool ChatModel::isStreaming() const
