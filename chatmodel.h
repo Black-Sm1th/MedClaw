@@ -84,11 +84,21 @@ signals:
     void isStreamingChanged();
     /// 行数未变但内容/展示高度变化（流式追加、工具结果合并到卡片等），供界面滚到底部
     void messagePayloadChanged();
+    /// 流式增量推送：把「自上次 flush 以来累积的 delta 字符串」一次性发给 QML，
+    /// QML delegate 监听后调用 TextEdit::insert(length, delta) 增量追加，
+    /// 避免每次 flush 都全量 setText / setMarkdown 重排整段消息。
+    /// row 是目标 delegate 在 model 中的行号，QML 用 index 比对决定是否处理。
+    void streamFlushed(int row, const QString &delta);
 
 private:
-    /// 节流刷新：仅在节流间隔到期时把当前累积的 content 发一次 dataChanged(ContentRole)，
-    /// 让 QML 中 textFormat=MarkdownText 的 TextEdit 进行一次重渲染。
+    /// 节流刷新：把累积的 delta 通过 streamFlushed(row, delta) 推给 QML，
+    /// 让 bubbleText 用 insert() 局部追加；同时仍 emit dataChanged(ContentRole)
+    /// 与 messagePayloadChanged()，便于其它依赖 content / 行高变化的绑定（粘底滚动等）感知。
     void flushStream();
+
+    /// 自适应节流：按当前消息总长度返回下一次 flush 的间隔（毫秒）。
+    /// 越长的消息 layout / 度量 / 粘底滚动越贵，间隔随之放宽。
+    static int streamFlushIntervalMsFor(int contentLen);
 
     QVector<ChatMessage> m_messages;
     bool m_streaming = false;
@@ -96,6 +106,10 @@ private:
     QTimer m_streamFlushTimer;      ///< 流式节流定时器（单次触发，到点后 flushStream）
     int    m_streamFlushRow = -1;   ///< 当前正在被节流刷新的行号
     bool   m_streamDirty    = false;///< 自上次 flush 后是否有新 chunk 累积
+    /// 自上次 streamFlushed() 之后累积的「新增片段」。flushStream() 把它整段发出去并清空。
+    /// 注意：m_messages[m_streamFlushRow].content 仍持有完整累积内容，供 delegate 重建 /
+    /// 历史加载 / 最终 Markdown 精排时一次性读取。
+    QString m_streamPending;
 };
 
 #endif // CHATMODEL_H

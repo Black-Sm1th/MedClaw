@@ -1584,6 +1584,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_newAgentSidebarTs = 0;
         }
 
+        // 侧栏「任务记录」：与网关 agents 数组顺序相反展示（新项在上 / 或符合产品期望的倒序）
+        std::reverse(m_agentList.begin(), m_agentList.end());
+
         emit agentListChanged();
         scheduleAgentListFirstUserTitles();
         return;

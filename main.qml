@@ -1117,9 +1117,18 @@ ApplicationWindow {
 
                                 TextEdit {
                                     id: bubbleText
-                                    // 流式期间 C++ 侧已将多个 chunk 节流合并为单次 dataChanged(ContentRole)，
-                                    // 故本绑定每秒最多被重算少量几次，可以放心使用 MarkdownText 全程渲染。
-                                    text: content
+                                    // 关键性能点：流式期间走「增量 insert」路径，避免每次 chunk
+                                    // 都全量重排整段消息：
+                                    //
+                                    //   * 不再使用 `text: content` 的全量 binding。每次 ChatModel
+                                    //     在节流窗口到点 emit streamFlushed(row, delta) 时，下方
+                                    //     Connections 调用 TextEdit::insert(length, delta) 把新增片段
+                                    //     局部追加到末尾，QTextDocument 只 layout 追加段，复杂度 O(delta)。
+                                    //   * delegate 创建 / 滚出滚回重建：onCompleted 把 m_messages[row].content
+                                    //     一次性注入（流式期间的累积副本，结束后是完整文本），保证文本完整。
+                                    //   * 流式期间 textFormat=PlainText（仅文本 layout）；流式结束 isStreaming
+                                    //     翻 false 后切回 MarkdownText，Qt 内部对当前完整文本跑一次最终
+                                    //     setMarkdown 精排，用户在结束的一瞬间「跳变」为漂亮排版。
                                     width: Math.min(implicitWidth, chatBubble.isUser ? chatBubble.width * 0.75 - 32 : chatBubble.width)
                                     wrapMode: Text.Wrap
                                     font.pixelSize: 16
@@ -1130,10 +1139,37 @@ ApplicationWindow {
                                     color: chatBubble.isUser
                                            ? "#E5000000"
                                            : (isIntermediate ? "#8C000000" : "#D9000000")
-                                    textFormat: Text.MarkdownText
+                                    textFormat: (isStreaming === true)
+                                                ? Text.PlainText
+                                                : Text.MarkdownText
                                     readOnly: true
                                     selectByMouse: true
                                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
+
+                                    /// delegate 创建（首次创建 / ListView 回收后重建）时把当前完整
+                                    /// 累积文本一次性命令式赋值给 text。之后 content 通过 dataChanged
+                                    /// 变化也不会再触发 text 全量 set——流式增量靠下面的 Connections。
+                                    /// textFormat 由非流式态创建：直接走 MarkdownText 路径精排一次。
+                                    Component.onCompleted: bubbleText.text = (content || "")
+
+                                    Connections {
+                                        target: chatModel
+                                        function onStreamFlushed(row, delta) {
+                                            if (row !== index) return
+                                            if (!delta || delta.length === 0) return
+                                            bubbleText.insert(bubbleText.length, delta)
+                                        }
+                                    }
+
+                                    /// 流式结束 isStreaming 翻 false → textFormat 切到 MarkdownText。
+                                    /// 但 TextEdit 不会因为 textFormat 变化自动重新解析已有 text，
+                                    /// 必须再次 setText 才会触发 QTextDocument::setMarkdown() 跑最终精排。
+                                    /// 这里用 isStreaming role 的变化作为触发：true→false 时用完整 content
+                                    /// 重新赋值一次，之后这条消息就以漂亮的 Markdown 形式定格。
+                                    onTextFormatChanged: {
+                                        if (textFormat === Text.MarkdownText)
+                                            bubbleText.text = (content || "")
+                                    }
                                 }
                             }
                         }
