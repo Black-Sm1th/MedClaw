@@ -309,6 +309,20 @@ ApplicationWindow {
                                             wsClient.clearActiveAgentContext()
                                     }
                                 }
+                                ToolTip {
+                                    id: scheduledTaskMenuTip
+                                    visible: modelData === "定时任务" && selItemMouse.containsMouse
+                                    text: qsTr("可设置task开机联网后定时启动")
+                                    delay: 400
+                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    contentItem: Text {
+                                        text: scheduledTaskMenuTip.text
+                                        font.pixelSize: 14
+                                        color: "#FFFFFF"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
                             }
                         }
                     }
@@ -355,6 +369,20 @@ ApplicationWindow {
                                         leftMidPanel.activeAgentId = ""
                                         chatModel.clear()
                                         wsClient.clearActiveAgentContext()
+                                    }
+                                }
+                                ToolTip {
+                                    id: scheduledTaskMenuTipCollapsed
+                                    visible: modelData === "定时任务" && selItemMouseCollapse.containsMouse
+                                    text: qsTr("可设置task开机联网后定时启动")
+                                    delay: 400
+                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    contentItem: Text {
+                                        text: scheduledTaskMenuTipCollapsed.text
+                                        font.pixelSize: 14
+                                        color: "#FFFFFF"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        wrapMode: Text.Wrap
                                     }
                                 }
                             }
