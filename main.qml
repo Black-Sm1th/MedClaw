@@ -2017,6 +2017,16 @@ ApplicationWindow {
                                             //     color: "#D9000000"
                                             //     anchors.verticalCenter: parent.verticalCenter
                                             // }
+
+                                            Text {
+                                                id: workflowText
+                                                text: "workflow"
+                                                font.pixelSize: 14
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                visible: skillPopup.visible
+                                            }
                                             Rectangle {
                                                 visible: dropdownSelectionSkill.selectedSkills.length > 0
                                                 width: badgeText.width + 8
@@ -2433,6 +2443,17 @@ ApplicationWindow {
                                                         fillMode: Image.PreserveAspectFit
                                                         sourceSize: Qt.size(16, 16)
                                                     }
+
+                                                    Text {
+                                                        id: toolText
+                                                        text: "skills"
+                                                        font.pixelSize: 14
+                                                        font.family: "Alibaba PuHuiTi 3.0"
+                                                        color: "#D9000000"
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        visible: toolPopup2.visible
+                                                    }
+
                                                     Rectangle {
                                                         id: toolCountBadge
                                                         visible: newTaskRec.activeShortcutGroupName.length === 0
@@ -3478,7 +3499,7 @@ ApplicationWindow {
                                 color: "#D9000000"
                             }
                             Label{
-                                text: qsTr("创建定时任务，让 AI 按计划自动执行")
+                                text: qsTr("可设置task开机联网后定时启动")
                                 font.pixelSize: 12
                                 color: "#A6000000"
                             }
