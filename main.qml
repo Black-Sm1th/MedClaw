@@ -3148,6 +3148,8 @@ ApplicationWindow {
                     return currentText
                 }
 
+                readonly property bool hasWorkspaceSelected: displayText !== qsTr("workspace")
+
                 function resetPicker() {
                     absolutePath = ""
                     currentText = qsTr("workspace")
@@ -3171,11 +3173,25 @@ ApplicationWindow {
                          : "transparent"
                     Behavior on color { ColorAnimation { duration: 100 } }
 
-                    ToolTip.visible: wsMouseArea.containsMouse
-                                     && dropdownSelectionWorkSpace.pickerLocked
-                                     && (wsClient.agentIdentity && (wsClient.agentIdentity.workspace || "").length > 0)
-                    ToolTip.text: wsClient.agentIdentity ? (wsClient.agentIdentity.workspace || "") : ""
-                    ToolTip.delay: 400
+                    ToolTip {
+                        id: wsToolTip
+                        visible: wsMouseArea.containsMouse
+                                 && (dropdownSelectionWorkSpace.hasWorkspaceSelected
+                                     ? dropdownSelectionWorkSpace.pickerLocked
+                                     : true)
+                        text: dropdownSelectionWorkSpace.hasWorkspaceSelected
+                            ? (wsClient.agentIdentity ? (wsClient.agentIdentity.workspace || "") : "")
+                            : qsTr("input+output储存空间")
+                        delay: 400
+                        background: Rectangle { color: "#A6000000"; radius: 4 }
+                        contentItem: Text {
+                            text: wsToolTip.text
+                            font.pixelSize: 14
+                            color: "#FFFFFF"
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            wrapMode: Text.Wrap
+                        }
+                    }
 
                     Row {
                         spacing: 6
