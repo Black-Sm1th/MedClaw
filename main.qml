@@ -103,9 +103,15 @@ ApplicationWindow {
         return trimToFirstParenPairOnly(raw)
     }
 
-    // 启动时自动连接（地址与 AppData/config.json 中 serverUrl 一致，由 C++ 加载）
+    // 启动时显示登录页；若存在「记住」的账号则用其 token 自动登录
+    // （服务器地址含端口已在创建用户时分配，沿用 config.json 的 serverUrl）
     Component.onCompleted: {
-        wsClient.connectToServer(wsClient.serverUrl)
+        var u = wsClient.rememberedUsername
+        if (u && u.length > 0) {
+            var tk = wsClient.tokenForUsername(u)
+            if (tk && tk.length > 0)
+                wsClient.login(u, tk, true)
+        }
     }
     Connections{
         target: wsClient
@@ -826,6 +832,58 @@ ApplicationWindow {
                 }
                 Rectangle {
                     width: workspaceTopBarSlot.width > 0 ? 8 : 0
+                    height: 1
+                    color: "transparent"
+                }
+                // 当前登录用户：点击弹出「退出登录」菜单
+                Rectangle {
+                    id: userChip
+                    visible: wsClient.loggedIn
+                    height: 30
+                    width: userChipRow.implicitWidth + 24
+                    radius: 15
+                    color: userChipMouse.containsMouse ? "#F2F4F8" : "transparent"
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Row {
+                        id: userChipRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Image {
+                            source: "qrc:/images/ai.png"
+                            width: 18; height: 18
+                            sourceSize: Qt.size(18, 18)
+                            fillMode: Image.PreserveAspectFit
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            text: wsClient.currentUsername.length > 0
+                                  ? wsClient.currentUsername : qsTr("未登录")
+                            font.pixelSize: 14
+                            color: "#D9000000"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    MouseArea {
+                        id: userChipMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (userMenu.visible) {
+                                userMenu.close()
+                            } else {
+                                var p = userChip.mapToItem(window.contentItem, 0, userChip.height + 6)
+                                userMenu.x = p.x + userChip.width - userMenu.width
+                                userMenu.y = p.y
+                                userMenu.open()
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    width: userChip.visible ? 12 : 0
                     height: 1
                     color: "transparent"
                 }
@@ -5208,6 +5266,80 @@ ApplicationWindow {
         }
     }
 
+    /// 顶栏用户菜单：显示当前账号 + 退出登录
+    Popup {
+        id: userMenu
+        parent: window.contentItem
+        padding: 4
+        width: 168
+        height: userMenuCol.implicitHeight + 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#E6E7EB"
+            border.width: 1
+        }
+        contentItem: Column {
+            id: userMenuCol
+            spacing: 0
+            width: parent.width
+
+            Rectangle {
+                width: parent.width
+                height: 40
+                color: "transparent"
+                Column {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 1
+                    Label {
+                        text: qsTr("当前账号")
+                        font.pixelSize: 11
+                        color: "#9AA0A6"
+                    }
+                    Label {
+                        width: parent.width
+                        text: wsClient.currentUsername
+                        font.pixelSize: 13
+                        color: "#D9000000"
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: "#EEF0F2" }
+
+            Rectangle {
+                width: parent.width
+                height: 36
+                radius: 6
+                color: logoutMouse.containsMouse ? "#0A000000" : "transparent"
+                Label {
+                    text: qsTr("退出登录")
+                    font.pixelSize: 14
+                    color: "#E54545"
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                MouseArea {
+                    id: logoutMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        userMenu.close()
+                        wsClient.logout()
+                    }
+                }
+            }
+        }
+    }
+
     /// 任务记录右键菜单：当前仅一项「删除」
     Popup {
         id: agentContextMenu
@@ -7045,5 +7177,15 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // ── 登录覆盖层（未登录时显示，覆盖整个窗口）──
+    LoginPage {
+        id: loginOverlay
+        anchors.fill: parent
+        z: 100000
+        appWindow: window
+        visible: !wsClient.loggedIn
+        enabled: visible
     }
 }

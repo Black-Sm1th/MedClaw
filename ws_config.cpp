@@ -12,6 +12,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QStringList>
+#include <QUrl>
 #include <cstring>
 
 namespace {
@@ -349,6 +351,7 @@ WsConfig::WsConfig()
     , m_hasKeys(false)
 {
     loadOrCreatePersistentConfig();
+    loadAccounts();
 
     memset(m_ed25519Pk, 0, sizeof(m_ed25519Pk));
     memset(m_ed25519Sk, 0, sizeof(m_ed25519Sk));
@@ -367,6 +370,9 @@ void WsConfig::loadOrCreatePersistentConfig()
         QStringLiteral("openclaw-control-ui");
     static const QString kDefaultSkillsStoragePath =
         QStringLiteral("~/MedClaw/skills");
+    static const QString kDefaultServerHost = QStringLiteral("127.0.0.1");
+    static const QString kDefaultUsersDir =
+        QStringLiteral("~/MedClaw/.medclaw-users");
     const QString base = QStringLiteral("AppData/config/");
     QDir().mkpath(base);
     const QString path = base + QStringLiteral("config.json");
@@ -388,7 +394,11 @@ void WsConfig::loadOrCreatePersistentConfig()
         m_token     = kDefaultToken;
         m_clientId  = kDefaultClientId;
         QJsonObject o;
+        m_serverHost = kDefaultServerHost;
+        m_usersDir   = kDefaultUsersDir;
         o[QStringLiteral("serverUrl")]        = m_serverUrl;
+        o[QStringLiteral("serverHost")]       = m_serverHost;
+        o[QStringLiteral("usersDir")]         = m_usersDir;
         o[QStringLiteral("token")]            = m_token;
         o[QStringLiteral("clientId")]         = m_clientId;
         o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
@@ -431,6 +441,18 @@ void WsConfig::loadOrCreatePersistentConfig()
         merged[QStringLiteral("shortcut")] = defaultShortcutArray();
         mergedDirty = true;
     }
+    if (merged.value(QStringLiteral("serverHost")).toString().trimmed().isEmpty()) {
+        // 默认主机取自 serverUrl 的 host（兼容已配置远程地址），否则回退 127.0.0.1
+        QString host = QUrl(merged.value(QStringLiteral("serverUrl")).toString()).host().trimmed();
+        if (host.isEmpty())
+            host = kDefaultServerHost;
+        merged[QStringLiteral("serverHost")] = host;
+        mergedDirty = true;
+    }
+    if (merged.value(QStringLiteral("usersDir")).toString().trimmed().isEmpty()) {
+        merged[QStringLiteral("usersDir")] = kDefaultUsersDir;
+        mergedDirty = true;
+    }
     if (mergedDirty)
         writeDefaults(merged);
 
@@ -452,6 +474,13 @@ void WsConfig::loadOrCreatePersistentConfig()
 
     m_skillsStoragePath = merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed();
     m_llmJudgmentEnabled = merged.value(QStringLiteral("llmJudgmentEnabled")).toBool(false);
+    m_username = merged.value(QStringLiteral("username")).toString().trimmed();
+    m_serverHost = merged.value(QStringLiteral("serverHost")).toString().trimmed();
+    m_usersDir   = merged.value(QStringLiteral("usersDir")).toString().trimmed();
+    if (m_serverHost.isEmpty())
+        m_serverHost = kDefaultServerHost;
+    if (m_usersDir.isEmpty())
+        m_usersDir = kDefaultUsersDir;
 
     if (m_serverUrl.isEmpty())
         m_serverUrl = kDefaultServer;
@@ -479,8 +508,189 @@ void WsConfig::loadOrCreatePersistentConfig()
 QString WsConfig::serverUrl()     const { return m_serverUrl; }
 void    WsConfig::setServerUrl(const QString &url) { m_serverUrl = url; }
 
+QString WsConfig::serverHost()    const { return m_serverHost; }
+QString WsConfig::usersDir()      const { return m_usersDir; }
+
+QString WsConfig::resolveServerUrlForUser(const QString &username) const
+{
+    const QString u = username.trimmed();
+    if (u.isEmpty())
+        return QString();
+
+    // 展开 usersDir 中的 ~/ 前缀
+    QString dir = m_usersDir;
+    if (dir == QLatin1String("~"))
+        dir = QDir::homePath();
+    else if (dir.startsWith(QStringLiteral("~/")))
+        dir = QDir::homePath() + dir.mid(1);
+
+    const QString envPath = dir + QLatin1Char('/') + u + QStringLiteral("/.env");
+    QFile f(envPath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        qWarning().noquote() << "[WsConfig] 用户 .env 不存在，无法解析端口:" << envPath;
+        return QString();
+    }
+    const QString content = QString::fromUtf8(f.readAll());
+    f.close();
+
+    static const QString kKey = QStringLiteral("OPENCLAW_GATEWAY_PORT=");
+    QString port;
+    const QStringList lines = content.split(QLatin1Char('\n'));
+    for (const QString &ln : lines) {
+        const QString t = ln.trimmed();
+        if (t.startsWith(QLatin1Char('#')))
+            continue;
+        if (t.startsWith(kKey)) {
+            port = t.mid(kKey.length()).trimmed();
+            break;
+        }
+    }
+    if (port.isEmpty())
+        return QString();
+
+    const QString host = m_serverHost.isEmpty()
+        ? QStringLiteral("127.0.0.1") : m_serverHost;
+    return QStringLiteral("ws://%1:%2").arg(host, port);
+}
+
 QString WsConfig::token()         const { return m_token; }
 void    WsConfig::setToken(const QString &token) { m_token = token; }
+
+QString WsConfig::username()      const { return m_username; }
+void    WsConfig::setUsername(const QString &username) { m_username = username; }
+
+QVariantList WsConfig::accounts()         const { return m_accounts; }
+QString      WsConfig::rememberedUsername() const { return m_rememberedUsername; }
+
+QString WsConfig::tokenForUsername(const QString &username) const
+{
+    const QString u = username.trimmed();
+    for (const QVariant &v : m_accounts) {
+        const QVariantMap m = v.toMap();
+        if (m.value(QStringLiteral("username")).toString() == u)
+            return m.value(QStringLiteral("token")).toString();
+    }
+    return QString();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  账号持久化（accounts.json）
+// ═══════════════════════════════════════════════════════════════════════
+
+void WsConfig::loadAccounts()
+{
+    m_accounts.clear();
+    m_rememberedUsername.clear();
+
+    const QString path = QStringLiteral("AppData/config/accounts.json");
+    QFile f(path);
+    if (!f.exists())
+        return;
+    if (!f.open(QIODevice::ReadOnly)) {
+        qWarning() << "[WsConfig] cannot read" << path;
+        return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject())
+        return;
+
+    const QJsonObject o = doc.object();
+    const QJsonArray arr = o.value(QStringLiteral("accounts")).toArray();
+    for (const QJsonValue &v : arr) {
+        if (!v.isObject())
+            continue;
+        const QJsonObject ao = v.toObject();
+        const QString u = ao.value(QStringLiteral("username")).toString().trimmed();
+        if (u.isEmpty())
+            continue;
+        QVariantMap m;
+        m[QStringLiteral("username")]  = u;
+        m[QStringLiteral("token")]     = ao.value(QStringLiteral("token")).toString();
+        m[QStringLiteral("serverUrl")] = ao.value(QStringLiteral("serverUrl")).toString();
+        m_accounts.append(m);
+    }
+    m_rememberedUsername =
+        o.value(QStringLiteral("rememberedAccount")).toString().trimmed();
+}
+
+void WsConfig::saveAccounts() const
+{
+    const QString base = QStringLiteral("AppData/config/");
+    QDir().mkpath(base);
+    const QString path = base + QStringLiteral("accounts.json");
+
+    QJsonArray arr;
+    for (const QVariant &v : m_accounts) {
+        const QVariantMap m = v.toMap();
+        QJsonObject ao;
+        ao[QStringLiteral("username")]  = m.value(QStringLiteral("username")).toString();
+        ao[QStringLiteral("token")]     = m.value(QStringLiteral("token")).toString();
+        ao[QStringLiteral("serverUrl")] = m.value(QStringLiteral("serverUrl")).toString();
+        arr.append(ao);
+    }
+
+    QJsonObject o;
+    o[QStringLiteral("accounts")]         = arr;
+    o[QStringLiteral("rememberedAccount")] = m_rememberedUsername;
+
+    QFile out(path);
+    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+        out.close();
+    } else {
+        qWarning() << "[WsConfig] cannot write" << path;
+    }
+}
+
+void WsConfig::applyLoginCredentials(const QString &username,
+                                     const QString &token,
+                                     bool remember)
+{
+    m_username = username.trimmed();
+    m_token    = token.trimmed();
+
+    // 1. 写回 config.json 的 token / username（与 WebSocket 握手保持一致）
+    const QString cfgPath = QStringLiteral("AppData/config/config.json");
+    QFile f(cfgPath);
+    if (f.open(QIODevice::ReadOnly)) {
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        f.close();
+        if (doc.isObject()) {
+            QJsonObject o = doc.object();
+            o[QStringLiteral("token")]    = m_token;
+            o[QStringLiteral("username")] = m_username;
+            QFile out(cfgPath);
+            if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+                out.close();
+            }
+        }
+    }
+
+    // 2. upsert accounts.json 中该用户名的条目
+    bool found = false;
+    for (int i = 0; i < m_accounts.size(); ++i) {
+        QVariantMap m = m_accounts[i].toMap();
+        if (m.value(QStringLiteral("username")).toString() == m_username) {
+            m[QStringLiteral("token")]     = m_token;
+            m[QStringLiteral("serverUrl")] = m_serverUrl;
+            m_accounts[i] = m;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        QVariantMap m;
+        m[QStringLiteral("username")]  = m_username;
+        m[QStringLiteral("token")]     = m_token;
+        m[QStringLiteral("serverUrl")] = m_serverUrl;
+        m_accounts.append(m);
+    }
+
+    m_rememberedUsername = remember ? m_username : QString();
+    saveAccounts();
+}
 
 QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
 void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }
@@ -517,9 +727,16 @@ bool    WsConfig::hasDeviceKeys() const { return m_hasKeys; }
 
 void WsConfig::initDeviceKeys()
 {
-    // 步骤 1：生成 Ed25519 密钥对（内嵌纯 C++ 实现，无需外部 OpenSSL）
-    ed25519_create_keypair(m_ed25519Pk, m_ed25519Sk);
-    m_hasKeys = true;
+    // 步骤 1：优先复用已持久化的密钥；没有则生成新的并落盘。
+    // 这样 deviceId 在多次启动间保持稳定，配对只需一次（DOCKER.md 第二节）。
+    if (!loadDeviceKeys()) {
+        ed25519_create_keypair(m_ed25519Pk, m_ed25519Sk);
+        m_hasKeys = true;
+        saveDeviceKeys();
+        qDebug() << "[WsConfig] 生成新的 Ed25519 设备密钥并已持久化";
+    } else {
+        qDebug() << "[WsConfig] 复用已持久化的 Ed25519 设备密钥";
+    }
 
     // 步骤 2：公钥 → SHA-256 哈希 → 设备 ID（十六进制字符串，64 字符）
     const QByteArray rawPk(reinterpret_cast<char *>(m_ed25519Pk), 32);
@@ -527,6 +744,60 @@ void WsConfig::initDeviceKeys()
         QCryptographicHash::hash(rawPk, QCryptographicHash::Sha256).toHex());
 
     qDebug() << "[WsConfig] Ed25519 keypair ready. deviceId:" << m_deviceId.left(16) << "...";
+}
+
+bool WsConfig::loadDeviceKeys()
+{
+    const QString path = QStringLiteral("AppData/config/device.json");
+    QFile f(path);
+    if (!f.exists())
+        return false;
+    if (!f.open(QIODevice::ReadOnly)) {
+        qWarning() << "[WsConfig] cannot read" << path;
+        return false;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject())
+        return false;
+
+    const QJsonObject o = doc.object();
+    const QByteArray pk = QByteArray::fromBase64(
+        o.value(QStringLiteral("publicKey")).toString().toLatin1());
+    const QByteArray sk = QByteArray::fromBase64(
+        o.value(QStringLiteral("secretKey")).toString().toLatin1());
+    if (pk.size() != 32 || sk.size() != 64) {
+        qWarning() << "[WsConfig] device.json 密钥尺寸异常，将重新生成";
+        return false;
+    }
+
+    memcpy(m_ed25519Pk, pk.constData(), 32);
+    memcpy(m_ed25519Sk, sk.constData(), 64);
+    m_hasKeys = true;
+    return true;
+}
+
+void WsConfig::saveDeviceKeys() const
+{
+    const QString base = QStringLiteral("AppData/config/");
+    QDir().mkpath(base);
+    const QString path = base + QStringLiteral("device.json");
+
+    const QByteArray rawPk(reinterpret_cast<const char *>(m_ed25519Pk), 32);
+    const QByteArray rawSk(reinterpret_cast<const char *>(m_ed25519Sk), 64);
+
+    QJsonObject o;
+    o[QStringLiteral("publicKey")] = QString::fromLatin1(rawPk.toBase64());
+    o[QStringLiteral("secretKey")] = QString::fromLatin1(rawSk.toBase64());
+
+    QFile out(path);
+    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+        out.close();
+        qDebug().noquote() << "[WsConfig] 设备密钥已写入" << path;
+    } else {
+        qWarning() << "[WsConfig] cannot write" << path;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

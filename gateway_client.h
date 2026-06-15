@@ -105,6 +105,14 @@ class GatewayClient : public QObject
     Q_PROPERTY(QString gatewayHttpBaseUrl READ gatewayHttpBaseUrl CONSTANT)
     /// config.json 中的 gateway 认证 token（与 WebSocket 握手一致）
     Q_PROPERTY(QString gatewayAuthToken READ gatewayAuthToken CONSTANT)
+    /// 是否已登录（握手成功后为 true，登出后为 false）
+    Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY loggedInChanged)
+    /// 当前登录用户名
+    Q_PROPERTY(QString currentUsername READ currentUsername NOTIFY loggedInChanged)
+    /// 已保存账号（仅含 username，供登录页选择）
+    Q_PROPERTY(QVariantList accounts READ accounts NOTIFY accountsChanged)
+    /// 上次「记住」的用户名（用于自动填充 / 自动登录）
+    Q_PROPERTY(QString rememberedUsername READ rememberedUsername NOTIFY accountsChanged)
     /// 技能市场：当前 skillMarketCategories 选中项 path 下每个子文件夹一项 { folderName, installed }
     Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
                NOTIFY skillMarketFoldersChanged)
@@ -156,6 +164,12 @@ public:
     QString serverUrl() const;
     QString gatewayHttpBaseUrl() const;
     QString gatewayAuthToken() const;
+
+    // ── 用户登录 / 账号 ──
+    bool loggedIn() const { return m_loggedIn; }
+    QString currentUsername() const;
+    QVariantList accounts() const;
+    QString rememberedUsername() const;
 
     /// 获取当前连接状态（枚举值）
     int connectionState() const;
@@ -212,6 +226,26 @@ public:
      */
     Q_INVOKABLE void connectToServer(
         const QString &url = QStringLiteral("ws://127.0.0.1:18789"));
+
+    /**
+     * @brief 用户登录：保存用户名 + token 后用该 token 连接已配置的服务器
+     * @param username 用户名（仅作账号标识与记录，服务器隔离由 token 决定）
+     * @param token    该用户的 Gateway Token（认证凭据）
+     * @param remember 是否记住账号（下次启动自动登录）
+     *
+     * 服务器地址（含端口）沿用 config.json 的 serverUrl（创建用户时已分配），
+     * 因此登录无需填写端口。握手成功 → loginSucceeded + loggedIn 置 true；
+     * 失败 → loginFailed(原因)。
+     */
+    Q_INVOKABLE void login(const QString &username,
+                           const QString &token,
+                           bool remember = true);
+
+    /// 登出：断开连接并将 loggedIn 置回 false（回到登录页）
+    Q_INVOKABLE void logout();
+
+    /// 查询某用户名已保存的 token（供登录页选择已有账号时自动填充）
+    Q_INVOKABLE QString tokenForUsername(const QString &username) const;
 
     /// 主动断开 WebSocket 连接
     Q_INVOKABLE void disconnectFromServer();
@@ -483,6 +517,12 @@ signals:
     // ── 连接状态 ──
     void connectionStateChanged();  ///< 连接状态发生变化
 
+    // ── 用户登录 ──
+    void loggedInChanged();              ///< 登录状态变化
+    void accountsChanged();              ///< 已保存账号列表变化
+    void loginSucceeded();               ///< 登录成功（握手完成）
+    void loginFailed(const QString &reason); ///< 登录失败（含原因）
+
     // ── 聊天消息 ──
     void chatMessageReceived(const QString &role,
                              const QString &content,
@@ -701,6 +741,10 @@ private:
     ConnectionState m_state;            ///< 当前连接状态
     QString         m_connectRequestId; ///< connect 握手请求的 ID（用于匹配响应）
     QString         m_challengeNonce;   ///< 服务器下发的 challenge nonce
+
+    // ── 用户登录 ──
+    bool m_loggedIn = false;            ///< 是否已登录（握手成功后置 true）
+    bool m_loginInProgress = false;     ///< 一次 login() 发起的连接尚未出结果
 
     // ── 请求追踪 ──
     QMap<QString, QString> m_pendingRequests; ///< 待处理请求映射（requestId → 方法名）

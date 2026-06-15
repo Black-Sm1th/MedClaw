@@ -19,6 +19,7 @@
         <file>components/TabBarView.qml</file>
         <file>images/setting.png</file>
         <file>components/CustomButton.qml</file>
+        <file>components/LoginPage.qml</file>
         <file>images/more.png</file>
         <file>components/SingleLineTextInput.qml</file>
         <file>components/DatePicker.qml</file>

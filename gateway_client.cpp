@@ -181,6 +181,79 @@ QString GatewayClient::gatewayAuthToken() const
     return m_config.token();
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  用户登录 / 账号
+// ═══════════════════════════════════════════════════════════════════════
+
+QString GatewayClient::currentUsername() const { return m_config.username(); }
+
+QVariantList GatewayClient::accounts() const
+{
+    // 仅向 QML 暴露用户名，不外泄 token
+    QVariantList out;
+    const QVariantList src = m_config.accounts();
+    for (const QVariant &v : src) {
+        const QVariantMap m = v.toMap();
+        const QString u = m.value(QStringLiteral("username")).toString();
+        if (u.isEmpty())
+            continue;
+        QVariantMap o;
+        o[QStringLiteral("username")] = u;
+        out.append(o);
+    }
+    return out;
+}
+
+QString GatewayClient::rememberedUsername() const
+{
+    return m_config.rememberedUsername();
+}
+
+QString GatewayClient::tokenForUsername(const QString &username) const
+{
+    return m_config.tokenForUsername(username);
+}
+
+void GatewayClient::login(const QString &username, const QString &token, bool remember)
+{
+    const QString u = username.trimmed();
+    const QString t = token.trimmed();
+    if (u.isEmpty() || t.isEmpty()) {
+        emit loginFailed(QStringLiteral(
+            "\u8bf7\u8f93\u5165\u7528\u6237\u540d\u548c Token"));  // 请输入用户名和 Token
+        return;
+    }
+
+    // 按用户名解析其专属 Gateway 端口（来自 .medclaw-users/<username>/.env，
+    // 创建用户时已分配，登录无需填端口）；解析不到时回退到已配置的 serverUrl。
+    QString url = m_config.resolveServerUrlForUser(u);
+    if (url.isEmpty()) {
+        url = m_config.serverUrl();
+        qWarning().noquote()
+            << "[Gateway] 未能按用户名解析端口，回退到 serverUrl:" << url;
+    } else {
+        m_config.setServerUrl(url);
+        qDebug().noquote() << "[Gateway] 用户" << u << "解析到地址:" << url;
+    }
+
+    // 保存凭据（账号记录该用户的 serverUrl）并以新 token 连接
+    m_config.applyLoginCredentials(u, t, remember);
+    emit accountsChanged();
+
+    m_loginInProgress = true;
+    connectToServer(url);
+}
+
+void GatewayClient::logout()
+{
+    m_loginInProgress = false;
+    if (m_loggedIn) {
+        m_loggedIn = false;
+        emit loggedInChanged();
+    }
+    disconnectFromServer();
+}
+
 /// 将连接状态枚举转换为用户可读的中文描述
 QString GatewayClient::statusText() const
 {
@@ -955,6 +1028,13 @@ void GatewayClient::onSocketError(QAbstractSocket::SocketError error)
                << "pending=" << m_pendingRequests.size()
                << "error=" << m_socket->errorString();
     emit errorOccurred(m_socket->errorString());
+    // 登录过程中底层连接失败（地址不可达 / 超时等）：直接反馈登录失败，不自动重连
+    if (m_loginInProgress) {
+        m_loginInProgress = false;
+        m_userRequestedDisconnect = true;
+        emit loginFailed(QStringLiteral(
+            "\u65e0\u6cd5\u8fde\u63a5\u5230\u670d\u52a1\u5668\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5"));  // 无法连接到服务器，请检查网络后重试
+    }
     // 不在此处 setState(Disconnected)，保留 Connecting/Handshaking/Connected
     // 供 onDisconnected 判断断线前阶段并走自动重连逻辑。
     // 少数情况下仅 error 不触发 disconnected，强制 abort 以统一进入 onDisconnected。
@@ -1386,6 +1466,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             if (errMsg.isEmpty() && errVal.isString())
                 errMsg = errVal.toString();
             qWarning() << "[Gateway] connect failed:" << errMsg;
+            if (m_loginInProgress) {
+                m_loginInProgress = false;
+                // 失败的 token 不应触发自动重连，避免反复弹错
+                m_userRequestedDisconnect = true;
+                emit loginFailed(errMsg.isEmpty()
+                    ? QStringLiteral("\u767b\u5f55\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 Token")  // 登录失败，请检查 Token
+                    : errMsg);
+            }
             emit errorOccurred(errMsg);
             m_socket->abort();
             return;
@@ -1394,6 +1482,18 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         qDebug() << "[Gateway] handshake complete!";
         m_autoReconnectFailureCount = 0;
         setState(Connected);
+
+        // ── 登录成功 ──
+        {
+            const bool wasLogin = m_loginInProgress;
+            m_loginInProgress = false;
+            if (!m_loggedIn) {
+                m_loggedIn = true;
+                emit loggedInChanged();
+            }
+            if (wasLogin)
+                emit loginSucceeded();
+        }
         if (m_skillInstallBusy) {
             m_skillInstallBusy = false;
             emit skillInstallBusyChanged();

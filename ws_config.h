@@ -43,10 +43,55 @@ public:
     /// 设置服务器 WebSocket 地址
     void setServerUrl(const QString &url);
 
+    /// 服务器主机（不含端口，如 127.0.0.1），来自 config.json 的 serverHost
+    QString serverHost() const;
+    /// 多用户数据目录（含各用户 .env），来自 config.json 的 usersDir
+    QString usersDir() const;
+
+    /**
+     * @brief 按用户名解析其专属 Gateway 地址
+     *
+     * 读取 <usersDir>/<username>/.env 中的 OPENCLAW_GATEWAY_PORT，
+     * 与 serverHost 组合为 ws://host:port。
+     * 每个用户在创建时已分配独立端口（见 DOCKER.md），因此登录无需填端口。
+     *
+     * @return 解析成功返回完整 ws:// 地址；找不到 .env 或端口时返回空字符串。
+     */
+    QString resolveServerUrlForUser(const QString &username) const;
+
     /// 获取身份认证 Token
     QString token() const;
     /// 设置身份认证 Token
     void setToken(const QString &token);
+
+    // ═══════════════════════════════════════════════════════════════
+    //  用户登录 / 账号管理（多用户隔离）
+    // ═══════════════════════════════════════════════════════════════
+
+    /// 当前登录用户名（来自 config.json 的 username）
+    QString username() const;
+    void setUsername(const QString &username);
+
+    /// 已保存账号列表（每项 QVariantMap：username / token / serverUrl）
+    QVariantList accounts() const;
+    /// 上次「记住」的用户名（用于自动填充 / 自动登录）
+    QString rememberedUsername() const;
+    /// 查询某用户名已保存的 token（不存在则返回空字符串）
+    QString tokenForUsername(const QString &username) const;
+
+    /**
+     * @brief 应用一次登录：更新内存中的 token/username，并持久化
+     *
+     * 持久化内容：
+     *   1. 写回 AppData/config/config.json 的 token、username（与握手一致）
+     *   2. upsert AppData/config/accounts.json 中该用户名的账号条目
+     *   3. remember 为 true 时记录 rememberedAccount，便于下次自动登录
+     *
+     * @note 服务器地址（含端口）沿用 config.json 中的 serverUrl，登录无需填写端口。
+     */
+    void applyLoginCredentials(const QString &username,
+                               const QString &token,
+                               bool remember);
 
     /// 存放技能路径（JSON：skillsStoragePath，默认 ~/medclaw/MedClaw/skills）
     QString skillsStoragePath() const;
@@ -103,6 +148,11 @@ private:
      */
     void loadOrCreatePersistentConfig();
 
+    /// 从 AppData/config/accounts.json 读取已保存账号与 rememberedAccount
+    void loadAccounts();
+    /// 将当前账号列表与 rememberedAccount 写入 AppData/config/accounts.json
+    void saveAccounts() const;
+
     /**
      * @brief 初始化 Ed25519 设备密钥对
      *
@@ -114,6 +164,18 @@ private:
      *   4. SHA-256(公钥) → deviceId（64 字符十六进制）
      */
     void initDeviceKeys();
+
+    /**
+     * @brief 从 AppData/config/device.json 读取已持久化的 Ed25519 密钥对
+     * @return 成功载入（公私钥尺寸正确）返回 true；文件不存在或损坏返回 false
+     *
+     * 持久化设备密钥可保证 deviceId 在多次启动间保持稳定，
+     * 从而配对（DOCKER.md 第二节）只需完成一次，无需每次登录重新配对。
+     */
+    bool loadDeviceKeys();
+
+    /// 将当前 Ed25519 公私钥以 Base64 写入 AppData/config/device.json
+    void saveDeviceKeys() const;
 
     /**
      * @brief 构建带 Ed25519 签名的 device JSON 对象
@@ -129,7 +191,14 @@ private:
 
     // ── 服务器与认证 ──
     QString m_serverUrl;        ///< WebSocket 服务器地址
+    QString m_serverHost;       ///< 服务器主机（不含端口），按用户名解析端口时使用
+    QString m_usersDir;         ///< 多用户数据目录（含各用户 .env）
     QString m_token;            ///< 身份认证 Token
+    QString m_username;         ///< 当前登录用户名
+
+    // ── 账号管理（accounts.json）──
+    QVariantList m_accounts;        ///< 每项 {username, token, serverUrl}
+    QString      m_rememberedUsername; ///< rememberedAccount
 
     QString m_skillsStoragePath; ///< 存放技能路径
     QVariantList m_skillMarketCategories; ///< 技能市场分类（name + path）
