@@ -1012,7 +1012,9 @@ ApplicationWindow {
                     clip: true
                     model: chatModel
                     spacing: 12
-
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AsNeeded
+                    }
                     onCountChanged: {
                         if (count > 0)
                             chatListView.scheduleScrollToEnd()
