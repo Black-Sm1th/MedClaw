@@ -51,6 +51,8 @@
 #include <QDateTime>
 #include <QHash>
 #include <QMap>
+#include <QSet>
+#include <QSqlDatabase>
 
 #include "ws_config.h"
 #include "ws_session.h"
@@ -71,6 +73,12 @@ class GatewayClient : public QObject
                NOTIFY sessionsChanged)
     Q_PROPERTY(QString currentSessionKey READ currentSessionKey
                WRITE setCurrentSessionKey NOTIFY currentSessionChanged)
+    Q_PROPERTY(QString currentTaskSessionKey READ currentTaskSessionKey
+               NOTIFY currentTaskSessionChanged)
+    Q_PROPERTY(QString currentViewSessionKey READ currentViewSessionKey
+               NOTIFY currentViewSessionChanged)
+    Q_PROPERTY(QVariantList collaborationParticipants READ collaborationParticipants
+               NOTIFY collaborationParticipantsChanged)
     Q_PROPERTY(QVariantList skillList READ skillList
                NOTIFY skillListChanged)
     Q_PROPERTY(QVariantList cronJobs READ cronJobs
@@ -81,6 +89,8 @@ class GatewayClient : public QObject
                NOTIFY agentIdentityChanged)
     Q_PROPERTY(QVariantList agentList READ agentList
                NOTIFY agentListChanged)
+    Q_PROPERTY(QVariantList taskSessionList READ taskSessionList
+               NOTIFY taskSessionListChanged)
     Q_PROPERTY(QString defaultAgentId READ defaultAgentId
                NOTIFY agentListChanged)
     Q_PROPERTY(QVariantList modelList READ modelList
@@ -96,7 +106,7 @@ class GatewayClient : public QObject
     /// tools.catalog 展平后的工具列表（含 enabled，与 config 中 deny 对齐）
     Q_PROPERTY(QVariantList toolList READ toolList
                NOTIFY toolListChanged)
-    /// 尚无侧栏 agent 时用户在聊天栏勾选技能后的暂存（待 agents.create 后写入 config）
+    /// 尚无侧栏 agent 时用户在聊天栏勾选技能后的暂存（待新建 agent 后写入 config）
     Q_PROPERTY(bool pendingNewAgentSkillPolicySet READ pendingNewAgentSkillPolicySet
                NOTIFY pendingNewAgentSkillPolicyChanged)
     /// 与 AppData/config.json 中 serverUrl 一致（握手 token/clientId 亦来自该文件）
@@ -165,6 +175,12 @@ public:
     QVariantList sessions() const;
     /// 获取当前活跃会话 key（委托给 WsSession）
     QString currentSessionKey() const;
+    /// 当前任务的主控 sessionKey（发送消息始终优先走它）
+    QString currentTaskSessionKey() const;
+    /// 当前聊天区正在查看的 sessionKey
+    QString currentViewSessionKey() const;
+    /// 当前任务的主控/子 agent 参与者列表
+    QVariantList collaborationParticipants() const;
     /// 获取技能列表（委托给 WsSkill）
     QVariantList skillList() const;
     /// 获取定时任务列表（委托给 WsScheduledTask）
@@ -175,6 +191,8 @@ public:
     QVariantMap agentIdentity() const;
     /// 获取 agent 列表（通过 agents.list RPC 获取）
     QVariantList agentList() const;
+    /// 获取本地 SQLite 任务会话列表
+    QVariantList taskSessionList() const;
     /// 获取默认 agent ID
     QString defaultAgentId() const;
     /// 获取可用模型列表
@@ -220,7 +238,7 @@ public:
      * @brief 发送聊天消息
      * @param message    用户输入的消息文本
      * @param sessionKey 目标会话 key（空则使用当前会话）
-     * @param workspaceForNewAgent 当前无会话、将触发 agents.create 时使用的 workspace（空则服务端默认路径）
+     * @param workspaceForNewAgent 兼容旧 QML 参数；当前无会话时会在默认/当前 agent 下创建 session
      */
     Q_INVOKABLE void sendChatMessage(const QString &message,
                                      const QString &sessionKey = QString(),
@@ -232,14 +250,21 @@ public:
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();
 
-    /// 创建新会话（发送 chat.send /new 命令）
+    /// 创建新会话（发送 sessions.create RPC，在当前 agent 下新增 session）
     Q_INVOKABLE void createNewSession();
 
-    /// 删除指定会话（发送 session.delete RPC）
+    /// 删除指定会话（发送 sessions.delete RPC）
     Q_INVOKABLE void deleteSession(const QString &sessionKey);
+    /// 从本地任务列表软删除任务会话（不删除 agent）
+    Q_INVOKABLE void deleteTaskSession(const QString &sessionKey);
 
     /// 切换当前活跃会话
     Q_INVOKABLE void setCurrentSessionKey(const QString &key);
+    /// 新建任务前设置协作 agent；第一个为主控，其余由主控通过 sessions_spawn 拉起
+    Q_INVOKABLE void setPendingCollaborationAgents(const QVariantList &agentIds);
+    Q_INVOKABLE QVariantList pendingCollaborationAgentIds() const;
+    /// 点击协作参与者时，只切换聊天记录展示，不改变主控发送目标
+    Q_INVOKABLE void switchCollaborationViewSession(const QString &sessionKey);
 
     /// 加载当前会话的历史消息（发送 messages.list RPC）
     Q_INVOKABLE void loadHistory();
@@ -254,7 +279,8 @@ public:
      */
     Q_INVOKABLE void createAgent(const QString &name,
                                   const QString &workspace,
-                                  bool applyPendingToolSelection = true);
+                                  bool applyPendingToolSelection = true,
+                                  const QString &identityMarkdown = QString());
 
     /**
      * @brief 尚无 agent 时用户在工具弹窗点「保存」：记录将启用的 toolId，待首个 agent 创建后与 profile=full 一并写入 config
@@ -262,7 +288,7 @@ public:
     Q_INVOKABLE void setPendingNewAgentToolSelection(const QVariantList &enabledToolIds);
 
     /**
-     * @brief 尚无 agent 时在聊天栏勾选技能：暂存白名单，待 agents.create 后与工具策略一并 config.set
+     * @brief 尚无 agent 时在聊天栏勾选技能：暂存白名单，待新建 agent 后与工具策略一并 config.set
      */
     Q_INVOKABLE void setPendingNewAgentSkillSelection(const QVariantList &skillNames);
     Q_INVOKABLE QVariantList pendingNewAgentSkillNames() const;
@@ -321,9 +347,8 @@ public:
     Q_INVOKABLE QString cronDedicatedAgentDisplayName(const QString &taskTitle) const;
 
     /**
-     * @brief 暂存定时任务参数，在 createAgent 成功后再发 cron.add
+     * @brief 暂存定时任务参数，在当前 agent 下创建专用 session 后再发 cron.add
      * @param scheduleKind 1=cron 表达式 2=固定间隔(秒) 3=一次性 ISO 时间
-     * @note 调用顺序应为：先 createAgent(cronDedicatedAgentDisplayName(title), workspace)，再本方法
      */
     Q_INVOKABLE void prepareCronJobWithDedicatedAgent(int scheduleKind,
                                                        const QString &jobName,
@@ -398,6 +423,8 @@ public:
      * 切换 currentSessionKey 并发送三个 RPC 请求。
      */
     Q_INVOKABLE void switchAgent(const QString &agentId);
+    /// 切换左侧任务会话：任务列表基于 SQLite，不再等价于 agent 列表
+    Q_INVOKABLE void switchTaskSession(const QString &sessionKey);
 
     /**
      * @brief 清除当前选中的 agent 会话（不加载任何历史）
@@ -505,6 +532,9 @@ signals:
     // ── 会话管理 ──
     void sessionsChanged();          ///< 会话列表更新
     void currentSessionChanged();    ///< 当前活跃会话切换
+    void currentTaskSessionChanged(); ///< 当前任务主控会话切换
+    void currentViewSessionChanged(); ///< 当前查看会话切换
+    void collaborationParticipantsChanged(); ///< 协作参与者列表更新
     void sessionCreated();           ///< 新会话创建成功
     void historyLoaded(const QVariantList &messages); ///< 历史消息加载完成
     void toolResultsRefreshed(const QVariantList &messages); ///< 工具结果补拉完成（原地合并）
@@ -532,6 +562,7 @@ signals:
     // ── Agent 管理 ──
     void agentIdentityChanged();     ///< Agent 身份信息更新
     void agentListChanged();         ///< Agent 列表更新
+    void taskSessionListChanged();   ///< 本地任务会话列表更新
     void agentCreated(const QString &agentId, bool success,
                       const QString &message,
                       bool forChat); ///< 新 Agent 创建结果
@@ -602,8 +633,8 @@ private:
      *   1. 通过 requestId 从 m_pendingRequests 查找原始方法名
      *   2. connect 响应 → 完成握手，进入 Connected
      *   3. sessions.list → 委托 WsSession 解析，发射 sessionsChanged
-     *   4. chat.send（/new）→ 刷新列表，发射 sessionCreated
-     *   5. session.delete → 刷新列表
+     *   4. sessions.create → 刷新列表，发射 sessionCreated
+     *   5. sessions.delete → 刷新列表
      *   6. messages.list → 委托 WsSession 解析，发射 historyLoaded
      *   7. cron.list / cron.status / cron.add / cron.update /
      *      cron.remove / cron.run / cron.runs → 委托 WsScheduledTask 解析
@@ -633,10 +664,58 @@ private:
     /// 合并 agents / sessions 后防抖拉取各 agent 首条用户消息，作为侧栏标题
     void scheduleAgentListFirstUserTitles();
     void flushAgentListFirstUserTitles();
+    /// 拉取 session 列表中每个 session 的首条用户消息，作为任务标题
+    void scheduleSessionListFirstUserTitles();
+    void flushSessionListFirstUserTitles();
+    void refreshSessionFirstUserTitle(const QString &sessionKey);
     /// 仅刷新一个 agent 的侧栏首句（避免每次 sessions.list 全量 chat.history）
     void refreshSidebarFirstUserTitleForAgent(const QString &agentId);
     static QString firstUserMessageFromHistoryList(const QVariantList &history);
     void setAgentListSidebarTitle(const QString &agentId, const QString &text);
+    void setCurrentTaskSessionKeyInternal(const QString &key);
+    void setCurrentViewSessionKeyInternal(const QString &key);
+    QVariantMap agentInfoById(const QString &agentId) const;
+    QVariantMap sessionInfoByKey(const QString &sessionKey) const;
+    QString displayNameForSession(const QVariantMap &session) const;
+    QString agentIdFromSessionKey(const QString &sessionKey) const;
+    bool sessionBelongsToTask(const QVariantMap &session, const QString &taskKey) const;
+    QString buildCollaborationPrompt(const QString &userMessage,
+                                      const QStringList &participantAgentIds) const;
+    QJsonObject buildConfigWithSubagentAllowAgents(const QJsonObject &fullConfig,
+                                                   const QString &controllerAgentId,
+                                                   const QStringList &participantAgentIds,
+                                                   bool *changed) const;
+    void stashPendingCollaborationSend(const QString &controllerSessionKey,
+                                       const QString &controllerAgentId,
+                                       const QStringList &participantAgentIds,
+                                       const QString &userMessage);
+    void clearPendingCollaborationSend();
+    bool maybeConfigureSubagentAllowAgents(const QString &controllerSessionKey,
+                                           const QString &controllerAgentId,
+                                           const QStringList &participantAgentIds,
+                                           const QString &userMessage);
+    void sendPendingCollaborationChatNow();
+    QJsonObject buildSessionsCreateParams(const QString &sessionKey,
+                                           const QString &agentId,
+                                           const QString &label,
+                                           const QString &task = QString(),
+                                           const QString &model = QString()) const;
+
+    bool initTaskSessionDb();
+    void loadTaskSessionListFromDb();
+    void upsertTaskSessionLocal(const QString &sessionKey,
+                                const QString &workspace,
+                                const QString &title,
+                                const QStringList &agentIds,
+                                qint64 createdAt,
+                                qint64 updatedAt);
+    void touchTaskSessionLocal(const QString &sessionKey);
+    void softDeleteTaskSessionLocal(const QString &sessionKey);
+    QVariantMap taskSessionInfoByKey(const QString &sessionKey) const;
+    QStringList taskSessionAgentIds(const QVariantMap &row) const;
+    static QString taskTitleFromFirstMessage(const QString &message);
+    static QString agentsJsonFromList(const QStringList &agentIds);
+    static QStringList agentListFromJson(const QString &json);
 
     /// 聊天/历史/身份使用的 sessionKey（agent 行上可有 chatSessionKey）
     QString resolveChatSessionKeyForAgentId(const QString &agentId) const;
@@ -684,6 +763,9 @@ private:
 
     /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
     QString extractPayloadSessionKey(const QJsonObject &payload) const;
+    void rememberCollaborationChildSessionHint(const QJsonObject &payload);
+    QVariantMap collaborationChildHintForAgent(const QString &agentId,
+                                               const QString &taskKey) const;
     /// 当前 UI 是否应展示该会话的推送
     /// @param allowIfKeyMissing  若 payload 中无 sessionKey，是否默认允许
     bool eventAppliesToCurrentUiSession(
@@ -712,10 +794,26 @@ private:
     WsScheduledTask  m_scheduledTask;   ///< 定时任务类：预留
     QVariantMap      m_agentIdentity;   ///< 当前 agent 身份缓存
     QVariantList     m_agentList;       ///< agents.list 缓存
+    QVariantList     m_taskSessionList; ///< SQLite 任务会话缓存
+    QSqlDatabase     m_taskSessionDb;   ///< 本地任务会话 SQLite
+    bool             m_taskSessionDbReady = false;
     QString          m_defaultAgentId;  ///< 默认 agent ID
+    QString          m_currentTaskSessionKey; ///< 主控任务 sessionKey
+    QString          m_currentViewSessionKey; ///< 聊天区当前查看 sessionKey
+    QVariantList     m_collaborationChildSessionHints; ///< 实时发现的子 agent 会话（等待 sessions.list 落盘前）
+    QStringList      m_pendingCollaborationAgentIds; ///< 新建任务前选择的协作 agent
+    QString          m_pendingCollabControllerSessionKey;
+    QString          m_pendingCollabControllerAgentId;
+    QStringList      m_pendingCollabParticipantAgentIds;
+    QString          m_pendingCollabUserMessage;
+    bool             m_pendingCollabAwaitingConfigGet = false;
+    QSet<QString>    m_collabAllowConfigSetReqIds;
+    QSet<QString>    m_localOnlyTaskSessionKeys; ///< 已入本地库但尚未 sessions.create 的任务
+    QMap<QString, QString> m_pendingSessionsCreateReqSession; ///< reqId -> sessionKey
 
     QString m_pendingCreateName;       ///< agents.create 待确认名称
     QString m_pendingCreateWorkspace;  ///< agents.create 使用的 workspace 路径
+    QString m_pendingCreateIdentityMarkdown; ///< agents.create 成功后写入 workspace/IDENTITY.md
     QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
     QString m_pendingProfileFullAgentId; ///< agents.create 后待设置 tools.profile=full + deny 的 agentId
     QStringList m_pendingNewAgentEnabledToolIds; ///< 新建 agent 前用户在弹窗中选中的工具（空且未 set 表示用「全选」）
@@ -725,12 +823,13 @@ private:
     /// 刚创建完 agent、config.get 尚未写入 deny 前，切到该 agent 时不要清空待应用的 tool 选择
     QString m_expectingToolPolicyApplyForAgentId;
 
-    /// 当前无选中 agent 时，首条聊天触发的 agents.create 完成后要发送的文本
+    /// 当前无选中会话时，首条聊天触发的 sessions.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;
     bool m_pendingAgentCreateForChat = false;
     QVariantList m_pendingChatFiles;
+    QString m_pendingFirstChatSessionCreateReqId;
 
-    /// agents.create 完成后，需等 config.set（deny 列表）发送完才发出的首条消息
+    /// 新建 agent 并应用 config.set（deny 列表）后才发出的首条消息（兼容旧流程）
     QString m_pendingBootstrapChatMessage;
 
     /// 新建 agent 时暂存首句 + 时间，agents.list 回来后注入侧栏
@@ -752,8 +851,14 @@ private:
     /// 侧栏「首句问话」：chat.history 请求 id → agentId / 批次号（与切换会话的历史请求区分）
     QMap<QString, QString> m_sidebarTitleHistReqAgent;
     QMap<QString, quint64> m_sidebarTitleHistReqBatch;
+    QMap<QString, QString> m_sessionTitleHistReqSession;
+    QMap<QString, quint64> m_sessionTitleHistReqBatch;
+    QMap<QString, QString> m_chatSendReqSession;
+    QMap<QString, QString> m_chatSendReqMessage;
     quint64 m_sidebarTitleBatchGen = 0;
+    quint64 m_sessionTitleBatchGen = 0;
     QTimer m_agentFirstUserTitleDebounce;
+    QTimer m_sessionFirstUserTitleDebounce;
 
     /// 收到 toolResult 后防抖补拉历史；仅更新 toolResult 文本，不清空聊天模型
     QTimer m_toolResultRefreshTimer;

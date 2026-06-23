@@ -1,4 +1,4 @@
-QT += quick quickcontrols2 websockets
+QT += quick quickcontrols2 websockets sql
 
 CONFIG += c++11
 

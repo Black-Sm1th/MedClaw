@@ -25,9 +25,10 @@ ApplicationWindow {
     property string pendingDeleteCronJobId: ""
     property string pendingDeleteCronJobName: ""
     property string pendingDeleteMcpName: ""
-    /// 右键删除 agent 流程暂存（上下文菜单 → 确认弹窗）
-    property string pendingDeleteAgentId: ""
-    property string pendingDeleteAgentName: ""
+    /// 右键删除任务会话流程暂存（上下文菜单 → 确认弹窗）
+    property string pendingDeleteTaskSessionId: ""
+    property string pendingDeleteTaskSessionName: ""
+    property bool pendingCollabCreateAgent: false
     /// 删除定时任务时一并删除的专用 agent ID（cron.remove 成功后再发 agents.delete）
     property string pendingDeleteCronAgentId: ""
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
@@ -76,6 +77,14 @@ ApplicationWindow {
                 return qsTr("新对话")
             return nm || agent.id || ""
         }
+        return t
+    }
+
+    function taskSessionDisplayTitle(task) {
+        if (!task) return ""
+        var t = task.title || ""
+        if (t.length === 0)
+            t = qsTr("新对话")
         return t
     }
 
@@ -143,18 +152,41 @@ ApplicationWindow {
         }
         function onAgentCreated(agentId, success, message, forChat){
             if (success && forChat) {
-                leftMidPanel.activeAgentId = agentId
+                leftMidPanel.activeAgentId = wsClient.currentTaskSessionKey
                 window.leftSelectedIndex = 6
+            }
+            if (success && window.pendingCollabCreateAgent) {
+                window.pendingCollabCreateAgent = false
+                var arr = (newTaskRec.selectedCollaborationAgentIds || []).slice()
+                if (arr.length === 0 && (leftMidPanel.activeAgentId || "").length > 0)
+                    arr.push(leftMidPanel.activeAgentId)
+                var exists = false
+                for (var i = 0; i < arr.length; i++) {
+                    if (arr[i] === agentId) { exists = true; break }
+                }
+                if (!exists)
+                    arr.push(agentId)
+                newTaskRec.selectedCollaborationAgentIds = arr
+            } else if (!success && window.pendingCollabCreateAgent) {
+                window.pendingCollabCreateAgent = false
             }
         }
         function onAgentDeleted(agentId, success, message){
             if (success && leftMidPanel.activeAgentId === agentId) {
                 leftMidPanel.activeAgentId = ""
+                leftMidPanel.activeSessionKey = ""
                 chatModel.clear()
                 wsClient.clearActiveAgentContext()
                 /// 被删任务正在选中：跳回「新建任务」首页，与点击侧栏「新建任务」一致
                 window.leftSelectedIndex = 0
             }
+        }
+        function onCurrentSessionChanged() {
+            var sk = wsClient.currentSessionKey || ""
+            leftMidPanel.activeSessionKey = sk
+            leftMidPanel.activeAgentId = window.agentIdFromSessionKey(sk)
+            if (sk.length > 0)
+                window.leftSelectedIndex = 6
         }
         function onErrorOccurred(message){
             console.warn("[Gateway Error]", message)
@@ -241,6 +273,8 @@ ApplicationWindow {
 
                 // 当前选中的 agent ID（用于高亮）
                 property string activeAgentId: ""
+                // 当前选中的 session key（用于任务记录高亮）
+                property string activeSessionKey: ""
 
                 Column{
                     id: leftMenuColumn
@@ -305,6 +339,7 @@ ApplicationWindow {
                                     onClicked: {
                                         window.leftSelectedIndex = index
                                             leftMidPanel.activeAgentId = ""
+                                            leftMidPanel.activeSessionKey = ""
                                             chatModel.clear()
                                             wsClient.clearActiveAgentContext()
                                     }
@@ -367,6 +402,7 @@ ApplicationWindow {
                                     onClicked: {
                                         window.leftSelectedIndex = index
                                         leftMidPanel.activeAgentId = ""
+                                        leftMidPanel.activeSessionKey = ""
                                         chatModel.clear()
                                         wsClient.clearActiveAgentContext()
                                     }
@@ -424,7 +460,7 @@ ApplicationWindow {
                 }
 
                 // ═══════════════════════════════════════════════
-                //  任务记录列表（agent 列表）
+                //  任务记录列表（本地 SQLite 会话列表）
                 // ═══════════════════════════════════════════════
                 Item {
                     visible: !window.sidebarCollapsed
@@ -444,7 +480,7 @@ ApplicationWindow {
                         anchors.leftMargin: 12
                     }
 
-                    // 可滚动的 agent 列表
+                    // 可滚动的任务会话列表
                     ScrollView {
                         id: agentListScrollView
                         anchors.top: taskRecordLabel.bottom
@@ -461,7 +497,7 @@ ApplicationWindow {
                             width: agentListScrollView.width
 
                             Repeater {
-                                model: wsClient.agentList
+                                model: wsClient.taskSessionList
 
                                 delegate: Rectangle {
                                     id: agentItemRect
@@ -469,7 +505,7 @@ ApplicationWindow {
                                     height: 55
                                     radius: 8
                                     color: {
-                                        var isActive = (modelData.id === leftMidPanel.activeAgentId)
+                                        var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
                                         if (isActive) return "#E6E7EB"
                                         if (agentItemMouse.containsMouse) return "#0A000000"
                                         return "transparent"
@@ -489,10 +525,8 @@ ApplicationWindow {
                                             Label {
                                                 id: agentListCronTag
                                                 visible: {
-                                                    var nm = modelData.name || ""
-                                                    var sk = modelData.sessionKey || ""
-                                                    return (nm.indexOf("\u5b9a\u65f6-") === 0)
-                                                        || (sk.indexOf(":cron:") >= 0)
+                                                    var sk = modelData.session_id || ""
+                                                    return sk.indexOf(":cron:") >= 0
                                                 }
                                                 text: qsTr("[定时]")
                                                 font.pixelSize: 14
@@ -500,24 +534,7 @@ ApplicationWindow {
                                                 height: 21
                                             }
                                             Label {
-                                                text: {
-                                                    var nm = modelData.name || ""
-                                                    if (nm.indexOf("定时-") === 0) {
-                                                        var body = nm.substring(3)
-                                                        var lastDash = body.lastIndexOf("-")
-                                                        if (lastDash > 0 && /^\d+$/.test(body.substring(lastDash + 1)))
-                                                            return body.substring(0, lastDash)
-                                                        return body
-                                                    }
-                                                    var t = modelData.activeSessionTitle || ""
-                                                    if (t.length === 0) {
-                                                        if (nm.match(/^task-\d+$/))
-                                                            t = qsTr("新对话")
-                                                        else
-                                                            t = nm || modelData.id || ""
-                                                    }
-                                                    return t
-                                                }
+                                                text: window.taskSessionDisplayTitle(modelData)
                                                 font.pixelSize: 14
                                                 color: "#D9000000"
                                                 height: 21
@@ -531,8 +548,7 @@ ApplicationWindow {
                                         // 最近活跃会话的更新时间（与上行标题为同一条 session）
                                         Label {
                                             text: {
-                                                // 使用会话 startedAt / task-创建时间，不用 updatedAt（点击会刷新）
-                                                var ms = Number(modelData.activeSessionDisplayAt || 0)
+                                                var ms = Number(modelData.updated_at || modelData.created_at || 0)
                                                 if (!ms || ms <= 0) return ""
                                                 return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
                                             }
@@ -549,17 +565,17 @@ ApplicationWindow {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             if (mouse.button === Qt.RightButton) {
-                                                window.pendingDeleteAgentId = modelData.id
-                                                window.pendingDeleteAgentName = window.agentDisplayTitle(modelData)
+                                                window.pendingDeleteTaskSessionId = modelData.session_id || ""
+                                                window.pendingDeleteTaskSessionName = window.taskSessionDisplayTitle(modelData)
                                                 var p = agentItemMouse.mapToItem(window.contentItem, mouse.x, mouse.y)
                                                 agentContextMenu.x = Math.min(p.x, window.width - agentContextMenu.width - 4)
                                                 agentContextMenu.y = Math.min(p.y, window.height - agentContextMenu.height - 4)
                                                 agentContextMenu.open()
                                                 return
                                             }
-                                            leftMidPanel.activeAgentId = modelData.id
+                                            leftMidPanel.activeAgentId = modelData.agentId || ""
                                             window.leftSelectedIndex = 6
-                                            wsClient.switchAgent(modelData.id)
+                                            wsClient.switchTaskSession(modelData.session_id)
                                         }
                                     }
                                 }
@@ -624,14 +640,14 @@ ApplicationWindow {
                 width: collapsedHistoryPopupScroll.width
 
                 Repeater {
-                    model: wsClient.agentList
+                    model: wsClient.taskSessionList
 
                     delegate: Rectangle {
                         width: collapsedHistoryPopupScroll.width
                         height: 55
                         radius: 8
                         color: {
-                            var isActive = (modelData.id === leftMidPanel.activeAgentId)
+                            var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
                             if (isActive) return "#E6E7EB"
                             if (histPopAgentMouse.containsMouse) return "#0A000000"
                             return "transparent"
@@ -651,10 +667,8 @@ ApplicationWindow {
                                 Label {
                                     id: histPopCronTag
                                     visible: {
-                                        var nm = modelData.name || ""
-                                        var sk = modelData.sessionKey || ""
-                                        return (nm.indexOf("\u5b9a\u65f6-") === 0)
-                                            || (sk.indexOf(":cron:") >= 0)
+                                        var sk = modelData.session_id || ""
+                                        return sk.indexOf(":cron:") >= 0
                                     }
                                     text: qsTr("[定时]")
                                     font.pixelSize: 14
@@ -662,24 +676,7 @@ ApplicationWindow {
                                     height: 21
                                 }
                                 Label {
-                                    text: {
-                                        var nm = modelData.name || ""
-                                        if (nm.indexOf("定时-") === 0) {
-                                            var body = nm.substring(3)
-                                            var lastDash = body.lastIndexOf("-")
-                                            if (lastDash > 0 && /^\d+$/.test(body.substring(lastDash + 1)))
-                                                return body.substring(0, lastDash)
-                                            return body
-                                        }
-                                        var t = modelData.activeSessionTitle || ""
-                                        if (t.length === 0) {
-                                            if (nm.match(/^task-\d+$/))
-                                                t = qsTr("新对话")
-                                            else
-                                                t = nm || modelData.id || ""
-                                        }
-                                        return t
-                                    }
+                                    text: window.taskSessionDisplayTitle(modelData)
                                     font.pixelSize: 14
                                     color: "#D9000000"
                                     height: 21
@@ -692,7 +689,7 @@ ApplicationWindow {
 
                             Label {
                                 text: {
-                                    var ms = Number(modelData.activeSessionDisplayAt || 0)
+                                    var ms = Number(modelData.updated_at || modelData.created_at || 0)
                                     if (!ms || ms <= 0) return ""
                                     return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
                                 }
@@ -709,17 +706,17 @@ ApplicationWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 if (mouse.button === Qt.RightButton) {
-                                    window.pendingDeleteAgentId = modelData.id
-                                    window.pendingDeleteAgentName = window.agentDisplayTitle(modelData)
+                                    window.pendingDeleteTaskSessionId = modelData.session_id || ""
+                                    window.pendingDeleteTaskSessionName = window.taskSessionDisplayTitle(modelData)
                                     var p = histPopAgentMouse.mapToItem(window.contentItem, mouse.x, mouse.y)
                                     agentContextMenu.x = Math.min(p.x, window.width - agentContextMenu.width - 4)
                                     agentContextMenu.y = Math.min(p.y, window.height - agentContextMenu.height - 4)
                                     agentContextMenu.open()
                                     return
                                 }
-                                leftMidPanel.activeAgentId = modelData.id
+                                leftMidPanel.activeAgentId = modelData.agentId || ""
                                 window.leftSelectedIndex = 6
-                                wsClient.switchAgent(modelData.id)
+                                wsClient.switchTaskSession(modelData.session_id)
                                 collapsedHistoryPopup.close()
                             }
                         }
@@ -897,6 +894,9 @@ ApplicationWindow {
                 visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6
                 property bool hasMessages: chatModel.count > 0
                 property bool isNewTaskWelcome: window.leftSelectedIndex === 0 && !hasMessages
+                property var selectedCollaborationAgentIds: []
+                readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
+                                                             || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
 
                 property string activeShortcutGroupName: ""
                 property string activeShortcutGroupIcon: ""
@@ -949,6 +949,12 @@ ApplicationWindow {
                     if (msg === "") return
                     if (wsClient.connectionState !== 3)
                         return
+                    if (!newTaskRec.viewingControllerSession)
+                        return
+                    if (newTaskRec.isNewTaskWelcome)
+                        wsClient.clearActiveAgentContext()
+                    wsClient.setPendingCollaborationAgents(
+                        newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
                     textInputArea.text = ""
                     var wsPath = ""
                     if (!newTaskRec.hasMessages)
@@ -1017,9 +1023,11 @@ ApplicationWindow {
                     function onActiveAgentIdChanged() {
                         var aid = leftMidPanel.activeAgentId || ""
                         if (aid.length > 0) {
+                            newTaskRec.selectedCollaborationAgentIds = [aid]
                             newTaskRec.clearActiveShortcutVisualOnly()
                             return
                         }
+                        newTaskRec.selectedCollaborationAgentIds = []
                         // 回到「新建 / 无侧栏 agent」：与工具弹窗 onAboutToShow 一致，恢复全选并写回 pending
                         dropdownSelectionTool.syncToolsFromWsClient()
                         if (newTaskRec.activeShortcutGroupName.length > 0)
@@ -1028,11 +1036,104 @@ ApplicationWindow {
                             dropdownSelectionTool.applyToolSelectionImmediately()
                     }
                 }
+                Rectangle {
+                    id: collaborationTabBar
+                    visible: newTaskRec.hasMessages
+                             && wsClient.collaborationParticipants
+                             && wsClient.collaborationParticipants.length > 0
+                    anchors.top: parent.top
+                    anchors.topMargin: 12
+                    width: 840
+                    height: visible ? 40 : 0
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    color: "transparent"
+                    clip: true
+
+                    Flickable {
+                        anchors.fill: parent
+                        contentWidth: collaborationTabRow.implicitWidth
+                        contentHeight: height
+                        boundsBehavior: Flickable.StopAtBounds
+                        clip: true
+
+                        Row {
+                            id: collaborationTabRow
+                            spacing: 8
+                            height: parent.height
+
+                            Repeater {
+                                model: wsClient.collaborationParticipants
+
+                                delegate: Rectangle {
+                                    height: 32
+                                    width: Math.min(220, Math.max(92, participantLabel.implicitWidth + rolePill.width + 34))
+                                    radius: 8
+                                    readonly property bool activeTab: modelData.isPending
+                                                                  ? false
+                                                                  : (modelData.sessionKey === wsClient.currentViewSessionKey)
+                                    color: activeTab ? "#EAF2FF"
+                                         : participantMouse.containsMouse ? "#F7F9FA"
+                                         : "#FFFFFF"
+                                    border.width: 1
+                                    border.color: activeTab ? "#66A3FF" : "#E6E7EB"
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 10
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 10
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 6
+
+                                        Rectangle {
+                                            id: rolePill
+                                            width: rolePillText.implicitWidth + 10
+                                            height: 20
+                                            radius: 6
+                                            color: modelData.isController ? "#14006BFF" : "#1400A37A"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            Text {
+                                                id: rolePillText
+                                                anchors.centerIn: parent
+                                                text: modelData.roleLabel || ""
+                                                font.pixelSize: 11
+                                                color: modelData.isController ? "#006BFF" : "#007A5A"
+                                            }
+                                        }
+
+                                        Label {
+                                            id: participantLabel
+                                            text: modelData.agentName || modelData.title || modelData.agentId || ""
+                                            font.pixelSize: 13
+                                            color: "#D9000000"
+                                            elide: Text.ElideRight
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: Math.max(0, parent.width - rolePill.width - parent.spacing)
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: participantMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (modelData.isPending)
+                                                wsClient.switchCollaborationViewSession(wsClient.currentTaskSessionKey)
+                                            else
+                                                wsClient.switchCollaborationViewSession(modelData.sessionKey || "")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 ListView {
                     id: chatListView
                     visible: newTaskRec.hasMessages
-                    anchors.top: parent.top
-                    anchors.topMargin: 16
+                    anchors.top: collaborationTabBar.visible ? collaborationTabBar.bottom : parent.top
+                    anchors.topMargin: collaborationTabBar.visible ? 8 : 16
                     anchors.bottom: generatingRow.top
                     anchors.bottomMargin: 8
                     width: 840
@@ -1796,11 +1897,13 @@ ApplicationWindow {
                             backgroundColor: "transparent"
                             borderWidth: 0
                             placeholderText: wsClient.connectionState === 3
-                                             ? "分配一个任务或提问任何问题"
+                                             ? (newTaskRec.viewingControllerSession
+                                                ? "分配一个任务或提问任何问题"
+                                                : "当前为子 Agent 记录，仅支持查看")
                                              : "正在连接服务器，请稍候..."
                             width: parent.width - 24
                             height: 66
-                            readOnly: wsClient.connectionState !== 3
+                            readOnly: wsClient.connectionState !== 3 || !newTaskRec.viewingControllerSession
                             onEnterPressed: newTaskRec.doSendMessage()
                         }
                         Rectangle{
@@ -1913,6 +2016,308 @@ ApplicationWindow {
                                         visible: !modelPickerWrap.modelPickerEnabled
                                         hoverEnabled: false
                                         onClicked: {}
+                                    }
+                                }
+                                Item {
+                                    id: collaborationPicker
+                                    visible: newTaskRec.isNewTaskWelcome
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: visible ? (collabBtnRow.width + 24) : 0
+                                    height: 36
+
+                                    function isSelected(agentId) {
+                                        var arr = newTaskRec.selectedCollaborationAgentIds || []
+                                        for (var i = 0; i < arr.length; i++) {
+                                            if (arr[i] === agentId) return true
+                                        }
+                                        return false
+                                    }
+
+                                    function toggleAgent(agentId) {
+                                        if (!agentId) return
+                                        var arr = (newTaskRec.selectedCollaborationAgentIds || []).slice()
+                                        var idx = -1
+                                        for (var i = 0; i < arr.length; i++) {
+                                            if (arr[i] === agentId) { idx = i; break }
+                                        }
+                                        if (idx >= 0) {
+                                            arr.splice(idx, 1)
+                                        } else {
+                                            if (arr.length === 0 && (leftMidPanel.activeAgentId || "").length > 0)
+                                                arr.push(leftMidPanel.activeAgentId)
+                                            arr.push(agentId)
+                                        }
+                                        newTaskRec.selectedCollaborationAgentIds = arr
+                                    }
+
+                                    function selectedSummary() {
+                                        var arr = newTaskRec.selectedCollaborationAgentIds || []
+                                        if (arr.length <= 0)
+                                            return qsTr("协作")
+                                        if (arr.length === 1)
+                                            return qsTr("1 agent")
+                                        return arr.length + qsTr(" agents")
+                                    }
+
+                                    Rectangle {
+                                        id: collabButton
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: collabMouse.pressed ? "#14000000"
+                                             : collabMouse.containsMouse ? "#0A000000"
+                                             : "transparent"
+
+                                        Row {
+                                            id: collabBtnRow
+                                            spacing: 6
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 12
+                                            anchors.verticalCenter: parent.verticalCenter
+
+                                            Image {
+                                                source: "qrc:/images/add-square.png"
+                                                width: 16
+                                                height: 16
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                            Text {
+                                                text: collaborationPicker.selectedSummary()
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: collabMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (!newTaskRec.isNewTaskWelcome)
+                                                    return
+                                                collabPopup.visible ? collabPopup.close() : collabPopup.open()
+                                            }
+                                        }
+                                    }
+
+                                    Popup {
+                                        id: collabPopup
+                                        x: 0
+                                        width: 280
+                                        padding: 10
+                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+
+                                        function calcY() {
+                                            var globalPos = collaborationPicker.mapToItem(null, 0, 0)
+                                            var popupH = Math.min(contentItem.implicitHeight, 390) + padding * 2
+                                            if (popupH < 160) popupH = 300
+                                            if (globalPos.y + collaborationPicker.height + 4 + popupH > window.height)
+                                                return -popupH - 4
+                                            return collaborationPicker.height + 4
+                                        }
+
+                                        y: calcY()
+                                        onAboutToShow: {
+                                            if (!newTaskRec.isNewTaskWelcome) {
+                                                collabPopup.close()
+                                                return
+                                            }
+                                            if ((newTaskRec.selectedCollaborationAgentIds || []).length === 0
+                                                    && (leftMidPanel.activeAgentId || "").length > 0) {
+                                                newTaskRec.selectedCollaborationAgentIds = [leftMidPanel.activeAgentId]
+                                            }
+                                            collabNewAgentName.text = ""
+                                            collabNewAgentWorkspace.text = ""
+                                            collabIdentityInput.text = ""
+                                            y = calcY()
+                                        }
+                                        onOpened: Qt.callLater(function() { y = calcY() })
+
+                                        background: Rectangle {
+                                            color: "#FFFFFF"
+                                            radius: 12
+                                            border.color: "#14000000"
+                                            border.width: 1
+                                            layer.enabled: true
+                                            layer.effect: DropShadow {
+                                                transparentBorder: true
+                                                radius: 12
+                                                samples: 25
+                                                color: "#1A000000"
+                                            }
+                                        }
+
+                                        contentItem: Column {
+                                            spacing: 8
+                                            width: collabPopup.width - 20
+
+                                            Label {
+                                                width: parent.width
+                                                text: qsTr("协作 Agent")
+                                                font.pixelSize: 14
+                                                font.bold: true
+                                                color: "#D9000000"
+                                            }
+
+                                            Flickable {
+                                                width: parent.width
+                                                height: Math.min(collabAgentColumn.height, 188)
+                                                contentHeight: collabAgentColumn.height
+                                                clip: true
+                                                boundsBehavior: Flickable.StopAtBounds
+
+                                                Column {
+                                                    id: collabAgentColumn
+                                                    width: parent.width
+                                                    spacing: 2
+
+                                                    Repeater {
+                                                        model: wsClient.agentList
+
+                                                        delegate: Rectangle {
+                                                            width: collabPopup.width - 20
+                                                            height: 38
+                                                            radius: 6
+                                                            readonly property bool selected: collaborationPicker.isSelected(modelData.id || "")
+                                                            color: collabAgentMouse.containsMouse ? "#F7F9FA" : "transparent"
+
+                                                            Row {
+                                                                anchors.fill: parent
+                                                                anchors.leftMargin: 8
+                                                                anchors.rightMargin: 8
+                                                                spacing: 8
+
+                                                                Rectangle {
+                                                                    width: 18
+                                                                    height: 18
+                                                                    radius: 5
+                                                                    border.width: 1
+                                                                    border.color: selected ? "#006BFF" : "#33000000"
+                                                                    color: selected ? "#006BFF" : "#FFFFFF"
+                                                                    anchors.verticalCenter: parent.verticalCenter
+
+                                                                    Text {
+                                                                        anchors.centerIn: parent
+                                                                        text: selected ? "\u2713" : ""
+                                                                        color: "#FFFFFF"
+                                                                        font.pixelSize: 12
+                                                                    }
+                                                                }
+
+                                                                Column {
+                                                                    width: parent.width - 26
+                                                                    anchors.verticalCenter: parent.verticalCenter
+                                                                    spacing: 0
+
+                                                                    Label {
+                                                                        width: parent.width
+                                                                        text: modelData.name || modelData.id || ""
+                                                                        font.pixelSize: 13
+                                                                        color: "#D9000000"
+                                                                        elide: Text.ElideRight
+                                                                    }
+                                                                    Label {
+                                                                        width: parent.width
+                                                                        text: {
+                                                                            var arr = newTaskRec.selectedCollaborationAgentIds || []
+                                                                            return arr.length > 0 && arr[0] === modelData.id
+                                                                                ? qsTr("主控")
+                                                                                : qsTr("子 Agent")
+                                                                        }
+                                                                        font.pixelSize: 11
+                                                                        color: "#73000000"
+                                                                        elide: Text.ElideRight
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            MouseArea {
+                                                                id: collabAgentMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: {
+                                                                    if (!newTaskRec.isNewTaskWelcome)
+                                                                        return
+                                                                    collaborationPicker.toggleAgent(modelData.id || "")
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 1
+                                                color: "#E6E7EB"
+                                            }
+
+                                            SingleLineTextInput {
+                                                id: collabNewAgentName
+                                                inputWidth: parent.width
+                                                inputHeight: 32
+                                                inputRadius: 6
+                                                fontSize: 13
+                                                placeholderText: qsTr("新建 agent 名称")
+                                            }
+
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 88
+                                                radius: 6
+                                                color: "#FFFFFF"
+                                                border.width: 1
+                                                border.color: collabIdentityInput.activeFocus ? "#006BFF" : "#E6E7EB"
+
+                                                TextArea {
+                                                    id: collabIdentityInput
+                                                    anchors.fill: parent
+                                                    anchors.margins: 6
+                                                    wrapMode: TextEdit.Wrap
+                                                    font.pixelSize: 13
+                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                    color: "#D9000000"
+                                                    placeholderText: qsTr("IDENTITY.md，可选")
+                                                    placeholderTextColor: "#40000000"
+                                                    background: Rectangle { color: "transparent" }
+                                                }
+                                            }
+
+                                            Row {
+                                                width: parent.width
+                                                spacing: 6
+                                                SingleLineTextInput {
+                                                    id: collabNewAgentWorkspace
+                                                    inputWidth: parent.width - collabCreateBtn.width - 6
+                                                    inputHeight: 32
+                                                    inputRadius: 6
+                                                    fontSize: 13
+                                                    placeholderText: qsTr("workspace")
+                                                }
+                                                CustomButton {
+                                                    id: collabCreateBtn
+                                                    width: 64
+                                                    height: 32
+                                                    backgroundColor: "#006BFF"
+                                                    textColor: "#FFFFFF"
+                                                    text: qsTr("新建")
+                                                    fontSize: 13
+                                                    enabled: collabNewAgentName.text.trim().length > 0
+                                                    onClicked: {
+                                                        window.pendingCollabCreateAgent = true
+                                                        wsClient.createAgent(collabNewAgentName.text.trim(),
+                                                                             collabNewAgentWorkspace.text.trim(),
+                                                                             true,
+                                                                             collabIdentityInput.text)
+                                                        collabNewAgentName.text = ""
+                                                        collabIdentityInput.text = ""
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 Item {
@@ -2748,7 +3153,7 @@ ApplicationWindow {
                                     }
                                 }
                                 Rectangle{
-                                    width: parent.width - workspaceDialogSlot.width - dropdownSelectionSkill.width - dropdownSelectionTool.width - dropdownSelectionModel.width - inputLeftRow.width - 5 * 4
+                                    width: parent.width - workspaceDialogSlot.width - dropdownSelectionModel.width - collaborationPicker.width - dropdownSelectionSkill.width - dropdownSelectionTool.width - inputLeftRow.width - 6 * 4
                                     height: 1
                                 }
                                 Row{
@@ -2875,7 +3280,7 @@ ApplicationWindow {
                                         buttonRadius: 12
                                         text: ""
                                         anchors.verticalCenter: parent.verticalCenter
-                                        enabled: textInputArea.text !== ""
+                                        enabled: textInputArea.text !== "" && newTaskRec.viewingControllerSession
                                         backgroundColor: "#006BFF"
                                         iconSource: "qrc:/images/send.png"
                                         onClicked: newTaskRec.doSendMessage()
@@ -5148,30 +5553,23 @@ ApplicationWindow {
 
                                 function pad(n) { return n < 10 ? "0" + n : "" + n }
 
-                                var workPath = newTaskWorkDirInput.text.trim()
-                                var agentDisplay = wsClient.cronDedicatedAgentDisplayName(title)
-
                                 if (repeatIdx === 0) {
                                     var dt = y + "-" + pad(m) + "-" + pad(d) + "T" + pad(hh) + ":" + pad(mm) + ":00"
                                     console.log("[CronAdd] oneTime dateTime=" + dt)
-                                    wsClient.createAgent(agentDisplay, workPath)
                                     wsClient.prepareCronJobWithDedicatedAgent(3, title, prompt, "", "", 0, dt)
                                 } else if (repeatIdx === 1) {
                                     var cronExpr = mm + " " + hh + " * * *"
                                     console.log("[CronAdd] daily cron=" + cronExpr)
-                                    wsClient.createAgent(agentDisplay, workPath)
                                     wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr, "Asia/Shanghai", 0, "")
                                 } else if (repeatIdx === 2) {
                                     var dateObj = new Date(y, m - 1, d)
                                     var dow = dateObj.getDay()
                                     var cronExpr2 = mm + " " + hh + " * * " + dow
                                     console.log("[CronAdd] weekly cron=" + cronExpr2)
-                                    wsClient.createAgent(agentDisplay, workPath)
                                     wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr2, "Asia/Shanghai", 0, "")
                                 } else if (repeatIdx === 3) {
                                     var cronExpr3 = mm + " * * * *"
                                     console.log("[CronAdd] hourly cron=" + cronExpr3)
-                                    wsClient.createAgent(agentDisplay, workPath)
                                     wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr3, "Asia/Shanghai", 0, "")
                                 } else if (repeatIdx === 4) {
                                     var sec = parseInt(newTaskIntervalInput.text) || 3600
@@ -5182,7 +5580,6 @@ ApplicationWindow {
                                         return
                                     }
                                     console.log("[CronAdd] interval sec=" + sec)
-                                    wsClient.createAgent(agentDisplay, workPath)
                                     wsClient.prepareCronJobWithDedicatedAgent(2, title, prompt, "", "", sec, "")
                                 }
                                 newTaskDialog.close()
@@ -5255,7 +5652,7 @@ ApplicationWindow {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         agentContextMenu.close()
-                        if (window.pendingDeleteAgentId.length > 0)
+                        if (window.pendingDeleteTaskSessionId.length > 0)
                             deleteAgentPopup.open()
                     }
                 }
@@ -5263,9 +5660,9 @@ ApplicationWindow {
         }
     }
 
-    /// 删除 agent 确认弹窗（参考 deleteCronJobPopup 的视觉风格）
+    /// 删除任务会话确认弹窗（参考 deleteCronJobPopup 的视觉风格）
     Popup {
-        id: deleteAgentPopup
+        id: deleteSessionPopup
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
         width: 360
@@ -5273,8 +5670,8 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onClosed: {
-            window.pendingDeleteAgentId = ""
-            window.pendingDeleteAgentName = ""
+            window.pendingDeleteTaskSessionId = ""
+            window.pendingDeleteTaskSessionName = ""
         }
         background: Rectangle {
             radius: 12
@@ -5288,7 +5685,7 @@ ApplicationWindow {
             Label {
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: qsTr("确定删除此任务？\n此操作将同时移除该任务的会话与工作目录文件。")
+                text: qsTr("确定删除此任务？\n此操作会从任务列表移除该会话，不会删除 Agent。")
                 font.pixelSize: 15
                 color: "#D9000000"
             }
@@ -5305,9 +5702,9 @@ ApplicationWindow {
                     text: qsTr("删除")
                     fontSize: 14
                     onClicked: {
-                        var aid = window.pendingDeleteAgentId
-                        if (aid.length > 0)
-                            wsClient.deleteAgent(aid, true)
+                        var sid = window.pendingDeleteTaskSessionId
+                        if (sid.length > 0)
+                            wsClient.deleteTaskSession(sid)
                         deleteAgentPopup.close()
                     }
                 }
@@ -5320,7 +5717,7 @@ ApplicationWindow {
                     borderWidth: 1
                     text: qsTr("取消")
                     fontSize: 14
-                    onClicked: deleteAgentPopup.close()
+                    onClicked: deleteSessionPopup.close()
                 }
             }
         }

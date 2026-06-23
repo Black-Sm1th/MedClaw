@@ -25,6 +25,10 @@
 #include <QUuid>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QRegularExpression>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QTextStream>
 #include <algorithm>
 #include <limits>
 #include <QVariantMap>
@@ -64,6 +68,30 @@ QString normalizeGitCloneUrl(QString raw)
     return clean.toString();
 }
 
+QString agentWorkspaceSlug(QString name)
+{
+    name = name.trimmed().toLower();
+    QString out;
+    out.reserve(name.size());
+    bool lastDash = false;
+    for (const QChar ch : name) {
+        if (ch.isLetterOrNumber()) {
+            out.append(ch);
+            lastDash = false;
+        } else if (!lastDash) {
+            out.append(QLatin1Char('-'));
+            lastDash = true;
+        }
+    }
+    while (out.startsWith(QLatin1Char('-')))
+        out.remove(0, 1);
+    while (out.endsWith(QLatin1Char('-')))
+        out.chop(1);
+    if (out.isEmpty())
+        out = QStringLiteral("agent");
+    return out.left(48);
+}
+
 } // namespace
 
 /// 帧类型常量：事件帧
@@ -96,12 +124,18 @@ GatewayClient::GatewayClient(QObject *parent)
                               QWebSocketProtocol::VersionLatest, this))
     , m_state(Disconnected)
     , m_agentFirstUserTitleDebounce(this)
+    , m_sessionFirstUserTitleDebounce(this)
     // m_config、m_session、m_skill、m_scheduledTask 由各自默认构造函数初始化
 {
     m_agentFirstUserTitleDebounce.setSingleShot(true);
     m_agentFirstUserTitleDebounce.setInterval(400);
     connect(&m_agentFirstUserTitleDebounce, &QTimer::timeout, this,
             &GatewayClient::flushAgentListFirstUserTitles);
+
+    m_sessionFirstUserTitleDebounce.setSingleShot(true);
+    m_sessionFirstUserTitleDebounce.setInterval(250);
+    connect(&m_sessionFirstUserTitleDebounce, &QTimer::timeout, this,
+            &GatewayClient::flushSessionListFirstUserTitles);
 
     m_toolResultRefreshTimer.setSingleShot(true);
     m_toolResultRefreshTimer.setInterval(300);
@@ -136,6 +170,9 @@ GatewayClient::GatewayClient(QObject *parent)
     connect(m_socket, &QWebSocket::binaryFrameReceived, this, [=](const QByteArray &frame, bool isLastFrame) {
         qDebug() << "收到二进制分片，长度：" << frame.size() << "是否最后一片：" << isLastFrame;
     });
+
+    initTaskSessionDb();
+    loadTaskSessionListFromDb();
 }
 
 /**
@@ -205,6 +242,132 @@ QString GatewayClient::currentSessionKey() const
     return m_session.currentSessionKey();
 }
 
+QString GatewayClient::currentTaskSessionKey() const
+{
+    return m_currentTaskSessionKey;
+}
+
+QString GatewayClient::currentViewSessionKey() const
+{
+    return m_currentViewSessionKey;
+}
+
+QVariantList GatewayClient::collaborationParticipants() const
+{
+    QVariantList out;
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
+    if (taskKey.isEmpty())
+        return out;
+
+    const QVariantMap controllerSession = sessionInfoByKey(taskKey);
+    const QString controllerAgentId = agentIdFromSessionKey(taskKey);
+    const QVariantMap controllerAgent = agentInfoById(controllerAgentId);
+    QSet<QString> seenAgentIds;
+    if (!controllerAgentId.isEmpty())
+        seenAgentIds.insert(controllerAgentId);
+
+    QVariantMap controller;
+    controller[QStringLiteral("sessionKey")] = taskKey;
+    controller[QStringLiteral("agentId")] = controllerAgentId;
+    const QString controllerAgentName =
+        controllerAgent.value(QStringLiteral("name")).toString();
+    controller[QStringLiteral("title")] =
+        displayNameForSession(controllerSession).isEmpty()
+            ? (controllerAgentName.isEmpty() ? controllerAgentId : controllerAgentName)
+            : displayNameForSession(controllerSession);
+    controller[QStringLiteral("role")] = QStringLiteral("controller");
+    controller[QStringLiteral("roleLabel")] = QStringLiteral("\u4e3b\u63a7");
+    controller[QStringLiteral("isController")] = true;
+    if (!controllerAgent.value(QStringLiteral("name")).toString().isEmpty())
+        controller[QStringLiteral("agentName")] =
+            controllerAgent.value(QStringLiteral("name")).toString();
+    out.append(controller);
+
+    const QVariantList sess = m_session.sessions();
+    for (const QVariant &v : sess) {
+        const QVariantMap s = v.toMap();
+        const QString key = s.value(QStringLiteral("sessionKey")).toString();
+        if (key.isEmpty() || key == taskKey)
+            continue;
+        if (!sessionBelongsToTask(s, taskKey))
+            continue;
+
+        const QString aid = agentIdFromSessionKey(key);
+        if (!aid.isEmpty())
+            seenAgentIds.insert(aid);
+        const QVariantMap agent = agentInfoById(aid);
+        const QString agentName = agent.value(QStringLiteral("name")).toString();
+        QVariantMap row;
+        row[QStringLiteral("sessionKey")] = key;
+        row[QStringLiteral("agentId")] = aid;
+        row[QStringLiteral("title")] =
+            displayNameForSession(s).isEmpty()
+                ? (agentName.isEmpty() ? aid : agentName)
+                : displayNameForSession(s);
+        row[QStringLiteral("agentName")] = agentName.isEmpty() ? aid : agentName;
+        QString role = s.value(QStringLiteral("subagentRole")).toString();
+        if (role.isEmpty())
+            role = QStringLiteral("leaf");
+        row[QStringLiteral("role")] = role;
+        row[QStringLiteral("roleLabel")] = QStringLiteral("\u5b50 Agent");
+        row[QStringLiteral("isController")] = false;
+        const qint64 startedAt = s.value(QStringLiteral("startedAt")).toLongLong();
+        const qint64 updatedAt = s.value(QStringLiteral("updatedAt")).toLongLong();
+        row[QStringLiteral("startedAt")] = QVariant(static_cast<qlonglong>(startedAt));
+        row[QStringLiteral("updatedAt")] = QVariant(static_cast<qlonglong>(updatedAt));
+        out.append(row);
+    }
+
+    const QVariantMap taskRow = taskSessionInfoByKey(taskKey);
+    const QStringList selectedAgents = taskSessionAgentIds(taskRow);
+    for (const QString &aidRaw : selectedAgents) {
+        const QString aid = aidRaw.trimmed();
+        if (aid.isEmpty() || seenAgentIds.contains(aid))
+            continue;
+
+        const QVariantMap agent = agentInfoById(aid);
+        const QString agentName = agent.value(QStringLiteral("name")).toString();
+        const QVariantMap hinted = collaborationChildHintForAgent(aid, taskKey);
+        QVariantMap row;
+        const QString hintedSessionKey =
+            hinted.value(QStringLiteral("sessionKey")).toString();
+        row[QStringLiteral("sessionKey")] =
+            hintedSessionKey.isEmpty() ? taskKey : hintedSessionKey;
+        row[QStringLiteral("agentId")] = aid;
+        row[QStringLiteral("title")] = agentName.isEmpty() ? aid : agentName;
+        row[QStringLiteral("agentName")] = agentName.isEmpty() ? aid : agentName;
+        row[QStringLiteral("role")] =
+            hinted.isEmpty() ? QStringLiteral("selected") : QStringLiteral("leaf");
+        row[QStringLiteral("roleLabel")] =
+            hinted.isEmpty() ? QStringLiteral("\u5f85\u521b\u5efa")
+                             : QStringLiteral("\u5b50 Agent");
+        row[QStringLiteral("isController")] = false;
+        row[QStringLiteral("isPending")] = hinted.isEmpty();
+        row[QStringLiteral("startedAt")] = hinted.isEmpty()
+            ? QVariant(static_cast<qlonglong>(std::numeric_limits<qint64>::max()))
+            : hinted.value(QStringLiteral("startedAt"));
+        row[QStringLiteral("updatedAt")] = hinted.isEmpty()
+            ? QVariant(static_cast<qlonglong>(0))
+            : hinted.value(QStringLiteral("updatedAt"));
+        out.append(row);
+        seenAgentIds.insert(aid);
+    }
+
+    if (out.size() > 1) {
+        std::sort(out.begin() + 1, out.end(), [](const QVariant &a, const QVariant &b) {
+            const QVariantMap ma = a.toMap();
+            const QVariantMap mb = b.toMap();
+            const qint64 ta = ma.value(QStringLiteral("startedAt")).toLongLong();
+            const qint64 tb = mb.value(QStringLiteral("startedAt")).toLongLong();
+            if (ta != tb)
+                return ta < tb;
+            return ma.value(QStringLiteral("sessionKey")).toString()
+                < mb.value(QStringLiteral("sessionKey")).toString();
+        });
+    }
+    return out;
+}
+
 /// 委托给 WsSkill 获取技能列表
 QVariantList GatewayClient::skillList() const
 {
@@ -233,6 +396,11 @@ QVariantMap GatewayClient::agentIdentity() const
 QVariantList GatewayClient::agentList() const
 {
     return m_agentList;
+}
+
+QVariantList GatewayClient::taskSessionList() const
+{
+    return m_taskSessionList;
 }
 
 /// 获取默认 agent ID
@@ -302,11 +470,13 @@ void GatewayClient::setState(ConnectionState state)
     }
 }
 
-/// 委托给 WsSession 切换会话；若已连接且会话非空，查询该会话当前模型（sessions.patch model:null）
+/// 委托给 WsSession 切换会话；切换本身只读，不触发 sessions.patch
 void GatewayClient::setCurrentSessionKey(const QString &key)
 {
     if (!m_session.setCurrentSessionKey(key))
         return;
+    setCurrentTaskSessionKeyInternal(key);
+    setCurrentViewSessionKeyInternal(key);
     if (m_state == Connected && !m_session.currentSessionKey().trimmed().isEmpty()) {
         if (!m_pendingSessionModelId.isEmpty())
             patchSessionModel(m_pendingSessionModelId);
@@ -321,12 +491,344 @@ void GatewayClient::clearActiveAgentContext()
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
     m_pendingBootstrapChatMessage.clear();
+    m_pendingCollaborationAgentIds.clear();
+    m_collaborationChildSessionHints.clear();
+    emit collaborationParticipantsChanged();
     if (!m_pendingSessionModelId.isEmpty()) {
         m_pendingSessionModelId.clear();
         emit pendingSessionModelIdChanged();
     }
     if (m_session.setCurrentSessionKey(QString()))
         emit currentSessionChanged();
+    setCurrentTaskSessionKeyInternal(QString());
+    setCurrentViewSessionKeyInternal(QString());
+}
+
+void GatewayClient::setPendingCollaborationAgents(const QVariantList &agentIds)
+{
+    QStringList next;
+    for (const QVariant &v : agentIds) {
+        const QString id = v.toString().trimmed();
+        if (!id.isEmpty() && !next.contains(id))
+            next.append(id);
+    }
+    if (m_pendingCollaborationAgentIds == next)
+        return;
+    m_pendingCollaborationAgentIds = next;
+    emit collaborationParticipantsChanged();
+}
+
+QVariantList GatewayClient::pendingCollaborationAgentIds() const
+{
+    QVariantList out;
+    for (const QString &id : m_pendingCollaborationAgentIds)
+        out.append(id);
+    return out;
+}
+
+bool GatewayClient::initTaskSessionDb()
+{
+    if (m_taskSessionDbReady)
+        return true;
+
+    QDir dbDir(QStringLiteral("AppData/config"));
+    if (!dbDir.exists())
+        QDir().mkpath(dbDir.path());
+
+    const QString connName = QStringLiteral("medclaw_task_sessions");
+    if (QSqlDatabase::contains(connName))
+        m_taskSessionDb = QSqlDatabase::database(connName);
+    else
+        m_taskSessionDb = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connName);
+    m_taskSessionDb.setDatabaseName(dbDir.filePath(QStringLiteral("task_sessions.db")));
+
+    if (!m_taskSessionDb.open()) {
+        qWarning().noquote() << "[TaskSessionDb] open failed:"
+                             << m_taskSessionDb.lastError().text();
+        return false;
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    const bool ok = q.exec(QStringLiteral(
+        "CREATE TABLE IF NOT EXISTS task_sessions ("
+        "session_id TEXT PRIMARY KEY,"
+        "workspace TEXT NOT NULL DEFAULT '',"
+        "title TEXT NOT NULL DEFAULT '',"
+        "created_at INTEGER NOT NULL,"
+        "updated_at INTEGER NOT NULL,"
+        "deleted_at INTEGER,"
+        "agents_json TEXT NOT NULL DEFAULT '[]'"
+        ")"));
+    if (!ok) {
+        qWarning().noquote() << "[TaskSessionDb] create table failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_task_sessions_visible "
+        "ON task_sessions(deleted_at, updated_at)"));
+    m_taskSessionDbReady = true;
+    return true;
+}
+
+void GatewayClient::loadTaskSessionListFromDb()
+{
+    if (!initTaskSessionDb())
+        return;
+
+    QVariantList rows;
+    QSqlQuery q(m_taskSessionDb);
+    if (!q.exec(QStringLiteral(
+            "SELECT session_id, workspace, title, created_at, updated_at, "
+            "deleted_at, agents_json "
+            "FROM task_sessions "
+            "WHERE deleted_at IS NULL "
+            "ORDER BY updated_at DESC, created_at DESC"))) {
+        qWarning().noquote() << "[TaskSessionDb] load failed:"
+                             << q.lastError().text();
+        return;
+    }
+
+    while (q.next()) {
+        QVariantMap row;
+        row[QStringLiteral("session_id")] = q.value(0).toString();
+        row[QStringLiteral("sessionKey")] = q.value(0).toString();
+        row[QStringLiteral("workspace")] = q.value(1).toString();
+        row[QStringLiteral("title")] = q.value(2).toString();
+        row[QStringLiteral("created_at")] =
+            QVariant(static_cast<qlonglong>(q.value(3).toLongLong()));
+        row[QStringLiteral("updated_at")] =
+            QVariant(static_cast<qlonglong>(q.value(4).toLongLong()));
+        if (!q.value(5).isNull()) {
+            row[QStringLiteral("deleted_at")] =
+                QVariant(static_cast<qlonglong>(q.value(5).toLongLong()));
+        }
+        const QString agentsJson = q.value(6).toString();
+        row[QStringLiteral("agents_json")] = agentsJson;
+        QVariantList agents;
+        for (const QString &id : agentListFromJson(agentsJson))
+            agents.append(id);
+        row[QStringLiteral("agents")] = agents;
+        if (!agents.isEmpty())
+            row[QStringLiteral("agentId")] = agents.first().toString();
+        rows.append(row);
+    }
+
+    m_taskSessionList = rows;
+    emit taskSessionListChanged();
+}
+
+void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
+                                           const QString &workspace,
+                                           const QString &title,
+                                           const QStringList &agentIds,
+                                           qint64 createdAt,
+                                           qint64 updatedAt)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || !initTaskSessionDb())
+        return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (createdAt <= 0) createdAt = now;
+    if (updatedAt <= 0) updatedAt = createdAt;
+
+    QString workspaceValue = workspace;
+    if (workspaceValue.isNull())
+        workspaceValue = QStringLiteral("");
+    workspaceValue = workspaceValue.trimmed();
+    if (workspaceValue.isNull())
+        workspaceValue = QStringLiteral("");
+    if (workspaceValue.isEmpty())
+        workspaceValue = QDir::currentPath();
+
+    QString titleValue = title;
+    if (titleValue.isNull())
+        titleValue = QStringLiteral("");
+    titleValue = titleValue.trimmed();
+    if (titleValue.isNull())
+        titleValue = QStringLiteral("");
+
+    QString agentsJson = agentsJsonFromList(agentIds);
+    if (agentsJson.isNull() || agentsJson.trimmed().isEmpty())
+        agentsJson = QStringLiteral("[]");
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE task_sessions SET "
+        "workspace=?,"
+        "title=CASE WHEN title='' THEN ? ELSE title END,"
+        "updated_at=?,"
+        "deleted_at=NULL,"
+        "agents_json=? "
+        "WHERE session_id=?"));
+    q.addBindValue(QVariant(workspaceValue));
+    q.addBindValue(QVariant(titleValue));
+    q.addBindValue(QVariant(static_cast<qlonglong>(updatedAt)));
+    q.addBindValue(agentsJson);
+    q.addBindValue(key);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] update failed:"
+                             << q.lastError().text();
+        return;
+    }
+
+    if (q.numRowsAffected() <= 0) {
+        QSqlQuery ins(m_taskSessionDb);
+        ins.prepare(QStringLiteral(
+            "INSERT INTO task_sessions "
+            "(session_id, workspace, title, created_at, updated_at, deleted_at, agents_json) "
+            "VALUES (?, ?, ?, ?, ?, NULL, ?)"));
+        ins.addBindValue(QVariant(key));
+        ins.addBindValue(QVariant(workspaceValue));
+        ins.addBindValue(QVariant(titleValue));
+        ins.addBindValue(QVariant(static_cast<qlonglong>(createdAt)));
+        ins.addBindValue(QVariant(static_cast<qlonglong>(updatedAt)));
+        ins.addBindValue(agentsJson);
+        if (!ins.exec()) {
+            qWarning().noquote() << "[TaskSessionDb] insert failed:"
+                                 << ins.lastError().text();
+            return;
+        }
+    }
+
+    loadTaskSessionListFromDb();
+    qDebug().noquote() << "[TaskSessionDb] upsert ok"
+                       << "session=" << key
+                       << "title=" << titleValue
+                       << "rows=" << m_taskSessionList.size();
+}
+
+void GatewayClient::touchTaskSessionLocal(const QString &sessionKey)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || !initTaskSessionDb())
+        return;
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE task_sessions SET updated_at=? "
+        "WHERE session_id=? AND deleted_at IS NULL"));
+    q.addBindValue(QVariant(static_cast<qlonglong>(QDateTime::currentMSecsSinceEpoch())));
+    q.addBindValue(key);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] touch failed:"
+                             << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() > 0)
+        loadTaskSessionListFromDb();
+}
+
+void GatewayClient::softDeleteTaskSessionLocal(const QString &sessionKey)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || !initTaskSessionDb())
+        return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE task_sessions SET deleted_at=?, updated_at=? "
+        "WHERE session_id=?"));
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(key);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] soft delete failed:"
+                             << q.lastError().text();
+        return;
+    }
+    loadTaskSessionListFromDb();
+}
+
+QVariantMap GatewayClient::taskSessionInfoByKey(const QString &sessionKey) const
+{
+    const QString key = sessionKey.trimmed();
+    for (const QVariant &v : m_taskSessionList) {
+        const QVariantMap row = v.toMap();
+        if (row.value(QStringLiteral("session_id")).toString() == key)
+            return row;
+    }
+    return QVariantMap();
+}
+
+QStringList GatewayClient::taskSessionAgentIds(const QVariantMap &row) const
+{
+    QStringList ids;
+    const QVariantList agents = row.value(QStringLiteral("agents")).toList();
+    for (const QVariant &v : agents) {
+        const QString id = v.toString().trimmed();
+        if (!id.isEmpty() && !ids.contains(id))
+            ids.append(id);
+    }
+    if (ids.isEmpty()) {
+        const QString aid = row.value(QStringLiteral("agentId")).toString().trimmed();
+        if (!aid.isEmpty())
+            ids.append(aid);
+    }
+    return ids;
+}
+
+QString GatewayClient::taskTitleFromFirstMessage(const QString &message)
+{
+    QString title = message.trimmed();
+    title.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    if (title.length() > 120)
+        title = title.left(117) + QStringLiteral("...");
+    return title;
+}
+
+QString GatewayClient::agentsJsonFromList(const QStringList &agentIds)
+{
+    QJsonArray arr;
+    QStringList seen;
+    for (const QString &raw : agentIds) {
+        const QString id = raw.trimmed();
+        if (id.isEmpty() || seen.contains(id))
+            continue;
+        seen.append(id);
+        arr.append(id);
+    }
+    return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact));
+}
+
+QStringList GatewayClient::agentListFromJson(const QString &json)
+{
+    QStringList out;
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isArray())
+        return out;
+    for (const QJsonValue &v : doc.array()) {
+        const QString id = v.toString().trimmed();
+        if (!id.isEmpty() && !out.contains(id))
+            out.append(id);
+    }
+    return out;
+}
+
+void GatewayClient::switchCollaborationViewSession(const QString &sessionKey)
+{
+    const QString key = sessionKey.trimmed();
+    if (m_state != Connected || key.isEmpty())
+        return;
+
+    const bool isKnownController = (key == m_currentTaskSessionKey);
+    const QVariantMap hintedChild =
+        collaborationChildHintForAgent(agentIdFromSessionKey(key),
+                                       m_currentTaskSessionKey);
+    const bool isKnownChild =
+        sessionBelongsToTask(sessionInfoByKey(key), m_currentTaskSessionKey)
+        || (hintedChild.value(QStringLiteral("sessionKey")).toString() == key);
+    if (!isKnownController && !isKnownChild) {
+        emit errorOccurred(QStringLiteral("\u8be5\u4f1a\u8bdd\u4e0d\u5c5e\u4e8e\u5f53\u524d\u534f\u4f5c\u4efb\u52a1"));
+        return;
+    }
+
+    setCurrentViewSessionKeyInternal(key);
+    getAgentIdentity(key);
+    loadChatHistory(key);
 }
 
 bool GatewayClient::mergeSessionHintsIntoAgentList()
@@ -334,6 +836,7 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
     struct Best {
         qint64 updated = 0;   // 挑选该 agent 下最近活跃的会话（用于 startedAt / task- 时间）
         qint64 startedAt = 0; // 会话开始时间，侧栏展示（不用 updatedAt）
+        QString sessionKey;
     };
     struct CronPick {
         qint64 updated = -1;
@@ -365,6 +868,7 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
         if (updated >= slot.updated) {
             slot.updated = updated;
             slot.startedAt = startedAt;
+            slot.sessionKey = key;
         }
 
         // agent:<id>:cron:<uuid> — 定时任务会话
@@ -413,7 +917,10 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
                     QVariant(static_cast<qlonglong>(displayAt));
             }
         } else {
-            row.remove(QStringLiteral("chatSessionKey"));
+            if (!b.sessionKey.isEmpty())
+                row[QStringLiteral("chatSessionKey")] = b.sessionKey;
+            else
+                row.remove(QStringLiteral("chatSessionKey"));
             qint64 displayAt = b.startedAt;
             if (displayAt <= 0 && id.startsWith(QLatin1String("task-"))) {
                 bool ok = false;
@@ -454,8 +961,10 @@ bool GatewayClient::mergeSessionHintsIntoAgentList()
         next[i] = row;
     }
 
-    if (!changed)
+    if (!changed) {
+        clearPendingCollaborationSend();
         return false;
+    }
     m_agentList = next;
     return true;
 }
@@ -511,6 +1020,60 @@ void GatewayClient::flushAgentListFirstUserTitles()
 
     qDebug().noquote() << "[Gateway] sidebar first-user titles batch" << batch
                        << "agents=" << m_agentList.size();
+}
+
+void GatewayClient::scheduleSessionListFirstUserTitles()
+{
+    if (m_state != Connected)
+        return;
+    m_sessionFirstUserTitleDebounce.start();
+}
+
+void GatewayClient::flushSessionListFirstUserTitles()
+{
+    if (m_state != Connected)
+        return;
+    const QVariantList sessions = m_session.sessions();
+    if (sessions.isEmpty())
+        return;
+
+    ++m_sessionTitleBatchGen;
+    const quint64 batch = m_sessionTitleBatchGen;
+
+    for (const QVariant &v : sessions) {
+        const QVariantMap row = v.toMap();
+        const QString sk = row.value(QStringLiteral("sessionKey")).toString().trimmed();
+        if (sk.isEmpty())
+            continue;
+        const QString first = row.value(QStringLiteral("firstUserTitle")).toString().trimmed();
+        if (!first.isEmpty())
+            continue;
+        const QString reqId =
+            sendRequest(QStringLiteral("chat.history"),
+                        m_session.buildChatHistoryParams(sk, 80));
+        m_sessionTitleHistReqSession.insert(reqId, sk);
+        m_sessionTitleHistReqBatch.insert(reqId, batch);
+    }
+
+    qDebug().noquote() << "[Gateway] session first-user titles batch" << batch
+                       << "sessions=" << sessions.size();
+}
+
+void GatewayClient::refreshSessionFirstUserTitle(const QString &sessionKey)
+{
+    if (m_state != Connected)
+        return;
+    const QString sk = sessionKey.trimmed();
+    if (sk.isEmpty())
+        return;
+
+    ++m_sessionTitleBatchGen;
+    const quint64 batch = m_sessionTitleBatchGen;
+    const QString reqId =
+        sendRequest(QStringLiteral("chat.history"),
+                    m_session.buildChatHistoryParams(sk, 80));
+    m_sessionTitleHistReqSession.insert(reqId, sk);
+    m_sessionTitleHistReqBatch.insert(reqId, batch);
 }
 
 void GatewayClient::refreshSidebarFirstUserTitleForAgent(const QString &agentId)
@@ -576,6 +1139,336 @@ void GatewayClient::setAgentListSidebarTitle(const QString &agentId, const QStri
     }
 }
 
+void GatewayClient::setCurrentTaskSessionKeyInternal(const QString &key)
+{
+    const QString trimmed = key.trimmed();
+    if (m_currentTaskSessionKey == trimmed)
+        return;
+    m_currentTaskSessionKey = trimmed;
+    emit currentTaskSessionChanged();
+    emit collaborationParticipantsChanged();
+}
+
+void GatewayClient::setCurrentViewSessionKeyInternal(const QString &key)
+{
+    const QString trimmed = key.trimmed();
+    if (m_currentViewSessionKey == trimmed)
+        return;
+    m_currentViewSessionKey = trimmed;
+    emit currentViewSessionChanged();
+}
+
+QVariantMap GatewayClient::agentInfoById(const QString &agentId) const
+{
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty())
+        return QVariantMap();
+    for (const QVariant &v : m_agentList) {
+        const QVariantMap row = v.toMap();
+        if (row.value(QStringLiteral("id")).toString() == aid)
+            return row;
+    }
+    return QVariantMap();
+}
+
+QVariantMap GatewayClient::sessionInfoByKey(const QString &sessionKey) const
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty())
+        return QVariantMap();
+    for (const QVariant &v : m_session.sessions()) {
+        const QVariantMap row = v.toMap();
+        if (row.value(QStringLiteral("sessionKey")).toString() == key)
+            return row;
+    }
+    return QVariantMap();
+}
+
+QString GatewayClient::displayNameForSession(const QVariantMap &session) const
+{
+    QString t = session.value(QStringLiteral("derivedTitle")).toString().trimmed();
+    if (t.isEmpty())
+        t = session.value(QStringLiteral("label")).toString().trimmed();
+    if (t.isEmpty())
+        t = session.value(QStringLiteral("displayName")).toString().trimmed();
+    if (t.length() > 80)
+        t = t.left(77) + QStringLiteral("...");
+    return t;
+}
+
+QString GatewayClient::agentIdFromSessionKey(const QString &sessionKey) const
+{
+    const QStringList parts = sessionKey.trimmed().split(QLatin1Char(':'));
+    if (parts.size() >= 2 && parts[0] == QLatin1String("agent"))
+        return parts[1];
+    return QString();
+}
+
+bool GatewayClient::sessionBelongsToTask(const QVariantMap &session,
+                                         const QString &taskKey) const
+{
+    const QString normalizedTask = taskKey.trimmed();
+    if (normalizedTask.isEmpty())
+        return false;
+    const QString spawnedBy =
+        session.value(QStringLiteral("spawnedBy")).toString().trimmed();
+    const QString parent =
+        session.value(QStringLiteral("parentSessionKey")).toString().trimmed();
+    if (spawnedBy == normalizedTask || parent == normalizedTask)
+        return true;
+
+    const QString key =
+        session.value(QStringLiteral("sessionKey")).toString().trimmed();
+    if (key.isEmpty() || key == normalizedTask)
+        return false;
+    if (key.contains(QLatin1String(":subagent:"))
+        || key.contains(QLatin1String(":acp:"))) {
+        const QStringList taskParts = normalizedTask.split(QLatin1Char(':'));
+        const QStringList keyParts = key.split(QLatin1Char(':'));
+        if (taskParts.size() >= 2 && keyParts.size() >= 2
+            && taskParts[0] == keyParts[0] && taskParts[1] == keyParts[1]) {
+            return parent == normalizedTask || spawnedBy == normalizedTask;
+        }
+    }
+    return false;
+}
+
+QString GatewayClient::buildCollaborationPrompt(
+    const QString &userMessage,
+    const QStringList &participantAgentIds) const
+{
+    if (participantAgentIds.isEmpty())
+        return userMessage;
+
+    QStringList lines;
+    lines << QStringLiteral("\u4f60\u662f\u8fd9\u4e2a\u534f\u4f5c\u4efb\u52a1\u7684\u4e3b\u63a7 agent\u3002");
+    lines << QStringLiteral("\u8bf7\u5148\u7406\u89e3\u7528\u6237\u4efb\u52a1\uff0c\u7136\u540e\u4f7f\u7528 sessions_spawn \u4e3a\u4e0b\u5217\u534f\u4f5c agent \u521b\u5efa\u5b50\u4efb\u52a1\u3002");
+    lines << QStringLiteral("sessions_spawn \u53c2\u6570\u5efa\u8bae\uff1aruntime=\"subagent\", mode=\"session\", cleanup=\"keep\", agentId=\u76ee\u6807 agent id, task=\u5206\u914d\u7ed9\u8be5 agent \u7684\u5177\u4f53\u4efb\u52a1\u3002");
+    lines << QStringLiteral("\u8bf7\u7b49\u5f85\u6240\u6709\u5b50 agent \u5b8c\u6210\u540e\uff0c\u7efc\u5408\u4ed6\u4eec\u7684\u7ed3\u679c\u7ed9\u51fa\u6700\u7ec8\u56de\u590d\u3002");
+    lines << QStringLiteral("");
+    lines << QStringLiteral("\u534f\u4f5c agent\uff1a");
+    for (const QString &aid : participantAgentIds) {
+        const QVariantMap a = agentInfoById(aid);
+        const QString name = a.value(QStringLiteral("name")).toString();
+        if (name.isEmpty() || name == aid)
+            lines << QStringLiteral("- %1").arg(aid);
+        else
+            lines << QStringLiteral("- %1 (%2)").arg(aid, name);
+    }
+    lines << QStringLiteral("");
+    lines << QStringLiteral("\u7528\u6237\u4efb\u52a1\uff1a");
+    lines << userMessage;
+    return lines.join(QLatin1Char('\n'));
+}
+
+QJsonObject GatewayClient::buildConfigWithSubagentAllowAgents(
+    const QJsonObject &fullConfig,
+    const QString &controllerAgentId,
+    const QStringList &participantAgentIds,
+    bool *changed) const
+{
+    if (changed)
+        *changed = false;
+    const QString controllerId = controllerAgentId.trimmed();
+    if (controllerId.isEmpty())
+        return QJsonObject();
+
+    QStringList targets;
+    for (const QString &id : participantAgentIds) {
+        const QString t = id.trimmed();
+        if (!t.isEmpty() && t != controllerId && !targets.contains(t))
+            targets.append(t);
+    }
+    if (targets.isEmpty())
+        return fullConfig;
+
+    QJsonObject result = fullConfig;
+    QJsonObject agentsObj = result.value(QStringLiteral("agents")).toObject();
+    QJsonArray list = agentsObj.value(QStringLiteral("list")).toArray();
+
+    int idx = -1;
+    for (int i = 0; i < list.size(); ++i) {
+        if (list.at(i).toObject().value(QStringLiteral("id")).toString().trimmed()
+            == controllerId) {
+            idx = i;
+            break;
+        }
+    }
+
+    QJsonObject agentEntry;
+    if (idx >= 0)
+        agentEntry = list.at(idx).toObject();
+    else
+        agentEntry[QStringLiteral("id")] = controllerId;
+
+    QJsonObject subagents = agentEntry.value(QStringLiteral("subagents")).toObject();
+    QJsonArray allowArr = subagents.value(QStringLiteral("allowAgents")).toArray();
+
+    QSet<QString> normalizedExisting;
+    bool allowAny = false;
+    for (const QJsonValue &v : allowArr) {
+        const QString raw = v.toString().trimmed();
+        if (raw == QLatin1String("*"))
+            allowAny = true;
+        if (!raw.isEmpty())
+            normalizedExisting.insert(raw.toLower());
+    }
+    if (allowAny)
+        return fullConfig;
+
+    bool didChange = false;
+    for (const QString &target : targets) {
+        const QString normalized = target.toLower();
+        if (normalizedExisting.contains(normalized))
+            continue;
+        allowArr.append(target);
+        normalizedExisting.insert(normalized);
+        didChange = true;
+    }
+
+    if (!didChange)
+        return fullConfig;
+
+    subagents[QStringLiteral("allowAgents")] = allowArr;
+    agentEntry[QStringLiteral("subagents")] = subagents;
+    if (idx >= 0)
+        list[idx] = agentEntry;
+    else
+        list.append(agentEntry);
+
+    agentsObj[QStringLiteral("list")] = list;
+    result[QStringLiteral("agents")] = agentsObj;
+    if (changed)
+        *changed = true;
+    return result;
+}
+
+void GatewayClient::stashPendingCollaborationSend(
+    const QString &controllerSessionKey,
+    const QString &controllerAgentId,
+    const QStringList &participantAgentIds,
+    const QString &userMessage)
+{
+    m_pendingCollabControllerSessionKey = controllerSessionKey.trimmed();
+    m_pendingCollabControllerAgentId = controllerAgentId.trimmed();
+    m_pendingCollabParticipantAgentIds = participantAgentIds;
+    m_pendingCollabUserMessage = userMessage;
+}
+
+void GatewayClient::clearPendingCollaborationSend()
+{
+    m_pendingCollabControllerSessionKey.clear();
+    m_pendingCollabControllerAgentId.clear();
+    m_pendingCollabParticipantAgentIds.clear();
+    m_pendingCollabUserMessage.clear();
+    m_pendingCollabAwaitingConfigGet = false;
+}
+
+bool GatewayClient::maybeConfigureSubagentAllowAgents(
+    const QString &controllerSessionKey,
+    const QString &controllerAgentId,
+    const QStringList &participantAgentIds,
+    const QString &userMessage)
+{
+    QStringList targets;
+    for (const QString &id : participantAgentIds) {
+        const QString t = id.trimmed();
+        if (!t.isEmpty() && t != controllerAgentId && !targets.contains(t))
+            targets.append(t);
+    }
+    if (targets.isEmpty())
+        return false;
+
+    stashPendingCollaborationSend(controllerSessionKey, controllerAgentId,
+                                  targets, userMessage);
+
+    if (m_lastConfigSnapshot.isEmpty()) {
+        m_pendingCollabAwaitingConfigGet = true;
+        refreshMcpList();
+        return true;
+    }
+
+    bool changed = false;
+    const QJsonObject cfg = buildConfigWithSubagentAllowAgents(
+        m_lastConfigSnapshot, controllerAgentId, targets, &changed);
+    if (cfg.isEmpty()) {
+        clearPendingCollaborationSend();
+        emit errorOccurred(QStringLiteral("\u65e0\u6cd5\u6784\u5efa\u534f\u4f5c Agent \u6743\u9650\u914d\u7f6e"));
+        return true;
+    }
+    if (!changed)
+        return false;
+
+    m_lastConfigSnapshot = cfg;
+    QJsonObject reqParams;
+    reqParams[QStringLiteral("raw")] =
+        QString::fromUtf8(QJsonDocument(cfg).toJson(QJsonDocument::Compact));
+    if (!m_configSnapshotHash.isEmpty())
+        reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+
+    const QString reqId = sendConfigMutation(QStringLiteral("config.set"), reqParams);
+    m_collabAllowConfigSetReqIds.insert(reqId);
+    qDebug().noquote() << "[Gateway] update subagents.allowAgents controller="
+                       << controllerAgentId << "targets=" << targets;
+    return true;
+}
+
+void GatewayClient::sendPendingCollaborationChatNow()
+{
+    if (m_pendingCollabControllerSessionKey.trimmed().isEmpty()
+        || m_pendingCollabUserMessage.trimmed().isEmpty()) {
+        clearPendingCollaborationSend();
+        return;
+    }
+
+    const QString controllerKey = m_pendingCollabControllerSessionKey;
+    const QString controllerId = m_pendingCollabControllerAgentId;
+    const QString title = taskTitleFromFirstMessage(m_pendingCollabUserMessage);
+    const QString msg = buildCollaborationPrompt(
+        m_pendingCollabUserMessage, m_pendingCollabParticipantAgentIds);
+    clearPendingCollaborationSend();
+
+    if (m_localOnlyTaskSessionKeys.contains(controllerKey)) {
+        const QString reqId = sendRequest(
+            QStringLiteral("sessions.create"),
+            buildSessionsCreateParams(controllerKey, controllerId,
+                                      title, msg, m_pendingSessionModelId));
+        m_pendingSessionsCreateReqSession.insert(reqId, controllerKey);
+        if (!m_pendingSessionModelId.isEmpty()) {
+            m_pendingSessionModelId.clear();
+            emit pendingSessionModelIdChanged();
+        }
+        return;
+    }
+
+    sendRequest(QStringLiteral("chat.send"),
+                m_session.buildChatSendParams(msg, controllerKey));
+}
+
+QJsonObject GatewayClient::buildSessionsCreateParams(
+    const QString &sessionKey,
+    const QString &agentId,
+    const QString &label,
+    const QString &task,
+    const QString &model) const
+{
+    QJsonObject params;
+    const QString key = sessionKey.trimmed();
+    const QString aid = agentId.trimmed();
+    if (!key.isEmpty())
+        params[QStringLiteral("key")] = key;
+    if (!aid.isEmpty())
+        params[QStringLiteral("agentId")] = aid;
+    Q_UNUSED(label)
+    const QString t = task.trimmed();
+    if (!t.isEmpty())
+        params[QStringLiteral("task")] = t;
+    const QString modelRef = qualifyModelRef(model.trimmed());
+    if (!modelRef.isEmpty())
+        params[QStringLiteral("model")] = modelRef;
+    return params;
+}
+
 QString GatewayClient::resolveChatSessionKeyForAgentId(const QString &agentId) const
 {
     const QString aid = agentId.trimmed();
@@ -637,7 +1530,7 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
     case 1:
         m_cronPendingCronExpr = cronExpr;
         m_cronPendingTz = tz.isEmpty() ? QStringLiteral("Asia/Shanghai") : tz;
-        return;
+        break;
     case 2:
         if (intervalSec <= 0) {
             clearPendingCronDedicatedAgent();
@@ -646,7 +1539,7 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
             return;
         }
         m_cronPendingEveryMs = intervalSec * 1000;
-        return;
+        break;
     case 3: {
         const QDateTime at = QDateTime::fromString(isoDateTime, Qt::ISODate);
         if (!at.isValid()) {
@@ -658,7 +1551,7 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
         }
         m_cronPendingAt = at;
         m_cronPendingDeleteAfterRun = true;
-        return;
+        break;
     }
     default:
         clearPendingCronDedicatedAgent();
@@ -666,6 +1559,9 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
             QStringLiteral("\u65e0\u6548\u7684\u5b9a\u65f6\u7c7b\u578b"));
         return;
     }
+
+    const QString agentName = makeCronDedicatedAgentName(jobName);
+    createAgent(agentName, QString(), false);
 }
 
 void GatewayClient::clearPendingCronDedicatedAgent()
@@ -683,7 +1579,7 @@ void GatewayClient::clearPendingCronDedicatedAgent()
 
 void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
 {
-    if (agentId.isEmpty() || !m_cronAwaitingDedicatedAgent
+    if (agentId.trimmed().isEmpty() || !m_cronAwaitingDedicatedAgent
         || m_cronPendingScheduleKind <= 0) {
         return;
     }
@@ -700,26 +1596,25 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
 
     clearPendingCronDedicatedAgent();
 
-    // OpenClaw：sessionTarget "main" 仅允许 payload.kind=systemEvent；
-    // agentTurn + 指定 agentId 须用 isolated（见 src/cron/service/jobs.ts assertSupportedJobSpec）
-    const QString sessionIsolated = QStringLiteral("isolated");
-
     QJsonObject cronParams;
     switch (kind) {
     case 1:
         cronParams = m_scheduledTask.buildAddCronJobParams(
-            jobName, cronExpr, message, tz, sessionIsolated, false, agentId);
+            jobName, cronExpr, message, tz,
+            QStringLiteral("isolated"), false, agentId);
         break;
     case 2:
         if (everyMs > 0) {
             cronParams = m_scheduledTask.buildAddIntervalJobParams(
-                jobName, everyMs, message, sessionIsolated, false, agentId);
+                jobName, everyMs, message,
+                QStringLiteral("isolated"), false, agentId);
         }
         break;
     case 3:
         if (at.isValid()) {
             cronParams = m_scheduledTask.buildAddOneTimeJobParams(
-                jobName, at, message, deleteAfterRun, sessionIsolated, agentId);
+                jobName, at, message, deleteAfterRun,
+                QStringLiteral("isolated"), agentId);
         }
         break;
     default:
@@ -771,7 +1666,12 @@ void GatewayClient::connectToServer(const QString &url)
     clearPendingCronDedicatedAgent();
     m_sidebarTitleHistReqAgent.clear();
     m_sidebarTitleHistReqBatch.clear();
+    m_sessionTitleHistReqSession.clear();
+    m_sessionTitleHistReqBatch.clear();
+    m_chatSendReqSession.clear();
+    m_chatSendReqMessage.clear();
     m_agentFirstUserTitleDebounce.stop();
+    m_sessionFirstUserTitleDebounce.stop();
     setState(Connecting);
 
     // ── 构造带 Origin 头的请求 ──
@@ -859,6 +1759,9 @@ void GatewayClient::onDisconnected()
 
     m_session.setStreaming(false);
     m_pendingRequests.clear();
+    m_pendingFirstChatSessionCreateReqId.clear();
+    m_pendingAgentCreateForChat = false;
+    m_pendingFirstChatMessage.clear();
     if (!m_pendingSessionModelId.isEmpty()) {
         m_pendingSessionModelId.clear();
         emit pendingSessionModelIdChanged();
@@ -866,6 +1769,11 @@ void GatewayClient::onDisconnected()
     clearPendingCronDedicatedAgent();
     m_sidebarTitleHistReqAgent.clear();
     m_sidebarTitleHistReqBatch.clear();
+    m_sessionTitleHistReqSession.clear();
+    m_sessionTitleHistReqBatch.clear();
+    m_chatSendReqSession.clear();
+    m_chatSendReqMessage.clear();
+    m_sessionFirstUserTitleDebounce.stop();
     m_agentFirstUserTitleDebounce.stop();
 
     setState(Disconnected);
@@ -1101,6 +2009,12 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         return;
     }
 
+    if (event == QLatin1String("sessions.changed")) {
+        rememberCollaborationChildSessionHint(payload);
+        refreshSessions();
+        return;
+    }
+
     // ── ②.5 cron 事件：定时任务状态变更推送 ──
     if (event == QLatin1String("cron")) {
         qDebug() << "[Gateway] cron event:" << payload;
@@ -1114,6 +2028,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     if (event == QLatin1String("agent")
         || event == QLatin1String("chat")
         || event == QLatin1String("session.tool")) {
+        rememberCollaborationChildSessionHint(payload);
         ++debugCount;
         const QJsonObject data =
             payload.value(QStringLiteral("data")).toObject();
@@ -1323,8 +2238,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             emit agentCreated(m_pendingCreateName, false, errMsg, false);
             m_pendingCreateName.clear();
             m_pendingCreateWorkspace.clear();
+            m_pendingCreateIdentityMarkdown.clear();
             m_pendingAgentCreateForChat = false;
             m_pendingFirstChatMessage.clear();
+            m_pendingFirstChatSessionCreateReqId.clear();
             m_pendingBootstrapChatMessage.clear();
             m_pendingChatFiles.clear();
             clearPendingCronDedicatedAgent();
@@ -1333,9 +2250,23 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             emit agentDeleted(m_pendingDeleteId, false, errMsg);
             m_pendingDeleteId.clear();
         }
+        if (method == QLatin1String("sessions.create")) {
+            if (id == m_session.newSessionReqId())
+                m_session.clearNewSessionReqId();
+            if (id == m_pendingFirstChatSessionCreateReqId) {
+                m_pendingFirstChatSessionCreateReqId.clear();
+                m_pendingAgentCreateForChat = false;
+                m_pendingFirstChatMessage.clear();
+                m_pendingChatFiles.clear();
+            }
+        }
 
         m_sidebarTitleHistReqAgent.remove(id);
         m_sidebarTitleHistReqBatch.remove(id);
+        m_sessionTitleHistReqSession.remove(id);
+        m_sessionTitleHistReqBatch.remove(id);
+        m_chatSendReqSession.remove(id);
+        m_chatSendReqMessage.remove(id);
 
         if (method == QLatin1String("config.patch")) {
             if (m_skillInstallBusy) {
@@ -1372,6 +2303,19 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_configHashRetryAfterGet = false;
         }
 
+        if (method == QLatin1String("config.set")
+            && m_collabAllowConfigSetReqIds.remove(id)) {
+            clearPendingCollaborationSend();
+        }
+
+        if (method == QLatin1String("sessions.create")) {
+            const QString key = m_pendingSessionsCreateReqSession.take(id);
+            if (!key.isEmpty()) {
+                m_localOnlyTaskSessionKeys.remove(key);
+                softDeleteTaskSessionLocal(key);
+            }
+        }
+
         emit errorOccurred(errMsg);
         return;
     }
@@ -1404,8 +2348,6 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         refreshMcpList();
         refreshToolsCatalog(QString());
         refreshSkillMarketFolders();
-        if (!m_session.currentSessionKey().trimmed().isEmpty())
-            patchSessionModel(QString());
         return;
     }
 
@@ -1420,6 +2362,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("sessions.list")) {
         m_session.parseSessionsResponse(payload);
         emit sessionsChanged();
+        if (!m_currentTaskSessionKey.trimmed().isEmpty())
+            emit collaborationParticipantsChanged();
         if (mergeSessionHintsIntoAgentList())
             emit agentListChanged();
         // 不在此处拉侧栏首句：点击任务会 refreshSessions → 若这里全量 chat.history
@@ -1427,20 +2371,26 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         return;
     }
 
-    // chat.send 响应（如果是 /new 命令）→ 刷新列表 + 通知
-    if (method == QLatin1String("chat.send")
-        && id == m_session.newSessionReqId()) {
-        m_session.clearNewSessionReqId();
-        qDebug() << "[Gateway] /new session response, refreshing list...";
+    // sessions.delete 响应 → 刷新列表
+    if (method == QLatin1String("sessions.delete")) {
+        qDebug() << "[Gateway] session deleted, refreshing list...";
         refreshSessions();
+        emit collaborationParticipantsChanged();
         emit sessionCreated();
         return;
     }
 
-    // session.delete 响应 → 刷新列表
-    if (method == QLatin1String("session.delete")) {
-        qDebug() << "[Gateway] session deleted, refreshing list...";
+    if (method == QLatin1String("sessions.create")) {
+        QString key = m_pendingSessionsCreateReqSession.take(id);
+        if (key.isEmpty())
+            key = payload.value(QStringLiteral("key")).toString();
+        if (!key.isEmpty()) {
+            m_localOnlyTaskSessionKeys.remove(key);
+            touchTaskSessionLocal(key);
+        }
         refreshSessions();
+        emit collaborationParticipantsChanged();
+        emit sessionCreated();
         return;
     }
 
@@ -1490,6 +2440,30 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             applyAgentSwitch(agentId, false);
         }
 
+        if (!m_pendingCreateIdentityMarkdown.trimmed().isEmpty()) {
+            QString ws = m_pendingCreateWorkspace.isEmpty()
+                ? payload.value(QStringLiteral("workspace")).toString()
+                : m_pendingCreateWorkspace;
+            ws = expandTildePath(ws);
+            QDir dir(ws);
+            if (!dir.exists())
+                dir.mkpath(QStringLiteral("."));
+            QFile identityFile(dir.filePath(QStringLiteral("IDENTITY.md")));
+            if (identityFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+                QTextStream ts(&identityFile);
+                ts.setCodec("UTF-8");
+                ts << m_pendingCreateIdentityMarkdown;
+                if (!m_pendingCreateIdentityMarkdown.endsWith(QLatin1Char('\n')))
+                    ts << '\n';
+                identityFile.close();
+                qDebug().noquote() << "[Gateway] wrote custom IDENTITY.md:" << identityFile.fileName();
+            } else {
+                emit errorOccurred(QStringLiteral("\u65e0\u6cd5\u5199\u5165 IDENTITY.md: %1")
+                    .arg(identityFile.errorString()));
+            }
+            m_pendingCreateIdentityMarkdown.clear();
+        }
+
         qDebug() << "[Gateway] agents.create ok:" << agentId;
         emit agentCreated(agentId, true,
             QStringLiteral("agent \"%1\" \u521b\u5efa\u6210\u529f").arg(agentId),
@@ -1510,6 +2484,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_pendingBootstrapChatMessage = bootstrapMsg;
         }
         m_pendingCreateWorkspace.clear();
+        m_pendingCreateIdentityMarkdown.clear();
 
         // 在日志与 agentCreated 之后再发 cron.add，避免控制台顺序像「定时任务先于 agent」
         if (m_cronAwaitingDedicatedAgent) {
@@ -1612,12 +2587,23 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
         const QString sidebarAgent = m_sidebarTitleHistReqAgent.take(id);
         const quint64 reqBatch = m_sidebarTitleHistReqBatch.take(id);
+        const QString titleSession = m_sessionTitleHistReqSession.take(id);
+        const quint64 titleReqBatch = m_sessionTitleHistReqBatch.take(id);
 
         if (!sidebarAgent.isEmpty()) {
             if (reqBatch == m_sidebarTitleBatchGen) {
                 const QString first = firstUserMessageFromHistoryList(history);
                 if (!first.isEmpty())
                     setAgentListSidebarTitle(sidebarAgent, first);
+            }
+            return;
+        }
+
+        if (!titleSession.isEmpty()) {
+            if (titleReqBatch == m_sessionTitleBatchGen) {
+                const QString first = firstUserMessageFromHistoryList(history);
+                if (!first.isEmpty())
+                    refreshSessions();
             }
             return;
         }
@@ -1749,6 +2735,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_configHashRetryInFlight = false;
         m_configHashRetryAfterGet = false;
         qDebug() << "[Gateway] config.set ok, follow-up config.get";
+        const bool wasCollabAllowConfigSet = m_collabAllowConfigSetReqIds.remove(id);
 
         // config.set 已被服务端处理完毕，deny 列表已生效，
         // 此时可以安全地发出新 agent 的首条消息
@@ -1757,6 +2744,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_pendingBootstrapChatMessage.clear();
             sendChatMessage(msg);
         }
+        if (wasCollabAllowConfigSet)
+            sendPendingCollaborationChatNow();
 
         refreshMcpList();
         return;
@@ -1851,14 +2840,19 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         return;
     }
 
-    // 其余 chat.send（非 /new，且前面未 return）：只更新当前 agent 侧栏首句标题
+    // 其余 chat.send：只更新当前 agent 侧栏首句标题
     if (method == QLatin1String("chat.send")) {
-        const QString key = m_session.currentSessionKey();
+        const QString sentSession = m_chatSendReqSession.take(id);
+        m_chatSendReqMessage.remove(id);
+        refreshSessions();
+        const QString key = sentSession.isEmpty() ? m_session.currentSessionKey() : sentSession;
+        touchTaskSessionLocal(key);
         if (key.startsWith(QLatin1String("agent:"))) {
             const QStringList parts = key.split(QLatin1Char(':'));
             if (parts.size() >= 2 && !parts[1].isEmpty())
                 refreshSidebarFirstUserTitleForAgent(parts[1]);
         }
+        refreshSessions();
         return;
     }
 }
@@ -2089,7 +3083,10 @@ void GatewayClient::maybeRetryStashedConfigMutationAfterGet()
     m_configHashRetryInFlight = true;
     qDebug() << "[Gateway] retrying" << m_stashedConfigMutationMethod << "with fresh baseHash";
     m_stashedConfigMutationParams = p;
-    sendRequest(m_stashedConfigMutationMethod, p);
+    const QString reqId = sendRequest(m_stashedConfigMutationMethod, p);
+    if (m_stashedConfigMutationMethod == QLatin1String("config.set")
+        && !m_pendingCollabControllerSessionKey.trimmed().isEmpty())
+        m_collabAllowConfigSetReqIds.insert(reqId);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2124,9 +3121,9 @@ void GatewayClient::refreshSessions()
 }
 
 /**
- * @brief 创建新会话（/new 命令）
+ * @brief 创建新会话
  *
- * 向当前 sessionKey 发送 message="/new" 的 chat.send 请求。
+ * 向当前 Agent 发送 sessions.create 请求，在同一个 agent 下创建新的 session。
  * 响应到达后自动刷新会话列表并发射 sessionCreated 信号。
  */
 void GatewayClient::createNewSession()
@@ -2136,14 +3133,28 @@ void GatewayClient::createNewSession()
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
-    if (m_session.currentSessionKey().trimmed().isEmpty()) {
+    const QString currentKey = m_session.currentSessionKey().trimmed();
+    QString agentId;
+    if (currentKey.startsWith(QLatin1String("agent:")))
+        agentId = currentKey.split(QLatin1Char(':')).value(1);
+    if (agentId.trimmed().isEmpty())
+        agentId = m_defaultAgentId.trimmed();
+    if (agentId.trimmed().isEmpty()) {
         emit errorOccurred(QStringLiteral(
             "\u8bf7\u5148\u5728\u4efb\u52a1\u8bb0\u5f55\u4e2d\u9009\u62e9 Agent"));
         return;
     }
+
+    const QString model = m_pendingSessionModelId.isEmpty()
+        ? QString() : qualifyModelRef(m_pendingSessionModelId);
+    const QString key = QStringLiteral("agent:%1:dashboard:%2")
+        .arg(agentId, QUuid::createUuid().toString(QUuid::WithoutBraces));
     const QString reqId = sendRequest(
-        QStringLiteral("chat.send"), m_session.buildNewSessionParams());
+        QStringLiteral("sessions.create"),
+        buildSessionsCreateParams(key, agentId, QStringLiteral("\u65b0\u5bf9\u8bdd"),
+                                  QString(), model));
     m_session.setNewSessionReqId(reqId);
+    m_pendingSessionsCreateReqSession.insert(reqId, key);
 }
 
 /**
@@ -2157,8 +3168,28 @@ void GatewayClient::deleteSession(const QString &sessionKey)
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
-    sendRequest(QStringLiteral("session.delete"),
+    sendRequest(QStringLiteral("sessions.delete"),
                 m_session.buildDeleteSessionParams(sessionKey));
+}
+
+void GatewayClient::deleteTaskSession(const QString &sessionKey)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty())
+        return;
+
+    softDeleteTaskSessionLocal(key);
+    m_localOnlyTaskSessionKeys.remove(key);
+
+    if (m_currentTaskSessionKey == key) {
+        clearActiveAgentContext();
+        emit historyLoaded(QVariantList());
+    }
+
+    if (m_state == Connected) {
+        sendRequest(QStringLiteral("session.delete"),
+                    m_session.buildDeleteSessionParams(key));
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2185,7 +3216,8 @@ void GatewayClient::refreshAgents()
  */
 void GatewayClient::createAgent(const QString &name,
                                  const QString &workspace,
-                                 bool applyPendingToolSelection)
+                                 bool applyPendingToolSelection,
+                                 const QString &identityMarkdown)
 {
     if (!applyPendingToolSelection) {
         m_pendingNewAgentToolPolicySet = false;
@@ -2205,19 +3237,44 @@ void GatewayClient::createAgent(const QString &name,
     }
 
     m_pendingCreateName = name;
+    m_pendingCreateIdentityMarkdown = identityMarkdown;
 
+    const QString requestedName = name.trimmed();
     QString ws = workspace.trimmed();
-    if (ws.isEmpty()) {
-        ws = QStringLiteral("~/.openclaw/workspace-%1").arg(name.trimmed().toLower());
+    const bool autoWorkspace = ws.isEmpty();
+    QString requestWorkspace = ws;
+    if (requestWorkspace.isEmpty()) {
+        QString base = expandTildePath(m_agentsDefaultWorkspace).trimmed();
+        if (base.isEmpty())
+            base = QDir::currentPath();
+        QDir baseDir(base);
+        const QString root = baseDir.absoluteFilePath(QStringLiteral("../agent-workspaces"));
+        const QString suffix = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
+        requestWorkspace = QDir(root).filePath(
+            QStringLiteral("%1-%2").arg(agentWorkspaceSlug(requestedName), suffix));
     }
-    m_pendingCreateWorkspace = ws;
+    const QString normalizedRequestWorkspace =
+        QDir(expandTildePath(requestWorkspace)).absolutePath();
+    for (auto it = m_agentWorkspaceById.cbegin(); it != m_agentWorkspaceById.cend(); ++it) {
+        const QString existingWorkspace =
+            QDir(expandTildePath(it.value())).absolutePath();
+        if (!existingWorkspace.isEmpty() && existingWorkspace == normalizedRequestWorkspace) {
+            emit agentCreated(name, false,
+                QStringLiteral("workspace 已被 agent \"%1\" 使用，请选择其他工作空间")
+                    .arg(it.key()),
+                false);
+            return;
+        }
+    }
+    m_pendingCreateWorkspace = requestWorkspace;
 
     QJsonObject params;
-    params[QStringLiteral("name")]      = name.trimmed();
-    params[QStringLiteral("workspace")] = ws;
+    params[QStringLiteral("name")]      = requestedName;
+    params[QStringLiteral("workspace")] = requestWorkspace;
 
     qDebug().noquote() << "[Gateway] agents.create:" << name
-                       << "workspace:" << ws;
+                       << "workspace:" << requestWorkspace
+                       << (autoWorkspace ? QStringLiteral("(auto)") : QString());
     sendRequest(QStringLiteral("agents.create"), params);
 }
 
@@ -2798,8 +3855,12 @@ void GatewayClient::patchSessionModel(const QString &modelId)
         return;
     }
 
+    if (modelId.trimmed().isEmpty()) {
+        qDebug() << "[Gateway] patchSessionModel skipped empty modelId";
+        return;
+    }
+
     // 把外部传入的 modelId 解析为 "provider/id" 全限定形式：
-    //   - 空 → 保持空（用作查询当前模型）
     //   - 已经包含 provider 前缀 → 保留原值
     //   - 仅裸 id → 查 m_modelList 取 provider 拼出 "provider/id"
     const QString resolvedModelId = qualifyModelRef(modelId);
@@ -2827,14 +3888,10 @@ void GatewayClient::patchSessionModel(const QString &modelId)
     QJsonObject params;
     params[QStringLiteral("key")] = m_session.currentSessionKey();
 
-    if (resolvedModelId.isEmpty()) {
-        params[QStringLiteral("model")] = QJsonValue();
-    } else {
-        params[QStringLiteral("model")] = resolvedModelId;
-    }
+    params[QStringLiteral("model")] = resolvedModelId;
 
     qDebug().noquote() << "[Gateway] sessions.patch model:"
-                       << (resolvedModelId.isEmpty() ? "null (query)" : resolvedModelId)
+                       << resolvedModelId
                        << "session:" << m_session.currentSessionKey();
     sendRequest(QStringLiteral("sessions.patch"), params);
 }
@@ -2843,7 +3900,7 @@ void GatewayClient::patchSessionModel(const QString &modelId)
  * @brief 把模型 id 解析为 "provider/id" 全限定 ref
  *
  * 规则：
- *   - 入参为空 → 返回空（用于 sessions.patch model:null 查询）
+ *   - 入参为空 → 返回空
  *   - 入参已经含 "/" 且前缀能在 m_modelList 中匹配到某个 provider → 视为已全限定，原样返回
  *   - 入参为裸 id 且 m_modelList 中存在同名 id → 拼出 "provider/id"
  *   - 其他情况（找不到匹配 / provider 为空）→ 原样返回，让服务端自行匹配
@@ -2899,6 +3956,42 @@ void GatewayClient::switchAgent(const QString &agentId)
     applyAgentSwitch(agentId, true);
 }
 
+void GatewayClient::switchTaskSession(const QString &sessionKey)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(
+            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty()) {
+        clearActiveAgentContext();
+        return;
+    }
+
+    m_toolResultRefreshTimer.stop();
+    m_toolResultRefreshReqIds.clear();
+    m_pendingCollaborationAgentIds.clear();
+    m_collaborationChildSessionHints.clear();
+    emit collaborationParticipantsChanged();
+
+    const QString agentId = agentIdFromSessionKey(key);
+    m_session.setCurrentSessionKey(key);
+    setCurrentTaskSessionKeyInternal(key);
+    setCurrentViewSessionKeyInternal(key);
+    emit currentSessionChanged();
+
+    getAgentIdentity(key);
+    loadChatHistory(key);
+    refreshSessions();
+    if (!m_pendingSessionModelId.isEmpty())
+        patchSessionModel(m_pendingSessionModelId);
+    else
+        patchSessionModel(QString());
+    refreshToolsCatalog(agentId);
+}
+
 void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHistory)
 {
     if (m_state != Connected) {
@@ -2930,6 +4023,8 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
                        << "loadHistory:" << shouldLoadHistory;
 
     m_session.setCurrentSessionKey(sessionKey);
+    setCurrentTaskSessionKeyInternal(sessionKey);
+    setCurrentViewSessionKeyInternal(sessionKey);
     emit currentSessionChanged();
 
     getAgentIdentity(sessionKey);
@@ -2938,8 +4033,6 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
     refreshSessions();
     if (!m_pendingSessionModelId.isEmpty())
         patchSessionModel(m_pendingSessionModelId);
-    else
-        patchSessionModel(QString());
     refreshToolsCatalog(agentId.trimmed());
 }
 
@@ -2975,7 +4068,7 @@ void GatewayClient::loadChatHistory(const QString &sessionKey, int limit)
  * @brief 发送聊天消息
  * @param message    用户输入的消息文本
  * @param sessionKey 目标会话 key（空则使用当前会话）
- * @param workspaceForNewAgent 首条消息创建 agent 时传入的 workspace
+ * @param workspaceForNewAgent 兼容旧 QML 参数；当前无会话时会在默认/当前 agent 下创建 session
  *
  * 消息发送后，服务器会通过 event 帧推送 agent 的流式回复，
  * 由 handleEvent() → WsSession::parseEvent() 链路处理。
@@ -2995,25 +4088,91 @@ void GatewayClient::sendChatMessage(const QString &message,
 
     if (m_pendingAgentCreateForChat) {
         emit errorOccurred(QStringLiteral(
-            "\u6b63\u5728\u521b\u5efa\u65b0\u667a\u80fd\u4f53\uff0c\u8bf7\u7a0d\u5019"));
+            "\u6b63\u5728\u521b\u5efa\u65b0\u4f1a\u8bdd\uff0c\u8bf7\u7a0d\u5019"));
         return;
     }
 
     const QString explicitKey = sessionKey.trimmed();
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
     const QString activeKey = explicitKey.isEmpty()
-        ? m_session.currentSessionKey().trimmed() : explicitKey;
+        ? (taskKey.isEmpty() ? m_session.currentSessionKey().trimmed() : taskKey)
+        : explicitKey;
+
+    QStringList collaborationIds = m_pendingCollaborationAgentIds;
+    collaborationIds.removeDuplicates();
+    QString controllerAgentId;
+    if (!collaborationIds.isEmpty())
+        controllerAgentId = collaborationIds.first().trimmed();
+    QStringList participantIds;
+    for (int i = 1; i < collaborationIds.size(); ++i) {
+        const QString id = collaborationIds.at(i).trimmed();
+        if (!id.isEmpty() && id != controllerAgentId)
+            participantIds.append(id);
+    }
+
+    QString outboundMessage = message;
 
     if (activeKey.isEmpty()) {
-        m_pendingFirstChatMessage = trimmed;
-        m_pendingAgentCreateForChat = true;
-        const QString autoName = QStringLiteral("task-%1")
-            .arg(QDateTime::currentMSecsSinceEpoch());
-        createAgent(autoName, workspaceForNewAgent, true);
+        if (controllerAgentId.isEmpty())
+            controllerAgentId = QStringLiteral("main");
+
+        const QString controllerKey = QStringLiteral("agent:%1:dashboard:%2")
+            .arg(controllerAgentId,
+                 QUuid::createUuid().toString(QUuid::WithoutBraces));
+        QStringList taskAgents;
+        taskAgents.append(controllerAgentId);
+        for (const QString &pid : participantIds) {
+            if (!pid.isEmpty() && !taskAgents.contains(pid))
+                taskAgents.append(pid);
+        }
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const QString title = taskTitleFromFirstMessage(trimmed);
+        upsertTaskSessionLocal(controllerKey, workspaceForNewAgent,
+                               title, taskAgents, now, now);
+        m_localOnlyTaskSessionKeys.insert(controllerKey);
+
+        m_session.setCurrentSessionKey(controllerKey);
+        setCurrentTaskSessionKeyInternal(controllerKey);
+        setCurrentViewSessionKeyInternal(controllerKey);
+        emit currentSessionChanged();
+        getAgentIdentity(controllerKey);
+        refreshToolsCatalog(controllerAgentId);
+        m_pendingCollaborationAgentIds.clear();
+        emit collaborationParticipantsChanged();
+
+        if (maybeConfigureSubagentAllowAgents(controllerKey, controllerAgentId,
+                                              participantIds, trimmed))
+            return;
+
+        outboundMessage = buildCollaborationPrompt(trimmed, participantIds);
+        const QString reqId = sendRequest(
+            QStringLiteral("sessions.create"),
+            buildSessionsCreateParams(controllerKey, controllerAgentId,
+                                      title, outboundMessage,
+                                      m_pendingSessionModelId));
+        m_pendingSessionsCreateReqSession.insert(reqId, controllerKey);
+        if (!m_pendingSessionModelId.isEmpty()) {
+            m_pendingSessionModelId.clear();
+            emit pendingSessionModelIdChanged();
+        }
         return;
     }
 
+    if (!participantIds.isEmpty()) {
+        const QString controllerKey = activeKey;
+        QString controllerId = controllerAgentId;
+        if (controllerId.isEmpty())
+            controllerId = agentIdFromSessionKey(controllerKey);
+        m_pendingCollaborationAgentIds.clear();
+        emit collaborationParticipantsChanged();
+        if (maybeConfigureSubagentAllowAgents(controllerKey, controllerId,
+                                              participantIds, trimmed))
+            return;
+        outboundMessage = buildCollaborationPrompt(trimmed, participantIds);
+    }
+
     sendRequest(QStringLiteral("chat.send"),
-                m_session.buildChatSendParams(message, sessionKey));
+                m_session.buildChatSendParams(outboundMessage, activeKey));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3068,8 +4227,6 @@ void GatewayClient::addCronJob(const QString &name,
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
-    const QString agentName = cronDedicatedAgentDisplayName(name);
-    createAgent(agentName, QString(), false);
     prepareCronJobWithDedicatedAgent(
         1, name, message, cronExpr,
         tz.isEmpty() ? QStringLiteral("Asia/Shanghai") : tz, 0, QString());
@@ -3095,8 +4252,6 @@ void GatewayClient::addIntervalJob(const QString &name,
             QStringLiteral("\u95f4\u9694\u5fc5\u987b\u5927\u4e8e 0 \u79d2"));
         return;
     }
-    const QString agentName = cronDedicatedAgentDisplayName(name);
-    createAgent(agentName, QString(), false);
     prepareCronJobWithDedicatedAgent(2, name, message, QString(), QString(),
                                      intervalSec, QString());
 }
@@ -3124,8 +4279,6 @@ void GatewayClient::addOneTimeJob(const QString &name,
             QStringLiteral("\u65e0\u6548\u7684\u65f6\u95f4\u683c\u5f0f: %1").arg(dateTime));
         return;
     }
-    const QString agentName = cronDedicatedAgentDisplayName(name);
-    createAgent(agentName, QString(), false);
     prepareCronJobWithDedicatedAgent(3, name, message, QString(), QString(), 0,
                                      dateTime);
 }
@@ -3339,6 +4492,18 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
     mergeWorkspaceIntoAgentIdentity();
     parseSettingsFromConfig();
+
+    if (m_pendingCollabAwaitingConfigGet
+        && !m_pendingCollabControllerSessionKey.trimmed().isEmpty()) {
+        m_pendingCollabAwaitingConfigGet = false;
+        const bool delayed = maybeConfigureSubagentAllowAgents(
+            m_pendingCollabControllerSessionKey,
+            m_pendingCollabControllerAgentId,
+            m_pendingCollabParticipantAgentIds,
+            m_pendingCollabUserMessage);
+        if (!delayed)
+            sendPendingCollaborationChatNow();
+    }
 
     QString toolPolicyAgentId;
     if (!m_pendingProfileFullAgentId.isEmpty()) {
@@ -3811,10 +4976,96 @@ QString GatewayClient::extractPayloadSessionKey(const QJsonObject &payload) cons
     return QString();
 }
 
+void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &payload)
+{
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
+    if (taskKey.isEmpty())
+        return;
+
+    QString sessionKey = payload.value(QStringLiteral("sessionKey")).toString().trimmed();
+    if (sessionKey.isEmpty())
+        sessionKey = payload.value(QStringLiteral("childSessionKey")).toString().trimmed();
+    const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
+    if (sessionKey.isEmpty())
+        sessionKey = data.value(QStringLiteral("sessionKey")).toString().trimmed();
+    if (sessionKey.isEmpty())
+        sessionKey = data.value(QStringLiteral("childSessionKey")).toString().trimmed();
+    if (sessionKey.isEmpty() || sessionKey == taskKey)
+        return;
+
+    QString parentKey =
+        payload.value(QStringLiteral("parentSessionKey")).toString().trimmed();
+    if (parentKey.isEmpty())
+        parentKey = payload.value(QStringLiteral("spawnedBy")).toString().trimmed();
+    if (parentKey.isEmpty())
+        parentKey = data.value(QStringLiteral("parentSessionKey")).toString().trimmed();
+    if (parentKey.isEmpty())
+        parentKey = data.value(QStringLiteral("spawnedBy")).toString().trimmed();
+
+    if (!parentKey.isEmpty() && parentKey != taskKey)
+        return;
+    if (parentKey.isEmpty() && !sessionKey.contains(QLatin1String(":subagent:")))
+        return;
+
+    const QString agentId = agentIdFromSessionKey(sessionKey);
+    if (agentId.isEmpty())
+        return;
+
+    const QVariantMap taskRow = taskSessionInfoByKey(taskKey);
+    const QStringList selectedAgents = taskSessionAgentIds(taskRow);
+    if (!selectedAgents.contains(agentId))
+        return;
+
+    QVariantMap row;
+    row[QStringLiteral("sessionKey")] = sessionKey;
+    row[QStringLiteral("agentId")] = agentId;
+    row[QStringLiteral("parentSessionKey")] = parentKey.isEmpty() ? taskKey : parentKey;
+    row[QStringLiteral("spawnedBy")] = parentKey.isEmpty() ? taskKey : parentKey;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    row[QStringLiteral("startedAt")] = QVariant(static_cast<qlonglong>(now));
+    row[QStringLiteral("updatedAt")] = QVariant(static_cast<qlonglong>(now));
+
+    for (int i = 0; i < m_collaborationChildSessionHints.size(); ++i) {
+        const QVariantMap existing = m_collaborationChildSessionHints.at(i).toMap();
+        if (existing.value(QStringLiteral("sessionKey")).toString() == sessionKey
+            || existing.value(QStringLiteral("agentId")).toString() == agentId) {
+            m_collaborationChildSessionHints[i] = row;
+            emit collaborationParticipantsChanged();
+            return;
+        }
+    }
+    m_collaborationChildSessionHints.append(row);
+    emit collaborationParticipantsChanged();
+}
+
+QVariantMap GatewayClient::collaborationChildHintForAgent(
+    const QString &agentId, const QString &taskKey) const
+{
+    const QString aid = agentId.trimmed();
+    const QString parent = taskKey.trimmed();
+    if (aid.isEmpty() || parent.isEmpty())
+        return QVariantMap();
+    for (const QVariant &v : m_collaborationChildSessionHints) {
+        const QVariantMap row = v.toMap();
+        if (row.value(QStringLiteral("agentId")).toString() != aid)
+            continue;
+        const QString spawnedBy = row.value(QStringLiteral("spawnedBy")).toString();
+        const QString parentSessionKey =
+            row.value(QStringLiteral("parentSessionKey")).toString();
+        if (spawnedBy == parent || parentSessionKey == parent)
+            return row;
+    }
+    return QVariantMap();
+}
+
 bool GatewayClient::eventAppliesToCurrentUiSession(
     const QJsonObject &payload, bool allowIfKeyMissing) const
 {
-    const QString cur = m_session.currentSessionKey().trimmed();
+    QString cur = m_currentViewSessionKey.trimmed();
+    if (cur.isEmpty())
+        cur = m_currentTaskSessionKey.trimmed();
+    if (cur.isEmpty())
+        cur = m_session.currentSessionKey().trimmed();
     if (cur.isEmpty())
         return allowIfKeyMissing;
 
@@ -3823,14 +5074,6 @@ bool GatewayClient::eventAppliesToCurrentUiSession(
         return allowIfKeyMissing;
 
     if (evt == cur)
-        return true;
-
-    // 宽松匹配：只比较 agent ID 部分（忽略尾部 session segment）
-    // 例如 "agent:main:main" 与 "agent:main:abc123" 视为同一 agent
-    const QStringList curParts = cur.split(QLatin1Char(':'));
-    const QStringList evtParts = evt.split(QLatin1Char(':'));
-    if (curParts.size() >= 2 && evtParts.size() >= 2
-        && curParts[0] == evtParts[0] && curParts[1] == evtParts[1])
         return true;
 
     return false;

@@ -157,6 +157,8 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
 
         // 模型名单独存放；侧栏标题用 derivedTitle/label/displayName，不再把模型拼进 displayName
         const QString model = s.value(QStringLiteral("model")).toString();
+        const QString modelProvider =
+            s.value(QStringLiteral("modelProvider")).toString();
 
         qint64 updatedAt = 0;
         const QJsonValue uVal = s.value(QStringLiteral("updatedAt"));
@@ -178,6 +180,12 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
 
         const QString derivedTitle = s.value(QStringLiteral("derivedTitle")).toString();
         const QString label = s.value(QStringLiteral("label")).toString();
+        const QString spawnedBy = s.value(QStringLiteral("spawnedBy")).toString();
+        const QString parentSessionKey =
+            s.value(QStringLiteral("parentSessionKey")).toString();
+        const QString subagentRole = s.value(QStringLiteral("subagentRole")).toString();
+        const QString kind = s.value(QStringLiteral("kind")).toString();
+        const QString agentId = s.value(QStringLiteral("agentId")).toString();
 
         QVariantMap entry;
         entry[QStringLiteral("sessionKey")]   = key;
@@ -190,6 +198,29 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
             entry[QStringLiteral("label")] = label;
         if (!model.isEmpty())
             entry[QStringLiteral("model")] = model;
+        if (!modelProvider.isEmpty())
+            entry[QStringLiteral("modelProvider")] = modelProvider;
+        if (!spawnedBy.isEmpty())
+            entry[QStringLiteral("spawnedBy")] = spawnedBy;
+        if (!parentSessionKey.isEmpty())
+            entry[QStringLiteral("parentSessionKey")] = parentSessionKey;
+        if (!subagentRole.isEmpty())
+            entry[QStringLiteral("subagentRole")] = subagentRole;
+        if (!kind.isEmpty())
+            entry[QStringLiteral("kind")] = kind;
+        if (!agentId.isEmpty())
+            entry[QStringLiteral("agentId")] = agentId;
+        if (s.contains(QStringLiteral("spawnDepth"))) {
+            const QJsonValue dVal = s.value(QStringLiteral("spawnDepth"));
+            if (dVal.isDouble())
+                entry[QStringLiteral("spawnDepth")] = dVal.toInt();
+            else if (dVal.isString()) {
+                bool ok = false;
+                const int depth = dVal.toString().toInt(&ok);
+                if (ok)
+                    entry[QStringLiteral("spawnDepth")] = depth;
+            }
+        }
         m_sessions.append(entry);
     }
 

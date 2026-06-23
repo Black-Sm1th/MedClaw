@@ -83,13 +83,9 @@ int main(int argc, char *argv[])
         }
     });
 
-    // 新会话创建成功：清空聊天记录并显示系统提示
+    // 新会话创建成功：聊天区保留本地已追加的首条用户消息。
     QObject::connect(&wsClient, &GatewayClient::sessionCreated,
-                     [&chatModel]() {
-        chatModel.clear();
-        chatModel.addMessage(QStringLiteral("system"),
-                             QStringLiteral("\u65b0\u4f1a\u8bdd\u5df2\u521b\u5efa"));
-    });
+                     []() {});
 
     // 历史消息加载完成：清空当前显示并填充历史记录
     QObject::connect(&wsClient, &GatewayClient::historyLoaded,
