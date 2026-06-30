@@ -247,6 +247,14 @@ QString GatewayClient::currentTaskSessionKey() const
     return m_currentTaskSessionKey;
 }
 
+QString GatewayClient::currentTaskWorkspace() const
+{
+    const QString key = m_currentTaskSessionKey.trimmed();
+    if (key.isEmpty())
+        return QString();
+    return taskSessionInfoByKey(key).value(QStringLiteral("workspace")).toString();
+}
+
 QString GatewayClient::currentViewSessionKey() const
 {
     return m_currentViewSessionKey;
@@ -616,6 +624,7 @@ void GatewayClient::loadTaskSessionListFromDb()
 
     m_taskSessionList = rows;
     emit taskSessionListChanged();
+    emit currentTaskWorkspaceChanged();
 }
 
 void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
@@ -768,6 +777,42 @@ QStringList GatewayClient::taskSessionAgentIds(const QVariantMap &row) const
             ids.append(aid);
     }
     return ids;
+}
+
+bool GatewayClient::isLocalOnlyCronTaskSession(const QString &sessionKey) const
+{
+    const QString key = sessionKey.trimmed();
+    if (!key.contains(QStringLiteral(":cron:")))
+        return false;
+    if (taskSessionInfoByKey(key).isEmpty())
+        return false;
+    return sessionInfoByKey(key).isEmpty();
+}
+
+QString GatewayClient::cronJobIdFromSessionKey(const QString &sessionKey) const
+{
+    const QStringList parts = sessionKey.trimmed().split(QLatin1Char(':'));
+    if (parts.size() >= 4 && parts.value(0) == QLatin1String("agent")
+        && parts.value(2) == QLatin1String("cron"))
+        return parts.mid(3).join(QLatin1Char(':')).trimmed();
+    return QString();
+}
+
+void GatewayClient::softDeleteCronTaskSessionsForJob(const QString &jobId)
+{
+    const QString jid = jobId.trimmed();
+    if (jid.isEmpty())
+        return;
+    const QString suffix = QStringLiteral(":cron:%1").arg(jid);
+    QStringList keys;
+    for (const QVariant &v : m_taskSessionList) {
+        const QVariantMap row = v.toMap();
+        const QString key = row.value(QStringLiteral("session_id")).toString();
+        if (key.endsWith(suffix))
+            keys.append(key);
+    }
+    for (const QString &key : keys)
+        softDeleteTaskSessionLocal(key);
 }
 
 QString GatewayClient::taskTitleFromFirstMessage(const QString &message)
@@ -1146,6 +1191,7 @@ void GatewayClient::setCurrentTaskSessionKeyInternal(const QString &key)
         return;
     m_currentTaskSessionKey = trimmed;
     emit currentTaskSessionChanged();
+    emit currentTaskWorkspaceChanged();
     emit collaborationParticipantsChanged();
 }
 
@@ -1233,9 +1279,18 @@ bool GatewayClient::sessionBelongsToTask(const QVariantMap &session,
     return false;
 }
 
+QString GatewayClient::normalizeWorkspacePath(const QString &workspace) const
+{
+    const QString trimmed = workspace.trimmed();
+    if (trimmed.isEmpty())
+        return QString();
+    return QDir(expandTildePath(trimmed)).absolutePath();
+}
+
 QString GatewayClient::buildCollaborationPrompt(
     const QString &userMessage,
-    const QStringList &participantAgentIds) const
+    const QStringList &participantAgentIds,
+    const QString &businessWorkspace) const
 {
     if (participantAgentIds.isEmpty())
         return userMessage;
@@ -1244,6 +1299,9 @@ QString GatewayClient::buildCollaborationPrompt(
     lines << QStringLiteral("\u4f60\u662f\u8fd9\u4e2a\u534f\u4f5c\u4efb\u52a1\u7684\u4e3b\u63a7 agent\u3002");
     lines << QStringLiteral("\u8bf7\u5148\u7406\u89e3\u7528\u6237\u4efb\u52a1\uff0c\u7136\u540e\u4f7f\u7528 sessions_spawn \u4e3a\u4e0b\u5217\u534f\u4f5c agent \u521b\u5efa\u5b50\u4efb\u52a1\u3002");
     lines << QStringLiteral("sessions_spawn \u53c2\u6570\u5efa\u8bae\uff1aruntime=\"subagent\", mode=\"session\", cleanup=\"keep\", agentId=\u76ee\u6807 agent id, task=\u5206\u914d\u7ed9\u8be5 agent \u7684\u5177\u4f53\u4efb\u52a1\u3002");
+    const QString normalizedBusinessWorkspace = normalizeWorkspacePath(businessWorkspace);
+    if (!normalizedBusinessWorkspace.isEmpty())
+        lines << QStringLiteral("\u672c\u4efb\u52a1\u7684 workspace\uff1a%1").arg(normalizedBusinessWorkspace);
     lines << QStringLiteral("\u8bf7\u7b49\u5f85\u6240\u6709\u5b50 agent \u5b8c\u6210\u540e\uff0c\u7efc\u5408\u4ed6\u4eec\u7684\u7ed3\u679c\u7ed9\u51fa\u6700\u7ec8\u56de\u590d\u3002");
     lines << QStringLiteral("");
     lines << QStringLiteral("\u534f\u4f5c agent\uff1a");
@@ -1313,21 +1371,17 @@ QJsonObject GatewayClient::buildConfigWithSubagentAllowAgents(
         if (!raw.isEmpty())
             normalizedExisting.insert(raw.toLower());
     }
-    if (allowAny)
-        return fullConfig;
-
     bool didChange = false;
-    for (const QString &target : targets) {
-        const QString normalized = target.toLower();
-        if (normalizedExisting.contains(normalized))
-            continue;
-        allowArr.append(target);
-        normalizedExisting.insert(normalized);
-        didChange = true;
+    if (!allowAny) {
+        for (const QString &target : targets) {
+            const QString normalized = target.toLower();
+            if (normalizedExisting.contains(normalized))
+                continue;
+            allowArr.append(target);
+            normalizedExisting.insert(normalized);
+            didChange = true;
+        }
     }
-
-    if (!didChange)
-        return fullConfig;
 
     subagents[QStringLiteral("allowAgents")] = allowArr;
     agentEntry[QStringLiteral("subagents")] = subagents;
@@ -1335,6 +1389,9 @@ QJsonObject GatewayClient::buildConfigWithSubagentAllowAgents(
         list[idx] = agentEntry;
     else
         list.append(agentEntry);
+
+    if (!didChange)
+        return fullConfig;
 
     agentsObj[QStringLiteral("list")] = list;
     result[QStringLiteral("agents")] = agentsObj;
@@ -1347,12 +1404,14 @@ void GatewayClient::stashPendingCollaborationSend(
     const QString &controllerSessionKey,
     const QString &controllerAgentId,
     const QStringList &participantAgentIds,
-    const QString &userMessage)
+    const QString &userMessage,
+    const QString &businessWorkspace)
 {
     m_pendingCollabControllerSessionKey = controllerSessionKey.trimmed();
     m_pendingCollabControllerAgentId = controllerAgentId.trimmed();
     m_pendingCollabParticipantAgentIds = participantAgentIds;
     m_pendingCollabUserMessage = userMessage;
+    m_pendingCollabBusinessWorkspace = businessWorkspace.trimmed();
 }
 
 void GatewayClient::clearPendingCollaborationSend()
@@ -1361,6 +1420,7 @@ void GatewayClient::clearPendingCollaborationSend()
     m_pendingCollabControllerAgentId.clear();
     m_pendingCollabParticipantAgentIds.clear();
     m_pendingCollabUserMessage.clear();
+    m_pendingCollabBusinessWorkspace.clear();
     m_pendingCollabAwaitingConfigGet = false;
 }
 
@@ -1368,7 +1428,8 @@ bool GatewayClient::maybeConfigureSubagentAllowAgents(
     const QString &controllerSessionKey,
     const QString &controllerAgentId,
     const QStringList &participantAgentIds,
-    const QString &userMessage)
+    const QString &userMessage,
+    const QString &businessWorkspace)
 {
     QStringList targets;
     for (const QString &id : participantAgentIds) {
@@ -1380,7 +1441,7 @@ bool GatewayClient::maybeConfigureSubagentAllowAgents(
         return false;
 
     stashPendingCollaborationSend(controllerSessionKey, controllerAgentId,
-                                  targets, userMessage);
+                                  targets, userMessage, businessWorkspace);
 
     if (m_lastConfigSnapshot.isEmpty()) {
         m_pendingCollabAwaitingConfigGet = true;
@@ -1424,8 +1485,10 @@ void GatewayClient::sendPendingCollaborationChatNow()
     const QString controllerKey = m_pendingCollabControllerSessionKey;
     const QString controllerId = m_pendingCollabControllerAgentId;
     const QString title = taskTitleFromFirstMessage(m_pendingCollabUserMessage);
+    const QString businessWorkspace = m_pendingCollabBusinessWorkspace;
     const QString msg = buildCollaborationPrompt(
-        m_pendingCollabUserMessage, m_pendingCollabParticipantAgentIds);
+        m_pendingCollabUserMessage, m_pendingCollabParticipantAgentIds,
+        businessWorkspace);
     clearPendingCollaborationSend();
 
     if (m_localOnlyTaskSessionKeys.contains(controllerKey)) {
@@ -1489,14 +1552,8 @@ QString GatewayClient::resolveChatSessionKeyForAgentId(const QString &agentId) c
 
 QString GatewayClient::makeCronDedicatedAgentName(const QString &taskTitle)
 {
-    QString t = taskTitle.trimmed();
-    if (t.isEmpty())
-        t = QStringLiteral("task");
-    if (t.length() > 28)
-        t = t.left(28);
-    return QStringLiteral("\u5b9a\u65f6-%1-%2")
-        .arg(t)
-        .arg(QDateTime::currentMSecsSinceEpoch());
+    Q_UNUSED(taskTitle)
+    return QStringLiteral("main");
 }
 
 QString GatewayClient::cronDedicatedAgentDisplayName(const QString &taskTitle) const
@@ -1511,7 +1568,8 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
     const QString &cronExpr,
     const QString &tz,
     int intervalSec,
-    const QString &isoDateTime)
+    const QString &isoDateTime,
+    const QString &workspace)
 {
     if (m_state != Connected) {
         clearPendingCronDedicatedAgent();
@@ -1525,6 +1583,7 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
     m_cronPendingScheduleKind = scheduleKind;
     m_cronPendingJobName = jobName;
     m_cronPendingMessage = message;
+    m_cronPendingWorkspace = normalizeWorkspacePath(workspace);
 
     switch (scheduleKind) {
     case 1:
@@ -1560,8 +1619,7 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
         return;
     }
 
-    const QString agentName = makeCronDedicatedAgentName(jobName);
-    createAgent(agentName, QString(), false);
+    sendPendingCronAddWithAgentId(QStringLiteral("main"));
 }
 
 void GatewayClient::clearPendingCronDedicatedAgent()
@@ -1571,6 +1629,7 @@ void GatewayClient::clearPendingCronDedicatedAgent()
     m_cronPendingJobName.clear();
     m_cronPendingCronExpr.clear();
     m_cronPendingMessage.clear();
+    m_cronPendingWorkspace.clear();
     m_cronPendingTz.clear();
     m_cronPendingEveryMs = 0;
     m_cronPendingAt = QDateTime();
@@ -1588,6 +1647,7 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
     const QString jobName = m_cronPendingJobName;
     const QString cronExpr = m_cronPendingCronExpr;
     const QString message = m_cronPendingMessage;
+    const QString workspace = m_cronPendingWorkspace;
     const QString tz = m_cronPendingTz.isEmpty() ? QStringLiteral("Asia/Shanghai")
                                                   : m_cronPendingTz;
     const int everyMs = m_cronPendingEveryMs;
@@ -1596,24 +1656,35 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
 
     clearPendingCronDedicatedAgent();
 
+    QString payloadMessage = message;
+    if (!workspace.isEmpty()) {
+        payloadMessage = QStringLiteral(
+            "\u672c\u5b9a\u65f6\u4efb\u52a1\u7684\u751f\u6210\u6587\u4ef6\u76ee\u5f55\uff1a%1\n"
+            "\u8bf7\u5c06\u672c\u6b21\u4efb\u52a1\u4ea7\u751f\u7684\u6587\u4ef6\u5199\u5165\u8be5\u76ee\u5f55\uff1b"
+            "\u8be5\u76ee\u5f55\u53ea\u4f5c\u4e3a\u8f93\u5165/\u8f93\u51fa\u5b58\u50a8\u7a7a\u95f4\uff0c"
+            "\u4e0d\u662f agent \u8eab\u4efd\u5de5\u4f5c\u7a7a\u95f4\u3002\n\n"
+            "\u7528\u6237\u4efb\u52a1\uff1a\n%2")
+            .arg(workspace, message);
+    }
+
     QJsonObject cronParams;
     switch (kind) {
     case 1:
         cronParams = m_scheduledTask.buildAddCronJobParams(
-            jobName, cronExpr, message, tz,
+            jobName, cronExpr, payloadMessage, tz,
             QStringLiteral("isolated"), false, agentId);
         break;
     case 2:
         if (everyMs > 0) {
             cronParams = m_scheduledTask.buildAddIntervalJobParams(
-                jobName, everyMs, message,
+                jobName, everyMs, payloadMessage,
                 QStringLiteral("isolated"), false, agentId);
         }
         break;
     case 3:
         if (at.isValid()) {
             cronParams = m_scheduledTask.buildAddOneTimeJobParams(
-                jobName, at, message, deleteAfterRun,
+                jobName, at, payloadMessage, deleteAfterRun,
                 QStringLiteral("isolated"), agentId);
         }
         break;
@@ -1624,8 +1695,39 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
     if (!cronParams.isEmpty()) {
         qDebug().noquote() << "[Gateway] cron.add bound to dedicated agent" << agentId
                            << "scheduleKind=" << kind;
-        sendRequest(QStringLiteral("cron.add"), cronParams);
+        const QString reqId = sendRequest(QStringLiteral("cron.add"), cronParams);
+        PendingCronTaskSession pending;
+        pending.agentId = agentId.trimmed();
+        pending.jobName = jobName.trimmed();
+        pending.workspace = workspace;
+        m_pendingCronTaskSessions.insert(reqId, pending);
     }
+}
+
+void GatewayClient::createCronTaskSessionLocal(
+    const QString &jobId,
+    const QString &agentId,
+    const QString &jobName,
+    const QString &workspace)
+{
+    const QString jid = jobId.trimmed();
+    const QString aid = agentId.trimmed();
+    if (jid.isEmpty() || aid.isEmpty())
+        return;
+
+    const QString key = QStringLiteral("agent:%1:cron:%2").arg(aid, jid);
+    const QString title = jobName.trimmed().isEmpty()
+        ? QStringLiteral("\u5b9a\u65f6\u4efb\u52a1")
+        : jobName.trimmed();
+    const QString workspaceValue = workspace.trimmed().isEmpty()
+        ? resolveWorkspacePathForAgentId(aid)
+        : workspace.trimmed();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    upsertTaskSessionLocal(key, workspaceValue, title, QStringList{ aid }, now, now);
+    qDebug().noquote() << "[TaskSessionDb] cron task inserted"
+                       << "jobId=" << jid
+                       << "session=" << key
+                       << "agent=" << aid;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2246,6 +2348,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_pendingChatFiles.clear();
             clearPendingCronDedicatedAgent();
         }
+        if (method == QLatin1String("cron.add")) {
+            m_pendingCronTaskSessions.remove(id);
+        }
         if (method == QLatin1String("agents.delete") && !m_pendingDeleteId.isEmpty()) {
             emit agentDeleted(m_pendingDeleteId, false, errMsg);
             m_pendingDeleteId.clear();
@@ -2666,6 +2771,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("cron.add")) {
         const QString jobId = m_scheduledTask.parseJobAddResponse(payload);
         if (!jobId.isEmpty()) {
+            const PendingCronTaskSession pending =
+                m_pendingCronTaskSessions.take(id);
+            createCronTaskSessionLocal(jobId, pending.agentId, pending.jobName,
+                                       pending.workspace);
             emit cronJobsChanged();
             emit cronJobAdded(jobId);
         }
@@ -2686,6 +2795,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("cron.remove")) {
         const QString jobId = m_scheduledTask.lastOperatedJobId();
         if (m_scheduledTask.parseJobRemoveResponse(jobId, payload)) {
+            softDeleteCronTaskSessionsForJob(jobId);
             emit cronJobsChanged();
             emit cronJobRemoved(jobId);
         }
@@ -3180,6 +3290,7 @@ void GatewayClient::deleteTaskSession(const QString &sessionKey)
 
     softDeleteTaskSessionLocal(key);
     m_localOnlyTaskSessionKeys.remove(key);
+    const QString cronJobId = cronJobIdFromSessionKey(key);
 
     if (m_currentTaskSessionKey == key) {
         clearActiveAgentContext();
@@ -3187,8 +3298,14 @@ void GatewayClient::deleteTaskSession(const QString &sessionKey)
     }
 
     if (m_state == Connected) {
-        sendRequest(QStringLiteral("session.delete"),
-                    m_session.buildDeleteSessionParams(key));
+        if (!cronJobId.isEmpty()) {
+            m_scheduledTask.setLastOperatedJobId(cronJobId);
+            sendRequest(QStringLiteral("cron.remove"),
+                        m_scheduledTask.buildRemoveParams(cronJobId));
+        } else {
+            sendRequest(QStringLiteral("sessions.delete"),
+                        m_session.buildDeleteSessionParams(key));
+        }
     }
 }
 
@@ -3240,19 +3357,15 @@ void GatewayClient::createAgent(const QString &name,
     m_pendingCreateIdentityMarkdown = identityMarkdown;
 
     const QString requestedName = name.trimmed();
-    QString ws = workspace.trimmed();
-    const bool autoWorkspace = ws.isEmpty();
-    QString requestWorkspace = ws;
-    if (requestWorkspace.isEmpty()) {
-        QString base = expandTildePath(m_agentsDefaultWorkspace).trimmed();
-        if (base.isEmpty())
-            base = QDir::currentPath();
-        QDir baseDir(base);
-        const QString root = baseDir.absoluteFilePath(QStringLiteral("../agent-workspaces"));
-        const QString suffix = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
-        requestWorkspace = QDir(root).filePath(
-            QStringLiteral("%1-%2").arg(agentWorkspaceSlug(requestedName), suffix));
-    }
+    Q_UNUSED(workspace)
+    QString base = expandTildePath(m_agentsDefaultWorkspace).trimmed();
+    if (base.isEmpty())
+        base = QDir::currentPath();
+    QDir baseDir(base);
+    const QString root = baseDir.absoluteFilePath(QStringLiteral("../agent-workspaces"));
+    const QString suffix = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
+    const QString requestWorkspace = QDir(root).filePath(
+        QStringLiteral("%1-%2").arg(agentWorkspaceSlug(requestedName), suffix));
     const QString normalizedRequestWorkspace =
         QDir(expandTildePath(requestWorkspace)).absolutePath();
     for (auto it = m_agentWorkspaceById.cbegin(); it != m_agentWorkspaceById.cend(); ++it) {
@@ -3274,7 +3387,7 @@ void GatewayClient::createAgent(const QString &name,
 
     qDebug().noquote() << "[Gateway] agents.create:" << name
                        << "workspace:" << requestWorkspace
-                       << (autoWorkspace ? QStringLiteral("(auto)") : QString());
+                       << QStringLiteral("(private)");
     sendRequest(QStringLiteral("agents.create"), params);
 }
 
@@ -3983,9 +4096,15 @@ void GatewayClient::switchTaskSession(const QString &sessionKey)
     emit currentSessionChanged();
 
     getAgentIdentity(key);
-    loadChatHistory(key);
+    const bool localCronPlaceholder = isLocalOnlyCronTaskSession(key);
+    if (localCronPlaceholder)
+        emit historyLoaded(QVariantList());
+    else
+        loadChatHistory(key);
     refreshSessions();
-    if (!m_pendingSessionModelId.isEmpty())
+    if (localCronPlaceholder)
+        patchSessionModel(QString());
+    else if (!m_pendingSessionModelId.isEmpty())
         patchSessionModel(m_pendingSessionModelId);
     else
         patchSessionModel(QString());
@@ -4127,7 +4246,8 @@ void GatewayClient::sendChatMessage(const QString &message,
         }
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         const QString title = taskTitleFromFirstMessage(trimmed);
-        upsertTaskSessionLocal(controllerKey, workspaceForNewAgent,
+        const QString businessWorkspace = normalizeWorkspacePath(workspaceForNewAgent);
+        upsertTaskSessionLocal(controllerKey, businessWorkspace,
                                title, taskAgents, now, now);
         m_localOnlyTaskSessionKeys.insert(controllerKey);
 
@@ -4141,10 +4261,12 @@ void GatewayClient::sendChatMessage(const QString &message,
         emit collaborationParticipantsChanged();
 
         if (maybeConfigureSubagentAllowAgents(controllerKey, controllerAgentId,
-                                              participantIds, trimmed))
+                                              participantIds, trimmed,
+                                              businessWorkspace))
             return;
 
-        outboundMessage = buildCollaborationPrompt(trimmed, participantIds);
+        outboundMessage = buildCollaborationPrompt(trimmed, participantIds,
+                                                   businessWorkspace);
         const QString reqId = sendRequest(
             QStringLiteral("sessions.create"),
             buildSessionsCreateParams(controllerKey, controllerAgentId,
@@ -4163,12 +4285,17 @@ void GatewayClient::sendChatMessage(const QString &message,
         QString controllerId = controllerAgentId;
         if (controllerId.isEmpty())
             controllerId = agentIdFromSessionKey(controllerKey);
+        const QVariantMap taskRow = taskSessionInfoByKey(controllerKey);
+        const QString businessWorkspace =
+            normalizeWorkspacePath(taskRow.value(QStringLiteral("workspace")).toString());
         m_pendingCollaborationAgentIds.clear();
         emit collaborationParticipantsChanged();
         if (maybeConfigureSubagentAllowAgents(controllerKey, controllerId,
-                                              participantIds, trimmed))
+                                              participantIds, trimmed,
+                                              businessWorkspace))
             return;
-        outboundMessage = buildCollaborationPrompt(trimmed, participantIds);
+        outboundMessage = buildCollaborationPrompt(trimmed, participantIds,
+                                                   businessWorkspace);
     }
 
     sendRequest(QStringLiteral("chat.send"),
@@ -4500,7 +4627,8 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
             m_pendingCollabControllerSessionKey,
             m_pendingCollabControllerAgentId,
             m_pendingCollabParticipantAgentIds,
-            m_pendingCollabUserMessage);
+            m_pendingCollabUserMessage,
+            m_pendingCollabBusinessWorkspace);
         if (!delayed)
             sendPendingCollaborationChatNow();
     }

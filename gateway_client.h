@@ -75,6 +75,8 @@ class GatewayClient : public QObject
                WRITE setCurrentSessionKey NOTIFY currentSessionChanged)
     Q_PROPERTY(QString currentTaskSessionKey READ currentTaskSessionKey
                NOTIFY currentTaskSessionChanged)
+    Q_PROPERTY(QString currentTaskWorkspace READ currentTaskWorkspace
+               NOTIFY currentTaskWorkspaceChanged)
     Q_PROPERTY(QString currentViewSessionKey READ currentViewSessionKey
                NOTIFY currentViewSessionChanged)
     Q_PROPERTY(QVariantList collaborationParticipants READ collaborationParticipants
@@ -177,6 +179,8 @@ public:
     QString currentSessionKey() const;
     /// 当前任务的主控 sessionKey（发送消息始终优先走它）
     QString currentTaskSessionKey() const;
+    /// 当前任务对应的业务 workspace（来自本地 task_sessions）
+    QString currentTaskWorkspace() const;
     /// 当前聊天区正在查看的 sessionKey
     QString currentViewSessionKey() const;
     /// 当前任务的主控/子 agent 参与者列表
@@ -356,7 +360,8 @@ public:
                                                        const QString &cronExpr,
                                                        const QString &tz,
                                                        int intervalSec,
-                                                       const QString &isoDateTime);
+                                                       const QString &isoDateTime,
+                                                       const QString &workspace = QString());
 
     /**
      * @brief 添加 cron 表达式定时任务
@@ -533,6 +538,7 @@ signals:
     void sessionsChanged();          ///< 会话列表更新
     void currentSessionChanged();    ///< 当前活跃会话切换
     void currentTaskSessionChanged(); ///< 当前任务主控会话切换
+    void currentTaskWorkspaceChanged(); ///< 当前任务 workspace 变化
     void currentViewSessionChanged(); ///< 当前查看会话切换
     void collaborationParticipantsChanged(); ///< 协作参与者列表更新
     void sessionCreated();           ///< 新会话创建成功
@@ -679,8 +685,10 @@ private:
     QString displayNameForSession(const QVariantMap &session) const;
     QString agentIdFromSessionKey(const QString &sessionKey) const;
     bool sessionBelongsToTask(const QVariantMap &session, const QString &taskKey) const;
+    QString normalizeWorkspacePath(const QString &workspace) const;
     QString buildCollaborationPrompt(const QString &userMessage,
-                                      const QStringList &participantAgentIds) const;
+                                      const QStringList &participantAgentIds,
+                                      const QString &businessWorkspace = QString()) const;
     QJsonObject buildConfigWithSubagentAllowAgents(const QJsonObject &fullConfig,
                                                    const QString &controllerAgentId,
                                                    const QStringList &participantAgentIds,
@@ -688,12 +696,14 @@ private:
     void stashPendingCollaborationSend(const QString &controllerSessionKey,
                                        const QString &controllerAgentId,
                                        const QStringList &participantAgentIds,
-                                       const QString &userMessage);
+                                       const QString &userMessage,
+                                       const QString &businessWorkspace);
     void clearPendingCollaborationSend();
     bool maybeConfigureSubagentAllowAgents(const QString &controllerSessionKey,
                                            const QString &controllerAgentId,
                                            const QStringList &participantAgentIds,
-                                           const QString &userMessage);
+                                           const QString &userMessage,
+                                           const QString &businessWorkspace = QString());
     void sendPendingCollaborationChatNow();
     QJsonObject buildSessionsCreateParams(const QString &sessionKey,
                                            const QString &agentId,
@@ -713,6 +723,9 @@ private:
     void softDeleteTaskSessionLocal(const QString &sessionKey);
     QVariantMap taskSessionInfoByKey(const QString &sessionKey) const;
     QStringList taskSessionAgentIds(const QVariantMap &row) const;
+    bool isLocalOnlyCronTaskSession(const QString &sessionKey) const;
+    QString cronJobIdFromSessionKey(const QString &sessionKey) const;
+    void softDeleteCronTaskSessionsForJob(const QString &jobId);
     static QString taskTitleFromFirstMessage(const QString &message);
     static QString agentsJsonFromList(const QStringList &agentIds);
     static QStringList agentListFromJson(const QString &json);
@@ -744,6 +757,10 @@ private:
     static QString makeCronDedicatedAgentName(const QString &taskTitle);
     void clearPendingCronDedicatedAgent();
     void sendPendingCronAddWithAgentId(const QString &agentId);
+    void createCronTaskSessionLocal(const QString &jobId,
+                                    const QString &agentId,
+                                    const QString &jobName,
+                                    const QString &workspace);
 
     /// 生成唯一的请求 ID（UUID v4，不含花括号）
     QString nextRequestId();
@@ -806,6 +823,7 @@ private:
     QString          m_pendingCollabControllerAgentId;
     QStringList      m_pendingCollabParticipantAgentIds;
     QString          m_pendingCollabUserMessage;
+    QString          m_pendingCollabBusinessWorkspace;
     bool             m_pendingCollabAwaitingConfigGet = false;
     QSet<QString>    m_collabAllowConfigSetReqIds;
     QSet<QString>    m_localOnlyTaskSessionKeys; ///< 已入本地库但尚未 sessions.create 的任务
@@ -843,10 +861,17 @@ private:
     QString m_cronPendingJobName;
     QString m_cronPendingCronExpr;
     QString m_cronPendingMessage;
+    QString m_cronPendingWorkspace;
     QString m_cronPendingTz;
     int m_cronPendingEveryMs = 0;
     QDateTime m_cronPendingAt;
     bool m_cronPendingDeleteAfterRun = true;
+    struct PendingCronTaskSession {
+        QString agentId;
+        QString jobName;
+        QString workspace;
+    };
+    QMap<QString, PendingCronTaskSession> m_pendingCronTaskSessions; ///< cron.add reqId -> task row info
 
     /// 侧栏「首句问话」：chat.history 请求 id → agentId / 批次号（与切换会话的历史请求区分）
     QMap<QString, QString> m_sidebarTitleHistReqAgent;

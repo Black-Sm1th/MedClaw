@@ -29,8 +29,6 @@ ApplicationWindow {
     property string pendingDeleteTaskSessionId: ""
     property string pendingDeleteTaskSessionName: ""
     property bool pendingCollabCreateAgent: false
-    /// 删除定时任务时一并删除的专用 agent ID（cron.remove 成功后再发 agents.delete）
-    property string pendingDeleteCronAgentId: ""
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
 
@@ -88,6 +86,14 @@ ApplicationWindow {
         return t
     }
 
+    function agentIdFromSessionKey(sessionKey) {
+        var key = String(sessionKey || "")
+        var parts = key.split(":")
+        if (parts.length >= 2 && parts[0] === "agent")
+            return parts[1] || ""
+        return ""
+    }
+
     /// FileDialog.fileUrl → 本地路径（与定时任务工作目录选择逻辑一致）
     function localFilePathFromUrl(fileUrl) {
         var path = decodeURIComponent(fileUrl.toString().replace(/^file:\/{2,3}/, ""))
@@ -131,12 +137,6 @@ ApplicationWindow {
         }
         function onCronJobRemoved(jobId){
             wsClient.refreshCronJobs(true)
-            /// 级联删除：cron.remove 成功后，把暂存的「定时-」专用 agent 一并删除
-            if (window.pendingDeleteCronAgentId.length > 0) {
-                var aid = window.pendingDeleteCronAgentId
-                window.pendingDeleteCronAgentId = ""
-                wsClient.deleteAgent(aid, true)
-            }
         }
         function onCronJobUpdated(jobId){
             wsClient.refreshCronJobs(true)
@@ -152,7 +152,7 @@ ApplicationWindow {
         }
         function onAgentCreated(agentId, success, message, forChat){
             if (success && forChat) {
-                leftMidPanel.activeAgentId = wsClient.currentTaskSessionKey
+                leftMidPanel.activeAgentId = String(agentId || "")
                 window.leftSelectedIndex = 6
             }
             if (success && window.pendingCollabCreateAgent) {
@@ -184,7 +184,7 @@ ApplicationWindow {
         function onCurrentSessionChanged() {
             var sk = wsClient.currentSessionKey || ""
             leftMidPanel.activeSessionKey = sk
-            leftMidPanel.activeAgentId = window.agentIdFromSessionKey(sk)
+            leftMidPanel.activeAgentId = String(window.agentIdFromSessionKey(sk) || "")
             if (sk.length > 0)
                 window.leftSelectedIndex = 6
         }
@@ -3589,12 +3589,21 @@ ApplicationWindow {
                 property var recentFolders: []
 
                 readonly property bool pickerLocked: newTaskRec.hasMessages || window.leftSelectedIndex === 6
+                readonly property string effectiveWorkspacePath: {
+                    if (pickerLocked) {
+                        var taskWs = wsClient.currentTaskWorkspace || ""
+                        if (taskWs)
+                            return String(taskWs)
+                        if (wsClient.agentIdentity)
+                            return String(wsClient.agentIdentity.workspace || "")
+                        return ""
+                    }
+                    return absolutePath || ""
+                }
 
                 readonly property string displayText: {
                     if (pickerLocked) {
-                        var w = ""
-                        if (wsClient.agentIdentity)
-                            w = wsClient.agentIdentity.workspace || ""
+                        var w = dropdownSelectionWorkSpace.effectiveWorkspacePath
                         w = String(w).replace(/\\/g, "/")
                         if (!w)
                             return qsTr("workspace")
@@ -3604,7 +3613,7 @@ ApplicationWindow {
                     return currentText
                 }
 
-                readonly property bool hasWorkspaceSelected: displayText !== qsTr("workspace")
+                readonly property bool hasWorkspaceSelected: effectiveWorkspacePath.length > 0
 
                 function resetPicker() {
                     absolutePath = ""
@@ -3636,7 +3645,7 @@ ApplicationWindow {
                                      ? dropdownSelectionWorkSpace.pickerLocked
                                      : true)
                         text: dropdownSelectionWorkSpace.hasWorkspaceSelected
-                            ? (wsClient.agentIdentity ? (wsClient.agentIdentity.workspace || "") : "")
+                            ? dropdownSelectionWorkSpace.effectiveWorkspacePath
                             : qsTr("input+output储存空间")
                         delay: 400
                         background: Rectangle { color: "#A6000000"; radius: 4 }
@@ -5550,27 +5559,28 @@ ApplicationWindow {
                                 var d = newTaskDatePicker.selectedDay
                                 var hh = newTaskTimePicker.selectedHour
                                 var mm = newTaskTimePicker.selectedMinute
+                                var cronWorkspace = dropdownSelectionWorkSpace.absolutePath
 
                                 function pad(n) { return n < 10 ? "0" + n : "" + n }
 
                                 if (repeatIdx === 0) {
                                     var dt = y + "-" + pad(m) + "-" + pad(d) + "T" + pad(hh) + ":" + pad(mm) + ":00"
                                     console.log("[CronAdd] oneTime dateTime=" + dt)
-                                    wsClient.prepareCronJobWithDedicatedAgent(3, title, prompt, "", "", 0, dt)
+                                    wsClient.prepareCronJobWithDedicatedAgent(3, title, prompt, "", "", 0, dt, cronWorkspace)
                                 } else if (repeatIdx === 1) {
                                     var cronExpr = mm + " " + hh + " * * *"
                                     console.log("[CronAdd] daily cron=" + cronExpr)
-                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr, "Asia/Shanghai", 0, "")
+                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr, "Asia/Shanghai", 0, "", cronWorkspace)
                                 } else if (repeatIdx === 2) {
                                     var dateObj = new Date(y, m - 1, d)
                                     var dow = dateObj.getDay()
                                     var cronExpr2 = mm + " " + hh + " * * " + dow
                                     console.log("[CronAdd] weekly cron=" + cronExpr2)
-                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr2, "Asia/Shanghai", 0, "")
+                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr2, "Asia/Shanghai", 0, "", cronWorkspace)
                                 } else if (repeatIdx === 3) {
                                     var cronExpr3 = mm + " * * * *"
                                     console.log("[CronAdd] hourly cron=" + cronExpr3)
-                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr3, "Asia/Shanghai", 0, "")
+                                    wsClient.prepareCronJobWithDedicatedAgent(1, title, prompt, cronExpr3, "Asia/Shanghai", 0, "", cronWorkspace)
                                 } else if (repeatIdx === 4) {
                                     var sec = parseInt(newTaskIntervalInput.text) || 3600
                                     if (sec <= 0) {
@@ -5580,7 +5590,7 @@ ApplicationWindow {
                                         return
                                     }
                                     console.log("[CronAdd] interval sec=" + sec)
-                                    wsClient.prepareCronJobWithDedicatedAgent(2, title, prompt, "", "", sec, "")
+                                    wsClient.prepareCronJobWithDedicatedAgent(2, title, prompt, "", "", sec, "", cronWorkspace)
                                 }
                                 newTaskDialog.close()
                             }
@@ -5653,7 +5663,7 @@ ApplicationWindow {
                     onClicked: {
                         agentContextMenu.close()
                         if (window.pendingDeleteTaskSessionId.length > 0)
-                            deleteAgentPopup.open()
+                            deleteSessionPopup.open()
                     }
                 }
             }
@@ -5705,7 +5715,7 @@ ApplicationWindow {
                         var sid = window.pendingDeleteTaskSessionId
                         if (sid.length > 0)
                             wsClient.deleteTaskSession(sid)
-                        deleteAgentPopup.close()
+                        deleteSessionPopup.close()
                     }
                 }
                 CustomButton {
@@ -5732,34 +5742,6 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        /// 查找待删除定时任务绑定的「定时-」专用 agent ID（若不存在则返回 ""）
-        function findDedicatedAgentIdForCron(jobId) {
-            if (!jobId) return ""
-            var jobs = wsClient.cronJobs
-            var aid = ""
-            for (var i = 0; i < jobs.length; i++) {
-                if (jobs[i].id === jobId) {
-                    aid = jobs[i].agentId || ""
-                    break
-                }
-            }
-            if (aid.length === 0) return ""
-            var agents = wsClient.agentList
-            for (var j = 0; j < agents.length; j++) {
-                if (agents[j].id === aid) {
-                    var nm = agents[j].name || ""
-                    return (nm.indexOf("\u5b9a\u65f6-") === 0) ? aid : ""
-                }
-            }
-            return ""
-        }
-
-        /// 打开前预计算一次，供提示文案与点击删除复用
-        property string boundAgentIdPreview: ""
-        onAboutToShow: {
-            boundAgentIdPreview = findDedicatedAgentIdForCron(window.pendingDeleteCronJobId)
-        }
-
         background: Rectangle {
             radius: 12
             color: "#FFFFFF"
@@ -5772,12 +5754,7 @@ ApplicationWindow {
             Label {
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: {
-                    var base = qsTr("确定删除定时任务「") + window.pendingDeleteCronJobName + qsTr("」？")
-                    if (deleteCronJobPopup.boundAgentIdPreview.length > 0)
-                        base += qsTr("\n此操作将同时删除其专用任务及其会话记录。")
-                    return base
-                }
+                text: qsTr("确定删除定时任务「") + window.pendingDeleteCronJobName + qsTr("」？")
                 font.pixelSize: 15
                 color: "#D9000000"
             }
@@ -5794,11 +5771,8 @@ ApplicationWindow {
                     text: qsTr("删除")
                     fontSize: 14
                     onClicked: {
-                        if (window.pendingDeleteCronJobId) {
-                            window.pendingDeleteCronAgentId =
-                                deleteCronJobPopup.boundAgentIdPreview
+                        if (window.pendingDeleteCronJobId)
                             wsClient.removeCronJob(window.pendingDeleteCronJobId)
-                        }
                         window.pendingDeleteCronJobId = ""
                         window.pendingDeleteCronJobName = ""
                         deleteCronJobPopup.close()
