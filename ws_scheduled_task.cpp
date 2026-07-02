@@ -370,10 +370,16 @@ QJsonObject WsScheduledTask::buildAddCronJobParams(
     payload[QStringLiteral("message")] = message;
     payload[QStringLiteral("deliver")] = deliver;
 
+    QJsonObject delivery;
+    delivery[QStringLiteral("mode")] = deliver
+        ? QStringLiteral("announce")
+        : QStringLiteral("none");
+
     QJsonObject params;
     params[QStringLiteral("name")]          = name;
     params[QStringLiteral("schedule")]      = schedule;
     params[QStringLiteral("payload")]       = payload;
+    params[QStringLiteral("delivery")]      = delivery;
     params[QStringLiteral("sessionTarget")] = sessionTarget;
     params[QStringLiteral("wakeMode")]      = QStringLiteral("now");
     params[QStringLiteral("enabled")]       = true;
@@ -399,10 +405,16 @@ QJsonObject WsScheduledTask::buildAddIntervalJobParams(
     payload[QStringLiteral("message")] = message;
     payload[QStringLiteral("deliver")] = deliver;
 
+    QJsonObject delivery;
+    delivery[QStringLiteral("mode")] = deliver
+        ? QStringLiteral("announce")
+        : QStringLiteral("none");
+
     QJsonObject params;
     params[QStringLiteral("name")]          = name;
     params[QStringLiteral("schedule")]      = schedule;
     params[QStringLiteral("payload")]       = payload;
+    params[QStringLiteral("delivery")]      = delivery;
     params[QStringLiteral("sessionTarget")] = sessionTarget;
     params[QStringLiteral("wakeMode")]      = QStringLiteral("now");
     params[QStringLiteral("enabled")]       = true;
@@ -427,10 +439,14 @@ QJsonObject WsScheduledTask::buildAddOneTimeJobParams(
     payload[QStringLiteral("kind")]    = QStringLiteral("agentTurn");
     payload[QStringLiteral("message")] = message;
 
+    QJsonObject delivery;
+    delivery[QStringLiteral("mode")] = QStringLiteral("none");
+
     QJsonObject params;
     params[QStringLiteral("name")]           = name;
     params[QStringLiteral("schedule")]       = schedule;
     params[QStringLiteral("payload")]        = payload;
+    params[QStringLiteral("delivery")]       = delivery;
     params[QStringLiteral("sessionTarget")]  = sessionTarget;
     params[QStringLiteral("wakeMode")]       = QStringLiteral("now");
     params[QStringLiteral("enabled")]        = true;

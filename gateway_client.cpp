@@ -648,8 +648,6 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
     workspaceValue = workspaceValue.trimmed();
     if (workspaceValue.isNull())
         workspaceValue = QStringLiteral("");
-    if (workspaceValue.isEmpty())
-        workspaceValue = QDir::currentPath();
 
     QString titleValue = title;
     if (titleValue.isNull())
@@ -702,8 +700,11 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
     }
 
     loadTaskSessionListFromDb();
+    if (m_currentTaskSessionKey.trimmed() == key)
+        emit currentTaskWorkspaceChanged();
     qDebug().noquote() << "[TaskSessionDb] upsert ok"
                        << "session=" << key
+                       << "workspace=" << workspaceValue
                        << "title=" << titleValue
                        << "rows=" << m_taskSessionList.size();
 }
@@ -812,6 +813,28 @@ void GatewayClient::softDeleteCronTaskSessionsForJob(const QString &jobId)
             keys.append(key);
     }
     for (const QString &key : keys)
+        softDeleteTaskSessionLocal(key);
+}
+
+void GatewayClient::reconcileCronTaskSessionsWithJobs()
+{
+    QSet<QString> liveJobIds;
+    for (const QVariant &v : m_scheduledTask.jobList()) {
+        const QString id = v.toMap().value(QStringLiteral("id")).toString().trimmed();
+        if (!id.isEmpty())
+            liveJobIds.insert(id);
+    }
+
+    QStringList staleKeys;
+    for (const QVariant &v : m_taskSessionList) {
+        const QVariantMap row = v.toMap();
+        const QString key = row.value(QStringLiteral("session_id")).toString();
+        const QString jobId = cronJobIdFromSessionKey(key);
+        if (!jobId.isEmpty() && !liveJobIds.contains(jobId))
+            staleKeys.append(key);
+    }
+
+    for (const QString &key : staleKeys)
         softDeleteTaskSessionLocal(key);
 }
 
@@ -1609,7 +1632,7 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
             return;
         }
         m_cronPendingAt = at;
-        m_cronPendingDeleteAfterRun = true;
+        m_cronPendingDeleteAfterRun = false;
         break;
     }
     default:
@@ -1633,7 +1656,7 @@ void GatewayClient::clearPendingCronDedicatedAgent()
     m_cronPendingTz.clear();
     m_cronPendingEveryMs = 0;
     m_cronPendingAt = QDateTime();
-    m_cronPendingDeleteAfterRun = true;
+    m_cronPendingDeleteAfterRun = false;
 }
 
 void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
@@ -1660,9 +1683,10 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
     if (!workspace.isEmpty()) {
         payloadMessage = QStringLiteral(
             "\u672c\u5b9a\u65f6\u4efb\u52a1\u7684\u751f\u6210\u6587\u4ef6\u76ee\u5f55\uff1a%1\n"
-            "\u8bf7\u5c06\u672c\u6b21\u4efb\u52a1\u4ea7\u751f\u7684\u6587\u4ef6\u5199\u5165\u8be5\u76ee\u5f55\uff1b"
-            "\u8be5\u76ee\u5f55\u53ea\u4f5c\u4e3a\u8f93\u5165/\u8f93\u51fa\u5b58\u50a8\u7a7a\u95f4\uff0c"
-            "\u4e0d\u662f agent \u8eab\u4efd\u5de5\u4f5c\u7a7a\u95f4\u3002\n\n"
+            "\u5982\u679c\u9700\u8981\u521b\u5efa\u3001\u4fee\u6539\u6216\u4fdd\u5b58\u6587\u4ef6\uff0c\u5fc5\u987b\u4f7f\u7528\u4e0a\u9762\u8fd9\u4e2a\u7edd\u5bf9\u8def\u5f84\u4e0b\u7684\u6587\u4ef6\u8def\u5f84\uff1b"
+            "\u4e0d\u8981\u628a\u751f\u6210\u6587\u4ef6\u5199\u5165 agent \u8eab\u4efd workspace\u3001\u5f53\u524d\u8fd0\u884c\u76ee\u5f55\u6216\u5176\u4ed6\u76ee\u5f55\u3002"
+            "\u8be5\u76ee\u5f55\u53ea\u4f5c\u4e3a\u672c\u6b21\u4efb\u52a1\u7684\u8f93\u5165/\u8f93\u51fa\u5b58\u50a8\u7a7a\u95f4\uff0c\u4e0d\u662f agent \u8eab\u4efd workspace\u3002\n"
+            "\u5199\u6587\u4ef6\u524d\u8bf7\u5148\u786e\u4fdd\u8be5\u76ee\u5f55\u5b58\u5728\u3002\n\n"
             "\u7528\u6237\u4efb\u52a1\uff1a\n%2")
             .arg(workspace, message);
     }
@@ -1719,15 +1743,14 @@ void GatewayClient::createCronTaskSessionLocal(
     const QString title = jobName.trimmed().isEmpty()
         ? QStringLiteral("\u5b9a\u65f6\u4efb\u52a1")
         : jobName.trimmed();
-    const QString workspaceValue = workspace.trimmed().isEmpty()
-        ? resolveWorkspacePathForAgentId(aid)
-        : workspace.trimmed();
+    const QString workspaceValue = workspace.trimmed();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     upsertTaskSessionLocal(key, workspaceValue, title, QStringList{ aid }, now, now);
     qDebug().noquote() << "[TaskSessionDb] cron task inserted"
                        << "jobId=" << jid
                        << "session=" << key
-                       << "agent=" << aid;
+                       << "agent=" << aid
+                       << "workspace=" << workspaceValue;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2756,6 +2779,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // cron.list 响应 → 委托 WsScheduledTask 解析
     if (method == QLatin1String("cron.list")) {
         m_scheduledTask.parseJobListResponse(payload);
+        reconcileCronTaskSessionsWithJobs();
         emit cronJobsChanged();
         return;
     }

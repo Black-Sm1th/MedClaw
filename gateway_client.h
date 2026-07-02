@@ -726,6 +726,7 @@ private:
     bool isLocalOnlyCronTaskSession(const QString &sessionKey) const;
     QString cronJobIdFromSessionKey(const QString &sessionKey) const;
     void softDeleteCronTaskSessionsForJob(const QString &jobId);
+    void reconcileCronTaskSessionsWithJobs();
     static QString taskTitleFromFirstMessage(const QString &message);
     static QString agentsJsonFromList(const QStringList &agentIds);
     static QStringList agentListFromJson(const QString &json);
@@ -865,7 +866,7 @@ private:
     QString m_cronPendingTz;
     int m_cronPendingEveryMs = 0;
     QDateTime m_cronPendingAt;
-    bool m_cronPendingDeleteAfterRun = true;
+    bool m_cronPendingDeleteAfterRun = false;
     struct PendingCronTaskSession {
         QString agentId;
         QString jobName;

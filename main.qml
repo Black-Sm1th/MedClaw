@@ -3594,8 +3594,6 @@ ApplicationWindow {
                         var taskWs = wsClient.currentTaskWorkspace || ""
                         if (taskWs)
                             return String(taskWs)
-                        if (wsClient.agentIdentity)
-                            return String(wsClient.agentIdentity.workspace || "")
                         return ""
                     }
                     return absolutePath || ""
@@ -5256,6 +5254,7 @@ ApplicationWindow {
                 window.editingCronScheduleKind = ""
                 window.editingCronScheduleExpr = ""
                 window.editingCronScheduleTz   = ""
+                newTaskWorkDirInput.text = ""
             }
         }
 
@@ -5559,7 +5558,7 @@ ApplicationWindow {
                                 var d = newTaskDatePicker.selectedDay
                                 var hh = newTaskTimePicker.selectedHour
                                 var mm = newTaskTimePicker.selectedMinute
-                                var cronWorkspace = dropdownSelectionWorkSpace.absolutePath
+                                var cronWorkspace = newTaskWorkDirInput.text.trim()
 
                                 function pad(n) { return n < 10 ? "0" + n : "" + n }
 
