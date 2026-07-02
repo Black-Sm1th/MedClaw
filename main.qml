@@ -28,7 +28,12 @@ ApplicationWindow {
     /// 右键删除任务会话流程暂存（上下文菜单 → 确认弹窗）
     property string pendingDeleteTaskSessionId: ""
     property string pendingDeleteTaskSessionName: ""
+    property string pendingDeleteAgentId: ""
+    property string pendingDeleteAgentName: ""
     property bool pendingCollabCreateAgent: false
+    property int agentManageTabIndex: 0
+    property bool agentEditorIsEdit: false
+    property string agentEditorAgentId: ""
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
 
@@ -76,6 +81,136 @@ ApplicationWindow {
             return nm || agent.id || ""
         }
         return t
+    }
+
+    function agentIdentityName(agent) {
+        if (!agent) return ""
+        var ident = agent.identity || {}
+        return ident.name || agent.name || agent.id || ""
+    }
+
+    function agentIdentitySummary(agent) {
+        if (!agent)
+            return ""
+        var text = String(agent.identityText || "").trim()
+        if (text.length > 0) {
+            var lines = text.split(/\r?\n/)
+            var useful = []
+            for (var i = 0; i < lines.length; i++) {
+                var line = String(lines[i] || "").trim()
+                if (!line || line.charAt(0) === "#")
+                    continue
+                line = line.replace(/^\s*[-*]\s*/, "")
+                useful.push(line)
+                if (useful.join(" · ").length >= 180)
+                    break
+            }
+            var rawSummary = useful.join(" · ").trim()
+            if (rawSummary.length > 0)
+                return rawSummary
+        }
+
+        var ident = agent.identity || {}
+        var parts = []
+        if (ident.name) parts.push("Name: " + ident.name)
+        if (ident.emoji) parts.push("Emoji: " + ident.emoji)
+        if (ident.creature) parts.push("Creature: " + ident.creature)
+        if (ident.theme) parts.push("Theme: " + ident.theme)
+        if (ident.vibe) parts.push("Vibe: " + ident.vibe)
+        if (parts.length > 0)
+            return parts.join(" · ")
+        return agent.id || ""
+    }
+
+    function isMainAgentId(agentId) {
+        return String(agentId || "").trim().toLowerCase() === "main"
+    }
+
+    function visibleAgentList() {
+        var list = wsClient.agentList || []
+        var out = []
+        for (var i = 0; i < list.length; i++) {
+            var id = list[i].id || ""
+            if (!window.isMainAgentId(id))
+                out.push(list[i])
+        }
+        return out
+    }
+
+    function findVisibleAgentId(preferredId) {
+        var target = String(preferredId || "").trim().toLowerCase()
+        if (!target || window.isMainAgentId(target))
+            return ""
+        var list = window.visibleAgentList()
+        for (var i = 0; i < list.length; i++) {
+            var id = String(list[i].id || "").trim()
+            var name = String(list[i].name || "").trim()
+            if (id.toLowerCase() === target || name.toLowerCase() === target)
+                return id
+        }
+        return ""
+    }
+
+    function medicalAnalysisTeamAgentIds() {
+        var wanted = ["Orchestrator", "writer", "researcher", "analyst"]
+        var ids = []
+        var missing = []
+        for (var i = 0; i < wanted.length; i++) {
+            var id = window.findVisibleAgentId(wanted[i])
+            if (id.length > 0)
+                ids.push(id)
+            else
+                missing.push(wanted[i])
+        }
+        if (missing.length > 0) {
+            errorToast.text = "医疗分析团队缺少专家：" + missing.join(", ")
+            errorToast.visible = true
+            errorToastTimer.restart()
+            return []
+        }
+        return ids
+    }
+
+    function orderedAgentIds(limit) {
+        var list = wsClient.agentList || []
+        var ids = []
+        var preferred = wsClient.defaultAgentId || "main"
+        for (var i = 0; i < list.length; i++) {
+            var id0 = list[i].id || ""
+            if (id0 === preferred) {
+                ids.push(id0)
+                break
+            }
+        }
+        for (var j = 0; j < list.length; j++) {
+            var id = list[j].id || ""
+            if (!id) continue
+            var exists = false
+            for (var k = 0; k < ids.length; k++) {
+                if (ids[k] === id) { exists = true; break }
+            }
+            if (!exists)
+                ids.push(id)
+        }
+        if (limit > 0 && ids.length > limit)
+            ids = ids.slice(0, limit)
+        return ids
+    }
+
+    function startTaskWithAgents(agentIds) {
+        var ids = agentIds || []
+        if (ids.length === 0) {
+            errorToast.text = "暂无可用专家"
+            errorToast.visible = true
+            errorToastTimer.restart()
+            return
+        }
+        chatModel.clear()
+        leftMidPanel.activeAgentId = ""
+        leftMidPanel.activeSessionKey = ""
+        wsClient.clearActiveAgentContext()
+        newTaskRec.selectedCollaborationAgentIds = ids
+        window.leftSelectedIndex = 0
     }
 
     function taskSessionDisplayTitle(task) {
@@ -130,6 +265,7 @@ ApplicationWindow {
                 wsClient.refreshCronJobs(true)
                 wsClient.refreshCronStatus()
                 wsClient.refreshMcpList()
+                wsClient.refreshAgents()
             }
         }
         function onCronJobAdded(jobId){
@@ -292,7 +428,7 @@ ApplicationWindow {
                         visible: !window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "workflow", "skills"]
+                            model: ["新建任务", "定时任务", "专家", "workflow", "skills"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -316,6 +452,8 @@ ApplicationWindow {
                                                 return "qrc:/images/chatNew.png"
                                             }else if(modelData === "定时任务"){
                                                 return "qrc:/images/alarm.png"
+                                            }else if(modelData === "专家"){
+                                                return "qrc:/images/ai.png"
                                             }else if(modelData === "workflow"){
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "MCP"){
@@ -367,7 +505,7 @@ ApplicationWindow {
                         visible: window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "workflow", "skills"]
+                            model: ["新建任务", "定时任务", "专家", "workflow", "skills"]
                             delegate: Rectangle{
                                 property bool isSelected: index === window.leftSelectedIndex
                                 width: leftMidPanel.width
@@ -385,6 +523,8 @@ ApplicationWindow {
                                             return "qrc:/images/chatNew.png"
                                         }else if(modelData === "定时任务"){
                                             return "qrc:/images/alarm.png"
+                                        }else if(modelData === "专家"){
+                                            return "qrc:/images/ai.png"
                                         }else if(modelData === "workflow"){
                                             return "qrc:/images/category.png"
                                         }else if(modelData === "MCP"){
@@ -2125,7 +2265,8 @@ ApplicationWindow {
                                                 return
                                             }
                                             if ((newTaskRec.selectedCollaborationAgentIds || []).length === 0
-                                                    && (leftMidPanel.activeAgentId || "").length > 0) {
+                                                    && (leftMidPanel.activeAgentId || "").length > 0
+                                                    && !window.isMainAgentId(leftMidPanel.activeAgentId)) {
                                                 newTaskRec.selectedCollaborationAgentIds = [leftMidPanel.activeAgentId]
                                             }
                                             collabNewAgentName.text = ""
@@ -2174,7 +2315,7 @@ ApplicationWindow {
                                                     spacing: 2
 
                                                     Repeater {
-                                                        model: wsClient.agentList
+                                                        model: window.visibleAgentList()
 
                                                         delegate: Rectangle {
                                                             width: collabPopup.width - 20
@@ -2252,11 +2393,13 @@ ApplicationWindow {
                                             Rectangle {
                                                 width: parent.width
                                                 height: 1
+                                                visible: false
                                                 color: "#E6E7EB"
                                             }
 
                                             SingleLineTextInput {
                                                 id: collabNewAgentName
+                                                visible: false
                                                 inputWidth: parent.width
                                                 inputHeight: 32
                                                 inputRadius: 6
@@ -2266,7 +2409,8 @@ ApplicationWindow {
 
                                             Rectangle {
                                                 width: parent.width
-                                                height: 88
+                                                height: 0
+                                                visible: false
                                                 radius: 6
                                                 color: "#FFFFFF"
                                                 border.width: 1
@@ -2288,6 +2432,8 @@ ApplicationWindow {
 
                                             Row {
                                                 width: parent.width
+                                                height: 0
+                                                visible: false
                                                 spacing: 6
                                                 SingleLineTextInput {
                                                     id: collabNewAgentWorkspace
@@ -2576,7 +2722,7 @@ ApplicationWindow {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     onClicked: {
                                                         skillPopup.close()
-                                                        window.leftSelectedIndex = 2
+                                                        window.leftSelectedIndex = 3
                                                     }
                                                 }
                                             }
@@ -3018,7 +3164,7 @@ ApplicationWindow {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     onClicked: {
                                                         toolPopup2.close()
-                                                        window.leftSelectedIndex = 3
+                                                        window.leftSelectedIndex = 4
                                                     }
                                                 }
                                             }
@@ -4545,10 +4691,281 @@ ApplicationWindow {
                     }
                 }
             }
+            Rectangle {
+                id: agentManageRec
+                anchors.fill: parent
+                visible: window.leftSelectedIndex === 2
+                property string searchText: ""
+
+                onVisibleChanged: {
+                    if (visible && wsClient.connectionState === 3)
+                        wsClient.refreshAgents()
+                }
+
+                function filteredAgents() {
+                    var list = window.visibleAgentList()
+                    if (!searchText)
+                        return list
+                    var kw = searchText.toLowerCase()
+                    var out = []
+                    for (var i = 0; i < list.length; i++) {
+                        var a = list[i]
+                        var name = (a.name || "").toLowerCase()
+                        var id = (a.id || "").toLowerCase()
+                        if (name.indexOf(kw) >= 0 || id.indexOf(kw) >= 0)
+                            out.push(a)
+                    }
+                    return out
+                }
+
+                function teamAgentIds(limit) {
+                    return window.medicalAnalysisTeamAgentIds()
+                }
+
+                Column {
+                    anchors.fill: parent
+                    leftPadding: 60
+                    topPadding: 24
+                    rightPadding: 60
+                    spacing: 16
+
+                    Row {
+                        width: parent.width - 120
+                        height: 40
+                        spacing: 12
+
+                        Label {
+                            text: qsTr("专家")
+                            font.pixelSize: 20
+                            font.weight: Font.Bold
+                            color: "#D9000000"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Item {
+                            width: parent.width - 20 - 92 - 12
+                            height: 1
+                        }
+
+                        CustomButton {
+                            width: 92
+                            height: 36
+                            visible: window.agentManageTabIndex === 0
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: qsTr("新增专家")
+                            fontSize: 14
+                            onClicked: {
+                                window.agentEditorIsEdit = false
+                                window.agentEditorAgentId = ""
+                                agentEditorNameInput.text = ""
+                                agentEditorIdentityInput.text = ""
+                                agentEditorPopup.open()
+                            }
+                        }
+                    }
+
+                    Row {
+                        spacing: 12
+                        CustomButton {
+                            width: 68
+                            height: 29
+                            buttonRadius: 8
+                            fontSize: 14
+                            text: qsTr("专家")
+                            backgroundColor: window.agentManageTabIndex === 0 ? "#0F006BFF" : "#F7F9FA"
+                            textColor: window.agentManageTabIndex === 0 ? "#006BFF" : "#A6000000"
+                            borderWidth: 0
+                            onClicked: window.agentManageTabIndex = 0
+                        }
+                        CustomButton {
+                            width: 80
+                            height: 29
+                            buttonRadius: 8
+                            fontSize: 14
+                            text: qsTr("专家团")
+                            backgroundColor: window.agentManageTabIndex === 1 ? "#0F006BFF" : "#F7F9FA"
+                            textColor: window.agentManageTabIndex === 1 ? "#006BFF" : "#A6000000"
+                            borderWidth: 0
+                            onClicked: window.agentManageTabIndex = 1
+                        }
+                    }
+
+                    SingleLineTextInput {
+                        visible: window.agentManageTabIndex === 0
+                        inputHeight: 36
+                        inputWidth: parent.width - 120
+                        icon: "qrc:/images/search.png"
+                        iconSize: 16
+                        placeholderText: qsTr("搜索专家")
+                        onTextChanged: agentManageRec.searchText = text
+                    }
+
+                    ScrollView {
+                        id: agentManageScroll
+                        width: parent.width - 120
+                        height: agentManageRec.height - 24 - 40 - 16 - 29 - 16
+                                - (window.agentManageTabIndex === 0 ? 36 + 16 : 0)
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        Grid {
+                            id: agentManageGrid
+                            columns: 2
+                            spacing: 12
+                            width: agentManageScroll.width
+                            property real cellWidth: (width - spacing) / 2
+
+                            Repeater {
+                                visible: window.agentManageTabIndex === 0
+                                model: window.agentManageTabIndex === 0 ? agentManageRec.filteredAgents() : []
+                                delegate: Rectangle {
+                                    width: agentManageGrid.cellWidth
+                                    height: agentColumn.height
+                                    radius: 8
+                                    color: agentCardMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
+                                    border.width: 1
+                                    border.color: "#E6E7EB"
+
+                                    MouseArea {
+                                        id: agentCardMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            var id = modelData.id || ""
+                                            if (id.length > 0)
+                                                window.startTaskWithAgents([id])
+                                        }
+                                    }
+
+                                    Column {
+                                        id: agentColumn
+                                        width: parent.width
+                                        padding: 16
+                                        spacing: 8
+
+                                        Label {
+                                            text: modelData.name || modelData.id || ""
+                                            width: parent.width - 32
+                                            font.pixelSize: 16
+                                            font.weight: Font.Bold
+                                            color: "#D9000000"
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Label {
+                                            width: parent.width - 32
+                                            text: window.agentIdentitySummary(modelData)
+                                            font.pixelSize: 12
+                                            color: "#73000000"
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Item { width: 1; height: 4 }
+
+                                        Row {
+                                            spacing: 8
+                                            CustomButton {
+                                                width: 64
+                                                height: 30
+                                                backgroundColor: "#F7F9FA"
+                                                textColor: "#D9000000"
+                                                borderColor: "#E6E7EB"
+                                                borderWidth: 1
+                                                text: qsTr("编辑")
+                                                fontSize: 13
+                                                onClicked: {
+                                                    window.agentEditorIsEdit = true
+                                                    window.agentEditorAgentId = modelData.id || ""
+                                                    agentEditorNameInput.text = modelData.name || modelData.id || ""
+                                                    agentEditorIdentityInput.text = ""
+                                                    agentEditorPopup.open()
+                                                }
+                                            }
+                                            CustomButton {
+                                                width: 64
+                                                height: 30
+                                                enabled: !modelData.isDefault
+                                                backgroundColor: enabled ? "#FFF2F2" : "#F7F9FA"
+                                                textColor: enabled ? "#E54545" : "#73000000"
+                                                borderColor: enabled ? "#FFE0E0" : "#E6E7EB"
+                                                borderWidth: 1
+                                                text: qsTr("删除")
+                                                fontSize: 13
+                                                onClicked: {
+                                                    window.pendingDeleteAgentId = modelData.id || ""
+                                                    window.pendingDeleteAgentName = modelData.name || modelData.id || ""
+                                                    deleteAgentPopup.open()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Repeater {
+                                visible: window.agentManageTabIndex === 1
+                                model: window.agentManageTabIndex === 1 ? [
+                                    {
+                                        title: qsTr("医疗分析团队"),
+                                        desc: qsTr("主控 orchestrator；协作 writer、research、analyst"),
+                                        limit: 0
+                                    }
+                                ] : []
+                                delegate: Rectangle {
+                                    width: agentManageGrid.cellWidth
+                                    height: 118
+                                    radius: 8
+                                    color: teamMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
+                                    border.width: 1
+                                    border.color: "#E6E7EB"
+
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.margins: 18
+                                        spacing: 10
+                                        Label {
+                                            width: parent.width
+                                            text: modelData.title
+                                            font.pixelSize: 16
+                                            font.weight: Font.Bold
+                                            color: "#D9000000"
+                                            elide: Text.ElideRight
+                                        }
+                                        Label {
+                                            width: parent.width
+                                            text: modelData.desc
+                                            font.pixelSize: 13
+                                            color: "#73000000"
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: teamMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            var ids = agentManageRec.teamAgentIds(modelData.limit)
+                                            if (ids.length > 0)
+                                                window.startTaskWithAgents(ids)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Rectangle{
                 id: skillSettingRec
                 anchors.fill: parent
-                visible: window.leftSelectedIndex === 2
+                visible: window.leftSelectedIndex === 3
                 property string skillSearchText: ""
                 /// 与技能页 Tab 同步，供顶部搜索框占位符使用（避免引用尚未创建的 TabBar）
                 property int skillTabForSearch: 0
@@ -4796,7 +5213,7 @@ ApplicationWindow {
             Rectangle{
                 id: toolsSettingRec
                 anchors.fill: parent
-                visible: window.leftSelectedIndex === 3
+                visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
                 onVisibleChanged: {
                     if (visible && wsClient.connectionState === 3)
@@ -5787,6 +6204,231 @@ ApplicationWindow {
                     text: qsTr("取消")
                     fontSize: 14
                     onClicked: deleteCronJobPopup.close()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: agentEditorPopup
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 0
+
+        Overlay.modal: Rectangle { color: "#40000000" }
+        background: Rectangle { color: "transparent" }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: agentEditorPopup.close()
+            }
+
+            Rectangle {
+                width: 560
+                anchors.centerIn: parent
+                height: agentEditorTitleBar.height + agentEditorContent.implicitHeight + 24 + 16
+                radius: 16
+                color: "#FFFFFF"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {}
+                }
+
+                Item {
+                    id: agentEditorTitleBar
+                    width: parent.width
+                    height: 64
+
+                    Label {
+                        text: window.agentEditorIsEdit ? qsTr("编辑专家") : qsTr("新增专家")
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                        color: "#D9000000"
+                        anchors.left: parent.left
+                        anchors.leftMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    ImageButton {
+                        source: "qrc:/images/close.png"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: agentEditorPopup.close()
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.bottom: parent.bottom
+                    }
+                }
+
+                Column {
+                    id: agentEditorContent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: agentEditorTitleBar.bottom
+                    anchors.margins: 24
+                    anchors.topMargin: 16
+                    spacing: 16
+
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        Row {
+                            spacing: 2
+                            Label {
+                                text: qsTr("专家名称")
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                            }
+                            Label {
+                                text: "*"
+                                font.pixelSize: 14
+                                color: "#FF4D4F"
+                            }
+                        }
+                        SingleLineTextInput {
+                            id: agentEditorNameInput
+                            width: parent.width
+                            inputHeight: 40
+                            inputRadius: 8
+                            fontSize: 14
+                            placeholderText: qsTr("例如：researcher")
+                        }
+                    }
+
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        Label {
+                            text: window.agentEditorIsEdit
+                                  ? qsTr("IDENTITY.md（留空不修改）")
+                                  : qsTr("IDENTITY.md（可选）")
+                            font.pixelSize: 14
+                            color: "#D9000000"
+                        }
+                        MultiLineTextInput {
+                            id: agentEditorIdentityInput
+                            inputWidth: parent.width
+                            inputHeight: 160
+                            inputRadius: 8
+                            fontSize: 14
+                            placeholderText: qsTr("描述该专家的角色、能力边界和协作方式")
+                        }
+                    }
+
+                    Row {
+                        width: parent.width
+                        spacing: 12
+                        layoutDirection: Qt.RightToLeft
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: qsTr("保存")
+                            fontSize: 14
+                            onClicked: {
+                                var name = agentEditorNameInput.text.trim()
+                                var identity = agentEditorIdentityInput.text
+                                if (name.length === 0) {
+                                    errorToast.text = "请输入专家名称"
+                                    errorToast.visible = true
+                                    errorToastTimer.restart()
+                                    return
+                                }
+                                if (window.agentEditorIsEdit) {
+                                    wsClient.updateAgent(window.agentEditorAgentId, name, "", "")
+                                    if (identity.trim().length > 0)
+                                        wsClient.updateAgentIdentity(window.agentEditorAgentId, identity)
+                                } else {
+                                    wsClient.createAgent(name, "", false, identity)
+                                }
+                                agentEditorPopup.close()
+                            }
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
+                            borderWidth: 1
+                            text: qsTr("取消")
+                            fontSize: 14
+                            onClicked: agentEditorPopup.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: deleteAgentPopup
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 360
+        padding: 20
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: {
+            window.pendingDeleteAgentId = ""
+            window.pendingDeleteAgentName = ""
+        }
+        background: Rectangle {
+            radius: 12
+            color: "#FFFFFF"
+            border.color: "#14000000"
+            border.width: 1
+        }
+        contentItem: Column {
+            spacing: 16
+            width: parent.width
+            Label {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("确定删除专家「") + window.pendingDeleteAgentName + qsTr("」？")
+                font.pixelSize: 15
+                color: "#D9000000"
+            }
+            Row {
+                spacing: 12
+                layoutDirection: Qt.RightToLeft
+                anchors.right: parent.right
+                CustomButton {
+                    width: 88
+                    height: 36
+                    backgroundColor: "#E54545"
+                    textColor: "#FFFFFF"
+                    borderWidth: 0
+                    text: qsTr("删除")
+                    fontSize: 14
+                    onClicked: {
+                        if (window.pendingDeleteAgentId.length > 0)
+                            wsClient.deleteAgent(window.pendingDeleteAgentId, true)
+                        deleteAgentPopup.close()
+                    }
+                }
+                CustomButton {
+                    width: 88
+                    height: 36
+                    backgroundColor: "#F7F9FA"
+                    textColor: "#A6000000"
+                    borderColor: "#E6E7EB"
+                    borderWidth: 1
+                    text: qsTr("取消")
+                    fontSize: 14
+                    onClicked: deleteAgentPopup.close()
                 }
             }
         }

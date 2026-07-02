@@ -287,6 +287,26 @@ public:
                                   const QString &identityMarkdown = QString());
 
     /**
+     * @brief 更新 Agent 基本信息（agents.update RPC）
+     * @param agentId 要更新的 agent ID
+     * @param name 新显示名，空则不修改
+     * @param workspace 新身份 workspace，空则不修改
+     * @param model 新模型，空则不修改
+     */
+    Q_INVOKABLE void updateAgent(const QString &agentId,
+                                  const QString &name = QString(),
+                                  const QString &workspace = QString(),
+                                  const QString &model = QString());
+
+    /**
+     * @brief 更新 Agent 固定身份目录中的 IDENTITY.md（本地文件写入）
+     * @param agentId 要更新的 agent ID
+     * @param identityMarkdown 新的 IDENTITY.md 内容
+     */
+    Q_INVOKABLE void updateAgentIdentity(const QString &agentId,
+                                          const QString &identityMarkdown);
+
+    /**
      * @brief 尚无 agent 时用户在工具弹窗点「保存」：记录将启用的 toolId，待首个 agent 创建后与 profile=full 一并写入 config
      */
     Q_INVOKABLE void setPendingNewAgentToolSelection(const QVariantList &enabledToolIds);

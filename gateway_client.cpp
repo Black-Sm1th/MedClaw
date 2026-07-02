@@ -2639,6 +2639,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         return;
     }
 
+    if (method == QLatin1String("agents.update")) {
+        const QString agentId = payload.value(QStringLiteral("agentId")).toString();
+        qDebug() << "[Gateway] agents.update ok:" << agentId;
+        refreshMcpList();
+        refreshAgents();
+        return;
+    }
+
     // agents.list 响应 → 解析 agent 列表
     if (method == QLatin1String("agents.list")) {
         m_agentList.clear();
@@ -2660,6 +2668,22 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             entry[QStringLiteral("sessionKey")] =
                 QStringLiteral("agent:%1:main").arg(id);
             entry[QStringLiteral("isDefault")]  = (id == m_defaultAgentId);
+            QString workspace = a.value(QStringLiteral("workspace")).toString().trimmed();
+            if (workspace.isEmpty())
+                workspace = resolveWorkspacePathForAgentId(id).trimmed();
+            entry[QStringLiteral("workspace")] = workspace;
+            entry[QStringLiteral("identity")] =
+                a.value(QStringLiteral("identity")).toObject().toVariantMap();
+            if (!workspace.trimmed().isEmpty()) {
+                QFile identityFile(QDir(expandTildePath(workspace))
+                    .filePath(QStringLiteral("IDENTITY.md")));
+                if (identityFile.exists()
+                        && identityFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    QTextStream ts(&identityFile);
+                    ts.setCodec("UTF-8");
+                    entry[QStringLiteral("identityText")] = ts.readAll();
+                }
+            }
 
             m_agentList.append(entry);
         }
@@ -2861,6 +2885,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("config.get")) {
         applyMcpListFromConfigGetPayload(payload);
         emit mcpListChanged();
+        refreshAgents();
         return;
     }
 
@@ -3413,6 +3438,82 @@ void GatewayClient::createAgent(const QString &name,
                        << "workspace:" << requestWorkspace
                        << QStringLiteral("(private)");
     sendRequest(QStringLiteral("agents.create"), params);
+}
+
+void GatewayClient::updateAgent(const QString &agentId,
+                                 const QString &name,
+                                 const QString &workspace,
+                                 const QString &model)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5"));
+        return;
+    }
+
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty()) {
+        emit errorOccurred(QStringLiteral("agentId \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+
+    QJsonObject params;
+    params[QStringLiteral("agentId")] = aid;
+    const QString n = name.trimmed();
+    if (!n.isEmpty())
+        params[QStringLiteral("name")] = n;
+    const QString ws = workspace.trimmed();
+    if (!ws.isEmpty())
+        params[QStringLiteral("workspace")] = ws;
+    const QString m = model.trimmed();
+    if (!m.isEmpty())
+        params[QStringLiteral("model")] = m;
+
+    qDebug().noquote() << "[Gateway] agents.update:" << aid
+                       << "name:" << n
+                       << "workspace:" << ws
+                       << "model:" << m;
+    sendRequest(QStringLiteral("agents.update"), params);
+}
+
+void GatewayClient::updateAgentIdentity(const QString &agentId,
+                                         const QString &identityMarkdown)
+{
+    const QString aid = agentId.trimmed();
+    if (aid.isEmpty()) {
+        emit errorOccurred(QStringLiteral("agentId \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+
+    QString ws = resolveWorkspacePathForAgentId(aid).trimmed();
+    if (ws.isEmpty()) {
+        emit errorOccurred(QStringLiteral("\u672a\u627e\u5230 agent \"%1\" \u7684\u8eab\u4efd\u76ee\u5f55").arg(aid));
+        return;
+    }
+
+    ws = expandTildePath(ws);
+    QDir dir(ws);
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+        emit errorOccurred(QStringLiteral("\u65e0\u6cd5\u521b\u5efa agent \u8eab\u4efd\u76ee\u5f55: %1").arg(ws));
+        return;
+    }
+
+    QFile identityFile(dir.filePath(QStringLiteral("IDENTITY.md")));
+    if (!identityFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        emit errorOccurred(QStringLiteral("\u65e0\u6cd5\u5199\u5165 IDENTITY.md: %1")
+            .arg(identityFile.errorString()));
+        return;
+    }
+
+    QTextStream ts(&identityFile);
+    ts.setCodec("UTF-8");
+    ts << identityMarkdown;
+    if (!identityMarkdown.endsWith(QLatin1Char('\n')))
+        ts << '\n';
+    identityFile.close();
+
+    qDebug().noquote() << "[Gateway] wrote IDENTITY.md for agent:" << aid
+                       << identityFile.fileName();
+    refreshAgents();
 }
 
 void GatewayClient::setPendingNewAgentToolSelection(const QVariantList &enabledToolIds)
