@@ -1,8 +1,13 @@
-QT += quick quickcontrols2 websockets sql
+QT += quick quickcontrols2 websockets sql webengine
 
 CONFIG += c++11
 
 msvc: QMAKE_CXXFLAGS += /utf-8
+
+# Qt 5.15.2 WebEngineCore from the official gcc_64 package can trigger
+# GNU ld.bfd ".dynsym local symbol" diagnostics on newer Linux toolchains.
+# gold links the same library cleanly.
+linux:QMAKE_LFLAGS += -fuse-ld=gold
 
 # Uncomment to make code fail on deprecated API usage
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000

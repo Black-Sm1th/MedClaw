@@ -3,17 +3,56 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QFontDatabase>
+#include <QLibraryInfo>
+#include <QDir>
+#include <QtWebEngine/QtWebEngine>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
 #include "gateway_client.h"
 #include "chatmodel.h"
 #include "session_reader.h"
 
+static void configureQtWebEngineRuntime()
+{
+    const QString libexecPath =
+        QLibraryInfo::location(QLibraryInfo::LibraryExecutablesPath);
+    const QString dataPath =
+        QLibraryInfo::location(QLibraryInfo::DataPath);
+    const QString translationsPath =
+        QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+
+    const QString processPath = QDir(libexecPath).filePath(QStringLiteral("QtWebEngineProcess"));
+    const QString resourcesPath = QDir(dataPath).filePath(QStringLiteral("resources"));
+    const QString localesPath = QDir(translationsPath).filePath(QStringLiteral("qtwebengine_locales"));
+
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINEPROCESS_PATH"))
+        qputenv("QTWEBENGINEPROCESS_PATH", processPath.toLocal8Bit());
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_RESOURCES_PATH"))
+        qputenv("QTWEBENGINE_RESOURCES_PATH", resourcesPath.toLocal8Bit());
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_LOCALES_PATH"))
+        qputenv("QTWEBENGINE_LOCALES_PATH", localesPath.toLocal8Bit());
+
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_DISABLE_SANDBOX"))
+        qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
+
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_CHROMIUM_FLAGS")) {
+        QByteArray flags("--no-sandbox");
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
+    }
+}
+
 int main(int argc, char *argv[])
 {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
+    if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
+        qputenv("QT_OPENGL", "desktop");
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+    configureQtWebEngineRuntime();
+    QtWebEngine::initialize();
+
     QGuiApplication app(argc, argv);
 
     // ── WebSocket 客户端 & 聊天数据模型 ──
@@ -129,7 +168,7 @@ int main(int argc, char *argv[])
     int fontId3 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-85-Regular.ttf");
     int fontId4 = QFontDatabase::addApplicationFont(":/fonts/AlimamaShuHeiTi-Bold.ttf");
 
-    // --test 参数启动测试界面，否则加载正式界面
+    // --test 启动 WebSocket 测试页。
     const bool testMode = app.arguments().contains(QStringLiteral("--test"));
     const QUrl url(testMode ? QStringLiteral("qrc:/TestChatClient.qml")
                             : QStringLiteral("qrc:/main.qml"));

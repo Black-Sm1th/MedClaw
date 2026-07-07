@@ -215,8 +215,8 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
 //         把「自上次 flush 以来的新增片段」推给 QML，delegate 调用
 //         TextEdit::insert(length, delta) 局部追加，QTextDocument 只对追加段做
 //         增量 layout，不重排已有内容。
-//       * 流式结束：emit dataChanged(IsStreamingRole) 让 QML 把 textFormat 切回
-//         MarkdownText，Qt 内部会用当前完整 plain text 跑一次最终 setMarkdown 精排。
+//       * 流式结束：emit dataChanged(ContentRole, IsStreamingRole) 让 QML 组件拿到
+//         完整文本；组件会延迟做最终 Markdown 精排，超长内容则继续保留纯文本。
 //       * m_messages[row].content 仍持有完整累积副本，便于 delegate 滚出滚回重建、
 //         或之后 historyLoaded / 重新查看会话时一次性 onCompleted 注入完整文本。
 
@@ -269,10 +269,9 @@ void ChatModel::flushStream()
         emit streamFlushed(m_streamFlushRow, m_streamPending);
         m_streamPending.clear();
     }
-    // 仍然广播 ContentRole 变化，方便依赖整段 content 的其它绑定（粘底滚动等）感知；
-    // bubbleText 已不再 binding text=content，所以这次广播不会触发全量 setText / setMarkdown。
-    const QModelIndex idx = index(m_streamFlushRow);
-    emit dataChanged(idx, idx, { ContentRole });
+    // 流式期间不再广播 ContentRole：可见 delegate 已通过 streamFlushed(delta)
+    // 命令式追加，滚出后重建的 delegate 会直接读取 model 中最新 content。
+    // 等流式结束再一次性 emit ContentRole，避免 QML 每个 flush 都重新评估整段文本。
     emit messagePayloadChanged();
 }
 
@@ -349,9 +348,8 @@ void ChatModel::endStreaming()
     }
     const int last = m_messages.count() - 1;
     // 关键顺序：先把残留 delta 合并进 content + 推给 QML，让 bubbleText insert 到末尾；
-    // 之后再翻 IsStreamingRole 触发 textFormat 切到 MarkdownText，
-    // QML 端 onTextFormatChanged 会用「完整 plain markdown 源」(此时 content 已包含 pending)
-    // 重新 setText 跑一次最终 QTextDocument::setMarkdown() 精排。
+    // 之后再翻 IsStreamingRole：QML 端 MarkdownWebView 会用完整 content
+    // 延迟精排短文本；超长文本保持 PlainText，避免 Markdown 渲染卡住主线程。
     if (m_streamFlushRow == last && !m_streamPending.isEmpty()) {
         m_messages[last].content += m_streamPending;
         emit streamFlushed(last, m_streamPending);

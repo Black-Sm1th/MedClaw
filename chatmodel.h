@@ -92,8 +92,8 @@ signals:
 
 private:
     /// 节流刷新：把累积的 delta 通过 streamFlushed(row, delta) 推给 QML，
-    /// 让 bubbleText 用 insert() 局部追加；同时仍 emit dataChanged(ContentRole)
-    /// 与 messagePayloadChanged()，便于其它依赖 content / 行高变化的绑定（粘底滚动等）感知。
+    /// 让 bubbleText 用 insert() 局部追加；流式期间只发 messagePayloadChanged()
+    /// 供粘底滚动感知，ContentRole 等流式结束再一次性刷新。
     void flushStream();
 
     /// 自适应节流：按当前消息总长度返回下一次 flush 的间隔（毫秒）。

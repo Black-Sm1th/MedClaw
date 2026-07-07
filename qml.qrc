@@ -9,6 +9,8 @@
         <file>images/close.png</file>
         <file>images/minus.png</file>
         <file>components/ImageButton.qml</file>
+        <file>components/MarkdownWebView.qml</file>
+        <file>web/markdown_renderer.html</file>
         <file>images/sidebarMinimalistic.png</file>
         <file>fonts/AlimamaShuHeiTi-Bold.ttf</file>
         <file>components/MultiLineTextInput.qml</file>
