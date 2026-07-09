@@ -5323,11 +5323,11 @@ ApplicationWindow {
                         property int currentIndex: 0
 
                         CustomButton {
-                            width: 68
+                            width: 76
                             height: 29
                             buttonRadius: 8
                             fontSize: 14
-                            text: qsTr("MI情报")
+                            text: qsTr("深度问数")
                             backgroundColor: toolsTab.currentIndex === 0 ? "#0F006BFF" : "#F7F9FA"
                             textColor: toolsTab.currentIndex === 0 ? "#006BFF" : "#A6000000"
                             borderWidth: 0
@@ -5364,7 +5364,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignHCenter
                                 topPadding: 40
                                 text: toolsScrollContent.currentSourceFilter === "plugin"
-                                      ? qsTr("暂无Medical Intelligence情报skills")
+                                      ? qsTr("暂无深度问数skills")
                                       : qsTr("暂无其他skills")
                                 font.pixelSize: 14
                                 color: "#73000000"
