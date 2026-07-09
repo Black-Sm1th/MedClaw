@@ -112,6 +112,27 @@
     th { background: #f1f5f9; font-weight: 650; }
     a { color: #2563eb; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    a.local-file-link,
+    a.local-file-link:hover {
+      text-decoration: none;
+    }
+    a.local-file-link code {
+      color: inherit;
+      background: #f6f8fa;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+    a.local-file-link:hover code {
+      background:
+        linear-gradient(currentColor, currentColor) left calc(100% - 2px) / 100% 1px repeat-x,
+        #f6f8fa;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+    a.local-file-link .num-run {
+      display: inline;
+      color: inherit;
+    }
     hr { height: 1px; border: 0; margin: 16px 0; background: rgba(15, 23, 42, .12); }
   </style>
 </head>
@@ -160,6 +181,34 @@
         });
       }
 
+      function localLinkHref(ref) {
+        return 'medclaw-local:' + encodeURIComponent(ref);
+      }
+
+      function decodeHtmlText(value) {
+        return String(value || '')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&');
+      }
+
+      function isLikelyLocalRef(ref) {
+        var value = String(ref || '').trim();
+        return /^(?:file:\/\/|~\/|\/)/.test(value)
+          || /^(?:\.{1,2}\/)?[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.(?:json|md|markdown|txt|csv|tsv|html?|pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|svg|py|js|ts|tsx|jsx|cpp|c|h|hpp|qml|pro|cmake|yml|yaml|xml|log)$/.test(value)
+          || /^[A-Za-z0-9_.-]+\.(?:json|md|markdown|txt|csv|tsv|html?|pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|svg|py|js|ts|tsx|jsx|cpp|c|h|hpp|qml|pro|cmake|yml|yaml|xml|log)$/.test(value);
+      }
+
+      function inlineCodeHtml(code) {
+        var ref = decodeHtmlText(code).trim();
+        if (!isLikelyLocalRef(ref))
+          return '<code>' + code + '</code>';
+        return '<a href="' + escapeAttr(localLinkHref(ref)) + '" class="local-file-link"><code>'
+          + code + '</code></a>';
+      }
+
       function normalizeRenderedText(root) {
         var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
           acceptNode: function (node) {
@@ -181,11 +230,11 @@
 
       function inlineMarkdown(text) {
         var out = escapeHtml(normalizeNumericSpacing(text));
-        out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+        out = out.replace(/`([^`]+)`/g, function (_, code) { return inlineCodeHtml(code); });
         out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+        out = out.replace(/(^|[^\w/])__([^_\s][^_]*?[^_\s])__(?=$|[^\w/])/g, '$1<strong>$2</strong>');
         out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-        out = out.replace(/_([^_]+)_/g, '<em>$1</em>');
+        out = out.replace(/(^|[^\w/])_([^_\s][^_]*?[^_\s])_(?=$|[^\w/])/g, '$1<em>$2</em>');
         out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, label, href) {
           return '<a href="' + escapeAttr(href) + '">' + label + '</a>';
         });

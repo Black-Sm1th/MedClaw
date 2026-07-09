@@ -29,9 +29,13 @@ public:
     Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl,
                                             const QString &workspace) const;
 
+    Q_INVOKABLE QString resolveLocalFileLink(const QString &link,
+                                             const QString &workspace) const;
+
 private:
     static QString resolveWorkspacePath(const QString &ws);
     static QString fileSizeHumanBytes(qint64 bytes);
+    static QString normalizeLocalFileCandidate(const QString &link);
 
     ChatModel      *m_chatModel  = nullptr;
     GatewayClient  *m_wsClient   = nullptr;

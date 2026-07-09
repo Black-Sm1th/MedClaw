@@ -6,6 +6,8 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
+#include <QStringList>
 #include <QUrl>
 
 MainViewController::MainViewController(QObject* parent)
@@ -165,12 +167,117 @@ QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
     return destName;
 }
 
+QString MainViewController::resolveLocalFileLink(const QString &link,
+                                                 const QString &workspace) const
+{
+    const QString candidate = normalizeLocalFileCandidate(link);
+    if (candidate.isEmpty())
+        return QString();
+
+    auto asFileUrlIfExists = [](const QString &path) -> QString {
+        const QFileInfo fi(path);
+        if (!fi.exists())
+            return QString();
+        return QUrl::fromLocalFile(fi.absoluteFilePath()).toString();
+    };
+
+    QString direct = candidate;
+    if (direct.startsWith(QStringLiteral("~/")))
+        direct = QDir::homePath() + direct.mid(1);
+    direct = QDir::cleanPath(direct);
+
+    QString resolved = asFileUrlIfExists(direct);
+    if (!resolved.isEmpty())
+        return resolved;
+
+    QStringList searchRoots;
+    auto addSearchRoot = [&](const QString &root) {
+        const QString path = resolveWorkspacePath(root);
+        if (path.isEmpty() || !QFileInfo(path).isDir() || searchRoots.contains(path))
+            return;
+        searchRoots.append(path);
+    };
+
+    addSearchRoot(workspace);
+    if (m_wsClient) {
+        addSearchRoot(m_wsClient->currentTaskWorkspace());
+        addSearchRoot(m_wsClient->agentIdentity().value(QStringLiteral("workspace")).toString());
+    }
+    addSearchRoot(QDir::homePath() + QStringLiteral("/.openclaw/workspace"));
+
+    if (searchRoots.isEmpty())
+        return QString();
+
+    if (candidate.contains(QLatin1Char('/')) || candidate.contains(QLatin1Char('\\'))) {
+        for (const QString &root : searchRoots) {
+            resolved = asFileUrlIfExists(QDir(root).filePath(candidate));
+            if (!resolved.isEmpty())
+                return resolved;
+        }
+    }
+
+    const QString fileName = QFileInfo(candidate).fileName();
+    if (fileName.isEmpty() || fileName == QStringLiteral(".") || fileName == QStringLiteral(".."))
+        return QString();
+
+    for (const QString &root : searchRoots) {
+        QDirIterator it(root,
+                        QStringList() << fileName,
+                        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                        QDirIterator::Subdirectories);
+        if (it.hasNext()) {
+            it.next();
+            return QUrl::fromLocalFile(it.fileInfo().absoluteFilePath()).toString();
+        }
+    }
+
+    return QString();
+}
+
 QString MainViewController::resolveWorkspacePath(const QString &ws)
 {
     QString p = ws;
     if (p.startsWith(QStringLiteral("~/")))
         p = QDir::homePath() + p.mid(1);
     return QDir::cleanPath(p);
+}
+
+QString MainViewController::normalizeLocalFileCandidate(const QString &link)
+{
+    QString value = link.trimmed();
+    if (value.isEmpty())
+        return QString();
+
+    if (value.startsWith(QStringLiteral("medclaw-local:"), Qt::CaseInsensitive)) {
+        value = value.mid(QStringLiteral("medclaw-local:").size());
+        value = QUrl::fromPercentEncoding(value.toUtf8());
+    }
+    if (value.startsWith(QStringLiteral("file://"), Qt::CaseInsensitive))
+        value = QUrl(value).toLocalFile();
+
+    while (value.startsWith(QLatin1Char('`')) || value.startsWith(QLatin1Char('"')) ||
+           value.startsWith(QLatin1Char('\'')) || value.startsWith(QLatin1Char('(')) ||
+           value.startsWith(QLatin1Char('['))) {
+        value = value.mid(1).trimmed();
+    }
+    while (value.endsWith(QLatin1Char('`')) || value.endsWith(QLatin1Char('"')) ||
+           value.endsWith(QLatin1Char('\'')) || value.endsWith(QLatin1Char(')')) ||
+           value.endsWith(QLatin1Char(']')) || value.endsWith(QLatin1Char(',')) ||
+           value.endsWith(QLatin1Char('.')) || value.endsWith(QLatin1Char(';')) ||
+           value.endsWith(QLatin1Char(':'))) {
+        value.chop(1);
+        value = value.trimmed();
+    }
+
+    const QFileInfo fullInfo(value);
+    if (!fullInfo.exists()) {
+        const QRegularExpression lineSuffix(QStringLiteral("^(.*):(\\d+)(?::\\d+)?$"));
+        const QRegularExpressionMatch match = lineSuffix.match(value);
+        if (match.hasMatch())
+            value = match.captured(1).trimmed();
+    }
+
+    return value;
 }
 
 QString MainViewController::fileSizeHumanBytes(qint64 bytes)

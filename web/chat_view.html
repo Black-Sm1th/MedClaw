@@ -1,0 +1,770 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    body {
+      box-sizing: border-box;
+      color: rgba(0, 0, 0, .86);
+      font-family: Arial, "Alibaba PuHuiTi 3.0", "Noto Sans CJK SC", "Microsoft YaHei", "Noto Color Emoji", sans-serif;
+      font-size: 16px;
+      line-height: 1.62;
+      letter-spacing: 0;
+      word-spacing: 0;
+      font-variant-numeric: normal;
+      text-align: left;
+      text-rendering: auto;
+    }
+
+    #app {
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding: 0 16px 8px;
+    }
+
+    #app::-webkit-scrollbar,
+    pre::-webkit-scrollbar,
+    .table-wrap::-webkit-scrollbar,
+    .tool-box::-webkit-scrollbar,
+    .orphan-tool::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    #app::-webkit-scrollbar-track,
+    pre::-webkit-scrollbar-track,
+    .table-wrap::-webkit-scrollbar-track,
+    .tool-box::-webkit-scrollbar-track,
+    .orphan-tool::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #app::-webkit-scrollbar-thumb,
+    pre::-webkit-scrollbar-thumb,
+    .table-wrap::-webkit-scrollbar-thumb,
+    .tool-box::-webkit-scrollbar-thumb,
+    .orphan-tool::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: transparent;
+    }
+
+    #app:hover::-webkit-scrollbar-thumb,
+    #app.scrolling::-webkit-scrollbar-thumb,
+    pre:hover::-webkit-scrollbar-thumb,
+    pre.scrolling::-webkit-scrollbar-thumb,
+    .table-wrap:hover::-webkit-scrollbar-thumb,
+    .table-wrap.scrolling::-webkit-scrollbar-thumb,
+    .tool-box:hover::-webkit-scrollbar-thumb,
+    .tool-box.scrolling::-webkit-scrollbar-thumb,
+    .orphan-tool:hover::-webkit-scrollbar-thumb,
+    .orphan-tool.scrolling::-webkit-scrollbar-thumb {
+      background: rgba(15, 23, 42, .24);
+    }
+
+    #app:hover::-webkit-scrollbar-thumb:hover,
+    #app.scrolling::-webkit-scrollbar-thumb:hover,
+    pre:hover::-webkit-scrollbar-thumb:hover,
+    .table-wrap:hover::-webkit-scrollbar-thumb:hover,
+    .tool-box:hover::-webkit-scrollbar-thumb:hover,
+    .orphan-tool:hover::-webkit-scrollbar-thumb:hover {
+      background: rgba(15, 23, 42, .38);
+    }
+
+    .message {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 840px;
+      margin: 0 auto 12px;
+    }
+
+    .message.user {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .bubble {
+      box-sizing: border-box;
+      min-height: 24px;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+
+    .bubble.user {
+      width: fit-content;
+      max-width: 75%;
+      min-width: 48px;
+      padding: 12px 16px;
+      background: #EBEDF0;
+      color: rgba(0, 0, 0, .9);
+    }
+
+    .bubble.assistant {
+      width: 100%;
+      padding: 12px 16px;
+      color: rgba(0, 0, 0, .85);
+      background: transparent;
+    }
+
+    .bubble.intermediate {
+      color: rgba(0, 0, 0, .55);
+      font-style: italic;
+    }
+
+    .markdown-body > :first-child { margin-top: 0; }
+    .markdown-body > :last-child { margin-bottom: 0; }
+    p { margin: 0 0 10px; }
+    h1, h2, h3, h4, h5, h6 {
+      margin: 18px 0 8px;
+      line-height: 1.32;
+      font-weight: 700;
+      color: rgba(0, 0, 0, .9);
+    }
+    h1 { font-size: 1.42em; }
+    h2 { font-size: 1.28em; }
+    h3 { font-size: 1.16em; }
+    h4, h5, h6 { font-size: 1.04em; }
+    ul, ol { margin: 0 0 10px 1.35em; padding: 0; }
+    li { margin: 3px 0; }
+    blockquote {
+      margin: 10px 0;
+      padding: 8px 12px;
+      border-left: 3px solid #94a3b8;
+      background: #f8fafc;
+      color: rgba(0, 0, 0, .58);
+    }
+    pre {
+      margin: 10px 0;
+      padding: 12px;
+      overflow-x: auto;
+      border: 1px solid rgba(15, 23, 42, .12);
+      border-radius: 8px;
+      background: #f6f8fa;
+      line-height: 1.48;
+      white-space: pre;
+    }
+    code {
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: .92em;
+    }
+    :not(pre) > code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: #f6f8fa;
+    }
+    .num-run {
+      display: inline-block;
+      white-space: nowrap;
+      font-family: Arial, "Helvetica Neue", "Noto Sans", sans-serif;
+      letter-spacing: 0;
+      word-spacing: 0;
+      font-kerning: normal;
+      font-variant-numeric: normal;
+      font-feature-settings: "kern" 1;
+      text-align: left;
+    }
+    .table-wrap {
+      width: 100%;
+      margin: 10px 0;
+      display: block;
+      overflow-x: auto;
+    }
+    table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+    th, td {
+      padding: 7px 9px;
+      border: 1px solid rgba(15, 23, 42, .12);
+      text-align: left;
+      vertical-align: top;
+      word-break: normal;
+      overflow-wrap: break-word;
+    }
+    th,
+    .nowrap-cell {
+      white-space: nowrap;
+      overflow-wrap: normal;
+    }
+    th:last-child, td:last-child {
+      min-width: 18em;
+      white-space: normal;
+    }
+    th { background: #f1f5f9; font-weight: 650; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    a.local-file-link,
+    a.local-file-link:hover {
+      text-decoration: none;
+    }
+    a.local-file-link code {
+      color: inherit;
+      background: #f6f8fa;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+    a.local-file-link:hover code {
+      background:
+        linear-gradient(currentColor, currentColor) left calc(100% - 2px) / 100% 1px repeat-x,
+        #f6f8fa;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+    a.local-file-link .num-run {
+      display: inline;
+      color: inherit;
+    }
+    hr { height: 1px; border: 0; margin: 16px 0; background: rgba(15, 23, 42, .12); }
+
+    .compaction {
+      position: relative;
+      height: 20px;
+    }
+    .compaction:before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 10px;
+      height: 1px;
+      background: rgba(0, 0, 0, .08);
+    }
+
+    .tool {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 840px;
+      margin: 0 auto 12px;
+      color: rgba(0, 0, 0, .86);
+    }
+    .tool-header,
+    .tool-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 28px;
+      user-select: none;
+    }
+    .tool-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .tool-name {
+      font-size: 16px;
+    }
+    .chevron {
+      color: rgba(0, 0, 0, .6);
+      font-size: 14px;
+      margin-left: 2px;
+    }
+    .status-slot {
+      width: 20px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #006BFF;
+      animation: pulse 1.3s ease-in-out infinite;
+    }
+    .dot.error { background: #EF4444; animation: none; }
+    .check {
+      color: #56CA00;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: .35; }
+      50% { opacity: 1; }
+    }
+    .tool-detail {
+      display: grid;
+      grid-template-columns: 1px minmax(0, 1fr);
+      column-gap: 10px;
+      margin: 8px 0 0 9px;
+    }
+    .tool-line {
+      background: #E6E7EB;
+      border-radius: 1px;
+    }
+    .tool-stack {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .tool-box,
+    .orphan-tool {
+      box-sizing: border-box;
+      max-height: 320px;
+      overflow: auto;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #E5E7EB;
+      background: #F3F4F6;
+      color: rgba(0, 0, 0, .65);
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      font-size: 14px;
+    }
+    .tool-box.args {
+      max-height: 200px;
+      font-family: Consolas, "Courier New", "Alibaba PuHuiTi 3.0", monospace;
+    }
+    .tool-box.result.after-args {
+      margin-top: 8px;
+    }
+    .tool-box.error,
+    .orphan-tool.error {
+      color: #FF3D40;
+      border-color: #FECACA;
+    }
+    .tool-status {
+      margin-top: 8px;
+      color: #006BFF;
+    }
+    .tool-status.done { color: #16A34A; }
+    .tool-status.error { color: #FF3D40; }
+    .orphan-tool-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: rgba(0, 0, 0, .85);
+      font-weight: 700;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    (function () {
+      var app = document.getElementById('app');
+      var messages = [];
+      var collapsed = {};
+      var renderToken = 0;
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value).replace(/`/g, '&#96;');
+      }
+
+      function normalizeNumericSpacing(value) {
+        var text = String(value || '').replace(/[\u00a0\u2007\u202f]/g, ' ');
+        for (var i = 0; i < 3; i++) {
+          text = text
+            .replace(/(\d)\s+(?=\d)/g, '$1')
+            .replace(/([\u4e00-\u9fff])\s+(?=\d)/g, '$1')
+            .replace(/(\d)\s+([\u4e00-\u9fff])/g, '$1$2')
+            .replace(/(\d)\s+(?=[\d.,，．%％+＋])/g, '$1')
+            .replace(/([.,，．])\s+(?=\d)/g, '$1')
+            .replace(/(\d)\s+([%％+＋])/g, '$1$2')
+            .replace(/([+＋])\s+([\u4e00-\u9fff])/g, '$1$2')
+            .replace(/(\d)\s*([-–~～])\s*(?=\d)/g, '$1$2')
+            .replace(/([第约近超逾])\s+(?=\d)/g, '$1');
+        }
+        return text;
+      }
+
+      function protectNumericRuns(html) {
+        return String(html || '').replace(/(<[^>]+>|&[a-zA-Z#0-9]+;|[^<&]+)/g, function (part) {
+          if (part.charAt(0) === '<' || part.charAt(0) === '&') return part;
+          return part.replace(/[+-]?\d[\d.,，．:：/\\-–~～%％+＋]*/g, function (run) {
+            return '<span class="num-run">' + run + '</span>';
+          });
+        });
+      }
+
+      function localLinkHref(ref) {
+        return 'medclaw-local:' + encodeURIComponent(ref);
+      }
+
+      function decodeHtmlText(value) {
+        return String(value || '')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&');
+      }
+
+      function isLikelyLocalRef(ref) {
+        var value = String(ref || '').trim();
+        return /^(?:file:\/\/|~\/|\/)/.test(value)
+          || /^(?:\.{1,2}\/)?[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.(?:json|md|markdown|txt|csv|tsv|html?|pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|svg|py|js|ts|tsx|jsx|cpp|c|h|hpp|qml|pro|cmake|yml|yaml|xml|log)$/.test(value)
+          || /^[A-Za-z0-9_.-]+\.(?:json|md|markdown|txt|csv|tsv|html?|pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|svg|py|js|ts|tsx|jsx|cpp|c|h|hpp|qml|pro|cmake|yml|yaml|xml|log)$/.test(value);
+      }
+
+      function inlineCodeHtml(code) {
+        var ref = decodeHtmlText(code).trim();
+        if (!isLikelyLocalRef(ref))
+          return '<code>' + code + '</code>';
+        return '<a href="' + escapeAttr(localLinkHref(ref)) + '" class="local-file-link"><code>'
+          + code + '</code></a>';
+      }
+
+      function inlineMarkdown(text) {
+        var out = escapeHtml(normalizeNumericSpacing(text));
+        out = out.replace(/`([^`]+)`/g, function (_, code) { return inlineCodeHtml(code); });
+        out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        out = out.replace(/(^|[^\w/])__([^_\s][^_]*?[^_\s])__(?=$|[^\w/])/g, '$1<strong>$2</strong>');
+        out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+        out = out.replace(/(^|[^\w/])_([^_\s][^_]*?[^_\s])_(?=$|[^\w/])/g, '$1<em>$2</em>');
+        out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, label, href) {
+          return '<a href="' + escapeAttr(href) + '">' + label + '</a>';
+        });
+        return protectNumericRuns(out);
+      }
+
+      function flushParagraph(buffer, html) {
+        if (!buffer.length) return;
+        html.push('<p>' + inlineMarkdown(buffer.join(' ')) + '</p>');
+        buffer.length = 0;
+      }
+
+      function splitTableRow(line) {
+        var s = line.trim();
+        if (s.charAt(0) === '|') s = s.slice(1);
+        if (s.charAt(s.length - 1) === '|') s = s.slice(0, -1);
+        return s.split('|').map(function (cell) { return cell.trim(); });
+      }
+
+      function isTableSeparator(line) {
+        return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+      }
+
+      function tableCellClass(cell, index) {
+        var compact = normalizeNumericSpacing(cell)
+          .replace(/[`*_~\[\]()]/g, '')
+          .replace(/\s+/g, '');
+        return index === 0 || compact.length <= 18 ? ' class="nowrap-cell"' : '';
+      }
+
+      function renderList(lines, start, html, ordered) {
+        var tag = ordered ? 'ol' : 'ul';
+        var pattern = ordered ? /^\s*\d+\.\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
+        var i = start;
+        html.push('<' + tag + '>');
+        while (i < lines.length) {
+          var match = lines[i].match(pattern);
+          if (!match) break;
+          html.push('<li>' + inlineMarkdown(match[1]) + '</li>');
+          i++;
+        }
+        html.push('</' + tag + '>');
+        return i;
+      }
+
+      function renderTable(lines, start, html) {
+        var headers = splitTableRow(lines[start]);
+        var i = start + 2;
+        html.push('<div class="table-wrap"><table><thead><tr>');
+        headers.forEach(function (cell) { html.push('<th>' + inlineMarkdown(cell) + '</th>'); });
+        html.push('</tr></thead><tbody>');
+        while (i < lines.length && lines[i].indexOf('|') !== -1 && lines[i].trim() !== '') {
+          html.push('<tr>');
+          splitTableRow(lines[i]).forEach(function (cell, index) {
+            html.push('<td' + tableCellClass(cell, index) + '>' + inlineMarkdown(cell) + '</td>');
+          });
+          html.push('</tr>');
+          i++;
+        }
+        html.push('</tbody></table></div>');
+        return i;
+      }
+
+      function renderMarkdown(markdown) {
+        var lines = String(markdown || '').replace(/\r\n/g, '\n').split('\n');
+        var html = [];
+        var paragraph = [];
+        var i = 0;
+
+        while (i < lines.length) {
+          var line = lines[i];
+
+          if (/^\s*```/.test(line)) {
+            flushParagraph(paragraph, html);
+            var code = [];
+            i++;
+            while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+            if (i < lines.length) i++;
+            html.push('<pre><code>' + escapeHtml(code.join('\n')) + '</code></pre>');
+            continue;
+          }
+
+          if (/^\s*$/.test(line)) {
+            flushParagraph(paragraph, html);
+            i++;
+            continue;
+          }
+
+          if (/^\s*#{1,6}\s+/.test(line)) {
+            flushParagraph(paragraph, html);
+            var h = line.match(/^\s*(#{1,6})\s+(.+)$/);
+            html.push('<h' + h[1].length + '>' + inlineMarkdown(h[2]) + '</h' + h[1].length + '>');
+            i++;
+            continue;
+          }
+
+          if (/^\s*>/.test(line)) {
+            flushParagraph(paragraph, html);
+            var quote = [];
+            while (i < lines.length && /^\s*>/.test(lines[i])) quote.push(lines[i++].replace(/^\s*>\s?/, ''));
+            html.push('<blockquote>' + renderMarkdown(quote.join('\n')) + '</blockquote>');
+            continue;
+          }
+
+          if (/^\s*[-*+]\s+/.test(line)) {
+            flushParagraph(paragraph, html);
+            i = renderList(lines, i, html, false);
+            continue;
+          }
+
+          if (/^\s*\d+\.\s+/.test(line)) {
+            flushParagraph(paragraph, html);
+            i = renderList(lines, i, html, true);
+            continue;
+          }
+
+          if (i + 1 < lines.length && line.indexOf('|') !== -1 && isTableSeparator(lines[i + 1])) {
+            flushParagraph(paragraph, html);
+            i = renderTable(lines, i, html);
+            continue;
+          }
+
+          if (/^\s*---+\s*$/.test(line)) {
+            flushParagraph(paragraph, html);
+            html.push('<hr>');
+            i++;
+            continue;
+          }
+
+          paragraph.push(line.trim());
+          i++;
+        }
+
+        flushParagraph(paragraph, html);
+        return html.join('');
+      }
+
+      function plainTextHtml(text) {
+        return protectNumericRuns(escapeHtml(normalizeNumericSpacing(text)));
+      }
+
+      function isCompactionMarker(msg) {
+        var c = String(msg.content || '').trim().toLowerCase();
+        return msg.msgType !== 'toolCall'
+          && msg.msgType !== 'toolResult'
+          && msg.msgRole !== 'user'
+          && c === 'compaction';
+      }
+
+      function toolKey(msg, index) {
+        return (msg.toolCallId && String(msg.toolCallId).length > 0)
+          ? 'id:' + msg.toolCallId
+          : 'idx:' + index;
+      }
+
+      function statusIcon(msg) {
+        if (!msg.hasToolResult) return '<span class="dot"></span>';
+        if (msg.isError) return '<span class="dot error"></span>';
+        return '<span class="check">✓</span>';
+      }
+
+      function renderToolCall(msg, index) {
+        var key = toolKey(msg, index);
+        var expanded = collapsed[key] !== true;
+        var hasArgs = String(msg.toolArgs || '').length > 0;
+        var hasResult = msg.hasToolResult && String(msg.toolResultText || '').length > 0;
+        var html = [];
+        html.push('<div class="tool" data-row="' + index + '">');
+        html.push('<div class="tool-header">');
+        html.push('<span class="status-slot">' + statusIcon(msg) + '</span>');
+        html.push('<span class="tool-toggle" data-tool-key="' + escapeAttr(key) + '">');
+        html.push('<span class="tool-name">' + escapeHtml(msg.toolName || '工具') + '</span>');
+        html.push('<span class="chevron">' + (expanded ? '▾' : '▸') + '</span>');
+        html.push('</span></div>');
+        if (expanded) {
+          html.push('<div class="tool-detail"><div class="tool-line"></div><div class="tool-stack">');
+          if (hasArgs)
+            html.push('<div class="tool-box args">' + escapeHtml(msg.toolArgs || '') + '</div>');
+          if (hasResult)
+            html.push('<div class="tool-box result' + (hasArgs ? ' after-args' : '') + (msg.isError ? ' error' : '') + '">' + plainTextHtml(msg.toolResultText || '') + '</div>');
+          html.push('</div></div>');
+          if (!msg.hasToolResult) {
+            html.push('<div class="tool-status"><span class="status-slot"><span class="dot"></span></span><span>执行中...</span></div>');
+          } else {
+            html.push('<div class="tool-status ' + (msg.isError ? 'error' : 'done') + '"><span class="status-slot">' + statusIcon(msg) + '</span><span>' + (msg.isError ? '任务失败' : '任务完成') + '</span></div>');
+          }
+        }
+        html.push('</div>');
+        return html.join('');
+      }
+
+      function renderOrphanToolResult(msg, index) {
+        return '<div class="message" data-row="' + index + '">'
+          + '<div class="orphan-tool' + (msg.isError ? ' error' : '') + '">'
+          + '<div class="orphan-tool-title"><span class="status-slot">' + statusIcon({ hasToolResult: true, isError: msg.isError }) + '</span>'
+          + '<span>' + escapeHtml(msg.toolName || '工具结果') + '</span></div>'
+          + plainTextHtml(msg.content || '')
+          + '</div></div>';
+      }
+
+      function renderTextMessage(msg, index) {
+        var isUser = msg.msgRole === 'user';
+        var classes = 'bubble ' + (isUser ? 'user' : 'assistant markdown-body');
+        if (msg.isIntermediate) classes += ' intermediate';
+        var body = '';
+        if (isUser || msg.isStreaming)
+          body = plainTextHtml(msg.content || '');
+        else
+          body = renderMarkdown(msg.content || '');
+        return '<div class="message ' + (isUser ? 'user' : 'assistant') + '" data-row="' + index + '">'
+          + '<div class="' + classes + '" data-content-row="' + index + '">' + body + '</div>'
+          + '</div>';
+      }
+
+      function renderMessage(msg, index) {
+        msg = msg || {};
+        if (isCompactionMarker(msg))
+          return '<div class="message compaction" data-row="' + index + '"></div>';
+        if (msg.msgType === 'toolCall')
+          return renderToolCall(msg, index);
+        if (msg.msgType === 'toolResult')
+          return renderOrphanToolResult(msg, index);
+        return renderTextMessage(msg, index);
+      }
+
+      function scrollToBottom() {
+        app.scrollTop = app.scrollHeight;
+      }
+
+      function markScrolling(node) {
+        if (!node || !node.classList) return;
+        node.classList.add('scrolling');
+        if (node._scrollHideTimer)
+          clearTimeout(node._scrollHideTimer);
+        node._scrollHideTimer = setTimeout(function () {
+          node.classList.remove('scrolling');
+          node._scrollHideTimer = null;
+        }, 850);
+      }
+
+      function renderAll(shouldScrollToBottom) {
+        var token = ++renderToken;
+        var oldTop = app.scrollTop;
+        var index = 0;
+        app.innerHTML = '';
+
+        function renderBatch() {
+          if (token !== renderToken)
+            return;
+
+          var html = [];
+          var chars = 0;
+          var count = 0;
+          while (index < messages.length && count < 24 && chars < 120000) {
+            var piece = renderMessage(messages[index], index);
+            html.push(piece);
+            chars += piece.length;
+            index++;
+            count++;
+          }
+
+          if (html.length)
+            app.insertAdjacentHTML('beforeend', html.join(''));
+
+          if (index < messages.length) {
+            setTimeout(renderBatch, 0);
+            return;
+          }
+
+          if (shouldScrollToBottom)
+            setTimeout(scrollToBottom, 0);
+          else
+            app.scrollTop = oldTop;
+        }
+
+        renderBatch();
+      }
+
+      window.MedClawChat = {
+        setMessages: function (items) {
+          messages = Array.isArray(items) ? items : [];
+          renderAll(true);
+        },
+        appendStreamDelta: function (row, delta) {
+          row = Number(row);
+          if (!messages[row]) return;
+          messages[row].content = String(messages[row].content || '') + String(delta || '');
+          messages[row].isStreaming = true;
+          var node = app.querySelector('[data-content-row="' + row + '"]');
+          if (!node) {
+            renderAll(true);
+            return;
+          }
+          node.innerHTML = plainTextHtml(messages[row].content || '');
+          scrollToBottom();
+        },
+        scrollToBottom: scrollToBottom
+      };
+
+      document.addEventListener('click', function (event) {
+        var toggle = event.target;
+        while (toggle && toggle !== document && !toggle.getAttribute('data-tool-key'))
+          toggle = toggle.parentNode;
+        if (toggle && toggle.getAttribute && toggle.getAttribute('data-tool-key')) {
+          var key = toggle.getAttribute('data-tool-key');
+          collapsed[key] = collapsed[key] !== true;
+          renderAll(false);
+          return;
+        }
+
+        var node = event.target;
+        while (node && node.tagName !== 'A') node = node.parentNode;
+        if (!node) return;
+        event.preventDefault();
+        var href = node.getAttribute('href') || node.href;
+        window.location.href = href.indexOf('medclaw-local:') === 0 ? href : node.href;
+      });
+
+      document.addEventListener('scroll', function (event) {
+        markScrolling(event.target);
+      }, true);
+    })();
+  </script>
+</body>
+</html>

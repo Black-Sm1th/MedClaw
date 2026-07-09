@@ -201,6 +201,118 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
     return false;
 }
 
+QVariantList ChatModel::messages() const
+{
+    QVariantList out;
+    out.reserve(m_messages.count());
+    for (const ChatMessage &msg : m_messages) {
+        QVariantMap item;
+        item.insert(QStringLiteral("msgRole"), msg.role);
+        item.insert(QStringLiteral("content"), msg.content);
+        item.insert(QStringLiteral("timestamp"), msg.timestamp.toString(QStringLiteral("hh:mm:ss")));
+        item.insert(QStringLiteral("msgType"), msg.msgType);
+        item.insert(QStringLiteral("toolName"), msg.toolName);
+        item.insert(QStringLiteral("toolArgs"), msg.toolArgs);
+        item.insert(QStringLiteral("toolCallId"), msg.toolCallId);
+        item.insert(QStringLiteral("isError"), msg.isError);
+        item.insert(QStringLiteral("toolResultText"), msg.toolResultText);
+        item.insert(QStringLiteral("hasToolResult"), msg.hasToolResult);
+        item.insert(QStringLiteral("isStreaming"), msg.isStreaming);
+        item.insert(QStringLiteral("isIntermediate"), msg.isIntermediate);
+        out.append(item);
+    }
+    return out;
+}
+
+void ChatModel::loadHistory(const QVariantList &messages)
+{
+    m_streamFlushTimer.stop();
+    m_streamFlushRow = -1;
+    m_streamDirty = false;
+    m_streamPending.clear();
+    const bool wasStreaming = m_streaming;
+    m_streaming = false;
+
+    beginResetModel();
+    m_messages.clear();
+    m_messages.reserve(messages.count());
+
+    for (const QVariant &v : messages) {
+        const QVariantMap m = v.toMap();
+        const QString mtype = m.value(QStringLiteral("msgType")).toString();
+
+        if (mtype == QLatin1String("toolCall")) {
+            for (int i = m_messages.count() - 1; i >= 0; --i) {
+                const ChatMessage &prev = m_messages[i];
+                if (prev.msgType == QStringLiteral("toolCall")
+                    || prev.msgType == QStringLiteral("toolResult")) {
+                    continue;
+                }
+                if (prev.msgType == QStringLiteral("text")
+                    && prev.role == QStringLiteral("assistant")
+                    && !prev.isIntermediate) {
+                    m_messages[i].isIntermediate = true;
+                }
+                break;
+            }
+
+            ChatMessage msg;
+            msg.role = QStringLiteral("assistant");
+            msg.timestamp = QDateTime::currentDateTime();
+            msg.msgType = QStringLiteral("toolCall");
+            msg.toolName = m.value(QStringLiteral("toolName")).toString();
+            msg.toolArgs = m.value(QStringLiteral("toolArgs")).toString();
+            msg.toolCallId = m.value(QStringLiteral("toolCallId")).toString();
+            msg.isError = false;
+            msg.hasToolResult = false;
+            m_messages.append(msg);
+            continue;
+        }
+
+        if (mtype == QLatin1String("toolResult")) {
+            const QString toolCallId = m.value(QStringLiteral("toolCallId")).toString();
+            bool merged = false;
+            for (int i = m_messages.count() - 1; i >= 0; --i) {
+                if (m_messages[i].msgType == QStringLiteral("toolCall")
+                    && m_messages[i].toolCallId == toolCallId) {
+                    m_messages[i].toolResultText = m.value(QStringLiteral("content")).toString();
+                    m_messages[i].hasToolResult = true;
+                    m_messages[i].isError = m.value(QStringLiteral("isError")).toBool();
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged)
+                continue;
+
+            ChatMessage msg;
+            msg.role = QStringLiteral("tool");
+            msg.content = m.value(QStringLiteral("content")).toString();
+            msg.timestamp = QDateTime::currentDateTime();
+            msg.msgType = QStringLiteral("toolResult");
+            msg.toolName = m.value(QStringLiteral("toolName")).toString();
+            msg.toolCallId = toolCallId;
+            msg.isError = m.value(QStringLiteral("isError")).toBool();
+            m_messages.append(msg);
+            continue;
+        }
+
+        ChatMessage msg;
+        msg.role = m.value(QStringLiteral("role")).toString();
+        msg.content = m.value(QStringLiteral("content")).toString();
+        msg.timestamp = QDateTime::currentDateTime();
+        msg.msgType = QStringLiteral("text");
+        msg.isError = false;
+        m_messages.append(msg);
+    }
+
+    endResetModel();
+    emit countChanged();
+    if (wasStreaming)
+        emit isStreamingChanged();
+    emit messagePayloadChanged();
+}
+
 // ── Streaming ────────────────────────────────────────────────────────
 //
 // 设计要点（既要保留 Markdown 渲染、又要避免长文本流式时卡死）：
@@ -348,8 +460,8 @@ void ChatModel::endStreaming()
     }
     const int last = m_messages.count() - 1;
     // 关键顺序：先把残留 delta 合并进 content + 推给 QML，让 bubbleText insert 到末尾；
-    // 之后再翻 IsStreamingRole：QML 端 MarkdownWebView 会用完整 content
-    // 延迟精排短文本；超长文本保持 PlainText，避免 Markdown 渲染卡住主线程。
+    // 之后再翻 IsStreamingRole：QML 端单 WebEngine 聊天区会用完整 content
+    // 做最终 Markdown 渲染；流式阶段只追加纯文本 delta。
     if (m_streamFlushRow == last && !m_streamPending.isEmpty()) {
         m_messages[last].content += m_streamPending;
         emit streamFlushed(last, m_streamPending);

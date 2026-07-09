@@ -244,8 +244,30 @@ ApplicationWindow {
 
     /// Markdown / 富文本中的超链接点击（需 Text.textFormat 为 MarkdownText 等）
     function openMarkdownLink(link) {
-        if (link && String(link).length > 0)
-            Qt.openUrlExternally(link)
+        var raw = String(link || "")
+        if (!raw)
+            return
+
+        var ws = ""
+        if (typeof dropdownSelectionWorkSpace !== "undefined")
+            ws = dropdownSelectionWorkSpace.effectiveWorkspacePath || ""
+        if (!ws)
+            ws = wsClient.currentTaskWorkspace || ""
+
+        var isLocalLink = raw.indexOf("medclaw-local:") === 0
+        if (isLocalLink || raw.indexOf("file://") === 0) {
+            var resolved = $MainViewController.resolveLocalFileLink(raw, ws)
+            if (resolved) {
+                Qt.openUrlExternally(resolved)
+                return
+            }
+            if (isLocalLink) {
+                console.warn("local file link not found:", raw)
+                return
+            }
+        }
+
+        Qt.openUrlExternally(raw)
     }
 
     function modelDisplayLabel(nm, pv) {
@@ -1140,8 +1162,8 @@ ApplicationWindow {
                 Connections {
                     target: chatModel
                     function onMessagePayloadChanged() {
-                        if (chatListView.count > 0)
-                            chatListView.scheduleScrollToEnd()
+                        if (chatModel.count > 0)
+                            chatWebView.scrollToBottom()
                     }
                 }
                 Connections {
@@ -1154,8 +1176,8 @@ ApplicationWindow {
                 Connections {
                     target: chatModel
                     function onIsStreamingChanged() {
-                        if (chatModel.isStreaming && chatListView.count > 0)
-                            chatListView.scheduleScrollToEnd()
+                        if (chatModel.isStreaming && chatModel.count > 0)
+                            chatWebView.scrollToBottom()
                     }
                 }
                 Connections {
@@ -1269,568 +1291,581 @@ ApplicationWindow {
                         }
                     }
                 }
-                ListView {
-                    id: chatListView
+                ChatWebView {
+                    id: chatWebView
                     visible: newTaskRec.hasMessages
                     anchors.top: collaborationTabBar.visible ? collaborationTabBar.bottom : parent.top
                     anchors.topMargin: collaborationTabBar.visible ? 8 : 16
                     anchors.bottom: generatingRow.top
                     anchors.bottomMargin: 8
-                    width: 840
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    clip: true
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     model: chatModel
-                    spacing: 12
-                    ScrollBar.vertical: ScrollBar {
-                        policy: ScrollBar.AsNeeded
-                    }
-                    onCountChanged: {
-                        if (count > 0)
-                            chatListView.scheduleScrollToEnd()
-                    }
-
-                    /// 「粘底」机制：
-                    /// dataChanged / 新增行触发后，delegate 的最终高度（尤其是
-                    /// toolResult 文本块的 Text.contentHeight）可能要再过一两个
-                    /// polish/render pass 才稳定，此时单次 Qt.callLater 调用的
-                    /// positionViewAtEnd() 会按旧 contentHeight 定位，从而漏掉
-                    /// 刚刚展开的工具结果。
-                    ///
-                    /// 解决：把「需要滚到底」标记成一段时间内的待办，期间任何
-                    /// contentHeight / 几何变化都会再次 positionViewAtEnd()，
-                    /// 直到布局稳定到时间窗口结束。
-                    property bool _pendingScrollToEnd: false
-                    property bool _scrollCallLaterQueued: false
-                    Timer {
-                        id: scrollSettleTimer
-                        interval: 220
-                        repeat: false
-                        onTriggered: chatListView._pendingScrollToEnd = false
-                    }
-                    function scheduleScrollToEnd() {
-                        if (count <= 0) return
-                        _pendingScrollToEnd = true
-                        scrollSettleTimer.restart()
-                        if (_scrollCallLaterQueued) return
-                        _scrollCallLaterQueued = true
-                        Qt.callLater(function () {
-                            chatListView._scrollCallLaterQueued = false
-                            if (chatListView.count > 0)
-                                chatListView.positionViewAtEnd()
-                        })
-                    }
-                    onContentHeightChanged: {
-                        if (_pendingScrollToEnd && count > 0)
-                            positionViewAtEnd()
-                    }
-                    onHeightChanged: {
-                        if (_pendingScrollToEnd && count > 0)
-                            positionViewAtEnd()
-                    }
-
-                    /// 工具卡片折叠状态记忆：key 优先用 toolCallId（稳定），
-                    /// 缺失时回退到 "idx:<index>"。值为 true 表示「已折叠」。
-                    /// ListView 滚动时会回收/重建 delegate，局部属性会被重置，
-                    /// 故必须把状态提升到 ListView 这一层持久保存。
-                    property var toolCollapsed: ({})
-                    function isToolCollapsed(callId, idx) {
-                        var k = (callId && String(callId).length > 0)
-                                ? ("id:" + callId) : ("idx:" + idx)
-                        return toolCollapsed[k] === true
-                    }
-                    function setToolCollapsed(callId, idx, collapsed) {
-                        var k = (callId && String(callId).length > 0)
-                                ? ("id:" + callId) : ("idx:" + idx)
-                        // QML var 属性按引用比较是否变化，必须替换为新对象才能触发绑定刷新
-                        var m = Object.assign({}, toolCollapsed)
-                        if (collapsed) m[k] = true
-                        else delete m[k]
-                        toolCollapsed = m
-                    }
-                    /// 切换会话 / 删除任务时 chatModel.clear() 会触发 modelReset，
-                    /// 顺便清掉折叠记忆，避免遗留键无限累积。
-                    Connections {
-                        target: chatModel
-                        function onModelReset() { chatListView.toolCollapsed = ({}) }
-                    }
-
-                    delegate: Item {
-                        width: chatListView.width
-                        readonly property bool isCompactionMarker: {
-                            var c = String(content || "").trim().toLowerCase()
-                            return msgType !== "toolCall"
-                                && msgType !== "toolResult"
-                                && msgRole !== "user"
-                                && c === "compaction"
-                        }
-                        height: {
-                            if (msgType === "toolCall") return toolBlockRoot.height
-                            if (msgType === "toolResult") return orphanToolResultRoot.height
-                            if (isCompactionMarker) return compactionDivider.height
-                            return chatBubble.height
-                        }
-
-                        Rectangle {
-                            id: chatBubble
-                            visible: msgType !== "toolCall" && msgType !== "toolResult" && !parent.isCompactionMarker
-                            width: parent.width
-                            height: visible ? bubbleInner.height + 4 : 0
-                            color: "transparent"
-                            readonly property bool isUser: msgRole === "user"
-
-                            Rectangle {
-                                id: bubbleInner
-                                anchors.left: chatBubble.isUser ? undefined : parent.left
-                                anchors.right: chatBubble.isUser ? parent.right : undefined
-                                anchors.top: parent.top
-                                readonly property real maxBubbleWidth: chatBubble.isUser ? chatBubble.width * 0.75 : chatBubble.width
-                                readonly property real minBubbleWidth: chatBubble.isUser ? 48 : 64
-                                width: chatBubble.isUser
-                                       ? Math.min(maxBubbleWidth,
-                                                  Math.max(minBubbleWidth, userText.implicitWidth + 32))
-                                       : maxBubbleWidth
-                                height: (chatBubble.isUser
-                                         ? userText.implicitHeight
-                                         : (markdownLoader.item ? markdownLoader.item.implicitHeight : 24)) + 24
-                                radius: 12
-                                color: chatBubble.isUser ? "#EBEDF0" : "transparent"
-
-                                TextEdit {
-                                    id: userText
-                                    visible: chatBubble.isUser
-                                    width: Math.max(0, parent.width - 32)
-                                    anchors.centerIn: parent
-                                    text: content || ""
-                                    textFormat: Text.PlainText
-                                    wrapMode: Text.Wrap
-                                    font.pixelSize: 16
-                                    font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                    color: "#E5000000"
-                                    readOnly: true
-                                    selectByMouse: true
-                                }
-
-                                Loader {
-                                    id: markdownLoader
-                                    active: !chatBubble.isUser
-                                    width: Math.max(0, parent.width - 32)
-                                    anchors.centerIn: parent
-
-                                    sourceComponent: MarkdownWebView {
-                                        // 流式时只追加 delta；结束后由 WebEngine 本地 HTML 渲染 Markdown。
-                                        width: markdownLoader.width
-                                        sourceText: content || ""
-                                        streaming: isStreaming === true
-                                        isUser: false
-                                        isIntermediate: isIntermediate || false
-                                        maxMarkdownChars: 500000
-                                        markdownDelayMs: 100
-                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
-
-                                        Connections {
-                                            target: chatModel
-                                            function onStreamFlushed(row, delta) {
-                                                if (row !== index) return
-                                                if (!delta || delta.length === 0) return
-                                                if (markdownLoader.item)
-                                                    markdownLoader.item.append(delta)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            id: compactionDivider
-                            visible: parent.isCompactionMarker
-                            width: parent.width
-                            height: visible ? 20 : 0
-                            color: "transparent"
-
-                            Rectangle {
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                height: 1
-                                color: "#14000000"
-                            }
-                        }
-
-                        // ── 工具调用 + 结果（合并到同一行，可折叠详情）──
-                        Item {
-                            id: toolBlockRoot
-                            visible: msgType === "toolCall"
-                            width: parent.width
-                            height: visible ? toolBlockRow.implicitHeight : 0
-
-                            readonly property bool toolDone: hasToolResult
-                            readonly property bool toolRunning: !hasToolResult
-                            readonly property bool toolOk: hasToolResult && !isError
-                            readonly property bool toolFail: hasToolResult && isError
-                            /// 折叠态由 chatListView.toolCollapsed 持久化记忆，
-                            /// 即便 delegate 滚出可视区被回收重建，状态也不会丢失。
-                            readonly property bool toolDetailExpanded:
-                                !chatListView.isToolCollapsed(toolCallId, index)
-
-                            Column {
-                                id: toolBlockRow
-                                width: parent.width
-                                spacing: 0
-
-                                Row {
-                                    id: toolHeaderRow
-                                    width: parent.width
-                                    spacing: 8
-                                    height: 28
-
-                                    Item {
-                                        width: 20
-                                        height: 20
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        Rectangle {
-                                            id: toolHeaderRunDot
-                                            anchors.centerIn: parent
-                                            visible: toolBlockRoot.toolRunning
-                                            width: 8
-                                            height: 8
-                                            radius: 4
-                                            color: "#006BFF"
-                                        }
-                                        SequentialAnimation {
-                                            running: toolBlockRoot.toolRunning && toolBlockRoot.visible
-                                            loops: Animation.Infinite
-                                            NumberAnimation {
-                                                target: toolHeaderRunDot
-                                                property: "opacity"
-                                                from: 0.35; to: 1; duration: 650
-                                                easing.type: Easing.InOutQuad
-                                            }
-                                            NumberAnimation {
-                                                target: toolHeaderRunDot
-                                                property: "opacity"
-                                                from: 1; to: 0.35; duration: 650
-                                                easing.type: Easing.InOutQuad
-                                            }
-                                        }
-                                        Text {
-                                            anchors.centerIn: parent
-                                            visible: toolBlockRoot.toolOk
-                                            text: "\u2713"
-                                            color: "#56CA00"
-                                            font.pixelSize: 16
-                                            font.bold: true
-                                        }
-                                        Rectangle {
-                                            anchors.centerIn: parent
-                                            visible: toolBlockRoot.toolFail
-                                            width: 8
-                                            height: 8
-                                            radius: 4
-                                            color: "#EF4444"
-                                        }
-                                    }
-
-                                    Row {
-                                        spacing: 4
-                                        anchors.verticalCenter: parent.verticalCenter
-
-                                        Text {
-                                            text: toolName || qsTr("工具")
-                                            font.pixelSize: 16
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            font.bold: true
-                                            color: "#D9000000"
-                                        }
-
-                                        Text {
-                                            id: toolChevron
-                                            text: toolBlockRoot.toolDetailExpanded ? "\u25BE" : "\u25B8"
-                                            font.pixelSize: 14
-                                            color: "#99000000"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                anchors.margins: -6
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: chatListView.setToolCollapsed(
-                                                               toolCallId, index,
-                                                               toolBlockRoot.toolDetailExpanded)
-                                            }
-                                        }
-
-                                    }
-                                }
-
-                                Column {
-                                    width: parent.width
-                                    visible: toolBlockRoot.toolDetailExpanded
-                                    spacing: 8
-
-                                    Row {
-                                        id: toolBlockDetailRow
-                                        width: parent.width
-                                        spacing: 10
-                                        leftPadding: 9
-                                        Rectangle {
-                                            id: toolTimelineBar
-                                            width: 1
-                                            height: toolCallResultStack.height
-                                            radius: 1
-                                            color: "#E6E7EB"
-                                        }
-
-                                        Column {
-                                            id: toolCallResultStack
-                                            width: toolBlockRoot.width - toolTimelineBar.width - toolBlockDetailRow.spacing - 8
-                                            spacing: 8
-
-                                            Rectangle {
-                                                id: toolArgsRect
-                                                width: parent.width
-                                                visible: toolArgs && String(toolArgs).length > 0
-                                                readonly property real _toolArgsPad: 10
-                                                readonly property real _toolArgsMaxH: 200
-                                                height: visible ? toolArgsText.contentHeight + 2 * _toolArgsPad + 2 : 0
-                                                radius: 8
-                                                color: "#F3F4F6"
-                                                border.width: 1
-                                                border.color: "#E5E7EB"
-                                                clip: true
-
-                                                Flickable {
-                                                    id: toolArgsFlick
-                                                    anchors.fill: parent
-                                                    anchors.margins: 1
-                                                    clip: true
-                                                    flickableDirection: Flickable.AutoFlickIfNeeded
-                                                    contentWidth: toolArgsText.contentWidth + 2 * toolArgsRect._toolArgsPad
-                                                    contentHeight: toolArgsText.contentHeight + 2 * toolArgsRect._toolArgsPad
-                                                    boundsBehavior: Flickable.StopAtBounds
-
-                                                    ScrollBar.horizontal: ScrollBar {
-                                                        policy: ScrollBar.AsNeeded
-                                                    }
-                                                    ScrollBar.vertical: ScrollBar {
-                                                        policy: ScrollBar.AsNeeded
-                                                    }
-
-                                                    Text {
-                                                        id: toolArgsText
-                                                        x: toolArgsRect._toolArgsPad
-                                                        y: toolArgsRect._toolArgsPad
-                                                        width: Math.max(
-                                                                   implicitWidth,
-                                                                   toolArgsFlick.width - 2 * toolArgsRect._toolArgsPad)
-                                                        text: toolArgs || ""
-                                                        wrapMode: Text.Wrap
-                                                        font.pixelSize: 14
-                                                        font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                        color: "#A6000000"
-                                                        // selectByMouse: true
-                                                        // readOnly: true
-                                                        // textFormat: Text.MarkdownText
-                                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                                                    }
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                id: toolResultRect
-                                                width: parent.width
-                                                visible: hasToolResult && String(toolResultText).length > 0
-                                                readonly property real _toolResPad: 10
-                                                readonly property real _toolResMaxH: 320
-                                                height: visible ? toolResultBody.contentHeight + 2 * _toolResPad + 2 : 0
-                                                radius: 8
-                                                color: "#F3F4F6"
-                                                border.width: 1
-                                                border.color: isError ? "#FECACA" : "#E5E7EB"
-                                                clip: true
-
-                                                Flickable {
-                                                    id: toolResultFlick
-                                                    anchors.fill: parent
-                                                    anchors.margins: 1
-                                                    clip: true
-                                                    flickableDirection: Flickable.AutoFlickIfNeeded
-                                                    contentWidth: toolResultBody.contentWidth + 2 * toolResultRect._toolResPad
-                                                    contentHeight: toolResultBody.contentHeight + 2 * toolResultRect._toolResPad
-                                                    boundsBehavior: Flickable.StopAtBounds
-
-                                                    ScrollBar.horizontal: ScrollBar {
-                                                        policy: ScrollBar.AsNeeded
-                                                    }
-                                                    ScrollBar.vertical: ScrollBar {
-                                                        policy: ScrollBar.AsNeeded
-                                                    }
-
-                                                    Text {
-                                                        id: toolResultBody
-                                                        x: toolResultRect._toolResPad
-                                                        y: toolResultRect._toolResPad
-                                                        width: Math.max(
-                                                                   implicitWidth,
-                                                                   toolResultFlick.width - 2 * toolResultRect._toolResPad)
-                                                        text: toolResultText || ""
-                                                        wrapMode: Text.Wrap
-                                                        font.pixelSize: 14
-                                                        font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                        color: isError ? "#FF3D40" : "#A6000000"
-                                                        // textFormat: Text.MarkdownText
-                                                        // readOnly: true
-                                                        // selectByMouse: true
-                                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Row {
-                                        width: parent.width
-                                        visible: toolBlockRoot.toolRunning
-                                        spacing: 8
-                                        height: 24
-                                        Item {
-                                            width: 20
-                                            height: 20
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            Rectangle {
-                                                id: toolFooterRunDot
-                                                anchors.centerIn: parent
-                                                width: 8
-                                                height: 8
-                                                radius: 4
-                                                color: "#006BFF"
-                                            }
-                                            SequentialAnimation {
-                                                running: toolBlockRoot.toolRunning && toolBlockRoot.visible
-                                                loops: Animation.Infinite
-                                                NumberAnimation {
-                                                    target: toolFooterRunDot
-                                                    property: "opacity"
-                                                    from: 0.35; to: 1; duration: 650
-                                                    easing.type: Easing.InOutQuad
-                                                }
-                                                NumberAnimation {
-                                                    target: toolFooterRunDot
-                                                    property: "opacity"
-                                                    from: 1; to: 0.35; duration: 650
-                                                    easing.type: Easing.InOutQuad
-                                                }
-                                            }
-                                        }
-                                        Text {
-                                            text: qsTr("执行中…")
-                                            font.pixelSize: 16
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            color: "#006BFF"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                    }
-                                    Row {
-                                        width: parent.width
-                                        visible: hasToolResult
-                                        spacing: 8
-                                        height: 24
-
-                                        Item {
-                                            width: 20
-                                            height: 20
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            Text {
-                                                anchors.centerIn: parent
-                                                visible: toolBlockRoot.toolOk
-                                                text: "\u2713"
-                                                color: "#56CA00"
-                                                font.pixelSize: 16
-                                                font.bold: true
-                                            }
-                                            Rectangle {
-                                                anchors.centerIn: parent
-                                                visible: toolBlockRoot.toolFail
-                                                width: 8
-                                                height: 8
-                                                radius: 4
-                                                color: "#EF4444"
-                                            }
-                                        }
-
-                                        Text {
-                                            text: isError ? qsTr("任务失败") : qsTr("任务完成")
-                                            font.pixelSize: 16
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            color: isError ? "#FF3D40" : "#16A34A"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 未匹配到 toolCall 的孤立 toolResult（兼容）
-                        Item {
-                            id: orphanToolResultRoot
-                            visible: msgType === "toolResult"
-                            width: parent.width
-                            height: visible ? orphanToolCol.implicitHeight + 24 : 0
-
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 8
-                                color: "#F3F4F6"
-                                border.width: 1
-                                border.color: isError ? "#FECACA" : "#E5E7EB"
-
-                                Column {
-                                    id: orphanToolCol
-                                    width: parent.width - 24
-                                    x: 12
-                                    y: 12
-                                    spacing: 6
-
-                                    Row {
-                                        spacing: 8
-                                        Text {
-                                            visible: !isError
-                                            text: "\u2713"
-                                            color: "#56CA00"
-                                            font.pixelSize: 14
-                                            font.bold: true
-                                        }
-                                        Rectangle {
-                                            visible: isError
-                                            width: 8
-                                            height: 8
-                                            radius: 4
-                                            color: "#EF4444"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                        Text {
-                                            text: toolName
-                                            font.pixelSize: 13
-                                            font.bold: true
-                                            color: "#D9000000"
-                                        }
-                                    }
-                                    Text {
-                                        width: parent.width
-                                        text: content || ""
-                                        wrapMode: Text.Wrap
-                                        font.pixelSize: 12
-                                        font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                        color: isError ? "#FF3D40" : "#A6000000"
-                                        textFormat: Text.MarkdownText
-                                        // readOnly: true
-                                        // selectByMouse: true
-                                        onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    onLinkActivated: function(link) { window.openMarkdownLink(link) }
                 }
+
+                // ListView {
+                //     id: chatListView
+                //     visible: false
+                //     anchors.top: collaborationTabBar.visible ? collaborationTabBar.bottom : parent.top
+                //     anchors.topMargin: collaborationTabBar.visible ? 8 : 16
+                //     anchors.bottom: generatingRow.top
+                //     anchors.bottomMargin: 8
+                //     width: 840
+                //     anchors.horizontalCenter: parent.horizontalCenter
+                //     clip: true
+                //     model: null
+                //     spacing: 12
+                //     ScrollBar.vertical: ScrollBar {
+                //         policy: ScrollBar.AsNeeded
+                //     }
+                //     onCountChanged: {
+                //         if (count > 0)
+                //             chatListView.scheduleScrollToEnd()
+                //     }
+
+                //     /// 「粘底」机制：
+                //     /// dataChanged / 新增行触发后，delegate 的最终高度（尤其是
+                //     /// toolResult 文本块的 Text.contentHeight）可能要再过一两个
+                //     /// polish/render pass 才稳定，此时单次 Qt.callLater 调用的
+                //     /// positionViewAtEnd() 会按旧 contentHeight 定位，从而漏掉
+                //     /// 刚刚展开的工具结果。
+                //     ///
+                //     /// 解决：把「需要滚到底」标记成一段时间内的待办，期间任何
+                //     /// contentHeight / 几何变化都会再次 positionViewAtEnd()，
+                //     /// 直到布局稳定到时间窗口结束。
+                //     property bool _pendingScrollToEnd: false
+                //     property bool _scrollCallLaterQueued: false
+                //     Timer {
+                //         id: scrollSettleTimer
+                //         interval: 220
+                //         repeat: false
+                //         onTriggered: chatListView._pendingScrollToEnd = false
+                //     }
+                //     function scheduleScrollToEnd() {
+                //         if (count <= 0) return
+                //         _pendingScrollToEnd = true
+                //         scrollSettleTimer.restart()
+                //         if (_scrollCallLaterQueued) return
+                //         _scrollCallLaterQueued = true
+                //         Qt.callLater(function () {
+                //             chatListView._scrollCallLaterQueued = false
+                //             if (chatListView.count > 0)
+                //                 chatListView.positionViewAtEnd()
+                //         })
+                //     }
+                //     onContentHeightChanged: {
+                //         if (_pendingScrollToEnd && count > 0)
+                //             positionViewAtEnd()
+                //     }
+                //     onHeightChanged: {
+                //         if (_pendingScrollToEnd && count > 0)
+                //             positionViewAtEnd()
+                //     }
+
+                //     /// 工具卡片折叠状态记忆：key 优先用 toolCallId（稳定），
+                //     /// 缺失时回退到 "idx:<index>"。值为 true 表示「已折叠」。
+                //     /// ListView 滚动时会回收/重建 delegate，局部属性会被重置，
+                //     /// 故必须把状态提升到 ListView 这一层持久保存。
+                //     property var toolCollapsed: ({})
+                //     function isToolCollapsed(callId, idx) {
+                //         var k = (callId && String(callId).length > 0)
+                //                 ? ("id:" + callId) : ("idx:" + idx)
+                //         return toolCollapsed[k] === true
+                //     }
+                //     function setToolCollapsed(callId, idx, collapsed) {
+                //         var k = (callId && String(callId).length > 0)
+                //                 ? ("id:" + callId) : ("idx:" + idx)
+                //         // QML var 属性按引用比较是否变化，必须替换为新对象才能触发绑定刷新
+                //         var m = Object.assign({}, toolCollapsed)
+                //         if (collapsed) m[k] = true
+                //         else delete m[k]
+                //         toolCollapsed = m
+                //     }
+                //     /// 切换会话 / 删除任务时 chatModel.clear() 会触发 modelReset，
+                //     /// 顺便清掉折叠记忆，避免遗留键无限累积。
+                //     Connections {
+                //         target: chatModel
+                //         function onModelReset() { chatListView.toolCollapsed = ({}) }
+                //     }
+
+                //     delegate: Item {
+                //         width: chatListView.width
+                //         readonly property bool isCompactionMarker: {
+                //             var c = String(content || "").trim().toLowerCase()
+                //             return msgType !== "toolCall"
+                //                 && msgType !== "toolResult"
+                //                 && msgRole !== "user"
+                //                 && c === "compaction"
+                //         }
+                //         height: {
+                //             if (msgType === "toolCall") return toolBlockRoot.height
+                //             if (msgType === "toolResult") return orphanToolResultRoot.height
+                //             if (isCompactionMarker) return compactionDivider.height
+                //             return chatBubble.height
+                //         }
+
+                //         Rectangle {
+                //             id: chatBubble
+                //             visible: msgType !== "toolCall" && msgType !== "toolResult" && !parent.isCompactionMarker
+                //             width: parent.width
+                //             height: visible ? bubbleInner.height + 4 : 0
+                //             color: "transparent"
+                //             readonly property bool isUser: msgRole === "user"
+
+                //             Rectangle {
+                //                 id: bubbleInner
+                //                 anchors.left: chatBubble.isUser ? undefined : parent.left
+                //                 anchors.right: chatBubble.isUser ? parent.right : undefined
+                //                 anchors.top: parent.top
+                //                 readonly property real maxBubbleWidth: chatBubble.isUser ? chatBubble.width * 0.75 : chatBubble.width
+                //                 readonly property real minBubbleWidth: chatBubble.isUser ? 48 : 64
+                //                 width: chatBubble.isUser
+                //                        ? Math.min(maxBubbleWidth,
+                //                                   Math.max(minBubbleWidth, userText.implicitWidth + 32))
+                //                        : maxBubbleWidth
+                //                 height: (chatBubble.isUser
+                //                          ? userText.implicitHeight
+                //                          : (markdownLoader.item ? markdownLoader.item.implicitHeight : 24)) + 24
+                //                 radius: 12
+                //                 color: chatBubble.isUser ? "#EBEDF0" : "transparent"
+
+                //                 TextEdit {
+                //                     id: userText
+                //                     visible: chatBubble.isUser
+                //                     width: Math.max(0, parent.width - 32)
+                //                     anchors.centerIn: parent
+                //                     text: content || ""
+                //                     textFormat: Text.PlainText
+                //                     wrapMode: Text.Wrap
+                //                     font.pixelSize: 16
+                //                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                //                     color: "#E5000000"
+                //                     readOnly: true
+                //                     selectByMouse: true
+                //                 }
+
+                //                 Loader {
+                //                     id: markdownLoader
+                //                     active: !chatBubble.isUser
+                //                     width: Math.max(0, parent.width - 32)
+                //                     anchors.centerIn: parent
+
+                //                     sourceComponent: MarkdownWebView {
+                //                         // 流式时只追加 delta；结束后由 WebEngine 本地 HTML 渲染 Markdown。
+                //                         width: markdownLoader.width
+                //                         sourceText: content || ""
+                //                         streaming: isStreaming === true
+                //                         isUser: false
+                //                         isIntermediate: isIntermediate || false
+                //                         maxMarkdownChars: 500000
+                //                         markdownDelayMs: 100
+                //                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
+
+                //                         Connections {
+                //                             target: chatModel
+                //                             function onStreamFlushed(row, delta) {
+                //                                 if (row !== index) return
+                //                                 if (!delta || delta.length === 0) return
+                //                                 if (markdownLoader.item)
+                //                                     markdownLoader.item.append(delta)
+                //                             }
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //         }
+
+                //         Rectangle {
+                //             id: compactionDivider
+                //             visible: parent.isCompactionMarker
+                //             width: parent.width
+                //             height: visible ? 20 : 0
+                //             color: "transparent"
+
+                //             Rectangle {
+                //                 anchors.verticalCenter: parent.verticalCenter
+                //                 anchors.left: parent.left
+                //                 anchors.right: parent.right
+                //                 height: 1
+                //                 color: "#14000000"
+                //             }
+                //         }
+
+                //         // ── 工具调用 + 结果（合并到同一行，可折叠详情）──
+                //         Item {
+                //             id: toolBlockRoot
+                //             visible: msgType === "toolCall"
+                //             width: parent.width
+                //             height: visible ? toolBlockRow.implicitHeight : 0
+
+                //             readonly property bool toolDone: hasToolResult
+                //             readonly property bool toolRunning: !hasToolResult
+                //             readonly property bool toolOk: hasToolResult && !isError
+                //             readonly property bool toolFail: hasToolResult && isError
+                //             /// 折叠态由 chatListView.toolCollapsed 持久化记忆，
+                //             /// 即便 delegate 滚出可视区被回收重建，状态也不会丢失。
+                //             readonly property bool toolDetailExpanded:
+                //                 !chatListView.isToolCollapsed(toolCallId, index)
+
+                //             Column {
+                //                 id: toolBlockRow
+                //                 width: parent.width
+                //                 spacing: 0
+
+                //                 Row {
+                //                     id: toolHeaderRow
+                //                     width: parent.width
+                //                     spacing: 8
+                //                     height: 28
+
+                //                     Item {
+                //                         width: 20
+                //                         height: 20
+                //                         anchors.verticalCenter: parent.verticalCenter
+                //                         Rectangle {
+                //                             id: toolHeaderRunDot
+                //                             anchors.centerIn: parent
+                //                             visible: toolBlockRoot.toolRunning
+                //                             width: 8
+                //                             height: 8
+                //                             radius: 4
+                //                             color: "#006BFF"
+                //                         }
+                //                         SequentialAnimation {
+                //                             running: toolBlockRoot.toolRunning && toolBlockRoot.visible
+                //                             loops: Animation.Infinite
+                //                             NumberAnimation {
+                //                                 target: toolHeaderRunDot
+                //                                 property: "opacity"
+                //                                 from: 0.35; to: 1; duration: 650
+                //                                 easing.type: Easing.InOutQuad
+                //                             }
+                //                             NumberAnimation {
+                //                                 target: toolHeaderRunDot
+                //                                 property: "opacity"
+                //                                 from: 1; to: 0.35; duration: 650
+                //                                 easing.type: Easing.InOutQuad
+                //                             }
+                //                         }
+                //                         Text {
+                //                             anchors.centerIn: parent
+                //                             visible: toolBlockRoot.toolOk
+                //                             text: "\u2713"
+                //                             color: "#56CA00"
+                //                             font.pixelSize: 16
+                //                             font.bold: true
+                //                         }
+                //                         Rectangle {
+                //                             anchors.centerIn: parent
+                //                             visible: toolBlockRoot.toolFail
+                //                             width: 8
+                //                             height: 8
+                //                             radius: 4
+                //                             color: "#EF4444"
+                //                         }
+                //                     }
+
+                //                     Row {
+                //                         spacing: 4
+                //                         anchors.verticalCenter: parent.verticalCenter
+
+                //                         Text {
+                //                             text: toolName || qsTr("工具")
+                //                             font.pixelSize: 16
+                //                             font.family: "Alibaba PuHuiTi 3.0"
+                //                             font.bold: true
+                //                             color: "#D9000000"
+                //                         }
+
+                //                         Text {
+                //                             id: toolChevron
+                //                             text: toolBlockRoot.toolDetailExpanded ? "\u25BE" : "\u25B8"
+                //                             font.pixelSize: 14
+                //                             color: "#99000000"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             MouseArea {
+                //                                 anchors.fill: parent
+                //                                 anchors.margins: -6
+                //                                 cursorShape: Qt.PointingHandCursor
+                //                                 onClicked: chatListView.setToolCollapsed(
+                //                                                toolCallId, index,
+                //                                                toolBlockRoot.toolDetailExpanded)
+                //                             }
+                //                         }
+
+                //                     }
+                //                 }
+
+                //                 Column {
+                //                     width: parent.width
+                //                     visible: toolBlockRoot.toolDetailExpanded
+                //                     spacing: 8
+
+                //                     Row {
+                //                         id: toolBlockDetailRow
+                //                         width: parent.width
+                //                         spacing: 10
+                //                         leftPadding: 9
+                //                         Rectangle {
+                //                             id: toolTimelineBar
+                //                             width: 1
+                //                             height: toolCallResultStack.height
+                //                             radius: 1
+                //                             color: "#E6E7EB"
+                //                         }
+
+                //                         Column {
+                //                             id: toolCallResultStack
+                //                             width: toolBlockRoot.width - toolTimelineBar.width - toolBlockDetailRow.spacing - 8
+                //                             spacing: 8
+
+                //                             Rectangle {
+                //                                 id: toolArgsRect
+                //                                 width: parent.width
+                //                                 visible: toolArgs && String(toolArgs).length > 0
+                //                                 readonly property real _toolArgsPad: 10
+                //                                 readonly property real _toolArgsMaxH: 200
+                //                                 height: visible ? toolArgsText.contentHeight + 2 * _toolArgsPad + 2 : 0
+                //                                 radius: 8
+                //                                 color: "#F3F4F6"
+                //                                 border.width: 1
+                //                                 border.color: "#E5E7EB"
+                //                                 clip: true
+
+                //                                 Flickable {
+                //                                     id: toolArgsFlick
+                //                                     anchors.fill: parent
+                //                                     anchors.margins: 1
+                //                                     clip: true
+                //                                     flickableDirection: Flickable.AutoFlickIfNeeded
+                //                                     contentWidth: toolArgsText.contentWidth + 2 * toolArgsRect._toolArgsPad
+                //                                     contentHeight: toolArgsText.contentHeight + 2 * toolArgsRect._toolArgsPad
+                //                                     boundsBehavior: Flickable.StopAtBounds
+
+                //                                     ScrollBar.horizontal: ScrollBar {
+                //                                         policy: ScrollBar.AsNeeded
+                //                                     }
+                //                                     ScrollBar.vertical: ScrollBar {
+                //                                         policy: ScrollBar.AsNeeded
+                //                                     }
+
+                //                                     Text {
+                //                                         id: toolArgsText
+                //                                         x: toolArgsRect._toolArgsPad
+                //                                         y: toolArgsRect._toolArgsPad
+                //                                         width: Math.max(
+                //                                                    implicitWidth,
+                //                                                    toolArgsFlick.width - 2 * toolArgsRect._toolArgsPad)
+                //                                         text: toolArgs || ""
+                //                                         wrapMode: Text.Wrap
+                //                                         font.pixelSize: 14
+                //                                         font.family: "Consolas, Courier New, Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                //                                         color: "#A6000000"
+                //                                         // selectByMouse: true
+                //                                         // readOnly: true
+                //                                         // textFormat: Text.MarkdownText
+                //                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                //                                     }
+                //                                 }
+                //                             }
+
+                //                             Rectangle {
+                //                                 id: toolResultRect
+                //                                 width: parent.width
+                //                                 visible: hasToolResult && String(toolResultText).length > 0
+                //                                 readonly property real _toolResPad: 10
+                //                                 readonly property real _toolResMaxH: 320
+                //                                 height: visible ? toolResultBody.contentHeight + 2 * _toolResPad + 2 : 0
+                //                                 radius: 8
+                //                                 color: "#F3F4F6"
+                //                                 border.width: 1
+                //                                 border.color: isError ? "#FECACA" : "#E5E7EB"
+                //                                 clip: true
+
+                //                                 Flickable {
+                //                                     id: toolResultFlick
+                //                                     anchors.fill: parent
+                //                                     anchors.margins: 1
+                //                                     clip: true
+                //                                     flickableDirection: Flickable.AutoFlickIfNeeded
+                //                                     contentWidth: toolResultBody.contentWidth + 2 * toolResultRect._toolResPad
+                //                                     contentHeight: toolResultBody.contentHeight + 2 * toolResultRect._toolResPad
+                //                                     boundsBehavior: Flickable.StopAtBounds
+
+                //                                     ScrollBar.horizontal: ScrollBar {
+                //                                         policy: ScrollBar.AsNeeded
+                //                                     }
+                //                                     ScrollBar.vertical: ScrollBar {
+                //                                         policy: ScrollBar.AsNeeded
+                //                                     }
+
+                //                                     Text {
+                //                                         id: toolResultBody
+                //                                         x: toolResultRect._toolResPad
+                //                                         y: toolResultRect._toolResPad
+                //                                         width: Math.max(
+                //                                                    implicitWidth,
+                //                                                    toolResultFlick.width - 2 * toolResultRect._toolResPad)
+                //                                         text: toolResultText || ""
+                //                                         wrapMode: Text.Wrap
+                //                                         font.pixelSize: 14
+                //                                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                //                                         color: isError ? "#FF3D40" : "#A6000000"
+                //                                         // textFormat: Text.MarkdownText
+                //                                         // readOnly: true
+                //                                         // selectByMouse: true
+                //                                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                //                                     }
+                //                                 }
+                //                             }
+                //                         }
+                //                     }
+
+                //                     Row {
+                //                         width: parent.width
+                //                         visible: toolBlockRoot.toolRunning
+                //                         spacing: 8
+                //                         height: 24
+                //                         Item {
+                //                             width: 20
+                //                             height: 20
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             Rectangle {
+                //                                 id: toolFooterRunDot
+                //                                 anchors.centerIn: parent
+                //                                 width: 8
+                //                                 height: 8
+                //                                 radius: 4
+                //                                 color: "#006BFF"
+                //                             }
+                //                             SequentialAnimation {
+                //                                 running: toolBlockRoot.toolRunning && toolBlockRoot.visible
+                //                                 loops: Animation.Infinite
+                //                                 NumberAnimation {
+                //                                     target: toolFooterRunDot
+                //                                     property: "opacity"
+                //                                     from: 0.35; to: 1; duration: 650
+                //                                     easing.type: Easing.InOutQuad
+                //                                 }
+                //                                 NumberAnimation {
+                //                                     target: toolFooterRunDot
+                //                                     property: "opacity"
+                //                                     from: 1; to: 0.35; duration: 650
+                //                                     easing.type: Easing.InOutQuad
+                //                                 }
+                //                             }
+                //                         }
+                //                         Text {
+                //                             text: qsTr("执行中…")
+                //                             font.pixelSize: 16
+                //                             font.family: "Alibaba PuHuiTi 3.0"
+                //                             color: "#006BFF"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                         }
+                //                     }
+                //                     Row {
+                //                         width: parent.width
+                //                         visible: hasToolResult
+                //                         spacing: 8
+                //                         height: 24
+
+                //                         Item {
+                //                             width: 20
+                //                             height: 20
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                             Text {
+                //                                 anchors.centerIn: parent
+                //                                 visible: toolBlockRoot.toolOk
+                //                                 text: "\u2713"
+                //                                 color: "#56CA00"
+                //                                 font.pixelSize: 16
+                //                                 font.bold: true
+                //                             }
+                //                             Rectangle {
+                //                                 anchors.centerIn: parent
+                //                                 visible: toolBlockRoot.toolFail
+                //                                 width: 8
+                //                                 height: 8
+                //                                 radius: 4
+                //                                 color: "#EF4444"
+                //                             }
+                //                         }
+
+                //                         Text {
+                //                             text: isError ? qsTr("任务失败") : qsTr("任务完成")
+                //                             font.pixelSize: 16
+                //                             font.family: "Alibaba PuHuiTi 3.0"
+                //                             color: isError ? "#FF3D40" : "#16A34A"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //         }
+
+                //         // 未匹配到 toolCall 的孤立 toolResult（兼容）
+                //         Item {
+                //             id: orphanToolResultRoot
+                //             visible: msgType === "toolResult"
+                //             width: parent.width
+                //             height: visible ? orphanToolCol.implicitHeight + 24 : 0
+
+                //             Rectangle {
+                //                 anchors.fill: parent
+                //                 radius: 8
+                //                 color: "#F3F4F6"
+                //                 border.width: 1
+                //                 border.color: isError ? "#FECACA" : "#E5E7EB"
+
+                //                 Column {
+                //                     id: orphanToolCol
+                //                     width: parent.width - 24
+                //                     x: 12
+                //                     y: 12
+                //                     spacing: 6
+
+                //                     Row {
+                //                         spacing: 8
+                //                         Text {
+                //                             visible: !isError
+                //                             text: "\u2713"
+                //                             color: "#56CA00"
+                //                             font.pixelSize: 14
+                //                             font.bold: true
+                //                         }
+                //                         Rectangle {
+                //                             visible: isError
+                //                             width: 8
+                //                             height: 8
+                //                             radius: 4
+                //                             color: "#EF4444"
+                //                             anchors.verticalCenter: parent.verticalCenter
+                //                         }
+                //                         Text {
+                //                             text: toolName
+                //                             font.pixelSize: 13
+                //                             font.bold: true
+                //                             color: "#D9000000"
+                //                         }
+                //                     }
+                //                     Text {
+                //                         width: parent.width
+                //                         text: content || ""
+                //                         wrapMode: Text.Wrap
+                //                         font.pixelSize: 12
+                //                         font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                //                         color: isError ? "#FF3D40" : "#A6000000"
+                //                         textFormat: Text.MarkdownText
+                //                         // readOnly: true
+                //                         // selectByMouse: true
+                //                         onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                //                     }
+                //                 }
+                //             }
+                //         }
+                //     }
+                // }
 
                 /// 固定在输入框上方、列表可视区域下方（不参与 ListView 滚动）
                 Item {

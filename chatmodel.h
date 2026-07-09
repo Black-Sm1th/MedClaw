@@ -5,6 +5,8 @@
 #include <QDateTime>
 #include <QVector>
 #include <QTimer>
+#include <QVariantList>
+#include <QVariantMap>
 
 /**
  * 聊天消息数据结构
@@ -73,6 +75,8 @@ public:
     Q_INVOKABLE void appendToLastMessage(const QString &text);
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
+    Q_INVOKABLE QVariantList messages() const;
+    void loadHistory(const QVariantList &messages);
 
     void beginStreaming();
     void appendStreamChunk(const QString &chunk);

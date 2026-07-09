@@ -129,27 +129,7 @@ int main(int argc, char *argv[])
     // 历史消息加载完成：清空当前显示并填充历史记录
     QObject::connect(&wsClient, &GatewayClient::historyLoaded,
                      [&chatModel](const QVariantList &messages) {
-        chatModel.clear();
-        for (const QVariant &v : messages) {
-            const QVariantMap m = v.toMap();
-            const QString mtype = m.value(QStringLiteral("msgType")).toString();
-            if (mtype == QLatin1String("toolCall")) {
-                chatModel.addToolCall(
-                    m.value(QStringLiteral("toolName")).toString(),
-                    m.value(QStringLiteral("toolArgs")).toString(),
-                    m.value(QStringLiteral("toolCallId")).toString());
-            } else if (mtype == QLatin1String("toolResult")) {
-                chatModel.addToolResult(
-                    m.value(QStringLiteral("toolName")).toString(),
-                    m.value(QStringLiteral("content")).toString(),
-                    m.value(QStringLiteral("toolCallId")).toString(),
-                    m.value(QStringLiteral("isError")).toBool());
-            } else {
-                chatModel.addMessage(
-                    m.value(QStringLiteral("role")).toString(),
-                    m.value(QStringLiteral("content")).toString());
-            }
-        }
+        chatModel.loadHistory(messages);
     });
 
     // ── 本地会话历史读取器 ──
