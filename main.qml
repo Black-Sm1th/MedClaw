@@ -2631,8 +2631,8 @@ ApplicationWindow {
                                             // }
 
                                             Text {
-                                                id: workflowText
-                                                text: "workflow"
+                                                id: skillsText
+                                                text: "技能"
                                                 font.pixelSize: 14
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#D9000000"
@@ -3058,7 +3058,7 @@ ApplicationWindow {
 
                                                     Text {
                                                         id: toolText
-                                                        text: "skills"
+                                                        text: "tools"
                                                         font.pixelSize: 14
                                                         font.family: "Alibaba PuHuiTi 3.0"
                                                         color: "#D9000000"
@@ -5766,7 +5766,7 @@ ApplicationWindow {
             Rectangle {
                 id: mcpSettingRec
                 anchors.fill: parent
-                visible: window.leftSelectedIndex === 4
+                visible: window.leftSelectedIndex === 5
                 property string mcpSearchText: ""
 
                 function filteredMcpList() {
