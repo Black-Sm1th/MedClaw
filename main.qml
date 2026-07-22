@@ -9,7 +9,7 @@ ApplicationWindow {
     width: 1440
     height: 800
     visible: true
-    title: qsTr("CRMS AI Agent")
+    title: qsTr("Aether_ClawDESK")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
@@ -275,9 +275,21 @@ ApplicationWindow {
         return trimToFirstParenPairOnly(raw)
     }
 
-    // 启动时自动连接（地址与 AppData/config.json 中 serverUrl 一致，由 C++ 加载）
+    // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
-        wsClient.connectToServer(wsClient.serverUrl)
+        if (authController.loggedIn)
+            wsClient.connectToServer(wsClient.serverUrl)
+    }
+    Connections {
+        target: authController
+        function onLoggedInChanged() {
+            if (authController.loggedIn) {
+                wsClient.connectToServer(wsClient.serverUrl)
+            } else {
+                wsClient.disconnectFromServer()
+                chatModel.clear()
+            }
+        }
     }
     Connections{
         target: wsClient
@@ -391,7 +403,8 @@ ApplicationWindow {
     }
     Rectangle{
         id: leftContainer
-        width: window.sidebarCollapsed ? 68 : 280
+        enabled: authController.loggedIn
+        width: authController.loggedIn ? (window.sidebarCollapsed ? 68 : 280) : 0
         height: parent.height
         anchors.left: parent.left
         anchors.top: parent.top
@@ -426,7 +439,7 @@ ApplicationWindow {
             Rectangle{
                 id: leftMidPanel
                 width: parent.width - 32
-                height: parent.height - 56
+                height: parent.height - 56 - 72
                 color: "transparent"
 
                 // 当前选中的 agent ID（用于高亮）
@@ -747,6 +760,106 @@ ApplicationWindow {
                 }
             }
         }
+
+        Rectangle {
+            id: accountEntry
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.right: parent.right
+            anchors.rightMargin: 16
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 12
+            height: 48
+            radius: 6
+            color: accountMouse.containsMouse || accountPopup.visible ? "#E6E7EB" : "transparent"
+            Image {
+                width: 28
+                height: 28
+                source: "qrc:/images/largeIcon.png"
+                anchors.left: parent.left
+                anchors.leftMargin: window.sidebarCollapsed ? 4 : 8
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Column {
+                visible: !window.sidebarCollapsed
+                anchors.left: parent.left
+                anchors.leftMargin: 46
+                anchors.right: accountArrow.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 1
+                Label { text: "用户管理"; color: "#D9000000"; font.pixelSize: 13 }
+                Label { width: parent.width; text: authController.phone; color: "#73000000"; font.pixelSize: 11; elide: Text.ElideMiddle }
+            }
+            Label {
+                id: accountArrow
+                visible: !window.sidebarCollapsed
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                text: "›"
+                color: "#73000000"
+                font.pixelSize: 18
+            }
+            MouseArea {
+                id: accountMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    var pt = accountEntry.mapToItem(window.contentItem,
+                                                    window.sidebarCollapsed ? accountEntry.width + 6 : 0,
+                                                    -accountPopup.height - 6)
+                    accountPopup.x = pt.x
+                    accountPopup.y = Math.max(8, pt.y)
+                    accountPopup.open()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: accountPopup
+        parent: window.contentItem
+        width: window.sidebarCollapsed ? 190 : 248
+        height: 92
+        padding: 8
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: "#FFFFFF"; radius: 6; border.width: 1; border.color: "#1F000000" }
+        contentItem: Column {
+            spacing: 2
+            Rectangle {
+                width: parent.width
+                height: 34
+                color: "transparent"
+                Row {
+                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                    Label { text: "账号"; color: "#73000000"; font.pixelSize: 12 }
+                    Label { text: authController.phone; color: "#D9000000"; font.pixelSize: 12 }
+                }
+            }
+            Rectangle {
+                width: parent.width
+                height: 40
+                radius: 5
+                color: logoutMouse.containsMouse ? "#F2F3F5" : "transparent"
+                Row {
+                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                    Label { text: "↪"; color: "#D9000000"; font.pixelSize: 16 }
+                    Label { text: authController.busy ? "正在退出..." : "退出登录"; color: "#D9000000"; font.pixelSize: 13 }
+                }
+                MouseArea {
+                    id: logoutMouse
+                    anchors.fill: parent
+                    enabled: !authController.busy
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: { accountPopup.close(); authController.logout() }
+                }
+            }
+        }
     }
 
     Popup {
@@ -927,6 +1040,7 @@ ApplicationWindow {
                 }
             }
             Rectangle{
+                visible: authController.loggedIn
                 color: "#F7F9FA"
                 width: statusRow.width
                 height: 31
@@ -978,7 +1092,8 @@ ApplicationWindow {
                 spacing: 0
                 Item {
                     id: workspaceTopBarSlot
-                    width: ((window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6)
+                    width: (authController.loggedIn
+                            && (window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6)
                             && !newTaskRec.isNewTaskWelcome) ? 137 : 0
                     height: parent.height
                     clip: true
@@ -990,21 +1105,25 @@ ApplicationWindow {
                 }
                 ImageButton{
                     id: settingBtn
+                    visible: authController.loggedIn
                     source: "qrc:/images/setting.png"
                     onClicked: settingsDialog.open()
                 }
                 Rectangle{
+                    visible: authController.loggedIn
                     width: 20
                     height: 1
                     color: "transparent"
                 }
                 Rectangle{
+                    visible: authController.loggedIn
                     width: 1
                     height: 16
                     color: "#1F000000"
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Rectangle{
+                    visible: authController.loggedIn
                     width: 20
                     height: 1
                     color: "transparent"
@@ -1046,6 +1165,7 @@ ApplicationWindow {
         }
         Rectangle{
             id: rightMainPanel
+            enabled: authController.loggedIn
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: rightTopPanel.bottom
@@ -1148,7 +1268,7 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Label{
-                        text: "CRMS AI Agent"
+                        text: "Aether_ClawDESK"
                         font.family: "Alimama ShuHeiTi"
                         font.pixelSize: 36
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -8372,5 +8492,16 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    LoginPage {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: rightTopPanel.height
+        anchors.bottom: parent.bottom
+        visible: !authController.loggedIn
+        enabled: visible
+        z: 20000
     }
 }

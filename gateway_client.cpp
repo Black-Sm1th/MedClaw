@@ -218,6 +218,17 @@ QString GatewayClient::gatewayAuthToken() const
     return m_config.token();
 }
 
+void GatewayClient::setTaskSessionUserId(const QString &userId)
+{
+    const QString normalized = userId.trimmed();
+    if (m_taskSessionUserId == normalized)
+        return;
+
+    m_taskSessionUserId = normalized;
+    clearActiveAgentContext();
+    loadTaskSessionListFromDb();
+}
+
 /// 将连接状态枚举转换为用户可读的中文描述
 QString GatewayClient::statusText() const
 {
@@ -559,22 +570,79 @@ bool GatewayClient::initTaskSessionDb()
     QSqlQuery q(m_taskSessionDb);
     const bool ok = q.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS task_sessions ("
-        "session_id TEXT PRIMARY KEY,"
+        "user_id TEXT NOT NULL,"
+        "session_id TEXT NOT NULL,"
         "workspace TEXT NOT NULL DEFAULT '',"
         "title TEXT NOT NULL DEFAULT '',"
         "created_at INTEGER NOT NULL,"
         "updated_at INTEGER NOT NULL,"
         "deleted_at INTEGER,"
-        "agents_json TEXT NOT NULL DEFAULT '[]'"
+        "agents_json TEXT NOT NULL DEFAULT '[]',"
+        "PRIMARY KEY (user_id, session_id)"
         ")"));
     if (!ok) {
         qWarning().noquote() << "[TaskSessionDb] create table failed:"
                              << q.lastError().text();
         return false;
     }
+    bool hasUserId = false;
+    int userIdPkOrder = 0;
+    int sessionIdPkOrder = 0;
+    if (q.exec(QStringLiteral("PRAGMA table_info(task_sessions)"))) {
+        while (q.next()) {
+            const QString columnName = q.value(1).toString();
+            const int pkOrder = q.value(5).toInt();
+            if (columnName == QLatin1String("user_id")) {
+                hasUserId = true;
+                userIdPkOrder = pkOrder;
+            } else if (columnName == QLatin1String("session_id")) {
+                sessionIdPkOrder = pkOrder;
+            }
+        }
+    }
+
+    // Migrate the original session_id-only schema. Old rows deliberately remain
+    // unassigned so an existing local history is never exposed to a new account.
+    if (!hasUserId || userIdPkOrder != 1 || sessionIdPkOrder != 2) {
+        if (!m_taskSessionDb.transaction()) {
+            qWarning().noquote() << "[TaskSessionDb] cannot start migration:"
+                                 << m_taskSessionDb.lastError().text();
+            return false;
+        }
+        QSqlQuery migration(m_taskSessionDb);
+        const bool createOk = migration.exec(QStringLiteral(
+            "CREATE TABLE task_sessions_migrating ("
+            "user_id TEXT NOT NULL,"
+            "session_id TEXT NOT NULL,"
+            "workspace TEXT NOT NULL DEFAULT '',"
+            "title TEXT NOT NULL DEFAULT '',"
+            "created_at INTEGER NOT NULL,"
+            "updated_at INTEGER NOT NULL,"
+            "deleted_at INTEGER,"
+            "agents_json TEXT NOT NULL DEFAULT '[]',"
+            "PRIMARY KEY (user_id, session_id)"
+            ")"));
+        const QString sourceUserId = hasUserId ? QStringLiteral("COALESCE(user_id, '')")
+                                                : QStringLiteral("''");
+        const bool copyOk = createOk && migration.exec(QStringLiteral(
+            "INSERT INTO task_sessions_migrating "
+            "(user_id, session_id, workspace, title, created_at, updated_at, deleted_at, agents_json) "
+            "SELECT %1, session_id, workspace, title, created_at, updated_at, deleted_at, agents_json "
+            "FROM task_sessions").arg(sourceUserId));
+        const bool replaceOk = copyOk
+            && migration.exec(QStringLiteral("DROP TABLE task_sessions"))
+            && migration.exec(QStringLiteral("ALTER TABLE task_sessions_migrating RENAME TO task_sessions"));
+        if (!replaceOk || !m_taskSessionDb.commit()) {
+            qWarning().noquote() << "[TaskSessionDb] schema migration failed:"
+                                 << migration.lastError().text();
+            m_taskSessionDb.rollback();
+            return false;
+        }
+    }
+    q.exec(QStringLiteral("DROP INDEX IF EXISTS idx_task_sessions_visible"));
     q.exec(QStringLiteral(
-        "CREATE INDEX IF NOT EXISTS idx_task_sessions_visible "
-        "ON task_sessions(deleted_at, updated_at)"));
+        "CREATE INDEX IF NOT EXISTS idx_task_sessions_user_visible "
+        "ON task_sessions(user_id, deleted_at, updated_at)"));
     m_taskSessionDbReady = true;
     return true;
 }
@@ -584,14 +652,23 @@ void GatewayClient::loadTaskSessionListFromDb()
     if (!initTaskSessionDb())
         return;
 
+    if (m_taskSessionUserId.isEmpty()) {
+        m_taskSessionList.clear();
+        emit taskSessionListChanged();
+        emit currentTaskWorkspaceChanged();
+        return;
+    }
+
     QVariantList rows;
     QSqlQuery q(m_taskSessionDb);
-    if (!q.exec(QStringLiteral(
+    q.prepare(QStringLiteral(
             "SELECT session_id, workspace, title, created_at, updated_at, "
             "deleted_at, agents_json "
             "FROM task_sessions "
-            "WHERE deleted_at IS NULL "
-            "ORDER BY updated_at DESC, created_at DESC"))) {
+            "WHERE user_id=? AND deleted_at IS NULL "
+            "ORDER BY updated_at DESC, created_at DESC"));
+    q.addBindValue(m_taskSessionUserId);
+    if (!q.exec()) {
         qWarning().noquote() << "[TaskSessionDb] load failed:"
                              << q.lastError().text();
         return;
@@ -635,7 +712,7 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
                                            qint64 updatedAt)
 {
     const QString key = sessionKey.trimmed();
-    if (key.isEmpty() || !initTaskSessionDb())
+    if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
         return;
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -668,11 +745,12 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
         "updated_at=?,"
         "deleted_at=NULL,"
         "agents_json=? "
-        "WHERE session_id=?"));
+        "WHERE user_id=? AND session_id=?"));
     q.addBindValue(QVariant(workspaceValue));
     q.addBindValue(QVariant(titleValue));
     q.addBindValue(QVariant(static_cast<qlonglong>(updatedAt)));
     q.addBindValue(agentsJson);
+    q.addBindValue(m_taskSessionUserId);
     q.addBindValue(key);
     if (!q.exec()) {
         qWarning().noquote() << "[TaskSessionDb] update failed:"
@@ -684,8 +762,9 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
         QSqlQuery ins(m_taskSessionDb);
         ins.prepare(QStringLiteral(
             "INSERT INTO task_sessions "
-            "(session_id, workspace, title, created_at, updated_at, deleted_at, agents_json) "
-            "VALUES (?, ?, ?, ?, ?, NULL, ?)"));
+            "(user_id, session_id, workspace, title, created_at, updated_at, deleted_at, agents_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, ?)"));
+        ins.addBindValue(m_taskSessionUserId);
         ins.addBindValue(QVariant(key));
         ins.addBindValue(QVariant(workspaceValue));
         ins.addBindValue(QVariant(titleValue));
@@ -712,14 +791,15 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
 void GatewayClient::touchTaskSessionLocal(const QString &sessionKey)
 {
     const QString key = sessionKey.trimmed();
-    if (key.isEmpty() || !initTaskSessionDb())
+    if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
         return;
 
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
         "UPDATE task_sessions SET updated_at=? "
-        "WHERE session_id=? AND deleted_at IS NULL"));
+        "WHERE user_id=? AND session_id=? AND deleted_at IS NULL"));
     q.addBindValue(QVariant(static_cast<qlonglong>(QDateTime::currentMSecsSinceEpoch())));
+    q.addBindValue(m_taskSessionUserId);
     q.addBindValue(key);
     if (!q.exec()) {
         qWarning().noquote() << "[TaskSessionDb] touch failed:"
@@ -733,16 +813,17 @@ void GatewayClient::touchTaskSessionLocal(const QString &sessionKey)
 void GatewayClient::softDeleteTaskSessionLocal(const QString &sessionKey)
 {
     const QString key = sessionKey.trimmed();
-    if (key.isEmpty() || !initTaskSessionDb())
+    if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
         return;
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
         "UPDATE task_sessions SET deleted_at=?, updated_at=? "
-        "WHERE session_id=?"));
+        "WHERE user_id=? AND session_id=?"));
     q.addBindValue(QVariant(static_cast<qlonglong>(now)));
     q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(m_taskSessionUserId);
     q.addBindValue(key);
     if (!q.exec()) {
         qWarning().noquote() << "[TaskSessionDb] soft delete failed:"

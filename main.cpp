@@ -3,27 +3,23 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QFontDatabase>
-#include <QLibraryInfo>
 #include <QDir>
+#include <QFileInfo>
 #include <QtWebEngine/QtWebEngine>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
 #include "gateway_client.h"
 #include "chatmodel.h"
 #include "session_reader.h"
+#include "auth_controller.h"
 
-static void configureQtWebEngineRuntime()
+static void configureQtWebEngineRuntime(const char *executablePath)
 {
-    const QString libexecPath =
-        QLibraryInfo::location(QLibraryInfo::LibraryExecutablesPath);
-    const QString dataPath =
-        QLibraryInfo::location(QLibraryInfo::DataPath);
-    const QString translationsPath =
-        QLibraryInfo::location(QLibraryInfo::TranslationsPath);
-
-    const QString processPath = QDir(libexecPath).filePath(QStringLiteral("QtWebEngineProcess"));
-    const QString resourcesPath = QDir(dataPath).filePath(QStringLiteral("resources"));
-    const QString localesPath = QDir(translationsPath).filePath(QStringLiteral("qtwebengine_locales"));
+    const QString appDir = QFileInfo(QString::fromLocal8Bit(executablePath)).absolutePath();
+    const QString processPath = QDir(appDir).filePath(QStringLiteral("QtWebEngineProcess.exe"));
+    const QString resourcesPath = QDir(appDir).filePath(QStringLiteral("resources"));
+    const QString localesPath =
+        QDir(appDir).filePath(QStringLiteral("translations/qtwebengine_locales"));
 
     if (qEnvironmentVariableIsEmpty("QTWEBENGINEPROCESS_PATH"))
         qputenv("QTWEBENGINEPROCESS_PATH", processPath.toLocal8Bit());
@@ -47,13 +43,15 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
     if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
-        qputenv("QT_OPENGL", "desktop");
+        qputenv("QT_OPENGL", "angle");
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
-    configureQtWebEngineRuntime();
+    QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
+    configureQtWebEngineRuntime(argv[0]);
     QtWebEngine::initialize();
 
     QGuiApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
+    QCoreApplication::setApplicationName(QStringLiteral("Aether_ClawDESK"));
 
     // ── WebSocket 客户端 & 聊天数据模型 ──
     GatewayClient wsClient;
@@ -134,6 +132,12 @@ int main(int argc, char *argv[])
 
     // ── 本地会话历史读取器 ──
     SessionReader sessionReader;
+    AuthController authController;
+    wsClient.setTaskSessionUserId(authController.userId());
+    QObject::connect(&authController, &AuthController::userChanged,
+                     [&wsClient, &authController]() {
+        wsClient.setTaskSessionUserId(authController.userId());
+    });
 
     GET_SINGLETON(MainViewController)->init(&chatModel, &wsClient);
 
@@ -142,6 +146,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
     engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
+    engine.rootContext()->setContextProperty(QStringLiteral("authController"), &authController);
 
     int fontId1 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     int fontId2 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");

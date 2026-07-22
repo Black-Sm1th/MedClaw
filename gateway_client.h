@@ -168,6 +168,8 @@ public:
     QString serverUrl() const;
     QString gatewayHttpBaseUrl() const;
     QString gatewayAuthToken() const;
+    /// 切换本地任务会话所属用户；列表和后续写入均按该用户隔离。
+    void setTaskSessionUserId(const QString &userId);
 
     /// 获取当前连接状态（枚举值）
     int connectionState() const;
@@ -835,6 +837,7 @@ private:
     QVariantList     m_taskSessionList; ///< SQLite 任务会话缓存
     QSqlDatabase     m_taskSessionDb;   ///< 本地任务会话 SQLite
     bool             m_taskSessionDbReady = false;
+    QString          m_taskSessionUserId;
     QString          m_defaultAgentId;  ///< 默认 agent ID
     QString          m_currentTaskSessionKey; ///< 主控任务 sessionKey
     QString          m_currentViewSessionKey; ///< 聊天区当前查看 sessionKey

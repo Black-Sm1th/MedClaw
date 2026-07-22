@@ -1,4 +1,6 @@
-QT += quick quickcontrols2 websockets sql webengine
+QT += quick quickcontrols2 websockets sql webengine network
+
+TARGET = Aether_ClawDESK
 
 CONFIG += c++11
 
@@ -23,7 +25,8 @@ HEADERS += \
     ws_skill.h \
     ws_tools.h \
     ws_scheduled_task.h \
-    session_reader.h
+    session_reader.h \
+    auth_controller.h
 
 SOURCES += \
     main.cpp \
@@ -36,7 +39,8 @@ SOURCES += \
     ws_skill.cpp \
     ws_tools.cpp \
     ws_scheduled_task.cpp \
-    session_reader.cpp
+    session_reader.cpp \
+    auth_controller.cpp
 
 RESOURCES += qml.qrc
 

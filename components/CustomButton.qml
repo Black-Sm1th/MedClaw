@@ -30,6 +30,8 @@ Rectangle {
     property color pressedBorderColor: Qt.darker(borderColor, 1.4)
     property color hoverTextColor: textColor
     property color pressedTextColor: textColor
+    property color disabledBackgroundColor: "#EBEDF0"
+    property color disabledTextColor: "#73000000"
     
     // 点击信号
     signal clicked()
@@ -42,7 +44,7 @@ Rectangle {
     
     // 背景样式
     color: {
-        if (!enabled) return "#EBEDF0"
+        if (!enabled) return disabledBackgroundColor
         if (mouseArea.pressed) return pressedBackgroundColor
         if (mouseArea.containsMouse) return hoverBackgroundColor
         return backgroundColor
@@ -137,7 +139,7 @@ Rectangle {
             text: customButton.text
             font.pixelSize: fontSize
             color: {
-                if (!customButton.enabled) return "#73000000"
+                if (!customButton.enabled) return disabledTextColor
                 if (mouseArea.pressed) return pressedTextColor
                 if (mouseArea.containsMouse) return hoverTextColor
                 return textColor
