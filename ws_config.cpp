@@ -320,7 +320,7 @@ WsConfig::WsConfig()
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
     , m_token(QStringLiteral(
           "faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe"))
-    , m_skillsStoragePath(QStringLiteral("~/MedClaw/skills"))
+    , m_skillsStoragePath(QStringLiteral("~/Aether_ClawDESK/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
     , m_clientVersion(QStringLiteral("dev"))
 // ── 平台标识：编译期自动检测 ──
@@ -366,7 +366,7 @@ void WsConfig::loadOrCreatePersistentConfig()
     static const QString kDefaultClientId =
         QStringLiteral("openclaw-control-ui");
     static const QString kDefaultSkillsStoragePath =
-        QStringLiteral("~/MedClaw/skills");
+        QStringLiteral("~/Aether_ClawDESK/skills");
     const QString base = QStringLiteral("AppData/config/");
     QDir().mkpath(base);
     const QString path = base + QStringLiteral("config.json");
@@ -606,7 +606,7 @@ QJsonObject WsConfig::buildConnectParams(const QString &challengeNonce) const
     params[QStringLiteral("caps")]        = caps;
     params[QStringLiteral("auth")]        = auth;
     params[QStringLiteral("locale")]      = QStringLiteral("zh-CN");
-    params[QStringLiteral("userAgent")]   = QStringLiteral("MedClaw-Qt/1.0");
+    params[QStringLiteral("userAgent")]   = QStringLiteral("Aether_ClawDESK-Qt/1.0");
     params[QStringLiteral("device")]      = buildSignedDevice(challengeNonce);
 
     return params;
