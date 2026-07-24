@@ -117,16 +117,11 @@ class GatewayClient : public QObject
     Q_PROPERTY(QString gatewayHttpBaseUrl READ gatewayHttpBaseUrl CONSTANT)
     /// config.json 中的 gateway 认证 token（与 WebSocket 握手一致）
     Q_PROPERTY(QString gatewayAuthToken READ gatewayAuthToken CONSTANT)
-    /// 技能市场：当前 skillMarketCategories 选中项 path 下每个子文件夹一项 { folderName, installed }
+    /// 技能市场列表；新数据源接入前保持为空
     Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
                NOTIFY skillMarketFoldersChanged)
-    /// 技能市场分类（来自 config.json skillMarketCategories）
-    Q_PROPERTY(QVariantList skillMarketCategories READ skillMarketCategories CONSTANT)
     /// 主界面快捷方式（来自 config.json shortcut）
     Q_PROPERTY(QVariantList shortcutList READ shortcutList CONSTANT)
-    /// 当前选中的技能市场分类下标（切换时重新扫描该分类 path 下子目录）
-    Q_PROPERTY(int skillMarketCategoryIndex READ skillMarketCategoryIndex
-               WRITE setSkillMarketCategoryIndex NOTIFY skillMarketCategoryIndexChanged)
     /// 正在安装技能（复制 + 请求网关重启）
     Q_PROPERTY(bool skillInstallBusy READ skillInstallBusy NOTIFY skillInstallBusyChanged)
 
@@ -214,10 +209,7 @@ public:
     QVariantList toolList() const;
 
     QVariantList skillMarketFolders() const;
-    QVariantList skillMarketCategories() const;
     QVariantList shortcutList() const;
-    int skillMarketCategoryIndex() const;
-    void setSkillMarketCategoryIndex(int index);
     bool skillInstallBusy() const;
 
     // ═══════════════════════════════════════════════════════════════
@@ -249,6 +241,9 @@ public:
     Q_INVOKABLE void sendChatMessage(const QString &message,
                                      const QString &sessionKey = QString(),
                                      const QString &workspaceForNewAgent = QString());
+
+    /// 确保任务工作目录存在；空路径时使用安装目录下的按日期默认目录。
+    Q_INVOKABLE QString prepareTaskWorkspace(const QString &workspace = QString());
 
     void setPendingChatFiles(const QVariantList &files);
     void resolveAndCopyFiles(const QVariantList &files, const QString &workspace);
@@ -344,7 +339,7 @@ public:
     /// 配置中该 Agent 已选技能名；无 skills 键时返回 skills.status 中的全部技能名
     Q_INVOKABLE QStringList selectedSkillNamesForAgent(const QString &agentId) const;
 
-    /// 扫描当前技能市场分类 path 下子文件夹并刷新 skillMarketFolders
+    /// 新技能市场数据源接入前清空 skillMarketFolders
     Q_INVOKABLE void refreshSkillMarketFolders();
 
     /**
@@ -602,7 +597,6 @@ signals:
     void currentModelChanged();           ///< 当前会话模型信息变更
     void pendingSessionModelIdChanged();  ///< 无会话时待选模型变更
     void skillMarketFoldersChanged();     ///< 技能市场目录列表更新
-    void skillMarketCategoryIndexChanged(); ///< 技能市场当前分类变更
     void skillInstallBusyChanged();       ///< 技能安装进行中状态变更
     void mcpListChanged();                ///< MCP 服务器列表更新
     void toolListChanged();               ///< 工具目录列表更新
@@ -771,6 +765,10 @@ private:
     /// 从 config 根对象重建 agentId → workspace（及 agents.defaults.workspace）
     void rebuildAgentWorkspaceMapFromConfigObject(const QJsonObject &configRoot);
     QString resolveWorkspacePathForAgentId(const QString &agentId) const;
+    QString resolveIdentityWorkspacePath(const QString &agentId,
+                                         const QString &configuredWorkspace) const;
+    /// 按每个 agent 的独立 workspace 重新读取 IDENTITY.md，并更新 m_agentList
+    void refreshAgentIdentityTextsFromWorkspaces();
     /// 用当前 workspace 映射补全 m_agentIdentity["workspace"] 并 notify
     void mergeWorkspaceIntoAgentIdentity();
 
@@ -804,6 +802,8 @@ private:
     /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
     QString extractPayloadSessionKey(const QJsonObject &payload) const;
     void rememberCollaborationChildSessionHint(const QJsonObject &payload);
+    void refreshCollaborationSessionsAfterSpawn(const QString &toolName,
+                                                const QString &toolResult);
     QVariantMap collaborationChildHintForAgent(const QString &agentId,
                                                const QString &taskKey) const;
     /// 当前 UI 是否应展示该会话的推送
@@ -911,7 +911,7 @@ private:
 
     /// 收到 toolResult 后防抖补拉历史；仅更新 toolResult 文本，不清空聊天模型
     QTimer m_toolResultRefreshTimer;
-    QSet<QString> m_toolResultRefreshReqIds;
+    QMap<QString, QString> m_toolResultRefreshReqSessions; ///< requestId -> view sessionKey
 
     // ── 模型管理 ──
     QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）
@@ -929,8 +929,6 @@ private:
     int m_autoReconnectFailureCount = 0;            ///< 本轮自动重连已连续失败次数（成功或手动连接时清零）
     bool m_skillInstallBusy = false; ///< 技能安装流程进行中
     QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
-    int m_skillMarketCategoryIndex = 0; ///< 当前技能市场分类下标
-    QString skillMarketCategoryScanRoot() const; ///< 当前分类下技能根目录（绝对路径）
 
     // ── 设置状态 ──
     bool m_memoryEnabled = true;

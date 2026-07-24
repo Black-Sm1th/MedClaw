@@ -53,14 +53,8 @@ public:
     void setSkillsStoragePath(const QString &path);
 
     /**
-     * 技能市场分类（JSON：skillMarketCategories，数组项 { "name", "path" }）
-     * path 为该分类下技能目录的绝对路径，可使用 ~/ 表示用户主目录。
-     */
-    QVariantList skillMarketCategories() const;
-
-    /**
-     * 主界面快捷方式（JSON：shortcut，数组项含 name、icon、tools、cards）
-     * cards 项含 name、description、icon、prompt、files。
+     * 主界面快捷方式（JSON：shortcut，数组项含 name、icon、color、cards）
+     * cards 项含 name、description、icon、color、prompt。
      */
     QVariantList shortcuts() const;
 
@@ -98,7 +92,7 @@ public:
 
 private:
     /**
-     * @brief 从 AppData/config/config.json 读取 serverUrl、token、clientId、skillsStoragePath、skillMarketCategories；
+     * @brief 从 AppData/config/config.json 读取 serverUrl、token、clientId、skillsStoragePath；
      *        若文件不存在则创建并写入默认值；缺省键会补全并写回。
      */
     void loadOrCreatePersistentConfig();
@@ -132,7 +126,6 @@ private:
     QString m_token;            ///< 身份认证 Token
 
     QString m_skillsStoragePath; ///< 存放技能路径
-    QVariantList m_skillMarketCategories; ///< 技能市场分类（name + path）
     QVariantList m_shortcuts;             ///< 主界面快捷方式
     bool    m_llmJudgmentEnabled = false;
 

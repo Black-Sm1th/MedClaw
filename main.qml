@@ -30,7 +30,6 @@ ApplicationWindow {
     property string pendingDeleteTaskSessionName: ""
     property string pendingDeleteAgentId: ""
     property string pendingDeleteAgentName: ""
-    property bool pendingCollabCreateAgent: false
     property int agentManageTabIndex: 0
     property bool agentEditorIsEdit: false
     property string agentEditorAgentId: ""
@@ -325,21 +324,6 @@ ApplicationWindow {
                 leftMidPanel.activeAgentId = String(agentId || "")
                 window.leftSelectedIndex = 6
             }
-            if (success && window.pendingCollabCreateAgent) {
-                window.pendingCollabCreateAgent = false
-                var arr = (newTaskRec.selectedCollaborationAgentIds || []).slice()
-                if (arr.length === 0 && (leftMidPanel.activeAgentId || "").length > 0)
-                    arr.push(leftMidPanel.activeAgentId)
-                var exists = false
-                for (var i = 0; i < arr.length; i++) {
-                    if (arr[i] === agentId) { exists = true; break }
-                }
-                if (!exists)
-                    arr.push(agentId)
-                newTaskRec.selectedCollaborationAgentIds = arr
-            } else if (!success && window.pendingCollabCreateAgent) {
-                window.pendingCollabCreateAgent = false
-            }
         }
         function onAgentDeleted(agentId, success, message){
             if (success && leftMidPanel.activeAgentId === agentId) {
@@ -463,9 +447,12 @@ ApplicationWindow {
                         visible: !window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "专家", "技能", "工具", "MCP"]
+                            model: ["新建任务", "定时任务", "专家·技能·工具"/*, "MCP"*/]
                             delegate: Rectangle{
-                                property bool isSelected: index === window.leftSelectedIndex
+                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 5)
+                                property bool isSelected: index === 2
+                                                          ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
+                                                          : targetIndex === window.leftSelectedIndex
                                 width: leftMidPanel.width
                                 height: 36
                                 radius: 8
@@ -487,14 +474,10 @@ ApplicationWindow {
                                                 return "qrc:/images/chatNew.png"
                                             }else if(modelData === "定时任务"){
                                                 return "qrc:/images/alarm.png"
-                                            }else if(modelData === "专家"){
-                                                return "qrc:/images/ai.png"
-                                            }else if(modelData === "技能"){
+                                            }else if(modelData === "专家·技能·工具"){
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "MCP"){
                                                 return "qrc:/images/puzzle.png"
-                                            }else if(modelData === "工具"){
-                                                return "qrc:/images/tools.png"
                                             }
                                         }
                                     }
@@ -510,7 +493,7 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        window.leftSelectedIndex = index
+                                        window.leftSelectedIndex = targetIndex
                                             leftMidPanel.activeAgentId = ""
                                             leftMidPanel.activeSessionKey = ""
                                             chatModel.clear()
@@ -540,9 +523,12 @@ ApplicationWindow {
                         visible: window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "专家", "技能", "工具", "MCP"]
+                            model: ["新建任务", "定时任务", "专家·技能·工具" /*, "MCP"*/ ]
                             delegate: Rectangle{
-                                property bool isSelected: index === window.leftSelectedIndex
+                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 5)
+                                property bool isSelected: index === 2
+                                                          ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
+                                                          : targetIndex === window.leftSelectedIndex
                                 width: leftMidPanel.width
                                 height: 36
                                 radius: 8
@@ -558,14 +544,10 @@ ApplicationWindow {
                                             return "qrc:/images/chatNew.png"
                                         }else if(modelData === "定时任务"){
                                             return "qrc:/images/alarm.png"
-                                        }else if(modelData === "专家"){
-                                            return "qrc:/images/ai.png"
-                                        }else if(modelData === "技能"){
+                                        }else if(modelData === "专家·技能·工具"){
                                             return "qrc:/images/category.png"
                                         }else if(modelData === "MCP"){
                                             return "qrc:/images/puzzle.png"
-                                        }else if(modelData === "工具"){
-                                            return "qrc:/images/tools.png"
                                         }
                                     }
                                 }
@@ -575,7 +557,7 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        window.leftSelectedIndex = index
+                                        window.leftSelectedIndex = targetIndex
                                         leftMidPanel.activeAgentId = ""
                                         leftMidPanel.activeSessionKey = ""
                                         chatModel.clear()
@@ -1175,7 +1157,9 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6
                 property bool hasMessages: chatModel.count > 0
-                property bool isNewTaskWelcome: window.leftSelectedIndex === 0 && !hasMessages
+                readonly property bool hasActiveTask: String(wsClient.currentTaskSessionKey || "").length > 0
+                property bool isNewTaskWelcome: window.leftSelectedIndex === 0
+                                                && !hasActiveTask && !hasMessages
                 property var selectedCollaborationAgentIds: []
                 readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
                                                              || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
@@ -1183,24 +1167,17 @@ ApplicationWindow {
                 property string activeShortcutGroupName: ""
                 property string activeShortcutGroupIcon: ""
                 property var activeShortcutCards: []
-                property var activeShortcutToolsConfig: []
-                /// 已选子卡片后收起列表，但不退出快捷方式（工具勾选保持到点 ×）
                 property bool shortcutSubPanelDismissed: false
 
-                /// 仅清快捷方式展示（不碰工具 pending），用于首条消息已发出、agent 尚在创建时，
-                /// 避免把 setPendingNewAgentToolSelection 覆盖成全选。
                 function clearActiveShortcutVisualOnly() {
                     activeShortcutGroupName = ""
                     activeShortcutGroupIcon = ""
                     activeShortcutCards = []
-                    activeShortcutToolsConfig = []
                     shortcutSubPanelDismissed = false
                 }
 
                 function clearActiveShortcut() {
                     clearActiveShortcutVisualOnly()
-                    dropdownSelectionTool.syncToolsFromWsClient()
-                    dropdownSelectionTool.applyToolSelectionImmediately()
                 }
                 function setActiveShortcut(sc) {
                     if (!sc) {
@@ -1216,8 +1193,6 @@ ApplicationWindow {
                     activeShortcutGroupName = sc.name || ""
                     activeShortcutGroupIcon = sc.icon || ""
                     activeShortcutCards = cards
-                    activeShortcutToolsConfig = sc.tools || []
-                    dropdownSelectionTool.applyShortcutTools(activeShortcutToolsConfig)
                 }
 
                 readonly property bool shortcutInlineListVisible: isNewTaskWelcome
@@ -1233,14 +1208,18 @@ ApplicationWindow {
                         return
                     if (!newTaskRec.viewingControllerSession)
                         return
+                    var wsPath = ""
+                    if (!newTaskRec.hasActiveTask) {
+                        wsPath = wsClient.prepareTaskWorkspace(
+                            dropdownSelectionWorkSpace.absolutePath)
+                        if (!wsPath)
+                            return
+                    }
                     if (newTaskRec.isNewTaskWelcome)
                         wsClient.clearActiveAgentContext()
                     wsClient.setPendingCollaborationAgents(
                         newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
                     textInputArea.text = ""
-                    var wsPath = ""
-                    if (!newTaskRec.hasMessages)
-                        wsPath = dropdownSelectionWorkSpace.absolutePath
 
                     if (attachmentModel.count > 0) {
                         var files = []
@@ -1310,17 +1289,11 @@ ApplicationWindow {
                             return
                         }
                         newTaskRec.selectedCollaborationAgentIds = []
-                        // 回到「新建 / 无侧栏 agent」：与工具弹窗 onAboutToShow 一致，恢复全选并写回 pending
-                        dropdownSelectionTool.syncToolsFromWsClient()
-                        if (newTaskRec.activeShortcutGroupName.length > 0)
-                            dropdownSelectionTool.applyShortcutTools(newTaskRec.activeShortcutToolsConfig)
-                        else
-                            dropdownSelectionTool.applyToolSelectionImmediately()
                     }
                 }
                 Rectangle {
                     id: collaborationTabBar
-                    visible: newTaskRec.hasMessages
+                    visible: newTaskRec.hasActiveTask
                              && wsClient.collaborationParticipants
                              && wsClient.collaborationParticipants.length > 0
                     anchors.top: parent.top
@@ -1422,6 +1395,20 @@ ApplicationWindow {
                     anchors.right: parent.right
                     model: chatModel
                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                }
+
+                Label {
+                    visible: newTaskRec.hasActiveTask && !newTaskRec.hasMessages
+                    anchors.top: collaborationTabBar.visible ? collaborationTabBar.bottom : parent.top
+                    anchors.topMargin: collaborationTabBar.visible ? 8 : 16
+                    anchors.bottom: generatingRow.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("暂无聊天记录")
+                    font.pixelSize: 14
+                    color: "#66000000"
                 }
 
                 // ListView {
@@ -2312,308 +2299,67 @@ ApplicationWindow {
                                     }
                                 }
                                 Item {
-                                    id: collaborationPicker
-                                    visible: newTaskRec.isNewTaskWelcome
+                                    id: expertSelectionTag
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: visible ? (collabBtnRow.width + 24) : 0
+                                    readonly property string expertId: {
+                                        var ids = newTaskRec.selectedCollaborationAgentIds || []
+                                        return ids.length > 0 ? String(ids[0] || "") : ""
+                                    }
+                                    readonly property string expertName: {
+                                        var list = wsClient.agentList || []
+                                        for (var i = 0; i < list.length; i++) {
+                                            if (String(list[i].id || "") === expertId)
+                                                return list[i].name || list[i].id || ""
+                                        }
+                                        return expertId
+                                    }
+                                    visible: newTaskRec.isNewTaskWelcome && expertId.length > 0
+                                    width: visible ? Math.min(240, expertTagRow.implicitWidth + 24) : 0
                                     height: 36
 
-                                    function isSelected(agentId) {
-                                        var arr = newTaskRec.selectedCollaborationAgentIds || []
-                                        for (var i = 0; i < arr.length; i++) {
-                                            if (arr[i] === agentId) return true
-                                        }
-                                        return false
-                                    }
-
-                                    function toggleAgent(agentId) {
-                                        if (!agentId) return
-                                        var arr = (newTaskRec.selectedCollaborationAgentIds || []).slice()
-                                        var idx = -1
-                                        for (var i = 0; i < arr.length; i++) {
-                                            if (arr[i] === agentId) { idx = i; break }
-                                        }
-                                        if (idx >= 0) {
-                                            arr.splice(idx, 1)
-                                        } else {
-                                            if (arr.length === 0 && (leftMidPanel.activeAgentId || "").length > 0)
-                                                arr.push(leftMidPanel.activeAgentId)
-                                            arr.push(agentId)
-                                        }
-                                        newTaskRec.selectedCollaborationAgentIds = arr
-                                    }
-
-                                    function selectedSummary() {
-                                        var arr = newTaskRec.selectedCollaborationAgentIds || []
-                                        if (arr.length <= 0)
-                                            return qsTr("协作")
-                                        if (arr.length === 1)
-                                            return qsTr("1 agent")
-                                        return arr.length + qsTr(" agents")
-                                    }
-
                                     Rectangle {
-                                        id: collabButton
                                         anchors.fill: parent
                                         radius: 8
-                                        color: collabMouse.pressed ? "#14000000"
-                                             : collabMouse.containsMouse ? "#0A000000"
-                                             : "transparent"
+                                        color: "#F7F9FA"
 
                                         Row {
-                                            id: collabBtnRow
-                                            spacing: 6
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 12
-                                            anchors.verticalCenter: parent.verticalCenter
+                                            id: expertTagRow
+                                            anchors.centerIn: parent
+                                            spacing: 8
 
                                             Image {
-                                                source: "qrc:/images/add-square.png"
                                                 width: 16
                                                 height: 16
-                                                anchors.verticalCenter: parent.verticalCenter
+                                                source: "qrc:/images/expert.png"
                                                 fillMode: Image.PreserveAspectFit
-                                            }
-                                            Text {
-                                                text: collaborationPicker.selectedSummary()
-                                                font.pixelSize: 14
-                                                color: "#D9000000"
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
-                                        }
-
-                                        MouseArea {
-                                            id: collabMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (!newTaskRec.isNewTaskWelcome)
-                                                    return
-                                                collabPopup.visible ? collabPopup.close() : collabPopup.open()
-                                            }
-                                        }
-                                    }
-
-                                    Popup {
-                                        id: collabPopup
-                                        x: 0
-                                        width: 280
-                                        padding: 10
-                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-
-                                        function calcY() {
-                                            var globalPos = collaborationPicker.mapToItem(null, 0, 0)
-                                            var popupH = Math.min(contentItem.implicitHeight, 390) + padding * 2
-                                            if (popupH < 160) popupH = 300
-                                            if (globalPos.y + collaborationPicker.height + 4 + popupH > window.height)
-                                                return -popupH - 4
-                                            return collaborationPicker.height + 4
-                                        }
-
-                                        y: calcY()
-                                        onAboutToShow: {
-                                            if (!newTaskRec.isNewTaskWelcome) {
-                                                collabPopup.close()
-                                                return
-                                            }
-                                            if ((newTaskRec.selectedCollaborationAgentIds || []).length === 0
-                                                    && (leftMidPanel.activeAgentId || "").length > 0
-                                                    && !window.isMainAgentId(leftMidPanel.activeAgentId)) {
-                                                newTaskRec.selectedCollaborationAgentIds = [leftMidPanel.activeAgentId]
-                                            }
-                                            collabNewAgentName.text = ""
-                                            collabNewAgentWorkspace.text = ""
-                                            collabIdentityInput.text = ""
-                                            y = calcY()
-                                        }
-                                        onOpened: Qt.callLater(function() { y = calcY() })
-
-                                        background: Rectangle {
-                                            color: "#FFFFFF"
-                                            radius: 12
-                                            border.color: "#14000000"
-                                            border.width: 1
-                                            layer.enabled: true
-                                            layer.effect: DropShadow {
-                                                transparentBorder: true
-                                                radius: 12
-                                                samples: 25
-                                                color: "#1A000000"
-                                            }
-                                        }
-
-                                        contentItem: Column {
-                                            spacing: 8
-                                            width: collabPopup.width - 20
 
                                             Label {
-                                                width: parent.width
-                                                text: qsTr("协作 Agent")
+                                                width: Math.min(170, implicitWidth)
+                                                text: expertSelectionTag.expertName
                                                 font.pixelSize: 14
-                                                font.bold: true
                                                 color: "#D9000000"
+                                                elide: Text.ElideRight
+                                                anchors.verticalCenter: parent.verticalCenter
                                             }
 
-                                            Flickable {
-                                                width: parent.width
-                                                height: Math.min(collabAgentColumn.height, 188)
-                                                contentHeight: collabAgentColumn.height
-                                                clip: true
-                                                boundsBehavior: Flickable.StopAtBounds
+                                            Image {
+                                                id: expertTagCloseIcon
+                                                width: 14
+                                                height: 14
+                                                source: "qrc:/images/close.png"
+                                                fillMode: Image.PreserveAspectFit
+                                                opacity: expertTagCloseMouse.containsMouse ? 1 : 0.65
+                                                anchors.verticalCenter: parent.verticalCenter
 
-                                                Column {
-                                                    id: collabAgentColumn
-                                                    width: parent.width
-                                                    spacing: 2
-
-                                                    Repeater {
-                                                        model: window.visibleAgentList()
-
-                                                        delegate: Rectangle {
-                                                            width: collabPopup.width - 20
-                                                            height: 38
-                                                            radius: 6
-                                                            readonly property bool selected: collaborationPicker.isSelected(modelData.id || "")
-                                                            color: collabAgentMouse.containsMouse ? "#F7F9FA" : "transparent"
-
-                                                            Row {
-                                                                anchors.fill: parent
-                                                                anchors.leftMargin: 8
-                                                                anchors.rightMargin: 8
-                                                                spacing: 8
-
-                                                                Rectangle {
-                                                                    width: 18
-                                                                    height: 18
-                                                                    radius: 5
-                                                                    border.width: 1
-                                                                    border.color: selected ? "#006BFF" : "#33000000"
-                                                                    color: selected ? "#006BFF" : "#FFFFFF"
-                                                                    anchors.verticalCenter: parent.verticalCenter
-
-                                                                    Text {
-                                                                        anchors.centerIn: parent
-                                                                        text: selected ? "\u2713" : ""
-                                                                        color: "#FFFFFF"
-                                                                        font.pixelSize: 12
-                                                                    }
-                                                                }
-
-                                                                Column {
-                                                                    width: parent.width - 26
-                                                                    anchors.verticalCenter: parent.verticalCenter
-                                                                    spacing: 0
-
-                                                                    Label {
-                                                                        width: parent.width
-                                                                        text: modelData.name || modelData.id || ""
-                                                                        font.pixelSize: 13
-                                                                        color: "#D9000000"
-                                                                        elide: Text.ElideRight
-                                                                    }
-                                                                    Label {
-                                                                        width: parent.width
-                                                                        text: {
-                                                                            var arr = newTaskRec.selectedCollaborationAgentIds || []
-                                                                            return arr.length > 0 && arr[0] === modelData.id
-                                                                                ? qsTr("主控")
-                                                                                : qsTr("子 Agent")
-                                                                        }
-                                                                        font.pixelSize: 11
-                                                                        color: "#73000000"
-                                                                        elide: Text.ElideRight
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            MouseArea {
-                                                                id: collabAgentMouse
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: {
-                                                                    if (!newTaskRec.isNewTaskWelcome)
-                                                                        return
-                                                                    collaborationPicker.toggleAgent(modelData.id || "")
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                width: parent.width
-                                                height: 1
-                                                visible: false
-                                                color: "#E6E7EB"
-                                            }
-
-                                            SingleLineTextInput {
-                                                id: collabNewAgentName
-                                                visible: false
-                                                inputWidth: parent.width
-                                                inputHeight: 32
-                                                inputRadius: 6
-                                                fontSize: 13
-                                                placeholderText: qsTr("新建 agent 名称")
-                                            }
-
-                                            Rectangle {
-                                                width: parent.width
-                                                height: 0
-                                                visible: false
-                                                radius: 6
-                                                color: "#FFFFFF"
-                                                border.width: 1
-                                                border.color: collabIdentityInput.activeFocus ? "#006BFF" : "#E6E7EB"
-
-                                                TextArea {
-                                                    id: collabIdentityInput
+                                                MouseArea {
+                                                    id: expertTagCloseMouse
                                                     anchors.fill: parent
-                                                    anchors.margins: 6
-                                                    wrapMode: TextEdit.Wrap
-                                                    font.pixelSize: 13
-                                                    font.family: "Alibaba PuHuiTi 3.0"
-                                                    color: "#D9000000"
-                                                    placeholderText: qsTr("IDENTITY.md，可选")
-                                                    placeholderTextColor: "#40000000"
-                                                    background: Rectangle { color: "transparent" }
-                                                }
-                                            }
-
-                                            Row {
-                                                width: parent.width
-                                                height: 0
-                                                visible: false
-                                                spacing: 6
-                                                SingleLineTextInput {
-                                                    id: collabNewAgentWorkspace
-                                                    inputWidth: parent.width - collabCreateBtn.width - 6
-                                                    inputHeight: 32
-                                                    inputRadius: 6
-                                                    fontSize: 13
-                                                    placeholderText: qsTr("workspace")
-                                                }
-                                                CustomButton {
-                                                    id: collabCreateBtn
-                                                    width: 64
-                                                    height: 32
-                                                    backgroundColor: "#006BFF"
-                                                    textColor: "#FFFFFF"
-                                                    text: qsTr("新建")
-                                                    fontSize: 13
-                                                    enabled: collabNewAgentName.text.trim().length > 0
-                                                    onClicked: {
-                                                        window.pendingCollabCreateAgent = true
-                                                        wsClient.createAgent(collabNewAgentName.text.trim(),
-                                                                             collabNewAgentWorkspace.text.trim(),
-                                                                             true,
-                                                                             collabIdentityInput.text)
-                                                        collabNewAgentName.text = ""
-                                                        collabIdentityInput.text = ""
-                                                    }
+                                                    anchors.margins: -6
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: newTaskRec.selectedCollaborationAgentIds = []
                                                 }
                                             }
                                         }
@@ -2621,8 +2367,9 @@ ApplicationWindow {
                                 }
                                 Item {
                                     id: dropdownSelectionSkill
+                                    visible: false
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: skillBtnRow.width + 12 + 12
+                                    width: 0
                                     height: 36
 
                                     property var selectedSkills: []
@@ -3018,8 +2765,9 @@ ApplicationWindow {
                                 }
                                 Item {
                                     id: dropdownSelectionTool
+                                    visible: false
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: toolBtnRow2.width + 12 + 12
+                                    width: 0
                                     height: 36
 
                                     property var selectedToolIds: []
@@ -3041,52 +2789,10 @@ ApplicationWindow {
                                         selectedToolIds = arr
                                     }
 
-                                    function allCatalogToolIds() {
-                                        var out = []
-                                        var list = wsClient.toolList || []
-                                        for (var i = 0; i < list.length; i++) {
-                                            var tid = list[i].toolId || ""
-                                            if (tid)
-                                                out.push(tid)
-                                        }
-                                        return out
-                                    }
-
-                                    /// 按快捷方式配置的 tools 勾选工具；空数组表示全选
-                                    function applyShortcutTools(toolsFromCfg) {
-                                        var all = allCatalogToolIds()
-                                        var ids = []
-                                        if (!toolsFromCfg || toolsFromCfg.length === 0) {
-                                            ids = all.slice()
-                                        } else {
-                                            var valid = {}
-                                            for (var a = 0; a < all.length; a++)
-                                                valid[all[a]] = true
-                                            for (var k = 0; k < toolsFromCfg.length; k++) {
-                                                var entry = toolsFromCfg[k]
-                                                var tid = ""
-                                                if (typeof entry === "string")
-                                                    tid = entry.trim()
-                                                else if (entry && entry.toolId)
-                                                    tid = String(entry.toolId).trim()
-                                                if (tid && valid[tid])
-                                                    ids.push(tid)
-                                            }
-                                            if (ids.length === 0)
-                                                ids = all.slice()
-                                        }
-                                        selectedToolIds = ids
-                                        applyToolSelectionImmediately()
-                                    }
-
                                     Connections {
                                         target: wsClient
                                         function onToolListChanged() {
                                             dropdownSelectionTool.syncToolsFromWsClient()
-                                            // 仅「尚无侧栏 agent」时应用快捷方式 tools；已选中历史 agent 时勿写 config.set
-                                            var aid = leftMidPanel.activeAgentId || ""
-                                            if (newTaskRec.activeShortcutGroupName.length > 0 && aid === "")
-                                                dropdownSelectionTool.applyShortcutTools(newTaskRec.activeShortcutToolsConfig)
                                         }
                                     }
 
@@ -3271,8 +2977,6 @@ ApplicationWindow {
 
                                         onAboutToShow: {
                                             dropdownSelectionTool.syncToolsFromWsClient()
-                                            if (newTaskRec.activeShortcutGroupName.length > 0)
-                                                dropdownSelectionTool.applyShortcutTools(newTaskRec.activeShortcutToolsConfig)
                                             toolSearchInput2.text = ""
                                             y = calcY()
                                         }
@@ -3452,7 +3156,10 @@ ApplicationWindow {
                                     }
                                 }
                                 Rectangle{
-                                    width: parent.width - workspaceDialogSlot.width - dropdownSelectionModel.width - collaborationPicker.width - dropdownSelectionSkill.width - dropdownSelectionTool.width - inputLeftRow.width - 6 * 4
+                                    width: Math.max(0, parent.width - workspaceDialogSlot.width
+                                                    - dropdownSelectionModel.width
+                                                    - expertSelectionTag.width
+                                                    - inputLeftRow.width - 4 * 4)
                                     height: 1
                                 }
                                 Row{
@@ -4845,8 +4552,71 @@ ApplicationWindow {
                 }
             }
             Rectangle {
+                id: capabilityHubHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 64
+                visible: window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
+                z: 2
+
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 60
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+
+                    Repeater {
+                        model: [qsTr("专家"), qsTr("技能"), qsTr("工具")]
+                        delegate: Rectangle {
+                            readonly property int pageIndex: index + 2
+                            width: 76
+                            height: 36
+                            radius: 6
+                            color: window.leftSelectedIndex === pageIndex ? "#F0F1F4"
+                                 : hubTabMouse.containsMouse ? "#F7F8FA" : "transparent"
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: modelData
+                                font.pixelSize: 16
+                                font.weight: window.leftSelectedIndex === parent.pageIndex
+                                             ? Font.Bold : Font.Medium
+                                color: window.leftSelectedIndex === parent.pageIndex
+                                     ? "#D9000000" : "#99000000"
+                            }
+
+                            MouseArea {
+                                id: hubTabMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: window.leftSelectedIndex = parent.pageIndex
+                            }
+                        }
+                    }
+                }
+
+                SingleLineTextInput {
+                    visible: window.leftSelectedIndex === 2
+                    anchors.right: parent.right
+                    anchors.rightMargin: 60
+                    anchors.verticalCenter: parent.verticalCenter
+                    inputWidth: Math.min(220, capabilityHubHeader.width * 0.24)
+                    inputHeight: 36
+                    icon: "qrc:/images/search.png"
+                    iconSize: 16
+                    placeholderText: qsTr("搜索专家...")
+                    onTextChanged: agentManageRec.searchText = text
+                }
+            }
+
+            Rectangle {
                 id: agentManageRec
-                anchors.fill: parent
+                anchors.top: capabilityHubHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
                 visible: window.leftSelectedIndex === 2
                 property string searchText: ""
 
@@ -4856,260 +4626,185 @@ ApplicationWindow {
                 }
 
                 function filteredAgents() {
-                    var list = window.visibleAgentList()
-                    if (!searchText)
-                        return list
+                    var list = wsClient.agentList || []
                     var kw = searchText.toLowerCase()
                     var out = []
                     for (var i = 0; i < list.length; i++) {
                         var a = list[i]
-                        var name = (a.name || "").toLowerCase()
-                        var id = (a.id || "").toLowerCase()
-                        if (name.indexOf(kw) >= 0 || id.indexOf(kw) >= 0)
+                        var name = String(a.name || "").trim().toLowerCase()
+                        var id = String(a.id || "").trim().toLowerCase()
+                        if (id === "main" || name === "默认")
+                            continue
+                        var detail = (a.identityText || "").toLowerCase()
+                        if (!kw || name.indexOf(kw) >= 0 || id.indexOf(kw) >= 0
+                                || detail.indexOf(kw) >= 0)
                             out.push(a)
                     }
                     return out
                 }
 
-                function teamAgentIds(limit) {
-                    return window.medicalAnalysisTeamAgentIds()
-                }
-
-                Column {
+                ScrollView {
+                    id: expertCardScroll
                     anchors.fill: parent
-                    leftPadding: 60
-                    topPadding: 24
-                    rightPadding: 60
-                    spacing: 16
+                    anchors.leftMargin: 60
+                    anchors.rightMargin: 60
+                    anchors.bottomMargin: 24
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-                    Row {
-                        width: parent.width - 120
-                        height: 40
+                    Grid {
+                        id: expertCardGrid
+                        width: expertCardScroll.availableWidth
+                        columns: width >= 760 ? 2 : 1
                         spacing: 12
+                        property real cardWidth: columns === 2 ? (width - spacing) / 2 : width
+
+                        Repeater {
+                            model: agentManageRec.filteredAgents()
+                            delegate: Rectangle {
+                                id: expertCard
+                                property var cardData: modelData
+                                readonly property bool hovered: expertCardMouse.containsMouse
+                                                                || expertDetailHover.hovered
+                                width: expertCardGrid.cardWidth
+                                height: 222
+                                radius: 8
+                                clip: true
+                                color: "#F7F8FC"
+                                border.width: 0
+
+                                Image {
+                                    id: expertCardBackground
+                                    anchors.fill: parent
+                                    source: "qrc:/images/expertBackground.png"
+                                    sourceClipRect: Qt.rect(1, 1, 898, 415)
+                                    fillMode: Image.PreserveAspectCrop
+                                    cache: true
+                                    visible: false
+                                }
+
+                                Rectangle {
+                                    id: expertCardBackgroundMask
+                                    anchors.fill: expertCardBackground
+                                    radius: Math.max(0, expertCard.radius - 1)
+                                    visible: false
+                                }
+
+                                OpacityMask {
+                                    anchors.fill: expertCardBackground
+                                    source: expertCardBackground
+                                    maskSource: expertCardBackgroundMask
+                                    cached: true
+                                }
+
+                                Rectangle {
+                                    z: 1
+                                    anchors.fill: parent
+                                    radius: expertCard.radius
+                                    color: expertCard.hovered ? "#0A006BFF" : "transparent"
+                                    border.width: expertCard.hovered ? 1 : 0
+                                    border.color: "#66006BFF"
+
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on border.width { NumberAnimation { duration: 120 } }
+                                }
+
+                                Column {
+                                    z: 2
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 26
+                                    anchors.top: parent.top
+                                    anchors.topMargin: 26
+                                    width: parent.width - 52
+                                    spacing: 12
+
+                                    Label {
+                                        width: parent.width
+                                        text: expertCard.cardData.name || expertCard.cardData.id || ""
+                                        font.pixelSize: 16
+                                        font.weight: Font.Bold
+                                        color: "#D9000000"
+                                        elide: Text.ElideRight
+                                    }
+                                    Label {
+                                        id: expertDetailLabel
+                                        width: parent.width
+                                        height: 136
+                                        text: String(expertCard.cardData.identityText || "").trim()
+                                              || qsTr("暂无 IDENTITY.md 内容")
+                                        font.pixelSize: 13
+                                        lineHeight: 1.35
+                                        color: "#99000000"
+                                        wrapMode: Text.Wrap
+                                        maximumLineCount: 7
+                                        elide: Text.ElideRight
+
+                                        HoverHandler {
+                                            id: expertDetailHover
+                                            cursorShape: Qt.PointingHandCursor
+                                        }
+
+                                        ToolTip {
+                                            id: expertDetailTooltip
+                                            visible: expertDetailHover.hovered
+                                                     && expertDetailTooltipText.text.length > 0
+                                            delay: 1000
+                                            timeout: -1
+                                            width: Math.min(540, window.width - 48)
+                                            x: Math.min(0, expertDetailLabel.width - width)
+                                            y: expertDetailLabel.height + 4
+                                            padding: 10
+
+                                            background: Rectangle {
+                                                color: "#A6000000"
+                                                radius: 4
+                                            }
+
+                                            contentItem: Text {
+                                                id: expertDetailTooltipText
+                                                width: expertDetailTooltip.availableWidth
+                                                text: String(expertCard.cardData.identityText || "").trim()
+                                                textFormat: Text.MarkdownText
+                                                wrapMode: Text.Wrap
+                                                maximumLineCount: 20
+                                                elide: Text.ElideRight
+                                                font.pixelSize: 14
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#FFFFFF"
+                                            }
+
+                                            HoverHandler {
+                                                cursorShape: Qt.PointingHandCursor
+                                            }
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: expertCardMouse
+                                    z: 1
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        var id = expertCard.cardData.id || ""
+                                        if (id.length > 0)
+                                            window.startTaskWithAgents([id])
+                                    }
+                                }
+                            }
+                        }
 
                         Label {
-                            text: qsTr("专家")
-                            font.pixelSize: 20
-                            font.weight: Font.Bold
-                            color: "#D9000000"
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        Item {
-                            width: parent.width - 20 - 92 - 12
-                            height: 1
-                        }
-
-                        CustomButton {
-                            width: 92
-                            height: 36
-                            visible: window.agentManageTabIndex === 0
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
-                            borderWidth: 0
-                            text: qsTr("新增专家")
-                            fontSize: 14
-                            onClicked: {
-                                window.agentEditorIsEdit = false
-                                window.agentEditorAgentId = ""
-                                agentEditorNameInput.text = ""
-                                agentEditorIdentityInput.text = ""
-                                agentEditorPopup.open()
-                            }
-                        }
-                    }
-
-                    Row {
-                        spacing: 12
-                        CustomButton {
-                            width: 68
-                            height: 29
-                            buttonRadius: 8
-                            fontSize: 14
-                            text: qsTr("专家")
-                            backgroundColor: window.agentManageTabIndex === 0 ? "#0F006BFF" : "#F7F9FA"
-                            textColor: window.agentManageTabIndex === 0 ? "#006BFF" : "#A6000000"
-                            borderWidth: 0
-                            onClicked: window.agentManageTabIndex = 0
-                        }
-                        CustomButton {
-                            width: 80
-                            height: 29
-                            buttonRadius: 8
-                            fontSize: 14
-                            text: qsTr("专家团")
-                            backgroundColor: window.agentManageTabIndex === 1 ? "#0F006BFF" : "#F7F9FA"
-                            textColor: window.agentManageTabIndex === 1 ? "#006BFF" : "#A6000000"
-                            borderWidth: 0
-                            onClicked: window.agentManageTabIndex = 1
-                        }
-                    }
-
-                    SingleLineTextInput {
-                        visible: window.agentManageTabIndex === 0
-                        inputHeight: 36
-                        inputWidth: parent.width - 120
-                        icon: "qrc:/images/search.png"
-                        iconSize: 16
-                        placeholderText: qsTr("搜索专家")
-                        onTextChanged: agentManageRec.searchText = text
-                    }
-
-                    ScrollView {
-                        id: agentManageScroll
-                        width: parent.width - 120
-                        height: agentManageRec.height - 24 - 40 - 16 - 29 - 16
-                                - (window.agentManageTabIndex === 0 ? 36 + 16 : 0)
-                        clip: true
-                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-                        Grid {
-                            id: agentManageGrid
-                            columns: 2
-                            spacing: 12
-                            width: agentManageScroll.width
-                            property real cellWidth: (width - spacing) / 2
-
-                            Repeater {
-                                visible: window.agentManageTabIndex === 0
-                                model: window.agentManageTabIndex === 0 ? agentManageRec.filteredAgents() : []
-                                delegate: Rectangle {
-                                    width: agentManageGrid.cellWidth
-                                    height: agentColumn.height
-                                    radius: 8
-                                    color: agentCardMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
-                                    border.width: 1
-                                    border.color: "#E6E7EB"
-
-                                    MouseArea {
-                                        id: agentCardMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            var id = modelData.id || ""
-                                            if (id.length > 0)
-                                                window.startTaskWithAgents([id])
-                                        }
-                                    }
-
-                                    Column {
-                                        id: agentColumn
-                                        width: parent.width
-                                        padding: 16
-                                        spacing: 8
-
-                                        Label {
-                                            text: modelData.name || modelData.id || ""
-                                            width: parent.width - 32
-                                            font.pixelSize: 16
-                                            font.weight: Font.Bold
-                                            color: "#D9000000"
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Label {
-                                            width: parent.width - 32
-                                            text: window.agentIdentitySummary(modelData)
-                                            font.pixelSize: 12
-                                            color: "#73000000"
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Item { width: 1; height: 4 }
-
-                                        Row {
-                                            spacing: 8
-                                            CustomButton {
-                                                width: 64
-                                                height: 30
-                                                backgroundColor: "#F7F9FA"
-                                                textColor: "#D9000000"
-                                                borderColor: "#E6E7EB"
-                                                borderWidth: 1
-                                                text: qsTr("编辑")
-                                                fontSize: 13
-                                                onClicked: {
-                                                    window.agentEditorIsEdit = true
-                                                    window.agentEditorAgentId = modelData.id || ""
-                                                    agentEditorNameInput.text = modelData.name || modelData.id || ""
-                                                    agentEditorIdentityInput.text = ""
-                                                    agentEditorPopup.open()
-                                                }
-                                            }
-                                            CustomButton {
-                                                width: 64
-                                                height: 30
-                                                enabled: !modelData.isDefault
-                                                backgroundColor: enabled ? "#FFF2F2" : "#F7F9FA"
-                                                textColor: enabled ? "#E54545" : "#73000000"
-                                                borderColor: enabled ? "#FFE0E0" : "#E6E7EB"
-                                                borderWidth: 1
-                                                text: qsTr("删除")
-                                                fontSize: 13
-                                                onClicked: {
-                                                    window.pendingDeleteAgentId = modelData.id || ""
-                                                    window.pendingDeleteAgentName = modelData.name || modelData.id || ""
-                                                    deleteAgentPopup.open()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Repeater {
-                                visible: window.agentManageTabIndex === 1
-                                model: window.agentManageTabIndex === 1 ? [
-                                    {
-                                        title: qsTr("医疗分析团队"),
-                                        desc: qsTr("主控 orchestrator；协作 writer、research、analyst"),
-                                        limit: 0
-                                    }
-                                ] : []
-                                delegate: Rectangle {
-                                    width: agentManageGrid.cellWidth
-                                    height: 118
-                                    radius: 8
-                                    color: teamMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
-                                    border.width: 1
-                                    border.color: "#E6E7EB"
-
-                                    Column {
-                                        anchors.fill: parent
-                                        anchors.margins: 18
-                                        spacing: 10
-                                        Label {
-                                            width: parent.width
-                                            text: modelData.title
-                                            font.pixelSize: 16
-                                            font.weight: Font.Bold
-                                            color: "#D9000000"
-                                            elide: Text.ElideRight
-                                        }
-                                        Label {
-                                            width: parent.width
-                                            text: modelData.desc
-                                            font.pixelSize: 13
-                                            color: "#73000000"
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: teamMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            var ids = agentManageRec.teamAgentIds(modelData.limit)
-                                            if (ids.length > 0)
-                                                window.startTaskWithAgents(ids)
-                                        }
-                                    }
-                                }
-                            }
+                            visible: agentManageRec.filteredAgents().length === 0
+                            width: expertCardGrid.width
+                            height: 120
+                            text: qsTr("未找到匹配的专家")
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 14
+                            color: "#73000000"
                         }
                     }
                 }
@@ -5117,7 +4812,10 @@ ApplicationWindow {
 
             Rectangle{
                 id: skillSettingRec
-                anchors.fill: parent
+                anchors.top: capabilityHubHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
                 visible: window.leftSelectedIndex === 3
                 property string skillSearchText: ""
                 /// 与技能页 Tab 同步，供顶部搜索框占位符使用（避免引用尚未创建的 TabBar）
@@ -5152,39 +4850,22 @@ ApplicationWindow {
                 Column{
                     anchors.fill: parent
                     leftPadding: 60
-                    topPadding: 24
                     rightPadding: 60
                     spacing: 16
                     Rectangle{
                         id: skillSettingTitleRec
-                        height: skillSettingTitle.height
+                        height: 36
                         width: parent.width - 120
-                        Column{
-                            id: skillSettingTitle
-                            spacing: 8
-                            anchors.left: parent.left
-                            Label{
-                                text: qsTr("技能")
-                                font.pixelSize: 20
-                                font.weight: Font.Bold
-                                color: "#D9000000"
-                            }
-                            Label{
-                                text: qsTr("为您的智能体提供预封装且可重复的最佳实践与工具")
-                                font.pixelSize: 14
-                                color: "#A6000000"
-                            }
-                            SingleLineTextInput {
-                                id: skillSettingSearchInput
-                                inputHeight: 36
-                                inputWidth: skillSettingTitleRec.width
-                                icon: "qrc:/images/search.png"
-                                iconSize: 16
-                                placeholderText: skillSettingRec.skillTabForSearch === 1
-                                                ? qsTr("搜索技能市场")
-                                                : qsTr("搜索已安装技能")
-                                onTextChanged: skillSettingRec.skillSearchText = text
-                            }
+                        SingleLineTextInput {
+                            id: skillSettingSearchInput
+                            inputHeight: 36
+                            inputWidth: parent.width - 120
+                            icon: "qrc:/images/search.png"
+                            iconSize: 16
+                            placeholderText: skillSettingRec.skillTabForSearch === 1
+                                            ? qsTr("搜索技能市场")
+                                            : qsTr("搜索已安装技能")
+                            onTextChanged: skillSettingRec.skillSearchText = text
                         }
                         Item {
                             width: 80
@@ -5432,55 +5113,55 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    Switch {
-                                        id: skillSwitch
-                                        checked: modelData.enabled
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 20
-                                        anchors.top: parent.top
-                                        anchors.topMargin: 20
-                                        hoverEnabled: true
+                                    // Switch {
+                                    //     id: skillSwitch
+                                    //     checked: modelData.enabled
+                                    //     anchors.right: parent.right
+                                    //     anchors.rightMargin: 20
+                                    //     anchors.top: parent.top
+                                    //     anchors.topMargin: 20
+                                    //     hoverEnabled: true
 
-                                        onClicked: {
-                                            var key = modelData.skillKey || modelData.name || ""
-                                            if (key.length > 0)
-                                                wsClient.setSkillEnabled(key, skillSwitch.checked)
-                                        }
+                                    //     onClicked: {
+                                    //         var key = modelData.skillKey || modelData.name || ""
+                                    //         if (key.length > 0)
+                                    //             wsClient.setSkillEnabled(key, skillSwitch.checked)
+                                    //     }
 
-                                        indicator: Rectangle {
-                                            implicitWidth: 44
-                                            implicitHeight: 22
-                                            x: skillSwitch.leftPadding
-                                            y: parent.height / 2 - height / 2
-                                            radius: 12
-                                            color: skillSwitch.checked ? "#006BFF" : "#1F000000"
+                                    //     indicator: Rectangle {
+                                    //         implicitWidth: 44
+                                    //         implicitHeight: 22
+                                    //         x: skillSwitch.leftPadding
+                                    //         y: parent.height / 2 - height / 2
+                                    //         radius: 12
+                                    //         color: skillSwitch.checked ? "#006BFF" : "#1F000000"
 
-                                            Behavior on color {
-                                                ColorAnimation { duration: 150 }
-                                            }
+                                    //         Behavior on color {
+                                    //             ColorAnimation { duration: 150 }
+                                    //         }
 
-                                            Rectangle {
-                                                x: skillSwitch.checked ? parent.width - width - 3 : 3
-                                                y: parent.height / 2 - height / 2
-                                                width: 18
-                                                height: 18
-                                                radius: 9
-                                                color: "#FFFFFF"
+                                    //         Rectangle {
+                                    //             x: skillSwitch.checked ? parent.width - width - 3 : 3
+                                    //             y: parent.height / 2 - height / 2
+                                    //             width: 18
+                                    //             height: 18
+                                    //             radius: 9
+                                    //             color: "#FFFFFF"
 
-                                                Behavior on x {
-                                                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-                                                }
-                                            }
-                                        }
+                                    //             Behavior on x {
+                                    //                 NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                    //             }
+                                    //         }
+                                    //     }
 
-                                        MouseArea {
-                                            z: 1
-                                            anchors.fill: parent
-                                            acceptedButtons: Qt.NoButton
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                        }
-                                    }
+                                    //     MouseArea {
+                                    //         z: 1
+                                    //         anchors.fill: parent
+                                    //         acceptedButtons: Qt.NoButton
+                                    //         hoverEnabled: true
+                                    //         cursorShape: Qt.PointingHandCursor
+                                    //     }
+                                    // }
                                 }
                             }
                         }
@@ -5508,49 +5189,10 @@ ApplicationWindow {
                         }
 
                         ScrollView {
-                            id: skillMarketCategoryBar
+                            id: skillMarketScrollView
                             anchors.top: parent.top
                             width: parent.width
-                            height: (wsClient.skillMarketCategories && wsClient.skillMarketCategories.length > 1) ? 29 : 0
-                            visible: height > 0
-                            clip: true
-                            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
-                            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-
-                            Row {
-                                spacing: 8
-                                Repeater {
-                                    model: wsClient.skillMarketCategories
-                                    delegate: Rectangle {
-                                        height: 29
-                                        width: tagLabel.width + 20
-                                        radius: 8
-                                        color: wsClient.skillMarketCategoryIndex === index ? "#0F006BFF" : "#F7F9FA"
-                                        Label {
-                                            id: tagLabel
-                                            anchors.centerIn: parent
-                                            text: (modelData && modelData.name !== undefined) ? modelData.name : ""
-                                            font.pixelSize: 14
-                                            color: wsClient.skillMarketCategoryIndex === index ? "#006BFF" : "#A6000000"
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                        }
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: wsClient.skillMarketCategoryIndex = index
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        ScrollView {
-                            id: skillMarketScrollView
-                            anchors.top: skillMarketCategoryBar.bottom
-                            anchors.topMargin: skillMarketCategoryBar.visible ? 16 : 0
-                            width: parent.width
-                            height: parent.height - skillMarketCategoryBar.height - (skillMarketCategoryBar.visible ? 16 : 0)
+                            height: parent.height
                             clip: true
                             ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
@@ -5648,7 +5290,10 @@ ApplicationWindow {
             }
             Rectangle{
                 id: toolsSettingRec
-                anchors.fill: parent
+                anchors.top: capabilityHubHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
                 visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
                 onVisibleChanged: {
@@ -5701,25 +5346,8 @@ ApplicationWindow {
                 Column{
                     anchors.fill: parent
                     leftPadding: 60
-                    topPadding: 24
                     rightPadding: 60
                     spacing: 16
-                    Rectangle{
-                        id: toolsSettingTitleRec
-                        height: toolsSettingTitle.height
-                        width: parent.width - 120
-                        Column{
-                            id: toolsSettingTitle
-                            spacing: 8
-                            anchors.left: parent.left
-                            Label{
-                                text: qsTr("工具")
-                                font.pixelSize: 20
-                                font.weight: Font.Bold
-                                color: "#D9000000"
-                            }
-                        }
-                    }
                     Row {
                         id: toolsTab
                         spacing: 12
@@ -5751,7 +5379,7 @@ ApplicationWindow {
                     ScrollView {
                         id: toolsScrollView
                         width: parent.width - 120
-                        height: toolsSettingRec.height - 24 - toolsSettingTitleRec.height - toolsTab.height - 32
+                        height: toolsSettingRec.height - 24 - toolsTab.height - 32
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 

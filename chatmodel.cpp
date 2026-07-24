@@ -135,7 +135,30 @@ void ChatModel::addToolResult(const QString &toolName,
 {
     for (int i = m_messages.count() - 1; i >= 0; --i) {
         if (m_messages[i].msgType == QStringLiteral("toolCall")
+            && !toolCallId.isEmpty()
             && m_messages[i].toolCallId == toolCallId) {
+            m_messages[i].toolResultText = content;
+            m_messages[i].hasToolResult = true;
+            m_messages[i].isError = isError;
+            const QModelIndex idx = index(i);
+            emit dataChanged(
+                idx,
+                idx,
+                { IsErrorRole, ToolResultTextRole, HasToolResultRole });
+            emit messagePayloadChanged();
+            return;
+        }
+    }
+
+    // 某些子 agent 的完成事件没有回传 toolCallId。此时仅回退匹配
+    // 最近一个同名且尚未完成的调用，避免原卡片永久停留在“执行中”。
+    if (toolCallId.isEmpty() && !toolName.isEmpty()) {
+        for (int i = m_messages.count() - 1; i >= 0; --i) {
+            if (m_messages[i].msgType != QStringLiteral("toolCall")
+                || m_messages[i].hasToolResult
+                || m_messages[i].toolName != toolName) {
+                continue;
+            }
             m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
             m_messages[i].isError = isError;
@@ -195,8 +218,10 @@ void ChatModel::clear()
 bool ChatModel::hasToolCallId(const QString &toolCallId) const
 {
     for (int i = m_messages.count() - 1; i >= 0; --i) {
-        if (m_messages[i].toolCallId == toolCallId)
+        if (m_messages[i].msgType == QStringLiteral("toolCall")
+            && m_messages[i].toolCallId == toolCallId) {
             return true;
+        }
     }
     return false;
 }

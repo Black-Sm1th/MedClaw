@@ -197,6 +197,7 @@
       function isLikelyLocalRef(ref) {
         var value = String(ref || '').trim();
         return /^(?:file:\/\/|~\/|\/)/.test(value)
+          || /^(?:[A-Za-z]:[\\/]|\\\\[^<>:"/\\|?*\r\n]+[\\/][^<>:"/\\|?*\r\n]+[\\/])(?:[^<>:"/\\|?*\r\n]+[\\/])*[^<>:"/\\|?*\r\n]+\.(?:json|md|markdown|txt|csv|tsv|html?|pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|svg|py|js|ts|tsx|jsx|cpp|c|h|hpp|qml|pro|cmake|yml|yaml|xml|log)$/i.test(value)
           || /^(?:\.{1,2}\/)?[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.(?:json|md|markdown|txt|csv|tsv|html?|pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|svg|py|js|ts|tsx|jsx|cpp|c|h|hpp|qml|pro|cmake|yml|yaml|xml|log)$/.test(value)
           || /^[A-Za-z0-9_.-]+\.(?:json|md|markdown|txt|csv|tsv|html?|pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|svg|py|js|ts|tsx|jsx|cpp|c|h|hpp|qml|pro|cmake|yml|yaml|xml|log)$/.test(value);
       }

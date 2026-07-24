@@ -63,5 +63,7 @@
         <file>images/shortcut/1.3.png</file>
         <file>images/shortcut/1.2.png</file>
         <file>images/shortcut/1.1.png</file>
+        <file>images/expertBackground.png</file>
+        <file>images/expert.png</file>
     </qresource>
 </RCC>

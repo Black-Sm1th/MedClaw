@@ -13,6 +13,7 @@
  */
 #include "gateway_client.h"
 #include <QAbstractSocket>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -30,6 +31,7 @@
 #include <QSqlQuery>
 #include <QTextStream>
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <QVariantMap>
 
@@ -141,10 +143,30 @@ GatewayClient::GatewayClient(QObject *parent)
     m_toolResultRefreshTimer.setInterval(300);
     connect(&m_toolResultRefreshTimer, &QTimer::timeout, this, [this]() {
         if (m_state != Connected) return;
+        QString viewKey = m_currentViewSessionKey.trimmed();
+        if (viewKey.isEmpty())
+            viewKey = m_currentTaskSessionKey.trimmed();
+        if (viewKey.isEmpty())
+            viewKey = m_session.currentSessionKey().trimmed();
+        if (viewKey.isEmpty())
+            return;
         const QString reqId = sendRequest(
             QStringLiteral("chat.history"),
-            m_session.buildChatHistoryParams(m_session.currentSessionKey(), 500));
-        m_toolResultRefreshReqIds.insert(reqId);
+            m_session.buildChatHistoryParams(viewKey, 500));
+        m_toolResultRefreshReqSessions.insert(reqId, viewKey);
+        QTimer::singleShot(900, this, [this, viewKey]() {
+            if (m_state != Connected)
+                return;
+            QString currentView = m_currentViewSessionKey.trimmed();
+            if (currentView.isEmpty())
+                currentView = m_currentTaskSessionKey.trimmed();
+            if (currentView != viewKey)
+                return;
+            const QString retryId = sendRequest(
+                QStringLiteral("chat.history"),
+                m_session.buildChatHistoryParams(viewKey, 500));
+            m_toolResultRefreshReqSessions.insert(retryId, viewKey);
+        });
     });
 
     m_socket->setMaxAllowedIncomingFrameSize(std::numeric_limits<quint64>::max());
@@ -282,8 +304,10 @@ QVariantList GatewayClient::collaborationParticipants() const
     const QString controllerAgentId = agentIdFromSessionKey(taskKey);
     const QVariantMap controllerAgent = agentInfoById(controllerAgentId);
     QSet<QString> seenAgentIds;
+    QSet<QString> seenSessionKeys;
     if (!controllerAgentId.isEmpty())
         seenAgentIds.insert(controllerAgentId);
+    seenSessionKeys.insert(taskKey);
 
     QVariantMap controller;
     controller[QStringLiteral("sessionKey")] = taskKey;
@@ -306,7 +330,7 @@ QVariantList GatewayClient::collaborationParticipants() const
     for (const QVariant &v : sess) {
         const QVariantMap s = v.toMap();
         const QString key = s.value(QStringLiteral("sessionKey")).toString();
-        if (key.isEmpty() || key == taskKey)
+        if (key.isEmpty() || seenSessionKeys.contains(key))
             continue;
         if (!sessionBelongsToTask(s, taskKey))
             continue;
@@ -335,6 +359,7 @@ QVariantList GatewayClient::collaborationParticipants() const
         row[QStringLiteral("startedAt")] = QVariant(static_cast<qlonglong>(startedAt));
         row[QStringLiteral("updatedAt")] = QVariant(static_cast<qlonglong>(updatedAt));
         out.append(row);
+        seenSessionKeys.insert(key);
     }
 
     const QVariantMap taskRow = taskSessionInfoByKey(taskKey);
@@ -359,9 +384,10 @@ QVariantList GatewayClient::collaborationParticipants() const
             hinted.isEmpty() ? QStringLiteral("selected") : QStringLiteral("leaf");
         row[QStringLiteral("roleLabel")] =
             hinted.isEmpty() ? QStringLiteral("\u5f85\u521b\u5efa")
-                             : QStringLiteral("\u5b50 Agent");
+                             : QStringLiteral("\u6267\u884c\u4e2d");
         row[QStringLiteral("isController")] = false;
         row[QStringLiteral("isPending")] = hinted.isEmpty();
+        row[QStringLiteral("isRunning")] = !hinted.isEmpty();
         row[QStringLiteral("startedAt")] = hinted.isEmpty()
             ? QVariant(static_cast<qlonglong>(std::numeric_limits<qint64>::max()))
             : hinted.value(QStringLiteral("startedAt"));
@@ -370,6 +396,44 @@ QVariantList GatewayClient::collaborationParticipants() const
             : hinted.value(QStringLiteral("updatedAt"));
         out.append(row);
         seenAgentIds.insert(aid);
+    }
+
+    // An expert can dynamically choose its own sub-agents. Those agents are
+    // intentionally absent from task_sessions.agents, so merge live spawn
+    // hints independently of the old preselected collaboration list.
+    for (const QVariant &value : m_collaborationChildSessionHints) {
+        const QVariantMap hinted = value.toMap();
+        const QString spawnedBy =
+            hinted.value(QStringLiteral("spawnedBy")).toString().trimmed();
+        const QString parent =
+            hinted.value(QStringLiteral("parentSessionKey")).toString().trimmed();
+        if (spawnedBy != taskKey && parent != taskKey)
+            continue;
+
+        const QString aid =
+            hinted.value(QStringLiteral("agentId")).toString().trimmed();
+        const QString childKey =
+            hinted.value(QStringLiteral("sessionKey")).toString().trimmed();
+        if (aid.isEmpty() || childKey.isEmpty()
+            || seenSessionKeys.contains(childKey))
+            continue;
+
+        const QVariantMap agent = agentInfoById(aid);
+        const QString agentName = agent.value(QStringLiteral("name")).toString();
+        QVariantMap row;
+        row[QStringLiteral("sessionKey")] = childKey;
+        row[QStringLiteral("agentId")] = aid;
+        row[QStringLiteral("title")] = agentName.isEmpty() ? aid : agentName;
+        row[QStringLiteral("agentName")] = agentName.isEmpty() ? aid : agentName;
+        row[QStringLiteral("role")] = QStringLiteral("leaf");
+        row[QStringLiteral("roleLabel")] = QStringLiteral("\u6267\u884c\u4e2d");
+        row[QStringLiteral("isController")] = false;
+        row[QStringLiteral("isPending")] = false;
+        row[QStringLiteral("isRunning")] = true;
+        row[QStringLiteral("startedAt")] = hinted.value(QStringLiteral("startedAt"));
+        row[QStringLiteral("updatedAt")] = hinted.value(QStringLiteral("updatedAt"));
+        out.append(row);
+        seenSessionKeys.insert(childKey);
     }
 
     if (out.size() > 1) {
@@ -433,31 +497,9 @@ QVariantList GatewayClient::modelList() const { return m_modelList; }
 
 QVariantList GatewayClient::skillMarketFolders() const { return m_skillMarketFolders; }
 
-QVariantList GatewayClient::skillMarketCategories() const
-{
-    return m_config.skillMarketCategories();
-}
-
 QVariantList GatewayClient::shortcutList() const
 {
     return m_config.shortcuts();
-}
-
-int GatewayClient::skillMarketCategoryIndex() const
-{
-    return m_skillMarketCategoryIndex;
-}
-
-void GatewayClient::setSkillMarketCategoryIndex(int index)
-{
-    const QVariantList cats = m_config.skillMarketCategories();
-    const int clamped =
-        cats.isEmpty() ? 0 : qBound(0, index, static_cast<int>(cats.size()) - 1);
-    if (m_skillMarketCategoryIndex == clamped)
-        return;
-    m_skillMarketCategoryIndex = clamped;
-    emit skillMarketCategoryIndexChanged();
-    refreshSkillMarketFolders();
 }
 
 bool GatewayClient::skillInstallBusy() const { return m_skillInstallBusy; }
@@ -964,12 +1006,24 @@ void GatewayClient::switchCollaborationViewSession(const QString &sessionKey)
         return;
 
     const bool isKnownController = (key == m_currentTaskSessionKey);
-    const QVariantMap hintedChild =
-        collaborationChildHintForAgent(agentIdFromSessionKey(key),
-                                       m_currentTaskSessionKey);
+    bool isHintedChild = false;
+    for (const QVariant &value : m_collaborationChildSessionHints) {
+        const QVariantMap hinted = value.toMap();
+        if (hinted.value(QStringLiteral("sessionKey")).toString() != key)
+            continue;
+        const QString spawnedBy =
+            hinted.value(QStringLiteral("spawnedBy")).toString();
+        const QString parent =
+            hinted.value(QStringLiteral("parentSessionKey")).toString();
+        if (spawnedBy == m_currentTaskSessionKey
+            || parent == m_currentTaskSessionKey) {
+            isHintedChild = true;
+            break;
+        }
+    }
     const bool isKnownChild =
         sessionBelongsToTask(sessionInfoByKey(key), m_currentTaskSessionKey)
-        || (hintedChild.value(QStringLiteral("sessionKey")).toString() == key);
+        || isHintedChild;
     if (!isKnownController && !isKnownChild) {
         emit errorOccurred(QStringLiteral("\u8be5\u4f1a\u8bdd\u4e0d\u5c5e\u4e8e\u5f53\u524d\u534f\u4f5c\u4efb\u52a1"));
         return;
@@ -1391,32 +1445,63 @@ QString GatewayClient::normalizeWorkspacePath(const QString &workspace) const
     return QDir(expandTildePath(trimmed)).absolutePath();
 }
 
+QString GatewayClient::prepareTaskWorkspace(const QString &workspace)
+{
+    QString target = normalizeWorkspacePath(workspace);
+    if (target.isEmpty()) {
+        QDir installDir(QCoreApplication::applicationDirPath());
+        if (installDir.dirName().compare(QStringLiteral("client"),
+                                         Qt::CaseInsensitive) == 0) {
+            installDir.cdUp();
+        }
+        const QString workspaceRoot =
+            installDir.absoluteFilePath(QStringLiteral("workspace"));
+        target = QDir(workspaceRoot).absoluteFilePath(
+            QStringLiteral("workspace-%1").arg(
+                QDateTime::currentDateTime().toString(
+                    QStringLiteral("yyyy-MM-dd-HH-mm-ss"))));
+    }
+
+    target = QDir::cleanPath(target);
+    if (!QDir(target).exists() && !QDir().mkpath(target)) {
+        emit errorOccurred(QStringLiteral("无法创建工作目录：%1").arg(target));
+        return QString();
+    }
+    return QDir(target).absolutePath();
+}
+
 QString GatewayClient::buildCollaborationPrompt(
     const QString &userMessage,
     const QStringList &participantAgentIds,
     const QString &businessWorkspace) const
 {
-    if (participantAgentIds.isEmpty())
-        return userMessage;
-
     QStringList lines;
-    lines << QStringLiteral("\u4f60\u662f\u8fd9\u4e2a\u534f\u4f5c\u4efb\u52a1\u7684\u4e3b\u63a7 agent\u3002");
-    lines << QStringLiteral("\u8bf7\u5148\u7406\u89e3\u7528\u6237\u4efb\u52a1\uff0c\u7136\u540e\u4f7f\u7528 sessions_spawn \u4e3a\u4e0b\u5217\u534f\u4f5c agent \u521b\u5efa\u5b50\u4efb\u52a1\u3002");
-    lines << QStringLiteral("sessions_spawn \u53c2\u6570\u5efa\u8bae\uff1aruntime=\"subagent\", mode=\"session\", cleanup=\"keep\", agentId=\u76ee\u6807 agent id, task=\u5206\u914d\u7ed9\u8be5 agent \u7684\u5177\u4f53\u4efb\u52a1\u3002");
-    const QString normalizedBusinessWorkspace = normalizeWorkspacePath(businessWorkspace);
-    if (!normalizedBusinessWorkspace.isEmpty())
-        lines << QStringLiteral("\u672c\u4efb\u52a1\u7684 workspace\uff1a%1").arg(normalizedBusinessWorkspace);
-    lines << QStringLiteral("\u8bf7\u7b49\u5f85\u6240\u6709\u5b50 agent \u5b8c\u6210\u540e\uff0c\u7efc\u5408\u4ed6\u4eec\u7684\u7ed3\u679c\u7ed9\u51fa\u6700\u7ec8\u56de\u590d\u3002");
-    lines << QStringLiteral("");
-    lines << QStringLiteral("\u534f\u4f5c agent\uff1a");
-    for (const QString &aid : participantAgentIds) {
-        const QVariantMap a = agentInfoById(aid);
-        const QString name = a.value(QStringLiteral("name")).toString();
-        if (name.isEmpty() || name == aid)
-            lines << QStringLiteral("- %1").arg(aid);
-        else
-            lines << QStringLiteral("- %1 (%2)").arg(aid, name);
+    if (!participantAgentIds.isEmpty()) {
+        lines << QStringLiteral("\u4f60\u662f\u8fd9\u4e2a\u534f\u4f5c\u4efb\u52a1\u7684\u4e3b\u63a7 agent\u3002");
+        lines << QStringLiteral("\u8bf7\u5148\u7406\u89e3\u7528\u6237\u4efb\u52a1\uff0c\u7136\u540e\u4f7f\u7528 sessions_spawn \u4e3a\u4e0b\u5217\u534f\u4f5c agent \u521b\u5efa\u5b50\u4efb\u52a1\u3002");
+        lines << QStringLiteral("sessions_spawn \u53c2\u6570\u5efa\u8bae\uff1aruntime=\"subagent\", mode=\"session\", cleanup=\"keep\", agentId=\u76ee\u6807 agent id, task=\u5206\u914d\u7ed9\u8be5 agent \u7684\u5177\u4f53\u4efb\u52a1\u3002");
     }
+    const QString normalizedBusinessWorkspace = normalizeWorkspacePath(businessWorkspace);
+    if (!normalizedBusinessWorkspace.isEmpty()) {
+        lines << QStringLiteral("本任务的工作目录（也是输出文件目录）：%1")
+                     .arg(normalizedBusinessWorkspace);
+        lines << QStringLiteral("如需创建、修改或保存文件，必须写入该目录或其子目录；不要写入 agent 身份 workspace、程序运行目录或其他目录。");
+    }
+    if (!participantAgentIds.isEmpty()) {
+        lines << QStringLiteral("\u8bf7\u7b49\u5f85\u6240\u6709\u5b50 agent \u5b8c\u6210\u540e\uff0c\u7efc\u5408\u4ed6\u4eec\u7684\u7ed3\u679c\u7ed9\u51fa\u6700\u7ec8\u56de\u590d\u3002");
+        lines << QStringLiteral("");
+        lines << QStringLiteral("\u534f\u4f5c agent\uff1a");
+        for (const QString &aid : participantAgentIds) {
+            const QVariantMap a = agentInfoById(aid);
+            const QString name = a.value(QStringLiteral("name")).toString();
+            if (name.isEmpty() || name == aid)
+                lines << QStringLiteral("- %1").arg(aid);
+            else
+                lines << QStringLiteral("- %1 (%2)").arg(aid, name);
+        }
+    }
+    if (lines.isEmpty())
+        return userMessage;
     lines << QStringLiteral("");
     lines << QStringLiteral("\u7528\u6237\u4efb\u52a1\uff1a");
     lines << userMessage;
@@ -1914,7 +1999,7 @@ void GatewayClient::disconnectFromServer()
     m_autoReconnectFailureCount = 0;
     m_pendingReconnectDelayMs = 0;
     m_toolResultRefreshTimer.stop();
-    m_toolResultRefreshReqIds.clear();
+    m_toolResultRefreshReqSessions.clear();
     if (m_skillInstallBusy) {
         m_skillInstallBusy = false;
         emit skillInstallBusyChanged();
@@ -2284,6 +2369,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             qDebug().noquote() << "[Gateway] session.tool → result:" << tr.toolName
                                << "error:" << tr.toolIsError
                                << "contentLen:" << tr.content.length();
+            refreshCollaborationSessionsAfterSpawn(tr.toolName, tr.content);
             emit toolResultReceived(tr.toolName, tr.content,
                                     tr.toolCallId, tr.toolIsError);
             m_toolResultRefreshTimer.start();
@@ -2323,6 +2409,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         qDebug().noquote() << "[Gateway] tool result:" << r.toolName
                            << "error:" << r.toolIsError
                            << "contentLen:" << r.content.length();
+        refreshCollaborationSessionsAfterSpawn(r.toolName, r.content);
         emit toolResultReceived(r.toolName, r.content,
                                 r.toolCallId, r.toolIsError);
         m_toolResultRefreshTimer.start();
@@ -2354,6 +2441,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             } else if (!r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
+            m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
             return;
         }
@@ -2386,6 +2474,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             } else if (!r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
+            m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
             return;
         }
@@ -2750,13 +2839,21 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 QStringLiteral("agent:%1:main").arg(id);
             entry[QStringLiteral("isDefault")]  = (id == m_defaultAgentId);
             QString workspace = a.value(QStringLiteral("workspace")).toString().trimmed();
-            if (workspace.isEmpty())
-                workspace = resolveWorkspacePathForAgentId(id).trimmed();
+            if (workspace.isEmpty()) {
+                const auto workspaceIt = m_agentWorkspaceById.constFind(id);
+                if (workspaceIt != m_agentWorkspaceById.cend())
+                    workspace = workspaceIt.value().trimmed();
+                else if (id == m_defaultAgentId)
+                    workspace = m_agentsDefaultWorkspace.trimmed();
+            }
             entry[QStringLiteral("workspace")] = workspace;
             entry[QStringLiteral("identity")] =
                 a.value(QStringLiteral("identity")).toObject().toVariantMap();
-            if (!workspace.trimmed().isEmpty()) {
-                QFile identityFile(QDir(expandTildePath(workspace))
+            const QString identityWorkspace =
+                resolveIdentityWorkspacePath(id, workspace);
+            entry[QStringLiteral("identityWorkspace")] = identityWorkspace;
+            if (!identityWorkspace.isEmpty()) {
+                QFile identityFile(QDir(identityWorkspace)
                     .filePath(QStringLiteral("IDENTITY.md")));
                 if (identityFile.exists()
                         && identityFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -2842,8 +2939,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         }
 
         // 工具结果补拉：仅原地合并 toolResult 文本，不清空聊天模型
-        if (m_toolResultRefreshReqIds.remove(id)) {
-            emit toolResultsRefreshed(history);
+        const QString toolResultSession =
+            m_toolResultRefreshReqSessions.take(id);
+        if (!toolResultSession.isEmpty()) {
+            QString currentView = m_currentViewSessionKey.trimmed();
+            if (currentView.isEmpty())
+                currentView = m_currentTaskSessionKey.trimmed();
+            if (toolResultSession == currentView)
+                emit toolResultsRefreshed(history);
             return;
         }
 
@@ -3181,6 +3284,8 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
         qDebug().noquote() << "[Gateway] chat → toolResult:" << tName
                            << "error:" << isErr
                            << "len:" << resultText.length();
+
+        refreshCollaborationSessionsAfterSpawn(tName, resultText);
 
         if (m_session.isStreaming()) {
             m_session.setStreaming(false);
@@ -3808,21 +3913,6 @@ QString GatewayClient::expandTildePath(const QString &path)
     return p;
 }
 
-QString GatewayClient::skillMarketCategoryScanRoot() const
-{
-    const QVariantList cats = m_config.skillMarketCategories();
-    if (cats.isEmpty())
-        return QString();
-    int idx = m_skillMarketCategoryIndex;
-    if (idx < 0 || idx >= cats.size())
-        idx = 0;
-    const QVariantMap entry = cats.at(idx).toMap();
-    const QString rel = entry.value(QStringLiteral("path")).toString().trimmed();
-    if (rel.isEmpty() || rel == QLatin1Char('.') || rel == QStringLiteral("."))
-        return QString();
-    return expandTildePath(rel).trimmed();
-}
-
 bool GatewayClient::copyDirectoryRecursive(const QString &srcDir, const QString &dstDir)
 {
     QDir src(srcDir);
@@ -4054,87 +4144,14 @@ void GatewayClient::addSkillFromGit(const QString &urlRaw)
 
 void GatewayClient::refreshSkillMarketFolders()
 {
-    const QVariantList cats = m_config.skillMarketCategories();
-    if (!cats.isEmpty()) {
-        const int clamped =
-            qBound(0, m_skillMarketCategoryIndex, static_cast<int>(cats.size()) - 1);
-        if (clamped != m_skillMarketCategoryIndex) {
-            m_skillMarketCategoryIndex = clamped;
-            emit skillMarketCategoryIndexChanged();
-        }
-    }
     m_skillMarketFolders.clear();
-    const QString base = skillMarketCategoryScanRoot().trimmed();
-    const QString storage = expandTildePath(m_config.skillsStoragePath()).trimmed();
-    if (base.isEmpty()) {
-        emit skillMarketFoldersChanged();
-        return;
-    }
-    QDir dir(base);
-    if (!dir.exists()) {
-        emit skillMarketFoldersChanged();
-        return;
-    }
-    const QFileInfoList list = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QFileInfo &fi : list) {
-        if (!fi.isDir())
-            continue;
-        const QString name = fi.fileName();
-        QVariantMap m;
-        m[QStringLiteral("folderName")] = name;
-        m[QStringLiteral("installed")] = QDir(storage + QLatin1Char('/') + name).exists();
-        m_skillMarketFolders.append(m);
-    }
     emit skillMarketFoldersChanged();
 }
 
 void GatewayClient::installSkillFromMarket(const QString &folderName)
 {
-    const QString name = folderName.trimmed();
-    if (name.isEmpty())
-        return;
-    if (m_state != Connected) {
-        emit errorOccurred(
-            QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
-        return;
-    }
-    if (m_skillInstallBusy)
-        return;
-    const QString srcRoot = skillMarketCategoryScanRoot().trimmed();
-    if (srcRoot.isEmpty()) {
-        emit errorOccurred(QStringLiteral(
-            "\u672a\u914d\u7f6e\u6280\u80fd\u5e02\u573a\u76ee\u5f55"));
-        return;
-    }
-    const QString dstRoot = expandTildePath(m_config.skillsStoragePath());
-    const QString src = srcRoot + QLatin1Char('/') + name;
-    const QString dst = dstRoot + QLatin1Char('/') + name;
-    if (!QDir(src).exists()) {
-        emit errorOccurred(QStringLiteral(
-            "\u6280\u80fd\u6587\u4ef6\u5939\u4e0d\u5b58\u5728"));
-        return;
-    }
-    QDir().mkpath(dstRoot);
-    if (QDir(dst).exists()) {
-        if (!QDir(dst).removeRecursively()) {
-            emit errorOccurred(QStringLiteral(
-                "\u65e0\u6cd5\u6e05\u9664\u76ee\u6807\u76ee\u5f55"));
-            return;
-        }
-    }
-    m_skillInstallBusy = true;
-    emit skillInstallBusyChanged();
-    if (!copyDirectoryRecursive(src, dst)) {
-        m_skillInstallBusy = false;
-        emit skillInstallBusyChanged();
-        emit errorOccurred(QStringLiteral(
-            "\u590d\u5236\u6280\u80fd\u6587\u4ef6\u5931\u8d25"));
-        return;
-    }
-    m_skillInstallBusy = false;
-    emit skillInstallBusyChanged();
-    refreshSkillMarketFolders();
-    refreshSkills();
+    Q_UNUSED(folderName)
+    emit errorOccurred(QStringLiteral("\u6280\u80fd\u5e02\u573a\u6570\u636e\u6e90\u5c1a\u672a\u63a5\u5165"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4290,7 +4307,7 @@ void GatewayClient::switchTaskSession(const QString &sessionKey)
     }
 
     m_toolResultRefreshTimer.stop();
-    m_toolResultRefreshReqIds.clear();
+    m_toolResultRefreshReqSessions.clear();
     m_pendingCollaborationAgentIds.clear();
     m_collaborationChildSessionHints.clear();
     emit collaborationParticipantsChanged();
@@ -4339,7 +4356,7 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
 
     // 切换会话时取消未完成的工具结果补拉
     m_toolResultRefreshTimer.stop();
-    m_toolResultRefreshReqIds.clear();
+    m_toolResultRefreshReqSessions.clear();
 
     const QString sessionKey = resolveChatSessionKeyForAgentId(agentId.trimmed());
 
@@ -4452,7 +4469,13 @@ void GatewayClient::sendChatMessage(const QString &message,
         }
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         const QString title = taskTitleFromFirstMessage(trimmed);
-        const QString businessWorkspace = normalizeWorkspacePath(workspaceForNewAgent);
+        const QString businessWorkspace = prepareTaskWorkspace(workspaceForNewAgent);
+        if (businessWorkspace.isEmpty())
+            return;
+        if (!m_pendingChatFiles.isEmpty()) {
+            resolveAndCopyFiles(m_pendingChatFiles, businessWorkspace);
+            m_pendingChatFiles.clear();
+        }
         upsertTaskSessionLocal(controllerKey, businessWorkspace,
                                title, taskAgents, now, now);
         m_localOnlyTaskSessionKeys.insert(controllerKey);
@@ -4486,7 +4509,7 @@ void GatewayClient::sendChatMessage(const QString &message,
         return;
     }
 
-    if (!participantIds.isEmpty()) {
+    {
         const QString controllerKey = activeKey;
         QString controllerId = controllerAgentId;
         if (controllerId.isEmpty())
@@ -4496,9 +4519,10 @@ void GatewayClient::sendChatMessage(const QString &message,
             normalizeWorkspacePath(taskRow.value(QStringLiteral("workspace")).toString());
         m_pendingCollaborationAgentIds.clear();
         emit collaborationParticipantsChanged();
-        if (maybeConfigureSubagentAllowAgents(controllerKey, controllerId,
-                                              participantIds, trimmed,
-                                              businessWorkspace))
+        if (!participantIds.isEmpty()
+            && maybeConfigureSubagentAllowAgents(controllerKey, controllerId,
+                                                 participantIds, trimmed,
+                                                 businessWorkspace))
             return;
         outboundMessage = buildCollaborationPrompt(trimmed, participantIds,
                                                    businessWorkspace);
@@ -4823,6 +4847,7 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
 
     rebuildMcpListFromConfigObject(m_lastConfigSnapshot);
     rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
+    refreshAgentIdentityTextsFromWorkspaces();
     mergeWorkspaceIntoAgentIdentity();
     parseSettingsFromConfig();
 
@@ -4959,6 +4984,69 @@ QString GatewayClient::resolveWorkspacePathForAgentId(const QString &agentId) co
     if (it != m_agentWorkspaceById.cend() && !it.value().isEmpty())
         return it.value();
     return m_agentsDefaultWorkspace;
+}
+
+QString GatewayClient::resolveIdentityWorkspacePath(
+    const QString &agentId, const QString &configuredWorkspace) const
+{
+    const QString id = agentId.trimmed();
+    if (!id.isEmpty()) {
+        QString stateDir = qEnvironmentVariable("OPENCLAW_STATE_DIR").trimmed();
+        if (stateDir.isEmpty())
+            stateDir = QDir(QDir::homePath()).filePath(QStringLiteral(".openclaw"));
+        else
+            stateDir = expandTildePath(stateDir);
+
+        const QString agentWorkspace = QDir(stateDir).filePath(
+            QStringLiteral("workspace-%1").arg(id));
+        if (QDir(agentWorkspace).exists())
+            return QDir(agentWorkspace).absolutePath();
+    }
+
+    const QString fallback = expandTildePath(configuredWorkspace).trimmed();
+    return fallback.isEmpty() ? QString() : QDir(fallback).absolutePath();
+}
+
+void GatewayClient::refreshAgentIdentityTextsFromWorkspaces()
+{
+    bool changed = false;
+    for (int i = 0; i < m_agentList.size(); ++i) {
+        const QVariantMap current = m_agentList.at(i).toMap();
+        QVariantMap next = current;
+        const QString id = current.value(QStringLiteral("id")).toString().trimmed();
+        if (id.isEmpty())
+            continue;
+
+        QString workspace = m_agentWorkspaceById.value(id).trimmed();
+        if (workspace.isEmpty())
+            workspace = current.value(QStringLiteral("workspace")).toString().trimmed();
+        if (workspace.isEmpty() && id == m_defaultAgentId)
+            workspace = m_agentsDefaultWorkspace.trimmed();
+
+        next[QStringLiteral("workspace")] = workspace;
+        const QString identityWorkspace =
+            resolveIdentityWorkspacePath(id, workspace);
+        next[QStringLiteral("identityWorkspace")] = identityWorkspace;
+        next.remove(QStringLiteral("identityText"));
+        if (!identityWorkspace.isEmpty()) {
+            QFile identityFile(QDir(identityWorkspace)
+                .filePath(QStringLiteral("IDENTITY.md")));
+            if (identityFile.exists()
+                    && identityFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QTextStream ts(&identityFile);
+                ts.setCodec("UTF-8");
+                next[QStringLiteral("identityText")] = ts.readAll();
+            }
+        }
+
+        if (next != current) {
+            m_agentList[i] = next;
+            changed = true;
+        }
+    }
+
+    if (changed)
+        emit agentListChanged();
 }
 
 void GatewayClient::mergeWorkspaceIntoAgentIdentity()
@@ -5316,39 +5404,110 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     if (taskKey.isEmpty())
         return;
 
-    QString sessionKey = payload.value(QStringLiteral("sessionKey")).toString().trimmed();
-    if (sessionKey.isEmpty())
-        sessionKey = payload.value(QStringLiteral("childSessionKey")).toString().trimmed();
-    const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
-    if (sessionKey.isEmpty())
-        sessionKey = data.value(QStringLiteral("sessionKey")).toString().trimmed();
-    if (sessionKey.isEmpty())
-        sessionKey = data.value(QStringLiteral("childSessionKey")).toString().trimmed();
+    // sessions_spawn events normally carry the controller sessionKey at the
+    // top level and the childSessionKey in a nested object or JSON text.  Read
+    // child keys first; otherwise the controller key masks the new session
+    // until sessions.list exposes it after the run has finished.
+    QStringList childSessionKeys;
+    QStringList explicitParentKeys;
+    QStringList eventSessionKeys;
+    const QRegularExpression childKeyInText(QStringLiteral(
+        "[\\\"']childSessionKey[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)[\\\"']"));
+    std::function<void(const QJsonValue &, int)> visit;
+    visit = [&](const QJsonValue &value, int depth) {
+        if (depth > 8)
+            return;
+        if (value.isObject()) {
+            const QJsonObject object = value.toObject();
+            for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
+                const QString field = it.key();
+                const QString text = it.value().isString()
+                    ? it.value().toString().trimmed() : QString();
+                if (field == QLatin1String("childSessionKey") && !text.isEmpty())
+                    childSessionKeys.append(text);
+                else if ((field == QLatin1String("parentSessionKey")
+                          || field == QLatin1String("spawnedBy")) && !text.isEmpty())
+                    explicitParentKeys.append(text);
+                else if ((field == QLatin1String("sessionKey")
+                          || field == QLatin1String("key")) && !text.isEmpty())
+                    eventSessionKeys.append(text);
+                visit(it.value(), depth + 1);
+            }
+            return;
+        }
+        if (value.isArray()) {
+            const QJsonArray array = value.toArray();
+            for (const QJsonValue &item : array)
+                visit(item, depth + 1);
+            return;
+        }
+        if (!value.isString())
+            return;
+        const QString text = value.toString().trimmed();
+        const QRegularExpressionMatch childMatch = childKeyInText.match(text);
+        if (childMatch.hasMatch()) {
+            const QString key = childMatch.captured(1).trimmed();
+            if (!key.isEmpty() && !childSessionKeys.contains(key))
+                childSessionKeys.append(key);
+        }
+        if (text.size() < 2 || text.size() > 1024 * 1024
+            || (text.at(0) != QLatin1Char('{') && text.at(0) != QLatin1Char('[')))
+            return;
+        QJsonParseError parseError;
+        const QJsonDocument document =
+            QJsonDocument::fromJson(text.toUtf8(), &parseError);
+        if (parseError.error == QJsonParseError::NoError)
+            visit(document.isObject() ? QJsonValue(document.object())
+                                      : QJsonValue(document.array()), depth + 1);
+    };
+    visit(QJsonValue(payload), 0);
+
+    for (const QString &candidate : eventSessionKeys) {
+        if ((candidate.contains(QLatin1String(":subagent:"))
+             || candidate.contains(QLatin1String(":acp:")))
+            && !childSessionKeys.contains(candidate)) {
+            childSessionKeys.append(candidate);
+        }
+    }
+    if (childSessionKeys.isEmpty())
+        return;
+
+    const QString sessionKey = childSessionKeys.constFirst().trimmed();
     if (sessionKey.isEmpty() || sessionKey == taskKey)
         return;
 
-    QString parentKey =
-        payload.value(QStringLiteral("parentSessionKey")).toString().trimmed();
-    if (parentKey.isEmpty())
-        parentKey = payload.value(QStringLiteral("spawnedBy")).toString().trimmed();
-    if (parentKey.isEmpty())
-        parentKey = data.value(QStringLiteral("parentSessionKey")).toString().trimmed();
-    if (parentKey.isEmpty())
-        parentKey = data.value(QStringLiteral("spawnedBy")).toString().trimmed();
+    QString parentKey;
+    for (const QString &candidate : explicitParentKeys) {
+        if (candidate == taskKey) {
+            parentKey = candidate;
+            break;
+        }
+    }
+    if (parentKey.isEmpty() && eventSessionKeys.contains(taskKey))
+        parentKey = taskKey;
+    if (parentKey.isEmpty() && !explicitParentKeys.isEmpty())
+        parentKey = explicitParentKeys.constFirst();
 
     if (!parentKey.isEmpty() && parentKey != taskKey)
         return;
-    if (parentKey.isEmpty() && !sessionKey.contains(QLatin1String(":subagent:")))
+    if (parentKey.isEmpty()
+        && !sessionKey.contains(QLatin1String(":subagent:"))
+        && !sessionKey.contains(QLatin1String(":acp:")))
         return;
 
     const QString agentId = agentIdFromSessionKey(sessionKey);
     if (agentId.isEmpty())
         return;
 
-    const QVariantMap taskRow = taskSessionInfoByKey(taskKey);
-    const QStringList selectedAgents = taskSessionAgentIds(taskRow);
-    if (!selectedAgents.contains(agentId))
-        return;
+    // Old preselected teams may emit only a bare subagent key. Keep that
+    // fallback, but require dynamic expert-selected agents to carry an
+    // explicit relationship to the active controller session.
+    if (parentKey.isEmpty()) {
+        const QStringList selectedAgents =
+            taskSessionAgentIds(taskSessionInfoByKey(taskKey));
+        if (!selectedAgents.contains(agentId))
+            return;
+    }
 
     QVariantMap row;
     row[QStringLiteral("sessionKey")] = sessionKey;
@@ -5361,8 +5520,7 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
 
     for (int i = 0; i < m_collaborationChildSessionHints.size(); ++i) {
         const QVariantMap existing = m_collaborationChildSessionHints.at(i).toMap();
-        if (existing.value(QStringLiteral("sessionKey")).toString() == sessionKey
-            || existing.value(QStringLiteral("agentId")).toString() == agentId) {
+        if (existing.value(QStringLiteral("sessionKey")).toString() == sessionKey) {
             m_collaborationChildSessionHints[i] = row;
             emit collaborationParticipantsChanged();
             return;
@@ -5370,6 +5528,35 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     }
     m_collaborationChildSessionHints.append(row);
     emit collaborationParticipantsChanged();
+}
+
+void GatewayClient::refreshCollaborationSessionsAfterSpawn(
+    const QString &toolName, const QString &toolResult)
+{
+    QString normalizedName = toolName.trimmed().toLower();
+    normalizedName.replace(QLatin1Char('.'), QLatin1Char('_'));
+    normalizedName.replace(QLatin1Char('-'), QLatin1Char('_'));
+    const bool isSpawn = normalizedName.contains(QLatin1String("sessions_spawn"))
+        || toolResult.contains(QLatin1String("childSessionKey"),
+                               Qt::CaseInsensitive);
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
+    if (!isSpawn || taskKey.isEmpty())
+        return;
+
+    if (!toolResult.trimmed().isEmpty()) {
+        QJsonObject hintPayload;
+        hintPayload[QStringLiteral("sessionKey")] = taskKey;
+        hintPayload[QStringLiteral("content")] = toolResult;
+        rememberCollaborationChildSessionHint(hintPayload);
+    }
+
+    refreshSessions();
+    for (const int delayMs : {300, 1200}) {
+        QTimer::singleShot(delayMs, this, [this, taskKey]() {
+            if (m_state == Connected && m_currentTaskSessionKey == taskKey)
+                refreshSessions();
+        });
+    }
 }
 
 QVariantMap GatewayClient::collaborationChildHintForAgent(
@@ -5409,6 +5596,21 @@ bool GatewayClient::eventAppliesToCurrentUiSession(
 
     if (evt == cur)
         return true;
+
+    // 子 agent 的部分 session.tool 完成事件只携带 agentId，不携带
+    // sessionKey。extractPayloadSessionKey 会将其合成为 agent:<id>:main；
+    // 当前正在查看的却是 agent:<id>:subagent:<uuid>，不能因此丢弃结果。
+    const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
+    const bool hasExplicitSessionKey =
+        !payload.value(QStringLiteral("sessionKey")).toString().trimmed().isEmpty()
+        || !data.value(QStringLiteral("sessionKey")).toString().trimmed().isEmpty();
+    const QString eventAgentId = agentIdFromSessionKey(evt);
+    const QString currentAgentId = agentIdFromSessionKey(cur);
+    if (!hasExplicitSessionKey
+        && !eventAgentId.isEmpty()
+        && eventAgentId == currentAgentId) {
+        return true;
+    }
 
     return false;
 }
