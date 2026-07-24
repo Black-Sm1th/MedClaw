@@ -249,6 +249,7 @@ void GatewayClient::setTaskSessionUserId(const QString &userId)
     m_taskSessionUserId = normalized;
     clearActiveAgentContext();
     loadTaskSessionListFromDb();
+    loadCronJobOwnershipFromDb();
 }
 
 /// 将连接状态枚举转换为用户可读的中文描述
@@ -460,13 +461,24 @@ QVariantList GatewayClient::skillList() const
 /// 委托给 WsScheduledTask 获取任务列表
 QVariantList GatewayClient::cronJobs() const
 {
-    return m_scheduledTask.jobList();
+    QVariantList owned;
+    if (m_taskSessionUserId.isEmpty())
+        return owned;
+    for (const QVariant &v : m_scheduledTask.jobList()) {
+        const QString jobId =
+            v.toMap().value(QStringLiteral("id")).toString().trimmed();
+        if (m_currentUserCronJobIds.contains(jobId))
+            owned.append(v);
+    }
+    return owned;
 }
 
 /// 委托给 WsScheduledTask 获取 cron 服务状态
 QVariantMap GatewayClient::cronServiceStatus() const
 {
-    return m_scheduledTask.cronStatus();
+    QVariantMap status = m_scheduledTask.cronStatus();
+    status[QStringLiteral("jobCount")] = cronJobs().size();
+    return status;
 }
 
 /// 获取当前 agent 身份信息
@@ -685,6 +697,23 @@ bool GatewayClient::initTaskSessionDb()
     q.exec(QStringLiteral(
         "CREATE INDEX IF NOT EXISTS idx_task_sessions_user_visible "
         "ON task_sessions(user_id, deleted_at, updated_at)"));
+
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS cron_jobs ("
+            "user_id TEXT NOT NULL,"
+            "job_id TEXT NOT NULL,"
+            "created_at INTEGER NOT NULL,"
+            "updated_at INTEGER NOT NULL,"
+            "deleted_at INTEGER,"
+            "PRIMARY KEY (user_id, job_id)"
+            ")"))) {
+        qWarning().noquote() << "[TaskSessionDb] create cron_jobs failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_cron_jobs_user_visible "
+        "ON cron_jobs(user_id, deleted_at, updated_at)"));
     m_taskSessionDbReady = true;
     return true;
 }
@@ -959,6 +988,12 @@ void GatewayClient::reconcileCronTaskSessionsWithJobs()
 
     for (const QString &key : staleKeys)
         softDeleteTaskSessionLocal(key);
+
+    const QSet<QString> ownedJobIds = m_currentUserCronJobIds;
+    for (const QString &jobId : ownedJobIds) {
+        if (!liveJobIds.contains(jobId))
+            softDeleteCronJobOwnershipLocal(jobId);
+    }
 }
 
 QString GatewayClient::taskTitleFromFirstMessage(const QString &message)
@@ -1445,6 +1480,113 @@ QString GatewayClient::normalizeWorkspacePath(const QString &workspace) const
     return QDir(expandTildePath(trimmed)).absolutePath();
 }
 
+void GatewayClient::loadCronJobOwnershipFromDb()
+{
+    m_currentUserCronJobIds.clear();
+    if (m_taskSessionUserId.isEmpty() || !initTaskSessionDb()) {
+        emit cronJobsChanged();
+        return;
+    }
+
+    // Upgrade path: older builds already stored cron task sessions per user.
+    // Recover their job IDs before loading the explicit ownership table.
+    for (const QVariant &v : m_taskSessionList) {
+        const QString jobId = cronJobIdFromSessionKey(
+            v.toMap().value(QStringLiteral("session_id")).toString());
+        if (!jobId.isEmpty())
+            upsertCronJobOwnershipLocal(jobId, m_taskSessionUserId);
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "SELECT job_id FROM cron_jobs "
+        "WHERE user_id=? AND deleted_at IS NULL"));
+    q.addBindValue(m_taskSessionUserId);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] load cron ownership failed:"
+                             << q.lastError().text();
+        emit cronJobsChanged();
+        return;
+    }
+    while (q.next()) {
+        const QString jobId = q.value(0).toString().trimmed();
+        if (!jobId.isEmpty())
+            m_currentUserCronJobIds.insert(jobId);
+    }
+    emit cronJobsChanged();
+    emit cronStatusChanged();
+}
+
+void GatewayClient::upsertCronJobOwnershipLocal(const QString &jobId,
+                                                 const QString &userId)
+{
+    const QString jid = jobId.trimmed();
+    const QString uid = userId.trimmed().isEmpty()
+        ? m_taskSessionUserId : userId.trimmed();
+    if (jid.isEmpty() || uid.isEmpty() || !initTaskSessionDb())
+        return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE cron_jobs SET updated_at=?, deleted_at=NULL "
+        "WHERE user_id=? AND job_id=?"));
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(uid);
+    q.addBindValue(jid);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] upsert cron ownership failed:"
+                             << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() <= 0) {
+        QSqlQuery insert(m_taskSessionDb);
+        insert.prepare(QStringLiteral(
+            "INSERT INTO cron_jobs "
+            "(user_id, job_id, created_at, updated_at, deleted_at) "
+            "VALUES (?, ?, ?, ?, NULL)"));
+        insert.addBindValue(uid);
+        insert.addBindValue(jid);
+        insert.addBindValue(QVariant(static_cast<qlonglong>(now)));
+        insert.addBindValue(QVariant(static_cast<qlonglong>(now)));
+        if (!insert.exec()) {
+            qWarning().noquote() << "[TaskSessionDb] insert cron ownership failed:"
+                                 << insert.lastError().text();
+            return;
+        }
+    }
+    if (uid == m_taskSessionUserId)
+        m_currentUserCronJobIds.insert(jid);
+}
+
+void GatewayClient::softDeleteCronJobOwnershipLocal(const QString &jobId)
+{
+    const QString jid = jobId.trimmed();
+    if (jid.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE cron_jobs SET deleted_at=?, updated_at=? "
+        "WHERE user_id=? AND job_id=?"));
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(jid);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] delete cron ownership failed:"
+                             << q.lastError().text();
+        return;
+    }
+    m_currentUserCronJobIds.remove(jid);
+}
+
+bool GatewayClient::isCronJobOwnedByCurrentUser(const QString &jobId) const
+{
+    return !m_taskSessionUserId.isEmpty()
+        && m_currentUserCronJobIds.contains(jobId.trimmed());
+}
+
 QString GatewayClient::prepareTaskWorkspace(const QString &workspace)
 {
     QString target = normalizeWorkspacePath(workspace);
@@ -1457,7 +1599,7 @@ QString GatewayClient::prepareTaskWorkspace(const QString &workspace)
         const QString workspaceRoot =
             installDir.absoluteFilePath(QStringLiteral("workspace"));
         target = QDir(workspaceRoot).absoluteFilePath(
-            QStringLiteral("workspace-%1").arg(
+            QStringLiteral("%1").arg(
                 QDateTime::currentDateTime().toString(
                     QStringLiteral("yyyy-MM-dd-HH-mm-ss"))));
     }
@@ -1465,6 +1607,29 @@ QString GatewayClient::prepareTaskWorkspace(const QString &workspace)
     target = QDir::cleanPath(target);
     if (!QDir(target).exists() && !QDir().mkpath(target)) {
         emit errorOccurred(QStringLiteral("无法创建工作目录：%1").arg(target));
+        return QString();
+    }
+    return QDir(target).absolutePath();
+}
+
+QString GatewayClient::prepareCronWorkspace(const QString &workspace)
+{
+    if (!workspace.trimmed().isEmpty())
+        return prepareTaskWorkspace(workspace);
+
+    QDir installDir(QCoreApplication::applicationDirPath());
+    if (installDir.dirName().compare(QStringLiteral("client"),
+                                     Qt::CaseInsensitive) == 0) {
+        installDir.cdUp();
+    }
+    const QString workspaceRoot =
+        installDir.absoluteFilePath(QStringLiteral("workspace"));
+    const QString target = QDir(workspaceRoot).absoluteFilePath(
+        QStringLiteral("cron-%1").arg(
+            QDateTime::currentDateTime().toString(
+                QStringLiteral("yyyy-MM-dd-HH-mm-ss"))));
+    if (!QDir(target).exists() && !QDir().mkpath(target)) {
+        emit errorOccurred(QStringLiteral("无法创建定时任务工作目录：%1").arg(target));
         return QString();
     }
     return QDir(target).absolutePath();
@@ -1766,13 +1931,22 @@ void GatewayClient::prepareCronJobWithDedicatedAgent(
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
+    if (m_taskSessionUserId.isEmpty()) {
+        clearPendingCronDedicatedAgent();
+        emit errorOccurred(QStringLiteral("请先登录后再创建定时任务"));
+        return;
+    }
 
     clearPendingCronDedicatedAgent();
     m_cronAwaitingDedicatedAgent = true;
     m_cronPendingScheduleKind = scheduleKind;
     m_cronPendingJobName = jobName;
     m_cronPendingMessage = message;
-    m_cronPendingWorkspace = normalizeWorkspacePath(workspace);
+    m_cronPendingWorkspace = prepareCronWorkspace(workspace);
+    if (m_cronPendingWorkspace.isEmpty()) {
+        clearPendingCronDedicatedAgent();
+        return;
+    }
 
     switch (scheduleKind) {
     case 1:
@@ -1890,6 +2064,7 @@ void GatewayClient::sendPendingCronAddWithAgentId(const QString &agentId)
         pending.agentId = agentId.trimmed();
         pending.jobName = jobName.trimmed();
         pending.workspace = workspace;
+        pending.userId = m_taskSessionUserId;
         m_pendingCronTaskSessions.insert(reqId, pending);
     }
 }
@@ -3005,8 +3180,11 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (!jobId.isEmpty()) {
             const PendingCronTaskSession pending =
                 m_pendingCronTaskSessions.take(id);
-            createCronTaskSessionLocal(jobId, pending.agentId, pending.jobName,
-                                       pending.workspace);
+            upsertCronJobOwnershipLocal(jobId, pending.userId);
+            if (pending.userId == m_taskSessionUserId) {
+                createCronTaskSessionLocal(jobId, pending.agentId, pending.jobName,
+                                           pending.workspace);
+            }
             emit cronJobsChanged();
             emit cronJobAdded(jobId);
         }
@@ -3027,6 +3205,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("cron.remove")) {
         const QString jobId = m_scheduledTask.lastOperatedJobId();
         if (m_scheduledTask.parseJobRemoveResponse(jobId, payload)) {
+            softDeleteCronJobOwnershipLocal(jobId);
             softDeleteCronTaskSessionsForJob(jobId);
             emit cronJobsChanged();
             emit cronJobRemoved(jobId);
@@ -3048,7 +3227,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // cron.runs 响应 → 执行记录
     if (method == QLatin1String("cron.runs")) {
         m_scheduledTask.parseRunsResponse(payload);
-        emit cronRunsLoaded(m_scheduledTask.runList());
+        QVariantList ownedRuns;
+        for (const QVariant &v : m_scheduledTask.runList()) {
+            const QString jobId =
+                v.toMap().value(QStringLiteral("jobId")).toString().trimmed();
+            if (m_currentUserCronJobIds.contains(jobId))
+                ownedRuns.append(v);
+        }
+        emit cronRunsLoaded(ownedRuns);
         return;
     }
 
@@ -4652,6 +4838,10 @@ void GatewayClient::setCronJobEnabled(const QString &jobId, bool enabled)
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
         return;
     }
+    if (!isCronJobOwnedByCurrentUser(jobId)) {
+        emit errorOccurred(QStringLiteral("无权修改该定时任务"));
+        return;
+    }
     sendRequest(QStringLiteral("cron.update"),
                 m_scheduledTask.buildToggleEnabledParams(jobId, enabled));
 }
@@ -4665,6 +4855,10 @@ void GatewayClient::removeCronJob(const QString &jobId)
     if (m_state != Connected) {
         emit errorOccurred(
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    if (!isCronJobOwnedByCurrentUser(jobId)) {
+        emit errorOccurred(QStringLiteral("无权删除该定时任务"));
         return;
     }
     m_scheduledTask.setLastOperatedJobId(jobId);
@@ -4683,6 +4877,10 @@ void GatewayClient::runCronJobNow(const QString &jobId)
     if (m_state != Connected) {
         emit errorOccurred(
             QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    if (!isCronJobOwnedByCurrentUser(jobId)) {
+        emit errorOccurred(QStringLiteral("无权执行该定时任务"));
         return;
     }
     m_scheduledTask.setLastOperatedJobId(jobId);
@@ -4706,6 +4904,10 @@ void GatewayClient::updateCronJobContent(const QString &jobId,
     const QString jid = jobId.trimmed();
     if (jid.isEmpty()) {
         emit errorOccurred(QStringLiteral("jobId \u4e0d\u80fd\u4e3a\u7a7a"));
+        return;
+    }
+    if (!isCronJobOwnedByCurrentUser(jid)) {
+        emit errorOccurred(QStringLiteral("无权修改该定时任务"));
         return;
     }
 
@@ -4768,6 +4970,10 @@ void GatewayClient::updateCronJobContent(const QString &jobId,
 void GatewayClient::loadCronRuns(const QString &jobId)
 {
     if (m_state != Connected) return;
+    if (!jobId.trimmed().isEmpty() && !isCronJobOwnedByCurrentUser(jobId)) {
+        emit errorOccurred(QStringLiteral("无权查看该定时任务记录"));
+        return;
+    }
     sendRequest(QStringLiteral("cron.runs"),
                 m_scheduledTask.buildRunsParams(jobId));
 }

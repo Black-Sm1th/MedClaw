@@ -10,7 +10,8 @@
 #include <QUrl>
 
 namespace {
-const char kDefaultApiBaseUrl[] = "http://192.168.0.36:8080";
+const char kDefaultApiBaseUrl[] = "http://111.6.178.34:24638";
+const char kPreviousDefaultApiBaseUrl[] = "http://192.168.0.36:8080";
 
 QString normalizedBaseUrl(QString url)
 {
@@ -77,6 +78,10 @@ AuthController::AuthController(QObject *parent)
     }
     m_apiBaseUrl = normalizedBaseUrl(settings.value(QStringLiteral("auth/apiBaseUrl"),
                                                     QString::fromLatin1(kDefaultApiBaseUrl)).toString());
+    if (m_apiBaseUrl == QString::fromLatin1(kPreviousDefaultApiBaseUrl)) {
+        m_apiBaseUrl = QString::fromLatin1(kDefaultApiBaseUrl);
+        settings.setValue(QStringLiteral("auth/apiBaseUrl"), m_apiBaseUrl);
+    }
     m_accessToken = settings.value(QStringLiteral("auth/accessToken")).toString();
     m_refreshToken = settings.value(QStringLiteral("auth/refreshToken")).toString();
     m_userId = settings.value(QStringLiteral("auth/userId")).toString().trimmed();

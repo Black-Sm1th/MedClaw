@@ -702,6 +702,7 @@ private:
     QString agentIdFromSessionKey(const QString &sessionKey) const;
     bool sessionBelongsToTask(const QVariantMap &session, const QString &taskKey) const;
     QString normalizeWorkspacePath(const QString &workspace) const;
+    QString prepareCronWorkspace(const QString &workspace);
     QString buildCollaborationPrompt(const QString &userMessage,
                                       const QStringList &participantAgentIds,
                                       const QString &businessWorkspace = QString()) const;
@@ -743,6 +744,11 @@ private:
     QString cronJobIdFromSessionKey(const QString &sessionKey) const;
     void softDeleteCronTaskSessionsForJob(const QString &jobId);
     void reconcileCronTaskSessionsWithJobs();
+    void loadCronJobOwnershipFromDb();
+    void upsertCronJobOwnershipLocal(const QString &jobId,
+                                     const QString &userId = QString());
+    void softDeleteCronJobOwnershipLocal(const QString &jobId);
+    bool isCronJobOwnedByCurrentUser(const QString &jobId) const;
     static QString taskTitleFromFirstMessage(const QString &message);
     static QString agentsJsonFromList(const QStringList &agentIds);
     static QStringList agentListFromJson(const QString &json);
@@ -838,6 +844,7 @@ private:
     QSqlDatabase     m_taskSessionDb;   ///< 本地任务会话 SQLite
     bool             m_taskSessionDbReady = false;
     QString          m_taskSessionUserId;
+    QSet<QString>    m_currentUserCronJobIds; ///< 当前登录用户拥有的 cron job ID
     QString          m_defaultAgentId;  ///< 默认 agent ID
     QString          m_currentTaskSessionKey; ///< 主控任务 sessionKey
     QString          m_currentViewSessionKey; ///< 聊天区当前查看 sessionKey
@@ -894,6 +901,7 @@ private:
         QString agentId;
         QString jobName;
         QString workspace;
+        QString userId;
     };
     QMap<QString, PendingCronTaskSession> m_pendingCronTaskSessions; ///< cron.add reqId -> task row info
 
