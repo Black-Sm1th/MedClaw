@@ -108,6 +108,14 @@ class GatewayClient : public QObject
     /// tools.catalog 展平后的工具列表（含 enabled，与 config 中 deny 对齐）
     Q_PROPERTY(QVariantList toolList READ toolList
                NOTIFY toolListChanged)
+    Q_PROPERTY(bool toolInstallBusy READ toolInstallBusy
+               NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(int toolInstallProgress READ toolInstallProgress
+               NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(QString toolInstallMessage READ toolInstallMessage
+               NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(QString toolInstallingId READ toolInstallingId
+               NOTIFY toolInstallStateChanged)
     /// 尚无侧栏 agent 时用户在聊天栏勾选技能后的暂存（待新建 agent 后写入 config）
     Q_PROPERTY(bool pendingNewAgentSkillPolicySet READ pendingNewAgentSkillPolicySet
                NOTIFY pendingNewAgentSkillPolicyChanged)
@@ -207,6 +215,10 @@ public:
     QVariantList mcpList() const;
     /// 运行时工具目录（tools.catalog + deny 状态）
     QVariantList toolList() const;
+    bool toolInstallBusy() const;
+    int toolInstallProgress() const;
+    QString toolInstallMessage() const;
+    QString toolInstallingId() const;
 
     QVariantList skillMarketFolders() const;
     QVariantList shortcutList() const;
@@ -481,10 +493,11 @@ public:
     Q_INVOKABLE void refreshToolsCatalog(const QString &agentId = QString());
 
     /**
-     * @brief 通过 agents.list[].tools.deny 启用/禁用工具（config.patch）
+     * @brief 通过 agents.list[].tools.deny 启用/禁用工具（config.set，不重启 Gateway）
      */
     Q_INVOKABLE void setAgentToolEnabled(const QString &agentId, const QString &toolId,
-                                         bool enabled);
+                                         bool enabled,
+                                         const QString &pluginId = QString());
 
     /**
      * @brief 批量设置工具启用状态，单次 config.set 写入完整配置
@@ -600,6 +613,7 @@ signals:
     void skillInstallBusyChanged();       ///< 技能安装进行中状态变更
     void mcpListChanged();                ///< MCP 服务器列表更新
     void toolListChanged();               ///< 工具目录列表更新
+    void toolInstallStateChanged();       ///< 工具安装进度或状态更新
     void pendingNewAgentSkillPolicyChanged(); ///< 新建 agent 前技能暂存变更
 
 private slots:
@@ -804,6 +818,11 @@ private:
     QString sendConfigMutation(const QString &method, const QJsonObject &params);
     void maybeRetryStashedConfigMutationAfterGet();
     static bool looksLikeConfigHashStaleError(const QString &errMsg);
+    void applyPendingInstalledToolPolicy();
+    void finishToolInstall(const QString &errorMessage = QString());
+    void consumeToolInstallOutput(const QByteArray &bytes, bool flush = false);
+    bool pluginNeedsProvisioning(const QString &pluginId,
+                                 const QString &backendRoot) const;
 
     /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
     QString extractPayloadSessionKey(const QJsonObject &payload) const;
@@ -936,6 +955,15 @@ private:
     bool m_connectFromAutoReconnect = false;        ///< 当前 connectToServer 由自动重连定时器发起
     int m_autoReconnectFailureCount = 0;            ///< 本轮自动重连已连续失败次数（成功或手动连接时清零）
     bool m_skillInstallBusy = false; ///< 技能安装流程进行中
+    bool m_toolInstallBusy = false;
+    int m_toolInstallProgress = 0;
+    QString m_toolInstallMessage;
+    QString m_toolInstallingId;
+    QString m_pendingToolInstallAgentId;
+    QString m_pendingToolInstallConfigGetReqId;
+    QString m_pendingToolInstallMutationReqId;
+    QByteArray m_toolInstallStdoutBuffer;
+    bool m_toolInstallScriptFinished = false;
     QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
 
     // ── 设置状态 ──

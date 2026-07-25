@@ -534,6 +534,11 @@ QVariantList GatewayClient::toolList() const
     return m_tools.toolList();
 }
 
+bool GatewayClient::toolInstallBusy() const { return m_toolInstallBusy; }
+int GatewayClient::toolInstallProgress() const { return m_toolInstallProgress; }
+QString GatewayClient::toolInstallMessage() const { return m_toolInstallMessage; }
+QString GatewayClient::toolInstallingId() const { return m_toolInstallingId; }
+
 /// 设置连接状态并通知 QML 属性绑定系统
 void GatewayClient::setState(ConnectionState state)
 {
@@ -2225,6 +2230,10 @@ void GatewayClient::onDisconnected()
 
     m_session.setStreaming(false);
     m_pendingRequests.clear();
+    if (m_toolInstallBusy) {
+        m_pendingToolInstallConfigGetReqId.clear();
+        m_pendingToolInstallMutationReqId.clear();
+    }
     m_pendingFirstChatSessionCreateReqId.clear();
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
@@ -2747,6 +2756,11 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 emit skillInstallBusyChanged();
             }
         }
+        if ((id == m_pendingToolInstallConfigGetReqId
+             || id == m_pendingToolInstallMutationReqId)
+            && !looksLikeConfigHashStaleError(errMsg)) {
+            finishToolInstall(errMsg);
+        }
 
         // sessions.patch 失败 → 清空"用户意图"，让下拉框回退到 currentModel
         // 显示真实的服务端状态，避免用户误以为切换成功
@@ -2821,6 +2835,11 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         refreshMcpList();
         refreshToolsCatalog(QString());
         refreshSkillMarketFolders();
+        if (m_toolInstallBusy && m_toolInstallScriptFinished
+            && m_pendingToolInstallConfigGetReqId.isEmpty()) {
+            m_pendingToolInstallConfigGetReqId =
+                sendRequest(QStringLiteral("config.get"), QJsonObject());
+        }
         return;
     }
 
@@ -3255,6 +3274,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("config.get")) {
         applyMcpListFromConfigGetPayload(payload);
         emit mcpListChanged();
+        if (id == m_pendingToolInstallConfigGetReqId) {
+            m_pendingToolInstallConfigGetReqId.clear();
+            applyPendingInstalledToolPolicy();
+        }
         refreshAgents();
         return;
     }
@@ -3275,6 +3298,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         }
         if (wasCollabAllowConfigSet)
             sendPendingCollaborationChatNow();
+        if (id == m_pendingToolInstallMutationReqId)
+            finishToolInstall();
 
         refreshMcpList();
         return;
@@ -3285,6 +3310,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_configHashRetryInFlight = false;
         m_configHashRetryAfterGet = false;
         qDebug() << "[Gateway] config.patch ok, follow-up config.get";
+        if (id == m_pendingToolInstallMutationReqId)
+            finishToolInstall();
         refreshMcpList();
         return;
     }
@@ -3615,6 +3642,8 @@ void GatewayClient::maybeRetryStashedConfigMutationAfterGet()
     qDebug() << "[Gateway] retrying" << m_stashedConfigMutationMethod << "with fresh baseHash";
     m_stashedConfigMutationParams = p;
     const QString reqId = sendRequest(m_stashedConfigMutationMethod, p);
+    if (m_toolInstallBusy && !m_pendingToolInstallMutationReqId.isEmpty())
+        m_pendingToolInstallMutationReqId = reqId;
     if (m_stashedConfigMutationMethod == QLatin1String("config.set")
         && !m_pendingCollabControllerSessionKey.trimmed().isEmpty())
         m_collabAllowConfigSetReqIds.insert(reqId);
@@ -5286,8 +5315,104 @@ void GatewayClient::refreshToolsCatalog(const QString &agentId)
     sendRequest(QStringLiteral("tools.catalog"), params);
 }
 
+bool GatewayClient::pluginNeedsProvisioning(const QString &pluginId,
+                                            const QString &backendRoot) const
+{
+    QFile catalog(QDir(backendRoot).filePath(QStringLiteral("python-skills.json")));
+    if (!catalog.open(QIODevice::ReadOnly))
+        return false;
+    const QJsonDocument doc = QJsonDocument::fromJson(catalog.readAll());
+    return doc.isObject() && doc.object().contains(pluginId.trimmed());
+}
+
+void GatewayClient::consumeToolInstallOutput(const QByteArray &bytes, bool flush)
+{
+    m_toolInstallStdoutBuffer.append(bytes);
+    while (true) {
+        const int newline = m_toolInstallStdoutBuffer.indexOf('\n');
+        if (newline < 0 && !flush)
+            break;
+        QByteArray line = newline >= 0
+            ? m_toolInstallStdoutBuffer.left(newline)
+            : m_toolInstallStdoutBuffer;
+        if (newline >= 0)
+            m_toolInstallStdoutBuffer.remove(0, newline + 1);
+        else
+            m_toolInstallStdoutBuffer.clear();
+        line = line.trimmed();
+        if (line.isEmpty()) {
+            if (newline < 0)
+                break;
+            continue;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(line);
+        if (!doc.isObject()) {
+            if (newline < 0)
+                break;
+            continue;
+        }
+        const QJsonObject event = doc.object();
+        bool changed = false;
+        if (event.value(QStringLiteral("pct")).isDouble()) {
+            const int progress = qBound(0, event.value(QStringLiteral("pct")).toInt(), 100);
+            if (progress != m_toolInstallProgress) {
+                m_toolInstallProgress = progress;
+                changed = true;
+            }
+        }
+        const QString message = event.value(QStringLiteral("message")).toString().trimmed();
+        if (!message.isEmpty() && message != m_toolInstallMessage) {
+            m_toolInstallMessage = message;
+            changed = true;
+        }
+        if (changed)
+            emit toolInstallStateChanged();
+        if (newline < 0)
+            break;
+    }
+}
+
+void GatewayClient::finishToolInstall(const QString &errorMessage)
+{
+    m_toolInstallBusy = false;
+    m_toolInstallProgress = 0;
+    m_toolInstallMessage.clear();
+    m_toolInstallingId.clear();
+    m_pendingToolInstallAgentId.clear();
+    m_pendingToolInstallConfigGetReqId.clear();
+    m_pendingToolInstallMutationReqId.clear();
+    m_toolInstallStdoutBuffer.clear();
+    m_toolInstallScriptFinished = false;
+    emit toolInstallStateChanged();
+    emit toolListChanged();
+    if (!errorMessage.trimmed().isEmpty())
+        emit errorOccurred(errorMessage.trimmed());
+}
+
+void GatewayClient::applyPendingInstalledToolPolicy()
+{
+    if (!m_toolInstallBusy || m_pendingToolInstallAgentId.isEmpty()
+        || m_toolInstallingId.isEmpty())
+        return;
+    const QJsonObject fullConfig = m_tools.buildFullConfigWithToolToggle(
+        m_lastConfigSnapshot, m_pendingToolInstallAgentId, m_toolInstallingId, true);
+    if (fullConfig.isEmpty()) {
+        finishToolInstall(QStringLiteral("安装完成，但无法更新工具配置"));
+        return;
+    }
+    QJsonObject reqParams;
+    reqParams[QStringLiteral("raw")] =
+        QString::fromUtf8(QJsonDocument(fullConfig).toJson(QJsonDocument::Compact));
+    if (!m_configSnapshotHash.isEmpty())
+        reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
+    m_pendingToolInstallMutationReqId =
+        sendConfigMutation(QStringLiteral("config.set"), reqParams);
+    m_tools.setLocalToolEnabled(m_toolInstallingId, true);
+    emit toolListChanged();
+}
+
 void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &toolId,
-                                        bool enabled)
+                                        bool enabled, const QString &pluginId)
 {
     if (m_state != Connected) {
         emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
@@ -5304,9 +5429,100 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
             "\u914d\u7f6e\u5feb\u7167\u672a\u52a0\u8f7d\uff0c\u8bf7\u5148\u5237\u65b0\u8fde\u63a5\u6216 MCP \u5217\u8868"));
         return;
     }
-    const QJsonObject patch =
-        m_tools.buildToolToggleMergePatch(m_lastConfigSnapshot, aid, tid, enabled);
-    if (patch.isEmpty()) {
+
+    if (enabled && !pluginId.trimmed().isEmpty()) {
+        QDir installRoot(QCoreApplication::applicationDirPath());
+        if (installRoot.dirName().compare(QStringLiteral("client"),
+                                          Qt::CaseInsensitive) == 0)
+            installRoot.cdUp();
+        const QString backendRoot = installRoot.absoluteFilePath(
+            QStringLiteral("runtime/backend"));
+        const QString scriptPath = QDir(backendRoot).filePath(
+            QStringLiteral("scripts/medclaw-skill-install.mjs"));
+        if (pluginNeedsProvisioning(pluginId, backendRoot)) {
+            if (m_toolInstallBusy) {
+                emit errorOccurred(QStringLiteral("另一个工具正在安装，请稍候"));
+                return;
+            }
+            const QStringList nodeCandidates = {
+                QDir(backendRoot).filePath(QStringLiteral("runtime/node/node.exe")),
+                installRoot.absoluteFilePath(QStringLiteral("runtime/node/node.exe")),
+                QDir(backendRoot).filePath(QStringLiteral("runtime/node/bin/node")),
+                installRoot.absoluteFilePath(QStringLiteral("runtime/node/bin/node"))
+            };
+            QString nodePath;
+            for (const QString &candidate : nodeCandidates) {
+                if (QFileInfo::exists(candidate)) {
+                    nodePath = candidate;
+                    break;
+                }
+            }
+            if (!QFileInfo::exists(scriptPath) || nodePath.isEmpty()) {
+                emit errorOccurred(QStringLiteral("未找到工具安装脚本或内置 Node 运行时"));
+                return;
+            }
+
+            QString stateDir = qEnvironmentVariable("OPENCLAW_STATE_DIR").trimmed();
+            if (stateDir.isEmpty())
+                stateDir = QDir(QDir::homePath()).filePath(QStringLiteral(".openclaw"));
+            else
+                stateDir = expandTildePath(stateDir);
+
+            m_toolInstallBusy = true;
+            m_toolInstallProgress = 0;
+            m_toolInstallMessage = QStringLiteral("正在准备安装工具...");
+            m_toolInstallingId = tid;
+            m_pendingToolInstallAgentId = aid;
+            m_toolInstallStdoutBuffer.clear();
+            m_toolInstallScriptFinished = false;
+            emit toolInstallStateChanged();
+
+            auto *proc = new QProcess(this);
+            proc->setWorkingDirectory(backendRoot);
+            connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc]() {
+                consumeToolInstallOutput(proc->readAllStandardOutput());
+            });
+            connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                    this, [this, proc](int exitCode, QProcess::ExitStatus exitStatus) {
+                consumeToolInstallOutput(proc->readAllStandardOutput(), true);
+                const QString stderrText =
+                    QString::fromUtf8(proc->readAllStandardError()).trimmed();
+                proc->deleteLater();
+                if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+                    const QString detail = m_toolInstallMessage.trimmed().isEmpty()
+                        ? stderrText : m_toolInstallMessage;
+                    finishToolInstall(detail.isEmpty()
+                        ? QStringLiteral("工具安装失败") : detail);
+                    return;
+                }
+                m_toolInstallProgress = 100;
+                if (m_toolInstallMessage.trimmed().isEmpty())
+                    m_toolInstallMessage = QStringLiteral("安装完成，正在更新配置...");
+                m_toolInstallScriptFinished = true;
+                emit toolInstallStateChanged();
+                if (m_state == Connected) {
+                    m_pendingToolInstallConfigGetReqId =
+                        sendRequest(QStringLiteral("config.get"), QJsonObject());
+                } else {
+                    m_toolInstallMessage = QStringLiteral("安装完成，等待服务重新连接...");
+                    emit toolInstallStateChanged();
+                }
+            });
+            proc->start(nodePath, QStringList()
+                << scriptPath << pluginId.trimmed()
+                << QStringLiteral("--state-dir") << stateDir);
+            if (!proc->waitForStarted(5000)) {
+                const QString error = proc->errorString();
+                proc->deleteLater();
+                finishToolInstall(QStringLiteral("无法启动工具安装脚本：%1").arg(error));
+            }
+            return;
+        }
+    }
+
+    const QJsonObject fullConfig =
+        m_tools.buildFullConfigWithToolToggle(m_lastConfigSnapshot, aid, tid, enabled);
+    if (fullConfig.isEmpty()) {
         emit errorOccurred(QStringLiteral(
             "\u672a\u627e\u5230\u6307\u5b9a agent\uff0c\u65e0\u6cd5\u66f4\u65b0\u5de5\u5177\u72b6\u6001"));
         return;
@@ -5314,11 +5530,11 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
 
     QJsonObject reqParams;
     reqParams[QStringLiteral("raw")] =
-        QString::fromUtf8(QJsonDocument(patch).toJson(QJsonDocument::Compact));
+        QString::fromUtf8(QJsonDocument(fullConfig).toJson(QJsonDocument::Compact));
     if (!m_configSnapshotHash.isEmpty())
         reqParams[QStringLiteral("baseHash")] = m_configSnapshotHash;
 
-    sendConfigMutation(QStringLiteral("config.patch"), reqParams);
+    sendConfigMutation(QStringLiteral("config.set"), reqParams);
 
     m_tools.setLocalToolEnabled(tid, enabled);
     emit toolListChanged();

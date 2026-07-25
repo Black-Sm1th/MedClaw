@@ -87,6 +87,14 @@ void WsTools::parseToolsCatalogResponse(const QJsonObject &payload)
             entry[QStringLiteral("groupId")] = groupId;
             entry[QStringLiteral("groupLabel")] = groupLabel;
             entry[QStringLiteral("optional")] = t.value(QStringLiteral("optional")).toBool(false);
+            QStringList defaultProfiles;
+            for (const QJsonValue &profile :
+                 t.value(QStringLiteral("defaultProfiles")).toArray()) {
+                const QString profileId = profile.toString().trimmed();
+                if (!profileId.isEmpty())
+                    defaultProfiles.append(profileId);
+            }
+            entry[QStringLiteral("defaultProfiles")] = defaultProfiles;
             entry[QStringLiteral("enabled")] = true;
             m_toolList.append(entry);
         }
@@ -103,9 +111,11 @@ void WsTools::applyToolPolicyFromConfig(const QJsonObject &config, const QString
     const QStringList allow = jsonStringList(tobj.value(QStringLiteral("allow")).toArray());
     const QStringList alsoAllow =
         jsonStringList(tobj.value(QStringLiteral("alsoAllow")).toArray());
+    const QString profile =
+        tobj.value(QStringLiteral("profile")).toString().trimmed().toLower();
     qDebug() << "[ToolPolicy] agent=" << agentId
              << "deny=" << deny << "allow=" << allow
-             << "alsoAllow=" << alsoAllow
+             << "profile=" << profile << "alsoAllow=" << alsoAllow
              << "toolsObj.keys=" << tobj.keys();
 
     QSet<QString> denySet;
@@ -125,7 +135,10 @@ void WsTools::applyToolPolicyFromConfig(const QJsonObject &config, const QString
         if (tid.isEmpty())
             continue;
 
-        bool enabled = true;
+        const QStringList defaultProfiles =
+            e.value(QStringLiteral("defaultProfiles")).toStringList();
+        bool enabled = profile.isEmpty() || profile == QLatin1String("full")
+            || defaultProfiles.contains(profile) || allowUnion.contains(tid);
         if (denySet.contains(tid))
             enabled = false;
         else if (explicitAllow)
@@ -136,84 +149,68 @@ void WsTools::applyToolPolicyFromConfig(const QJsonObject &config, const QString
     }
 }
 
-QJsonObject WsTools::buildToolToggleMergePatch(const QJsonObject &fullConfig,
-                                               const QString &agentId,
-                                               const QString &toolId,
-                                               const bool enable) const
+QJsonObject WsTools::buildFullConfigWithToolToggle(const QJsonObject &fullConfig,
+                                                   const QString &agentId,
+                                                   const QString &toolId,
+                                                   const bool enable) const
 {
     const QString aid = agentId.trimmed();
     const QString tid = toolId.trimmed();
     if (aid.isEmpty() || tid.isEmpty())
         return QJsonObject();
 
-    bool agentFound = false;
-    const QJsonArray agentList =
-        fullConfig.value(QStringLiteral("agents")).toObject()
-            .value(QStringLiteral("list")).toArray();
-    for (const QJsonValue &v : agentList) {
-        if (v.toObject().value(QStringLiteral("id")).toString().trimmed() == aid) {
-            agentFound = true;
+    QJsonObject result = fullConfig;
+    QJsonObject agentsObj = result.value(QStringLiteral("agents")).toObject();
+    QJsonArray agentList = agentsObj.value(QStringLiteral("list")).toArray();
+    int agentIndex = -1;
+    for (int i = 0; i < agentList.size(); ++i) {
+        if (agentList[i].toObject().value(QStringLiteral("id"))
+                .toString().trimmed() == aid) {
+            agentIndex = i;
             break;
         }
     }
-    if (!agentFound)
+    if (agentIndex < 0)
         return QJsonObject();
 
-    const QJsonObject existingTools = toolsObjectForAgent(fullConfig, aid);
+    QJsonObject agentEntry = agentList[agentIndex].toObject();
+    QJsonObject tools = agentEntry.value(QStringLiteral("tools")).toObject();
 
-    QStringList deny = jsonStringList(existingTools.value(QStringLiteral("deny")).toArray());
-    QStringList allow = jsonStringList(existingTools.value(QStringLiteral("allow")).toArray());
+    QStringList deny = jsonStringList(tools.value(QStringLiteral("deny")).toArray());
+    QStringList allow = jsonStringList(tools.value(QStringLiteral("allow")).toArray());
     QStringList alsoAllow =
-        jsonStringList(existingTools.value(QStringLiteral("alsoAllow")).toArray());
-
-    const bool explicitAllow = !allow.isEmpty();
+        jsonStringList(tools.value(QStringLiteral("alsoAllow")).toArray());
 
     if (enable) {
         deny.removeAll(tid);
-        if (explicitAllow) {
-            bool inUnion = false;
-            for (const QString &s : allow) {
-                if (s == tid) {
-                    inUnion = true;
-                    break;
-                }
-            }
-            if (!inUnion) {
-                for (const QString &s : alsoAllow) {
-                    if (s == tid) {
-                        inUnion = true;
-                        break;
-                    }
-                }
-            }
-            if (!inUnion)
+        if (!allow.isEmpty()) {
+            if (!allow.contains(tid))
                 allow.append(tid);
+        } else if (!alsoAllow.contains(tid)) {
+            alsoAllow.append(tid);
         }
     } else {
+        allow.removeAll(tid);
+        alsoAllow.removeAll(tid);
         if (!deny.contains(tid))
             deny.append(tid);
     }
 
-    QJsonObject toolsFrag;
-    toolsFrag[QStringLiteral("deny")] = toJsonArray(deny);
-    if (explicitAllow || !allow.isEmpty())
-        toolsFrag[QStringLiteral("allow")] = toJsonArray(allow);
+    tools[QStringLiteral("deny")] = toJsonArray(deny);
+    if (!allow.isEmpty())
+        tools[QStringLiteral("allow")] = toJsonArray(allow);
+    else
+        tools.remove(QStringLiteral("allow"));
     if (!alsoAllow.isEmpty())
-        toolsFrag[QStringLiteral("alsoAllow")] = toJsonArray(alsoAllow);
+        tools[QStringLiteral("alsoAllow")] = toJsonArray(alsoAllow);
+    else
+        tools.remove(QStringLiteral("alsoAllow"));
 
-    QJsonObject agentFrag;
-    agentFrag[QStringLiteral("id")] = aid;
-    agentFrag[QStringLiteral("tools")] = toolsFrag;
-
-    QJsonArray one;
-    one.append(agentFrag);
-
-    QJsonObject agents;
-    agents[QStringLiteral("list")] = one;
-
-    QJsonObject root;
-    root[QStringLiteral("agents")] = agents;
-    return root;
+    agentEntry[QStringLiteral("tools")] = tools;
+    agentList[agentIndex] = agentEntry;
+    agentsObj[QStringLiteral("list")] = agentList;
+    result[QStringLiteral("agents")] = agentsObj;
+    return result;
 }
 
 QJsonObject WsTools::buildFullConfigWithSkillToggle(const QJsonObject &fullConfig,

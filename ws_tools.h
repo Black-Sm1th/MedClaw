@@ -30,12 +30,14 @@ public:
     void applyToolPolicyFromConfig(const QJsonObject &config, const QString &agentId);
 
     /**
-     * @brief 生成 config.patch merge 片段（agents.list 单条合并）
+     * @brief 在完整配置中更新单个 Agent 的工具策略
+     *
+     * 返回值用于 config.set，避免 config.patch 触发 Gateway 重启。
      */
-    QJsonObject buildToolToggleMergePatch(const QJsonObject &fullConfig,
-                                          const QString &agentId,
-                                          const QString &toolId,
-                                          bool enable) const;
+    QJsonObject buildFullConfigWithToolToggle(const QJsonObject &fullConfig,
+                                              const QString &agentId,
+                                              const QString &toolId,
+                                              bool enable) const;
 
     /**
      * @brief 在 fullConfig 上修改指定 agent 的 skills 白名单，返回完整 config

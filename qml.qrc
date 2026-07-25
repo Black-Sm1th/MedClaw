@@ -65,5 +65,8 @@
         <file>images/shortcut/1.1.png</file>
         <file>images/expertBackground.png</file>
         <file>images/expert.png</file>
+        <file>images/loginTitle.png</file>
+        <file>images/logoImage.png</file>
+        <file>images/mainTitle.png</file>
     </qresource>
 </RCC>

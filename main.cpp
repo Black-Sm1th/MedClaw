@@ -5,6 +5,7 @@
 #include <QFontDatabase>
 #include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
 #include <QtWebEngine/QtWebEngine>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
@@ -52,6 +53,13 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
     QCoreApplication::setApplicationName(QStringLiteral("Aether_ClawDESK"));
+
+    // Keep relative runtime data paths stable regardless of how the EXE is launched.
+    const QString dataRoot = QDir(
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+                                 .filePath(QStringLiteral("Aether_ClawDESK"));
+    if (!QDir().mkpath(dataRoot) || !QDir::setCurrent(dataRoot))
+        qWarning() << "Unable to use application data directory:" << dataRoot;
 
     // ── WebSocket 客户端 & 聊天数据模型 ──
     GatewayClient wsClient;

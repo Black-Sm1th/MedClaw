@@ -409,7 +409,17 @@ ApplicationWindow {
                 height: 56
                 color: "transparent"
                 Image{
-                    source: "qrc:/images/titleIcon.png"
+                    id: logoImage
+                    source: "qrc:/images/logoImage.png"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Label{
+                    text: "Aether_ClawDESK"
+                    font.family: "Alimama ShuHeiTi"
+                    font.pixelSize: 18
+                    anchors.left: logoImage.right
+                    anchors.leftMargin: 8
+                    visible: !window.sidebarCollapsed
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 ImageButton{
@@ -757,7 +767,7 @@ ApplicationWindow {
             Image {
                 width: 28
                 height: 28
-                source: "qrc:/images/largeIcon.png"
+                source: "qrc:/images/logoImage.png"
                 anchors.left: parent.left
                 anchors.leftMargin: window.sidebarCollapsed ? 4 : 8
                 anchors.verticalCenter: parent.verticalCenter
@@ -1243,18 +1253,7 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
                     Image{
-                        source: "qrc:/images/largeIcon.png"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                    Label{
-                        text: "Aether_ClawDESK"
-                        font.family: "Alimama ShuHeiTi"
-                        font.pixelSize: 36
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                    Label{
-                        text: "7×24 小时在线的专属智能伙伴"
-                        font.pixelSize: 16
+                        source: "qrc:/images/mainTitle.png"
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
@@ -5298,7 +5297,7 @@ ApplicationWindow {
                 property string toolSearchText: ""
                 onVisibleChanged: {
                     if (visible && wsClient.connectionState === 3)
-                        wsClient.refreshToolsCatalog("")
+                        wsClient.refreshToolsCatalog("main")
                 }
                 function filteredToolGroups(sourceFilter) {
                     var seen = {}
@@ -5444,24 +5443,85 @@ ApplicationWindow {
                                                     padding: 20
                                                     spacing: 8
 
-                                                    Row {
-                                                        spacing: 8
+                                                    Item {
                                                         width: parent.width -  40
                                                         height: 24
 
-                                                        Label {
-                                                            text: modelData.label || modelData.toolId || ""
-                                                            font.pixelSize: 14
-                                                            font.weight: Font.Bold
-                                                            color: "#D9000000"
+                                                        Row {
+                                                            spacing: 8
+                                                            width: parent.width - 56
+                                                            anchors.left: parent.left
                                                             anchors.verticalCenter: parent.verticalCenter
+
+                                                            Label {
+                                                                text: modelData.label || modelData.toolId || ""
+                                                                font.pixelSize: 14
+                                                                font.weight: Font.Bold
+                                                                color: "#D9000000"
+                                                                width: Math.max(0, Math.min(implicitWidth, parent.width
+                                                                    - (toolPluginLabel.visible ? toolPluginLabel.width + 8 : 0)))
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Label {
+                                                                id: toolPluginLabel
+                                                                text: "plugin:" + (modelData.pluginId || "")
+                                                                visible: modelData.pluginId !== ""
+                                                                font.pixelSize: 14
+                                                                color: "#D9000000"
+                                                                width: Math.min(implicitWidth, parent.width * 0.48)
+                                                                elide: Text.ElideRight
+                                                            }
                                                         }
-                                                        Label {
-                                                            text: "plugin:" + (modelData.pluginId || "")
-                                                            visible: modelData.pluginId !== ""
-                                                            font.pixelSize: 14
-                                                            color: "#D9000000"
+
+                                                        Switch {
+                                                            id: toolEnabledSwitch
+                                                            property bool syncGuard: false
+                                                            function syncFromModel() {
+                                                                syncGuard = true
+                                                                checked = modelData.enabled === true
+                                                                syncGuard = false
+                                                            }
+                                                            Component.onCompleted: syncFromModel()
+                                                            Connections {
+                                                                target: wsClient
+                                                                function onToolListChanged() {
+                                                                    toolEnabledSwitch.syncFromModel()
+                                                                }
+                                                            }
+                                                            anchors.right: parent.right
                                                             anchors.verticalCenter: parent.verticalCenter
+                                                            enabled: wsClient.connectionState === 3
+                                                                     && !wsClient.toolInstallBusy
+                                                            onCheckedChanged: {
+                                                                if (syncGuard)
+                                                                    return
+                                                                wsClient.setAgentToolEnabled(
+                                                                    "main",
+                                                                    modelData.toolId || "",
+                                                                    checked,
+                                                                    modelData.pluginId || "")
+                                                            }
+                                                            indicator: Rectangle {
+                                                                implicitWidth: 44
+                                                                implicitHeight: 22
+                                                                x: toolEnabledSwitch.leftPadding
+                                                                y: parent.height / 2 - height / 2
+                                                                radius: 12
+                                                                color: toolEnabledSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                                                opacity: toolEnabledSwitch.enabled ? 1 : 0.55
+                                                                Behavior on color { ColorAnimation { duration: 150 } }
+                                                                Rectangle {
+                                                                    x: toolEnabledSwitch.checked ? parent.width - width - 3 : 3
+                                                                    y: parent.height / 2 - height / 2
+                                                                    width: 18
+                                                                    height: 18
+                                                                    radius: 9
+                                                                    color: "#FFFFFF"
+                                                                    Behavior on x {
+                                                                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
 
@@ -5499,6 +5559,37 @@ ApplicationWindow {
                                                             anchors.fill: parent
                                                             hoverEnabled: true
                                                             acceptedButtons: Qt.NoButton
+                                                        }
+                                                    }
+
+                                                    Column {
+                                                        width: parent.width - 40
+                                                        spacing: 5
+                                                        visible: wsClient.toolInstallBusy
+                                                                 && wsClient.toolInstallingId === (modelData.toolId || "")
+                                                        height: visible ? implicitHeight : 0
+
+                                                        Rectangle {
+                                                            width: parent.width
+                                                            height: 6
+                                                            radius: 3
+                                                            color: "#E6E7EB"
+                                                            Rectangle {
+                                                                width: parent.width * Math.max(0, Math.min(100,
+                                                                    wsClient.toolInstallProgress)) / 100
+                                                                height: parent.height
+                                                                radius: 3
+                                                                color: "#006BFF"
+                                                                Behavior on width { NumberAnimation { duration: 180 } }
+                                                            }
+                                                        }
+                                                        Label {
+                                                            width: parent.width
+                                                            text: (wsClient.toolInstallMessage || "")
+                                                                  + "  " + wsClient.toolInstallProgress + "%"
+                                                            font.pixelSize: 12
+                                                            color: "#73000000"
+                                                            elide: Text.ElideRight
                                                         }
                                                     }
                                                 }

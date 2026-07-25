@@ -22,9 +22,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -8
         spacing: 0
-        Image { source: "qrc:/images/largeIcon.png"; width: 88; height: 88; fillMode: Image.PreserveAspectFit; anchors.horizontalCenter: parent.horizontalCenter }
-        Label { width: parent.width; topPadding: 8; text: "Aether_ClawDESK"; horizontalAlignment: Text.AlignHCenter; font.family: "Alibaba PuHuiTi 3.0"; font.pixelSize: 24; font.bold: true; color: "#262626" }
-        Label { width: parent.width; topPadding: 5; text: "7×24 小时在线的专属智能伙伴"; horizontalAlignment: Text.AlignHCenter; font.pixelSize: 12; color: "#73000000" }
+        Image { source: "qrc:/images/loginTitle.png";height:!showPhoneForm ? 209 : 128 ;width: !showPhoneForm ? 840 : 514;  fillMode: Image.PreserveAspectFit; anchors.horizontalCenter: parent.horizontalCenter }
         Item { width: 1; height: showPhoneForm ? 40 : 38 }
 
         Column {
