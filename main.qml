@@ -4737,39 +4737,39 @@ ApplicationWindow {
                                             cursorShape: Qt.PointingHandCursor
                                         }
 
-                                        ToolTip {
-                                            id: expertDetailTooltip
-                                            visible: expertDetailHover.hovered
-                                                     && expertDetailTooltipText.text.length > 0
-                                            delay: 1000
-                                            timeout: -1
-                                            width: Math.min(540, window.width - 48)
-                                            x: Math.min(0, expertDetailLabel.width - width)
-                                            y: expertDetailLabel.height + 4
-                                            padding: 10
+                                        // ToolTip {
+                                        //     id: expertDetailTooltip
+                                        //     visible: expertDetailHover.hovered
+                                        //              && expertDetailTooltipText.text.length > 0
+                                        //     delay: 1000
+                                        //     timeout: -1
+                                        //     width: Math.min(540, window.width - 48)
+                                        //     x: Math.min(0, expertDetailLabel.width - width)
+                                        //     y: expertDetailLabel.height + 4
+                                        //     padding: 10
 
-                                            background: Rectangle {
-                                                color: "#A6000000"
-                                                radius: 4
-                                            }
+                                        //     background: Rectangle {
+                                        //         color: "#A6000000"
+                                        //         radius: 4
+                                        //     }
 
-                                            contentItem: Text {
-                                                id: expertDetailTooltipText
-                                                width: expertDetailTooltip.availableWidth
-                                                text: String(expertCard.cardData.description || "").trim()
-                                                textFormat: Text.PlainText
-                                                wrapMode: Text.Wrap
-                                                maximumLineCount: 20
-                                                elide: Text.ElideRight
-                                                font.pixelSize: 14
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#FFFFFF"
-                                            }
+                                        //     contentItem: Text {
+                                        //         id: expertDetailTooltipText
+                                        //         width: expertDetailTooltip.availableWidth
+                                        //         text: String(expertCard.cardData.description || "").trim()
+                                        //         textFormat: Text.PlainText
+                                        //         wrapMode: Text.Wrap
+                                        //         maximumLineCount: 20
+                                        //         elide: Text.ElideRight
+                                        //         font.pixelSize: 14
+                                        //         font.family: "Alibaba PuHuiTi 3.0"
+                                        //         color: "#FFFFFF"
+                                        //     }
 
-                                            HoverHandler {
-                                                cursorShape: Qt.PointingHandCursor
-                                            }
-                                        }
+                                        //     HoverHandler {
+                                        //         cursorShape: Qt.PointingHandCursor
+                                        //     }
+                                        // }
                                     }
                                 }
 
