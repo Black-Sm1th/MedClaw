@@ -91,23 +91,9 @@ ApplicationWindow {
     function agentIdentitySummary(agent) {
         if (!agent)
             return ""
-        var text = String(agent.identityText || "").trim()
-        if (text.length > 0) {
-            var lines = text.split(/\r?\n/)
-            var useful = []
-            for (var i = 0; i < lines.length; i++) {
-                var line = String(lines[i] || "").trim()
-                if (!line || line.charAt(0) === "#")
-                    continue
-                line = line.replace(/^\s*[-*]\s*/, "")
-                useful.push(line)
-                if (useful.join(" · ").length >= 180)
-                    break
-            }
-            var rawSummary = useful.join(" · ").trim()
-            if (rawSummary.length > 0)
-                return rawSummary
-        }
+        var description = String(agent.description || "").trim()
+        if (description.length > 0)
+            return description
 
         var ident = agent.identity || {}
         var parts = []
@@ -334,6 +320,10 @@ ApplicationWindow {
                 /// 被删任务正在选中：跳回「新建任务」首页，与点击侧栏「新建任务」一致
                 window.leftSelectedIndex = 0
             }
+        }
+        function onAgentInstallFinished(agentId, success, message) {
+            if (success && String(agentId || "").length > 0)
+                window.startTaskWithAgents([agentId])
         }
         function onCurrentSessionChanged() {
             var sk = wsClient.currentSessionKey || ""
@@ -4634,7 +4624,7 @@ ApplicationWindow {
                         var id = String(a.id || "").trim().toLowerCase()
                         if (id === "main" || name === "默认")
                             continue
-                        var detail = (a.identityText || "").toLowerCase()
+                        var detail = String(a.description || "").toLowerCase()
                         if (!kw || name.indexOf(kw) >= 0 || id.indexOf(kw) >= 0
                                 || detail.indexOf(kw) >= 0)
                             out.push(a)
@@ -4664,6 +4654,9 @@ ApplicationWindow {
                             delegate: Rectangle {
                                 id: expertCard
                                 property var cardData: modelData
+                                readonly property bool installing: wsClient.agentInstallBusy
+                                                                    && wsClient.agentInstallingId
+                                                                       === (cardData.id || "")
                                 readonly property bool hovered: expertCardMouse.containsMouse
                                                                 || expertDetailHover.hovered
                                 width: expertCardGrid.cardWidth
@@ -4729,9 +4722,9 @@ ApplicationWindow {
                                     Label {
                                         id: expertDetailLabel
                                         width: parent.width
-                                        height: 136
-                                        text: String(expertCard.cardData.identityText || "").trim()
-                                              || qsTr("暂无 IDENTITY.md 内容")
+                                        height: expertCard.installing ? 92 : 136
+                                        text: String(expertCard.cardData.description || "").trim()
+                                              || qsTr("暂无专家介绍")
                                         font.pixelSize: 13
                                         lineHeight: 1.35
                                         color: "#99000000"
@@ -4763,8 +4756,8 @@ ApplicationWindow {
                                             contentItem: Text {
                                                 id: expertDetailTooltipText
                                                 width: expertDetailTooltip.availableWidth
-                                                text: String(expertCard.cardData.identityText || "").trim()
-                                                textFormat: Text.MarkdownText
+                                                text: String(expertCard.cardData.description || "").trim()
+                                                textFormat: Text.PlainText
                                                 wrapMode: Text.Wrap
                                                 maximumLineCount: 20
                                                 elide: Text.ElideRight
@@ -4780,16 +4773,61 @@ ApplicationWindow {
                                     }
                                 }
 
+                                Column {
+                                    z: 3
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.leftMargin: 26
+                                    anchors.rightMargin: 26
+                                    anchors.bottomMargin: 20
+                                    spacing: 6
+                                    visible: expertCard.installing
+
+                                    Rectangle {
+                                        width: parent.width
+                                        height: 6
+                                        radius: 3
+                                        color: "#E6E7EB"
+
+                                        Rectangle {
+                                            width: parent.width * Math.max(0, Math.min(100,
+                                                wsClient.agentInstallProgress)) / 100
+                                            height: parent.height
+                                            radius: 3
+                                            color: "#006BFF"
+                                            Behavior on width {
+                                                NumberAnimation { duration: 180 }
+                                            }
+                                        }
+                                    }
+
+                                    Label {
+                                        width: parent.width
+                                        text: qsTr("专家召唤中...") + "  "
+                                              + wsClient.agentInstallProgress + "%"
+                                        font.pixelSize: 12
+                                        color: "#73000000"
+                                        elide: Text.ElideRight
+
+                                        ToolTip.visible: expertCard.hovered
+                                                         && wsClient.agentInstallMessage !== ""
+                                        ToolTip.text: wsClient.agentInstallMessage
+                                        ToolTip.delay: 500
+                                    }
+                                }
+
                                 MouseArea {
                                     id: expertCardMouse
                                     z: 1
                                     anchors.fill: parent
                                     hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: !wsClient.agentInstallBusy
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                     onClicked: {
                                         var id = expertCard.cardData.id || ""
                                         if (id.length > 0)
-                                            window.startTaskWithAgents([id])
+                                            wsClient.summonAgent(id)
                                     }
                                 }
                             }
@@ -5492,6 +5530,7 @@ ApplicationWindow {
                                                             anchors.verticalCenter: parent.verticalCenter
                                                             enabled: wsClient.connectionState === 3
                                                                      && !wsClient.toolInstallBusy
+                                                                     && !wsClient.agentInstallBusy
                                                             onCheckedChanged: {
                                                                 if (syncGuard)
                                                                     return

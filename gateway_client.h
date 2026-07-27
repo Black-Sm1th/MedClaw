@@ -116,6 +116,14 @@ class GatewayClient : public QObject
                NOTIFY toolInstallStateChanged)
     Q_PROPERTY(QString toolInstallingId READ toolInstallingId
                NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(bool agentInstallBusy READ agentInstallBusy
+               NOTIFY agentInstallStateChanged)
+    Q_PROPERTY(int agentInstallProgress READ agentInstallProgress
+               NOTIFY agentInstallStateChanged)
+    Q_PROPERTY(QString agentInstallMessage READ agentInstallMessage
+               NOTIFY agentInstallStateChanged)
+    Q_PROPERTY(QString agentInstallingId READ agentInstallingId
+               NOTIFY agentInstallStateChanged)
     /// 尚无侧栏 agent 时用户在聊天栏勾选技能后的暂存（待新建 agent 后写入 config）
     Q_PROPERTY(bool pendingNewAgentSkillPolicySet READ pendingNewAgentSkillPolicySet
                NOTIFY pendingNewAgentSkillPolicyChanged)
@@ -219,6 +227,10 @@ public:
     int toolInstallProgress() const;
     QString toolInstallMessage() const;
     QString toolInstallingId() const;
+    bool agentInstallBusy() const;
+    int agentInstallProgress() const;
+    QString agentInstallMessage() const;
+    QString agentInstallingId() const;
 
     QVariantList skillMarketFolders() const;
     QVariantList shortcutList() const;
@@ -284,6 +296,9 @@ public:
 
     /// 获取所有 Agent 列表（发送 agents.list RPC）
     Q_INVOKABLE void refreshAgents();
+
+    /// 安装所选专家的运行环境；完成后由 agentInstallFinished 通知界面。
+    Q_INVOKABLE void summonAgent(const QString &agentId);
 
     /**
      * @brief 创建新 Agent（agents.create RPC）
@@ -604,6 +619,9 @@ signals:
                       bool forChat); ///< 新 Agent 创建结果
     void agentDeleted(const QString &agentId, bool success,
                       const QString &message); ///< Agent 删除结果
+    void agentInstallStateChanged();
+    void agentInstallFinished(const QString &agentId, bool success,
+                              const QString &message);
 
     // ── 模型管理 ──
     void modelListChanged();              ///< 可用模型列表更新
@@ -785,10 +803,6 @@ private:
     /// 从 config 根对象重建 agentId → workspace（及 agents.defaults.workspace）
     void rebuildAgentWorkspaceMapFromConfigObject(const QJsonObject &configRoot);
     QString resolveWorkspacePathForAgentId(const QString &agentId) const;
-    QString resolveIdentityWorkspacePath(const QString &agentId,
-                                         const QString &configuredWorkspace) const;
-    /// 按每个 agent 的独立 workspace 重新读取 IDENTITY.md，并更新 m_agentList
-    void refreshAgentIdentityTextsFromWorkspaces();
     /// 用当前 workspace 映射补全 m_agentIdentity["workspace"] 并 notify
     void mergeWorkspaceIntoAgentIdentity();
 
@@ -823,6 +837,8 @@ private:
     void consumeToolInstallOutput(const QByteArray &bytes, bool flush = false);
     bool pluginNeedsProvisioning(const QString &pluginId,
                                  const QString &backendRoot) const;
+    void consumeAgentInstallOutput(const QByteArray &bytes, bool flush = false);
+    void finishAgentInstall(bool success, const QString &message);
 
     /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
     QString extractPayloadSessionKey(const QJsonObject &payload) const;
@@ -964,6 +980,11 @@ private:
     QString m_pendingToolInstallMutationReqId;
     QByteArray m_toolInstallStdoutBuffer;
     bool m_toolInstallScriptFinished = false;
+    bool m_agentInstallBusy = false;
+    int m_agentInstallProgress = 0;
+    QString m_agentInstallMessage;
+    QString m_agentInstallingId;
+    QByteArray m_agentInstallStdoutBuffer;
     QVariantList m_skillMarketFolders; ///< 技能市场子文件夹列表
 
     // ── 设置状态 ──

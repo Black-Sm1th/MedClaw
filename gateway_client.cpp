@@ -37,6 +37,32 @@
 
 namespace {
 
+QDir applicationInstallRoot()
+{
+    QDir installRoot(QCoreApplication::applicationDirPath());
+    if (installRoot.dirName().compare(QStringLiteral("client"),
+                                      Qt::CaseInsensitive) == 0) {
+        installRoot.cdUp();
+    }
+    return installRoot;
+}
+
+QString resolvedBackendRoot()
+{
+    QString configured = qEnvironmentVariable("MEDCLAW_BACKEND_ROOT").trimmed();
+    if (configured == QLatin1String("~")) {
+        configured = QDir::homePath();
+    } else if (configured.startsWith(QStringLiteral("~/"))
+               || configured.startsWith(QStringLiteral("~\\"))) {
+        configured = QDir(QDir::homePath()).filePath(configured.mid(2));
+    }
+    if (!configured.isEmpty())
+        return QDir(configured).absolutePath();
+
+    return applicationInstallRoot().absoluteFilePath(
+        QStringLiteral("runtime/backend"));
+}
+
 QString escapePowerShellSingleQuoted(const QString &s)
 {
     QString out = s;
@@ -92,6 +118,41 @@ QString agentWorkspaceSlug(QString name)
     if (out.isEmpty())
         out = QStringLiteral("agent");
     return out.left(48);
+}
+
+QString loadAgentDescription(const QString &agentId)
+{
+    const QString id = agentId.trimmed();
+    if (id.isEmpty()
+        || id == QLatin1String(".")
+        || id == QLatin1String("..")
+        || id.contains(QLatin1Char('/'))
+        || id.contains(QLatin1Char('\\'))) {
+        return QString();
+    }
+
+    const QString introPath = QDir(resolvedBackendRoot()).filePath(
+        QStringLiteral("config/agents/%1/intro.json").arg(id));
+    QFile introFile(introPath);
+    if (!introFile.exists())
+        return QString();
+    if (!introFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning().noquote() << "[Gateway] failed to read agent intro:"
+                             << introPath << introFile.errorString();
+        return QString();
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document =
+        QJsonDocument::fromJson(introFile.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        qWarning().noquote() << "[Gateway] invalid agent intro:"
+                             << introPath << parseError.errorString();
+        return QString();
+    }
+
+    return document.object()
+        .value(QStringLiteral("description")).toString().trimmed();
 }
 
 } // namespace
@@ -538,6 +599,10 @@ bool GatewayClient::toolInstallBusy() const { return m_toolInstallBusy; }
 int GatewayClient::toolInstallProgress() const { return m_toolInstallProgress; }
 QString GatewayClient::toolInstallMessage() const { return m_toolInstallMessage; }
 QString GatewayClient::toolInstallingId() const { return m_toolInstallingId; }
+bool GatewayClient::agentInstallBusy() const { return m_agentInstallBusy; }
+int GatewayClient::agentInstallProgress() const { return m_agentInstallProgress; }
+QString GatewayClient::agentInstallMessage() const { return m_agentInstallMessage; }
+QString GatewayClient::agentInstallingId() const { return m_agentInstallingId; }
 
 /// 设置连接状态并通知 QML 属性绑定系统
 void GatewayClient::setState(ConnectionState state)
@@ -3032,6 +3097,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             entry[QStringLiteral("sessionKey")] =
                 QStringLiteral("agent:%1:main").arg(id);
             entry[QStringLiteral("isDefault")]  = (id == m_defaultAgentId);
+            entry[QStringLiteral("description")] = loadAgentDescription(id);
             QString workspace = a.value(QStringLiteral("workspace")).toString().trimmed();
             if (workspace.isEmpty()) {
                 const auto workspaceIt = m_agentWorkspaceById.constFind(id);
@@ -3043,19 +3109,6 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             entry[QStringLiteral("workspace")] = workspace;
             entry[QStringLiteral("identity")] =
                 a.value(QStringLiteral("identity")).toObject().toVariantMap();
-            const QString identityWorkspace =
-                resolveIdentityWorkspacePath(id, workspace);
-            entry[QStringLiteral("identityWorkspace")] = identityWorkspace;
-            if (!identityWorkspace.isEmpty()) {
-                QFile identityFile(QDir(identityWorkspace)
-                    .filePath(QStringLiteral("IDENTITY.md")));
-                if (identityFile.exists()
-                        && identityFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                    QTextStream ts(&identityFile);
-                    ts.setCodec("UTF-8");
-                    entry[QStringLiteral("identityText")] = ts.readAll();
-                }
-            }
 
             m_agentList.append(entry);
         }
@@ -3773,6 +3826,166 @@ void GatewayClient::refreshAgents()
 {
     if (m_state != Connected) return;
     sendRequest(QStringLiteral("agents.list"), QJsonObject());
+}
+
+void GatewayClient::consumeAgentInstallOutput(const QByteArray &bytes, bool flush)
+{
+    m_agentInstallStdoutBuffer.append(bytes);
+    while (true) {
+        const int newline = m_agentInstallStdoutBuffer.indexOf('\n');
+        if (newline < 0 && !flush)
+            break;
+        QByteArray line = newline >= 0
+            ? m_agentInstallStdoutBuffer.left(newline)
+            : m_agentInstallStdoutBuffer;
+        if (newline >= 0)
+            m_agentInstallStdoutBuffer.remove(0, newline + 1);
+        else
+            m_agentInstallStdoutBuffer.clear();
+        line = line.trimmed();
+        if (line.isEmpty()) {
+            if (newline < 0)
+                break;
+            continue;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(line);
+        if (!doc.isObject()) {
+            if (newline < 0)
+                break;
+            continue;
+        }
+        const QJsonObject event = doc.object();
+        bool changed = false;
+        if (event.value(QStringLiteral("pct")).isDouble()) {
+            const int progress = qBound(0, event.value(QStringLiteral("pct")).toInt(), 100);
+            if (progress != m_agentInstallProgress) {
+                m_agentInstallProgress = progress;
+                changed = true;
+            }
+        }
+        const QString message = event.value(QStringLiteral("message")).toString().trimmed();
+        if (!message.isEmpty() && message != m_agentInstallMessage) {
+            m_agentInstallMessage = message;
+            changed = true;
+        }
+        if (changed)
+            emit agentInstallStateChanged();
+        if (newline < 0)
+            break;
+    }
+}
+
+void GatewayClient::finishAgentInstall(bool success, const QString &message)
+{
+    const QString agentId = m_agentInstallingId;
+    const QString resultMessage = message.trimmed().isEmpty()
+        ? (success ? QStringLiteral("专家召唤完成") : QStringLiteral("专家召唤失败"))
+        : message.trimmed();
+
+    if (success) {
+        m_agentInstallProgress = 100;
+        m_agentInstallMessage = resultMessage;
+        emit agentInstallStateChanged();
+    }
+
+    m_agentInstallBusy = false;
+    m_agentInstallProgress = 0;
+    m_agentInstallMessage.clear();
+    m_agentInstallingId.clear();
+    m_agentInstallStdoutBuffer.clear();
+    emit agentInstallStateChanged();
+    emit agentInstallFinished(agentId, success, resultMessage);
+    if (!success)
+        emit errorOccurred(resultMessage);
+}
+
+void GatewayClient::summonAgent(const QString &agentId)
+{
+    const QString aid = agentId.trimmed();
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("尚未连接到服务器"));
+        return;
+    }
+    if (aid.isEmpty()) {
+        emit errorOccurred(QStringLiteral("agentId 不能为空"));
+        return;
+    }
+    if (m_agentInstallBusy || m_toolInstallBusy) {
+        emit errorOccurred(QStringLiteral("另一个安装任务正在进行，请稍候"));
+        return;
+    }
+
+    const QDir installRoot = applicationInstallRoot();
+    const QString backendRoot = resolvedBackendRoot();
+    const QString scriptPath = QDir(backendRoot).filePath(
+        QStringLiteral("scripts/medclaw-agent-install.mjs"));
+    const QStringList nodeCandidates = {
+        QDir(backendRoot).filePath(QStringLiteral("runtime/node/node.exe")),
+        installRoot.absoluteFilePath(QStringLiteral("runtime/node/node.exe")),
+        QDir(backendRoot).filePath(QStringLiteral("runtime/node/bin/node")),
+        installRoot.absoluteFilePath(QStringLiteral("runtime/node/bin/node"))
+    };
+    QString nodePath;
+    for (const QString &candidate : nodeCandidates) {
+        if (QFileInfo::exists(candidate)) {
+            nodePath = candidate;
+            break;
+        }
+    }
+    if (!QFileInfo::exists(scriptPath)) {
+        emit errorOccurred(QStringLiteral("未找到专家安装脚本：%1")
+            .arg(QDir::toNativeSeparators(scriptPath)));
+        return;
+    }
+    if (nodePath.isEmpty()) {
+        emit errorOccurred(QStringLiteral("未找到专家安装所需的内置 Node 运行时，后端目录：%1")
+            .arg(QDir::toNativeSeparators(backendRoot)));
+        return;
+    }
+
+    QString stateDir = qEnvironmentVariable("OPENCLAW_STATE_DIR").trimmed();
+    if (stateDir.isEmpty())
+        stateDir = QDir(QDir::homePath()).filePath(QStringLiteral(".openclaw"));
+    else
+        stateDir = expandTildePath(stateDir);
+
+    m_agentInstallBusy = true;
+    m_agentInstallProgress = 0;
+    m_agentInstallMessage = QStringLiteral("专家召唤中...");
+    m_agentInstallingId = aid;
+    m_agentInstallStdoutBuffer.clear();
+    emit agentInstallStateChanged();
+
+    auto *proc = new QProcess(this);
+    proc->setWorkingDirectory(backendRoot);
+    connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc]() {
+        consumeAgentInstallOutput(proc->readAllStandardOutput());
+    });
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, proc](int exitCode, QProcess::ExitStatus exitStatus) {
+        if (!m_agentInstallBusy) {
+            proc->deleteLater();
+            return;
+        }
+        consumeAgentInstallOutput(proc->readAllStandardOutput(), true);
+        const QString stderrText = QString::fromUtf8(proc->readAllStandardError()).trimmed();
+        proc->deleteLater();
+        if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+            const QString detail = m_agentInstallMessage.trimmed().isEmpty()
+                ? stderrText : m_agentInstallMessage;
+            finishAgentInstall(false, detail);
+            return;
+        }
+        finishAgentInstall(true, QStringLiteral("专家召唤完成"));
+    });
+    proc->start(nodePath, QStringList()
+        << scriptPath << aid << QStringLiteral("--state-dir") << stateDir);
+    if (!proc->waitForStarted(5000)) {
+        const QString error = proc->errorString();
+        proc->deleteLater();
+        finishAgentInstall(false,
+            QStringLiteral("无法启动专家安装脚本：%1").arg(error));
+    }
 }
 
 /**
@@ -5082,7 +5295,6 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
 
     rebuildMcpListFromConfigObject(m_lastConfigSnapshot);
     rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
-    refreshAgentIdentityTextsFromWorkspaces();
     mergeWorkspaceIntoAgentIdentity();
     parseSettingsFromConfig();
 
@@ -5219,69 +5431,6 @@ QString GatewayClient::resolveWorkspacePathForAgentId(const QString &agentId) co
     if (it != m_agentWorkspaceById.cend() && !it.value().isEmpty())
         return it.value();
     return m_agentsDefaultWorkspace;
-}
-
-QString GatewayClient::resolveIdentityWorkspacePath(
-    const QString &agentId, const QString &configuredWorkspace) const
-{
-    const QString id = agentId.trimmed();
-    if (!id.isEmpty()) {
-        QString stateDir = qEnvironmentVariable("OPENCLAW_STATE_DIR").trimmed();
-        if (stateDir.isEmpty())
-            stateDir = QDir(QDir::homePath()).filePath(QStringLiteral(".openclaw"));
-        else
-            stateDir = expandTildePath(stateDir);
-
-        const QString agentWorkspace = QDir(stateDir).filePath(
-            QStringLiteral("workspace-%1").arg(id));
-        if (QDir(agentWorkspace).exists())
-            return QDir(agentWorkspace).absolutePath();
-    }
-
-    const QString fallback = expandTildePath(configuredWorkspace).trimmed();
-    return fallback.isEmpty() ? QString() : QDir(fallback).absolutePath();
-}
-
-void GatewayClient::refreshAgentIdentityTextsFromWorkspaces()
-{
-    bool changed = false;
-    for (int i = 0; i < m_agentList.size(); ++i) {
-        const QVariantMap current = m_agentList.at(i).toMap();
-        QVariantMap next = current;
-        const QString id = current.value(QStringLiteral("id")).toString().trimmed();
-        if (id.isEmpty())
-            continue;
-
-        QString workspace = m_agentWorkspaceById.value(id).trimmed();
-        if (workspace.isEmpty())
-            workspace = current.value(QStringLiteral("workspace")).toString().trimmed();
-        if (workspace.isEmpty() && id == m_defaultAgentId)
-            workspace = m_agentsDefaultWorkspace.trimmed();
-
-        next[QStringLiteral("workspace")] = workspace;
-        const QString identityWorkspace =
-            resolveIdentityWorkspacePath(id, workspace);
-        next[QStringLiteral("identityWorkspace")] = identityWorkspace;
-        next.remove(QStringLiteral("identityText"));
-        if (!identityWorkspace.isEmpty()) {
-            QFile identityFile(QDir(identityWorkspace)
-                .filePath(QStringLiteral("IDENTITY.md")));
-            if (identityFile.exists()
-                    && identityFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QTextStream ts(&identityFile);
-                ts.setCodec("UTF-8");
-                next[QStringLiteral("identityText")] = ts.readAll();
-            }
-        }
-
-        if (next != current) {
-            m_agentList[i] = next;
-            changed = true;
-        }
-    }
-
-    if (changed)
-        emit agentListChanged();
 }
 
 void GatewayClient::mergeWorkspaceIntoAgentIdentity()
@@ -5424,6 +5573,10 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
         emit errorOccurred(QStringLiteral("agentId / toolId \u4e0d\u80fd\u4e3a\u7a7a"));
         return;
     }
+    if (m_agentInstallBusy) {
+        emit errorOccurred(QStringLiteral("专家正在召唤中，请稍候"));
+        return;
+    }
     if (m_lastConfigSnapshot.isEmpty()) {
         emit errorOccurred(QStringLiteral(
             "\u914d\u7f6e\u5feb\u7167\u672a\u52a0\u8f7d\uff0c\u8bf7\u5148\u5237\u65b0\u8fde\u63a5\u6216 MCP \u5217\u8868"));
@@ -5431,14 +5584,17 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
     }
 
     if (enabled && !pluginId.trimmed().isEmpty()) {
-        QDir installRoot(QCoreApplication::applicationDirPath());
-        if (installRoot.dirName().compare(QStringLiteral("client"),
-                                          Qt::CaseInsensitive) == 0)
-            installRoot.cdUp();
-        const QString backendRoot = installRoot.absoluteFilePath(
-            QStringLiteral("runtime/backend"));
+        const QDir installRoot = applicationInstallRoot();
+        const QString backendRoot = resolvedBackendRoot();
         const QString scriptPath = QDir(backendRoot).filePath(
             QStringLiteral("scripts/medclaw-skill-install.mjs"));
+        const QString catalogPath = QDir(backendRoot).filePath(
+            QStringLiteral("python-skills.json"));
+        if (!QFileInfo::exists(catalogPath)) {
+            emit errorOccurred(QStringLiteral("后端工具清单不存在：%1")
+                .arg(QDir::toNativeSeparators(catalogPath)));
+            return;
+        }
         if (pluginNeedsProvisioning(pluginId, backendRoot)) {
             if (m_toolInstallBusy) {
                 emit errorOccurred(QStringLiteral("另一个工具正在安装，请稍候"));
@@ -5457,8 +5613,14 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
                     break;
                 }
             }
-            if (!QFileInfo::exists(scriptPath) || nodePath.isEmpty()) {
-                emit errorOccurred(QStringLiteral("未找到工具安装脚本或内置 Node 运行时"));
+            if (!QFileInfo::exists(scriptPath)) {
+                emit errorOccurred(QStringLiteral("未找到工具安装脚本：%1")
+                    .arg(QDir::toNativeSeparators(scriptPath)));
+                return;
+            }
+            if (nodePath.isEmpty()) {
+                emit errorOccurred(QStringLiteral("未找到工具安装所需的内置 Node 运行时，后端目录：%1")
+                    .arg(QDir::toNativeSeparators(backendRoot)));
                 return;
             }
 
@@ -5545,6 +5707,10 @@ void GatewayClient::batchSetAgentToolsEnabled(const QString &agentId,
 {
     if (m_state != Connected) {
         emit errorOccurred(QStringLiteral("\u5c1a\u672a\u8fde\u63a5\u5230\u670d\u52a1\u5668"));
+        return;
+    }
+    if (m_agentInstallBusy) {
+        emit errorOccurred(QStringLiteral("专家正在召唤中，请稍候"));
         return;
     }
     const QString aid = agentId.trimmed();
