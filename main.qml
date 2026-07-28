@@ -4598,6 +4598,132 @@ ApplicationWindow {
                     placeholderText: qsTr("搜索专家...")
                     onTextChanged: agentManageRec.searchText = text
                 }
+
+                Row {
+                    visible: window.leftSelectedIndex === 3
+                    anchors.right: parent.right
+                    anchors.rightMargin: 60
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 12
+
+                    SingleLineTextInput {
+                        inputWidth: Math.min(220, capabilityHubHeader.width * 0.24)
+                        inputHeight: 36
+                        icon: "qrc:/images/search.png"
+                        iconSize: 16
+                        placeholderText: qsTr("搜索技能...")
+                        onTextChanged: skillSettingRec.skillSearchText = text
+                    }
+
+                    Item {
+                        width: 80
+                        height: 36
+
+                        CustomButton {
+                            id: addSkillBtn
+                            anchors.fill: parent
+                            backgroundColor: "#0F006BFF"
+                            textColor: "#006BFF"
+                            borderWidth: 0
+                            text: "+ 添加"
+                            fontSize: 14
+                            onClicked: addSkillMenu.visible ? addSkillMenu.close() : addSkillMenu.open()
+                        }
+
+                        Popup {
+                            id: addSkillMenu
+                            y: addSkillBtn.height + 4
+                            x: parent.width - width
+                            width: 180
+                            padding: 4
+
+                            background: Rectangle {
+                                radius: 8
+                                color: "#FFFFFF"
+                                border.color: "#14000000"
+                                border.width: 1
+                                layer.enabled: true
+                                layer.effect: DropShadow {
+                                    transparentBorder: true
+                                    radius: 12
+                                    samples: 25
+                                    color: "#1A000000"
+                                }
+                            }
+
+                            contentItem: Column {
+                                spacing: 2
+
+                                Repeater {
+                                    model: [
+                                        { text: "上传 .ZIP", icon: "qrc:/images/upload.png" },
+                                        { text: "上传文件夹", icon: "qrc:/images/folder.png" },
+                                        { text: "从 GitHub 导入", icon: "qrc:/images/link.png" }
+                                    ]
+
+                                    delegate: Rectangle {
+                                        width: 172
+                                        height: 36
+                                        radius: 6
+                                        color: menuItemMouse.pressed ? "#14000000"
+                                             : menuItemMouse.containsMouse ? "#0A000000"
+                                             : "transparent"
+
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                                        Row {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 10
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 8
+
+                                            Image {
+                                                width: 16
+                                                height: 16
+                                                source: modelData.icon
+                                                sourceSize: Qt.size(16, 16)
+                                                fillMode: Image.PreserveAspectFit
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Label {
+                                                text: modelData.text
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: menuItemMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                addSkillMenu.close()
+                                                if (index === 0) {
+                                                    zipFileDialog.open()
+                                                } else if (index === 1) {
+                                                    folderDialog.open()
+                                                } else if (index === 2) {
+                                                    githubImportDialog.open()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            enter: Transition {
+                                NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                                NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                            }
+                            exit: Transition {
+                                NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                            }
+                        }
+                    }
+                }
             }
 
             Rectangle {
@@ -4809,11 +4935,6 @@ ApplicationWindow {
                                         font.pixelSize: 12
                                         color: "#73000000"
                                         elide: Text.ElideRight
-
-                                        ToolTip.visible: expertCard.hovered
-                                                         && wsClient.agentInstallMessage !== ""
-                                        ToolTip.text: wsClient.agentInstallMessage
-                                        ToolTip.delay: 500
                                     }
                                 }
 
@@ -4855,32 +4976,106 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 visible: window.leftSelectedIndex === 3
                 property string skillSearchText: ""
-                /// 与技能页 Tab 同步，供顶部搜索框占位符使用（避免引用尚未创建的 TabBar）
-                property int skillTabForSearch: 0
+                property string selectedSkillCategory: "全部"
+                property var skillCategories: [
+                    "全部", "政务技能", "平台基础", "临床科研", "科学计算",
+                    "开发者工具", "第三方服务集成", "场景调度"
+                ]
+                property var skillCategoryById: ({
+                    "gov-assessment": "政务技能",
+                    "gov-briefing": "政务技能",
+                    "gov-data-analysis": "政务技能",
+                    "gov-doc-drafting": "政务技能",
+                    "gov-doc-summary": "政务技能",
+                    "gov-enterprise-report": "政务技能",
+                    "gov-hotline-report": "政务技能",
+                    "gov-kb-qa": "政务技能",
+                    "gov-meeting-minutes": "政务技能",
+                    "gov-policy-drafting": "政务技能",
+                    "gov-policy-interpret": "政务技能",
+                    "gov-policy-lookup": "政务技能",
+                    "gov-policy-match": "政务技能",
+                    "gov-work-summary": "政务技能",
+                    "_shared": "平台基础",
+                    "node-connect": "平台基础",
+                    "model-usage": "平台基础",
+                    "skill-creator": "平台基础",
+                    "session-logs": "平台基础",
+                    "healthcheck": "平台基础",
+                    "coding-agent": "平台基础",
+                    "summarize": "平台基础",
+                    "apple-notes": "平台基础",
+                    "apple-reminders": "平台基础",
+                    "bear-notes": "平台基础",
+                    "notion": "平台基础",
+                    "obsidian": "平台基础",
+                    "things-mac": "平台基础",
+                    "trello": "平台基础",
+                    "biomcp-server": "临床科研",
+                    "scma-analyzer": "临床科研",
+                    "medical-intelligence": "临床科研",
+                    "medical-research-toolkit": "临床科研",
+                    "mlp-intelligence": "临床科研",
+                    "radiology-skills": "临床科研",
+                    "spatial-transcriptomics-agent": "临床科研",
+                    "spatial-transcriptomics-analysis": "临床科研",
+                    "precision-medicine": "临床科研",
+                    "data-analysis": "科学计算",
+                    "github": "开发者工具",
+                    "gh-issues": "开发者工具",
+                    "gitgrep": "开发者工具",
+                    "blucl": "开发者工具",
+                    "tmux": "开发者工具",
+                    "wacli": "开发者工具",
+                    "1password": "第三方服务集成",
+                    "canva": "第三方服务集成",
+                    "discord": "第三方服务集成",
+                    "gemini": "第三方服务集成",
+                    "gog": "第三方服务集成",
+                    "goplaces": "第三方服务集成",
+                    "himalaya": "第三方服务集成",
+                    "imsg": "第三方服务集成",
+                    "mcporter": "第三方服务集成",
+                    "openai-whisper": "第三方服务集成",
+                    "openai-whisper-api": "第三方服务集成",
+                    "opennlue": "第三方服务集成",
+                    "oracle": "第三方服务集成",
+                    "ordercli": "第三方服务集成",
+                    "peekaboo": "第三方服务集成",
+                    "sag": "第三方服务集成",
+                    "sherpa-onnx-tts": "第三方服务集成",
+                    "slack": "第三方服务集成",
+                    "songsee": "第三方服务集成",
+                    "sonoscli": "第三方服务集成",
+                    "spotify-player": "第三方服务集成",
+                    "video-frames": "第三方服务集成",
+                    "video-call": "第三方服务集成",
+                    "weather": "第三方服务集成",
+                    "xurl": "第三方服务集成",
+                    "camsnap": "第三方服务集成",
+                    "bluebubbles": "第三方服务集成",
+                    "blogwatcher": "第三方服务集成",
+                    "eighthtctl": "第三方服务集成",
+                    "paper-writing": "场景调度",
+                    "deep-research": "场景调度",
+                    "fact-forensics": "场景调度",
+                    "clawhub": "场景调度"
+                })
 
                 function filteredSkillList() {
-                    var list = wsClient.skillList
-                    if (!skillSearchText) return list
+                    var list = wsClient.skillList || []
                     var kw = skillSearchText.toLowerCase()
                     var result = []
                     for (var i = 0; i < list.length; i++) {
                         var name = (list[i].name || list[i].skillKey || "").toLowerCase()
                         var desc = (list[i].description || "").toLowerCase()
-                        if (name.indexOf(kw) >= 0 || desc.indexOf(kw) >= 0)
-                            result.push(list[i])
-                    }
-                    return result
-                }
-                function filteredSkillMarketFolders() {
-                    var list = wsClient.skillMarketFolders
-                    if (!skillSearchText) return list
-                    var kw = skillSearchText.toLowerCase()
-                    var result = []
-                    for (var i = 0; i < list.length; i++) {
-                        var item = list[i]
-                        var name = (item.folderName || "").toLowerCase()
-                        if (name.indexOf(kw) >= 0)
-                            result.push(item)
+                        var id = String(list[i].skillKey || list[i].name || "").toLowerCase()
+                        var category = skillCategoryById[id] || ""
+                        if (selectedSkillCategory !== "全部" && category !== selectedSkillCategory)
+                            continue
+                        if (kw && name.indexOf(kw) < 0 && desc.indexOf(kw) < 0)
+                            continue
+                        result.push(list[i])
                     }
                     return result
                 }
@@ -4889,146 +5084,57 @@ ApplicationWindow {
                     leftPadding: 60
                     rightPadding: 60
                     spacing: 16
-                    Rectangle{
-                        id: skillSettingTitleRec
-                        height: 36
+
+                    Flickable {
+                        id: skillCategoryBar
                         width: parent.width - 120
-                        SingleLineTextInput {
-                            id: skillSettingSearchInput
-                            inputHeight: 36
-                            inputWidth: parent.width - 120
-                            icon: "qrc:/images/search.png"
-                            iconSize: 16
-                            placeholderText: skillSettingRec.skillTabForSearch === 1
-                                            ? qsTr("搜索技能市场")
-                                            : qsTr("搜索已安装技能")
-                            onTextChanged: skillSettingRec.skillSearchText = text
-                        }
-                        Item {
-                            width: 80
-                            height: 36
-                            anchors.right: parent.right
+                        height: 36
+                        contentWidth: skillCategoryRow.width
+                        contentHeight: height
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.HorizontalFlick
 
-                            CustomButton{
-                                id: addSkillBtn
-                                anchors.fill: parent
-                                backgroundColor: "#0F006BFF"
-                                textColor: "#006BFF"
-                                borderWidth: 0
-                                text: "+ 添加"
-                                fontSize: 14
-                                onClicked: addSkillMenu.visible ? addSkillMenu.close() : addSkillMenu.open()
-                            }
+                        Row {
+                            id: skillCategoryRow
+                            spacing: 8
 
-                            Popup {
-                                id: addSkillMenu
-                                y: addSkillBtn.height + 4
-                                x: parent.width - width
-                                width: 180
-                                padding: 4
+                            Repeater {
+                                model: skillSettingRec.skillCategories
 
-                                background: Rectangle {
-                                    radius: 8
-                                    color: "#FFFFFF"
-                                    border.color: "#14000000"
-                                    border.width: 1
-                                    layer.enabled: true
-                                    layer.effect: DropShadow {
-                                        transparentBorder: true
-                                        radius: 12
-                                        samples: 25
-                                        color: "#1A000000"
+                                delegate: Rectangle {
+                                    readonly property bool selected: skillSettingRec.selectedSkillCategory === modelData
+                                    width: categoryLabel.implicitWidth + 24
+                                    height: 32
+                                    radius: 6
+                                    color: selected ? "#0F006BFF"
+                                         : categoryMouse.containsMouse ? "#F7F8FA" : "#F7F9FA"
+
+                                    Label {
+                                        id: categoryLabel
+                                        anchors.centerIn: parent
+                                        text: modelData
+                                        font.pixelSize: 14
+                                        font.weight: parent.selected ? Font.Medium : Font.Normal
+                                        color: parent.selected ? "#006BFF" : "#A6000000"
                                     }
-                                }
 
-                                contentItem: Column {
-                                    spacing: 2
-
-                                    Repeater {
-                                        model: [
-                                            { text: "上传 .ZIP", icon: "qrc:/images/upload.png" },
-                                            { text: "上传文件夹", icon: "qrc:/images/folder.png" },
-                                            { text: "从 GitHub 导入", icon: "qrc:/images/link.png" }
-                                        ]
-
-                                        delegate: Rectangle {
-                                            width: 172
-                                            height: 36
-                                            radius: 6
-                                            color: menuItemMouse.pressed ? "#14000000"
-                                                 : menuItemMouse.containsMouse ? "#0A000000"
-                                                 : "transparent"
-
-                                            Behavior on color {
-                                                ColorAnimation { duration: 100 }
-                                            }
-
-                                            Row {
-                                                anchors.left: parent.left
-                                                anchors.leftMargin: 10
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                spacing: 8
-
-                                                Image {
-                                                    width: 16
-                                                    height: 16
-                                                    source: modelData.icon
-                                                    sourceSize: Qt.size(16, 16)
-                                                    fillMode: Image.PreserveAspectFit
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                }
-
-                                                Label {
-                                                    text: modelData.text
-                                                    font.pixelSize: 14
-                                                    color: "#D9000000"
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: menuItemMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    addSkillMenu.close()
-                                                    if (index === 0) {
-                                                        zipFileDialog.open()
-                                                    } else if (index === 1) {
-                                                        folderDialog.open()
-                                                    } else if (index === 2) {
-                                                        githubImportDialog.open()
-                                                    }
-                                                }
-                                            }
-                                        }
+                                    MouseArea {
+                                        id: categoryMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: skillSettingRec.selectedSkillCategory = modelData
                                     }
-                                }
-
-                                enter: Transition {
-                                    NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
-                                    NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
-                                }
-                                exit: Transition {
-                                    NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
                                 }
                             }
                         }
-                    }
-                    TabBarView{
-                        id: skillSettingTaskTab
-                        lineWidth: parent.width - 120
-                        tabs: [ { text: "已安装", badge: wsClient.skillList.length }, { text: "技能市场" }]
-                        onCurrentIndexChanged: skillSettingRec.skillTabForSearch = currentIndex
-                        Component.onCompleted: skillSettingRec.skillTabForSearch = currentIndex
                     }
                     ScrollView {
                         id: skillScrollView
                         width: parent.width - 120
-                        height: skillSettingRec.height - 24 - skillSettingTitleRec.height - skillSettingTaskTab.height - 32
+                        height: skillSettingRec.height - skillCategoryBar.height - 48
                         clip: true
-                        visible: skillSettingTaskTab.currentIndex === 0
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         Grid {
                             id: skillGrid
@@ -5043,281 +5149,65 @@ ApplicationWindow {
 
                                 delegate: Rectangle {
                                     width: skillGrid.cellWidth
-                                    height: 100
+                                    height: 68
                                     radius: 8
                                     border.color: "#E6E7EB"
                                     border.width: 1
                                     color: "#FFFFFF"
 
-                                    Column {
-                                        anchors.fill: parent
-                                        padding: 20
-                                        spacing: 12
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 20
+                                        anchors.right: installedSkillButton.left
+                                        anchors.rightMargin: 20
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 8
+                                        height: 28
 
-                                        Row{
-                                            spacing: 8
-                                            width: parent.width - 40
+                                        Image {
+                                            width: 28
                                             height: 28
-                                            Image {
-                                                width: 28
-                                                height: 28
-                                                visible: !modelData.emoji
-                                                source: "qrc:/images/skillIcon.png"
-                                                fillMode: Image.PreserveAspectFit
-                                            }
-                                            Label {
-                                                width: 28
-                                                height: 28
-                                                visible: modelData.emoji
-                                                font.pixelSize: 20
-                                                text: modelData.emoji
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                                font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                            }
-                                            Label {
-                                                id: skillNameLabel
-                                                width: parent.width - 36
-                                                text: modelData.name ? modelData.name : ""
-                                                font.pixelSize: 16
-                                                font.weight: Font.Bold
-                                                color: "#D9000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                elide: Text.ElideRight
-
-                                                ToolTip {
-                                                    visible: skillNameHover.containsMouse && skillNameLabel.truncated
-                                                    text: skillNameLabel.text
-                                                    delay: 500
-                                                    x: 0
-                                                    y: skillNameLabel.height + 4
-                                                    width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
-                                                    background: Rectangle {
-                                                        color: "#A6000000"
-                                                        radius: 4
-                                                    }
-                                                    contentItem: Text {
-                                                        text: skillNameLabel.text
-                                                        font.pixelSize: 14
-                                                        color: "#FFFFFF"
-                                                        font.family: "Alibaba PuHuiTi 3.0"
-                                                        wrapMode: Text.Wrap
-                                                    }
-                                                }
-                                                MouseArea {
-                                                    id: skillNameHover
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    acceptedButtons: Qt.NoButton
-                                                }
-                                            }
+                                            visible: !modelData.emoji
+                                            source: "qrc:/images/skillIcon.png"
+                                            fillMode: Image.PreserveAspectFit
                                         }
-                                        Label {
-                                            id: skillDescLabel
-                                            text: modelData.description || ""
-                                            width: parent.width - 40
-                                            height: parent.height - 40 - 28 - 12
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                            visible: (modelData.description || "").length > 0
-                                            elide: Text.ElideRight
 
-                                            ToolTip {
-                                                visible: skillDescHover.containsMouse && skillDescLabel.truncated
-                                                text: skillDescLabel.text
-                                                delay: 500
-                                                x: 0
-                                                y: -height - 4
-                                                width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
-                                                background: Rectangle {
-                                                    color: "#A6000000"
-                                                    radius: 4
-                                                }
-                                                contentItem: Text {
-                                                    text: skillDescLabel.text
-                                                    font.pixelSize: 14
-                                                    color: "#FFFFFF"
-                                                    font.family: "Alibaba PuHuiTi 3.0"
-                                                    wrapMode: Text.Wrap
-                                                }
-                                            }
-                                            MouseArea {
-                                                id: skillDescHover
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                acceptedButtons: Qt.NoButton
-                                            }
+                                        Label {
+                                            width: 28
+                                            height: 28
+                                            visible: modelData.emoji
+                                            font.pixelSize: 20
+                                            text: modelData.emoji
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                            font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                                        }
+
+                                        Label {
+                                            id: skillNameLabel
+                                            width: parent.width - 36
+                                            text: modelData.name || modelData.skillKey || ""
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                            color: "#D9000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            elide: Text.ElideRight
                                         }
                                     }
 
-                                    // Switch {
-                                    //     id: skillSwitch
-                                    //     checked: modelData.enabled
-                                    //     anchors.right: parent.right
-                                    //     anchors.rightMargin: 20
-                                    //     anchors.top: parent.top
-                                    //     anchors.topMargin: 20
-                                    //     hoverEnabled: true
-
-                                    //     onClicked: {
-                                    //         var key = modelData.skillKey || modelData.name || ""
-                                    //         if (key.length > 0)
-                                    //             wsClient.setSkillEnabled(key, skillSwitch.checked)
-                                    //     }
-
-                                    //     indicator: Rectangle {
-                                    //         implicitWidth: 44
-                                    //         implicitHeight: 22
-                                    //         x: skillSwitch.leftPadding
-                                    //         y: parent.height / 2 - height / 2
-                                    //         radius: 12
-                                    //         color: skillSwitch.checked ? "#006BFF" : "#1F000000"
-
-                                    //         Behavior on color {
-                                    //             ColorAnimation { duration: 150 }
-                                    //         }
-
-                                    //         Rectangle {
-                                    //             x: skillSwitch.checked ? parent.width - width - 3 : 3
-                                    //             y: parent.height / 2 - height / 2
-                                    //             width: 18
-                                    //             height: 18
-                                    //             radius: 9
-                                    //             color: "#FFFFFF"
-
-                                    //             Behavior on x {
-                                    //                 NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-                                    //             }
-                                    //         }
-                                    //     }
-
-                                    //     MouseArea {
-                                    //         z: 1
-                                    //         anchors.fill: parent
-                                    //         acceptedButtons: Qt.NoButton
-                                    //         hoverEnabled: true
-                                    //         cursorShape: Qt.PointingHandCursor
-                                    //     }
-                                    // }
-                                }
-                            }
-                        }
-                    }
-                    Item {
-                        id: skillMarketViewWrap
-                        width: parent.width - 120
-                        height: skillSettingRec.height - 24 - skillSettingTitleRec.height - skillSettingTaskTab.height - 32
-                        visible: skillSettingTaskTab.currentIndex === 1
-                        clip: true
-
-                        Connections {
-                            target: skillSettingTaskTab
-                            function onCurrentIndexChanged() {
-                                if (skillSettingTaskTab.currentIndex === 1 && window.leftSelectedIndex === 2)
-                                    wsClient.refreshSkillMarketFolders()
-                            }
-                        }
-                        Connections {
-                            target: window
-                            function onLeftSelectedIndexChanged() {
-                                if (window.leftSelectedIndex === 2 && skillSettingTaskTab.currentIndex === 1)
-                                    wsClient.refreshSkillMarketFolders()
-                            }
-                        }
-
-                        ScrollView {
-                            id: skillMarketScrollView
-                            anchors.top: parent.top
-                            width: parent.width
-                            height: parent.height
-                            clip: true
-                            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-
-                            Column {
-                                width: skillMarketScrollView.width
-                                spacing: 12
-
-                                Label {
-                                    visible: skillSettingRec.filteredSkillMarketFolders().length === 0
-                                    wrapMode: Text.WordWrap
-                                    text: wsClient.skillMarketFolders.length === 0
-                                          ? qsTr("暂无技能")
-                                          : qsTr("无匹配结果")
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    font.pixelSize: 14
-                                    color: "#73000000"
-                                }
-
-                                Grid {
-                                    id: skillMarketGrid
-                                    columns: 2
-                                    spacing: 12
-                                    width: skillMarketScrollView.width
-
-                                    property real cellWidth: (width - spacing) / 2
-
-                                    Repeater {
-                                        model: skillSettingRec.filteredSkillMarketFolders()
-
-                                        delegate: Rectangle {
-                                            width: skillMarketGrid.cellWidth
-                                            height: 100
-                                            radius: 8
-                                            border.color: "#E6E7EB"
-                                            border.width: 1
-                                            color: "#FFFFFF"
-
-                                            Column {
-                                                anchors.left: parent.left
-                                                anchors.leftMargin: 20
-                                                anchors.top: parent.top
-                                                anchors.topMargin: 20
-                                                spacing: 12
-                                                width: parent.width - 40 - 80 - 12
-
-                                                Row {
-                                                    spacing: 12
-                                                    height: 28
-                                                    width: parent.width
-                                                    Image {
-                                                        width: 28
-                                                        height: 28
-                                                        source: "qrc:/images/skillIcon.png"
-                                                        fillMode: Image.PreserveAspectFit
-                                                    }
-                                                    Label {
-                                                        text: modelData.folderName || ""
-                                                        font.pixelSize: 16
-                                                        font.weight: Font.Bold
-                                                        color: "#D9000000"
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        elide: Text.ElideRight
-                                                        width: parent.width - 28 - 12
-                                                    }
-                                                }
-                                            }
-
-                                            CustomButton {
-                                                anchors.right: parent.right
-                                                anchors.rightMargin: 20
-                                                anchors.top: parent.top
-                                                anchors.topMargin: 20
-                                                width: 80
-                                                height: 36
-                                                buttonRadius: 8
-                                                fontSize: 14
-                                                iconSource: (modelData.installed || false) ? "" : "qrc:/images/download.png"
-                                                text: (modelData.installed || false) ? qsTr("已安装") : qsTr("安装")
-                                                backgroundColor: "#006BFF"
-                                                textColor: "#FFFFFF"
-                                                borderWidth: 0
-                                                enabled: !(modelData.installed || false) && !wsClient.skillInstallBusy
-                                                           && wsClient.connectionState === 3
-                                                onClicked: {
-                                                    wsClient.installSkillFromMarket(modelData.folderName || "")
-                                                }
-                                            }
-                                        }
+                                    CustomButton {
+                                        id: installedSkillButton
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 72
+                                        height: 32
+                                        buttonRadius: 8
+                                        fontSize: 13
+                                        text: qsTr("已安装")
+                                        enabled: false
+                                        disabledBackgroundColor: "#F7F9FA"
+                                        disabledTextColor: "#73000000"
                                     }
                                 }
                             }

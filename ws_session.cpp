@@ -23,6 +23,23 @@ QString textFromContentArray(const QJsonArray &cArr)
     return out;
 }
 
+QString userVisibleText(const QString &text)
+{
+    const QString marker = QStringLiteral("\n用户任务：\n");
+    const int markerIndex = text.indexOf(marker);
+    if (markerIndex < 0)
+        return text;
+
+    const QString prefix = text.left(markerIndex);
+    const bool isInjectedPrompt =
+        prefix.contains(QStringLiteral("本任务的工作目录（也是输出文件目录）："))
+        || prefix.startsWith(QStringLiteral("你是这个协作任务的主控 agent。"));
+    if (!isInjectedPrompt)
+        return text;
+
+    return text.mid(markerIndex + marker.length()).trimmed();
+}
+
 /**
  * OpenClaw agent 流里 phase=result 时正文在 data.result（常为 { content:[{type,text}] }），
  * 而不是顶层的 content/text；网关在非 full verbose 下会删掉 result，此时仍可能为空。
@@ -312,6 +329,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                         if (rBracket > 0 && rBracket < 60)
                             t = t.mid(rBracket + 2);
                     }
+                    if (role == QLatin1String("user"))
+                        t = userVisibleText(t);
                     if (t.isEmpty()) continue;
 
                     QVariantMap entry;
@@ -346,6 +365,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                 text = m.value(QStringLiteral("text")).toString();
             if (text.isEmpty())
                 text = m.value(QStringLiteral("message")).toString();
+            if (role == QLatin1String("user"))
+                text = userVisibleText(text);
             if (text.isEmpty()) continue;
 
             QVariantMap entry;

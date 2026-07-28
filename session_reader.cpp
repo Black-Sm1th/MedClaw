@@ -13,6 +13,27 @@
 #include <QDebug>
 #include <algorithm>
 
+namespace {
+
+QString userVisibleText(const QString &text)
+{
+    const QString marker = QStringLiteral("\n用户任务：\n");
+    const int markerIndex = text.indexOf(marker);
+    if (markerIndex < 0)
+        return text;
+
+    const QString prefix = text.left(markerIndex);
+    const bool isInjectedPrompt =
+        prefix.contains(QStringLiteral("本任务的工作目录（也是输出文件目录）："))
+        || prefix.startsWith(QStringLiteral("你是这个协作任务的主控 agent。"));
+    if (!isInjectedPrompt)
+        return text;
+
+    return text.mid(markerIndex + marker.length()).trimmed();
+}
+
+} // namespace
+
 // ═══════════════════════════════════════════════════════════════════════
 //  构造
 // ═══════════════════════════════════════════════════════════════════════
@@ -105,6 +126,7 @@ QVariantMap SessionReader::quickParseSummary(const QString &filePath)
                             int msgIdIdx = t.indexOf(QStringLiteral("\n[message_id:"));
                             if (msgIdIdx >= 0)
                                 t = t.left(msgIdIdx).trimmed();
+                            t = userVisibleText(t);
                             firstUserMsg = t;
                             break;
                         }
@@ -373,6 +395,7 @@ QVariantList SessionReader::readSessionMessages(const QString &filePath)
                 if (role == QLatin1String("user")) {
                     QRegExp tsRegex(QStringLiteral("^\\[.*?GMT[+-]\\d+\\]\\s*"));
                     t.replace(tsRegex, QString());
+                    t = userVisibleText(t);
                 }
 
                 if (t.isEmpty()) continue;
@@ -574,6 +597,8 @@ QVariantList SessionReader::parseResponseFile(const QString &filePath)
                         int rb = t.indexOf(QStringLiteral("] "));
                         if (rb > 0 && rb < 60) t = t.mid(rb + 2);
                     }
+                    if (role == QLatin1String("user"))
+                        t = userVisibleText(t);
                     // 跳过 /new /reset 系统指令
                     if (role == QLatin1String("user")
                         && t.startsWith(QLatin1String("A new session was started")))
@@ -609,6 +634,8 @@ QVariantList SessionReader::parseResponseFile(const QString &filePath)
             }
         } else {
             QString t = contentVal.toString();
+            if (role == QLatin1String("user"))
+                t = userVisibleText(t);
             if (t.isEmpty()) continue;
 
             QVariantMap entry;
