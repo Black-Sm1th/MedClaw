@@ -136,8 +136,6 @@ class GatewayClient : public QObject
     /// 技能市场列表；新数据源接入前保持为空
     Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
                NOTIFY skillMarketFoldersChanged)
-    /// 主界面快捷方式（来自 config.json shortcut）
-    Q_PROPERTY(QVariantList shortcutList READ shortcutList CONSTANT)
     /// 正在安装技能（复制 + 请求网关重启）
     Q_PROPERTY(bool skillInstallBusy READ skillInstallBusy NOTIFY skillInstallBusyChanged)
 
@@ -233,7 +231,6 @@ public:
     QString agentInstallingId() const;
 
     QVariantList skillMarketFolders() const;
-    QVariantList shortcutList() const;
     bool skillInstallBusy() const;
 
     // ═══════════════════════════════════════════════════════════════

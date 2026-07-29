@@ -52,12 +52,6 @@ public:
     QString skillsStoragePath() const;
     void setSkillsStoragePath(const QString &path);
 
-    /**
-     * 主界面快捷方式（JSON：shortcut，数组项含 name、icon、color、cards）
-     * cards 项含 name、description、icon、color、prompt。
-     */
-    QVariantList shortcuts() const;
-
     /// LLM 二级判定开关（本地持久化，OpenClaw 无原生支持）
     bool llmJudgmentEnabled() const;
     void setLlmJudgmentEnabled(bool enabled);
@@ -126,7 +120,6 @@ private:
     QString m_token;            ///< 身份认证 Token
 
     QString m_skillsStoragePath; ///< 存放技能路径
-    QVariantList m_shortcuts;             ///< 主界面快捷方式
     bool    m_llmJudgmentEnabled = false;
 
     // ── 客户端身份标识（需与 Gateway 白名单匹配） ──

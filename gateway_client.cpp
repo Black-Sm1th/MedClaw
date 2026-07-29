@@ -570,11 +570,6 @@ QVariantList GatewayClient::modelList() const { return m_modelList; }
 
 QVariantList GatewayClient::skillMarketFolders() const { return m_skillMarketFolders; }
 
-QVariantList GatewayClient::shortcutList() const
-{
-    return m_config.shortcuts();
-}
-
 bool GatewayClient::skillInstallBusy() const { return m_skillInstallBusy; }
 
 /// 获取当前会话的模型信息

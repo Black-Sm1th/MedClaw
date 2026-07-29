@@ -734,6 +734,8 @@ ApplicationWindow {
             } else {
                 wsClient.disconnectFromServer()
                 chatModel.clear()
+                textInputArea.text = ""
+                newTaskRec.resetShortcutSelection()
                 kbSources = []
                 kbSearchText = ""
                 kbLoading = false
@@ -1648,42 +1650,108 @@ ApplicationWindow {
                 readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
                                                              || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
 
-                property string activeShortcutGroupName: ""
-                property string activeShortcutGroupIcon: ""
-                property var activeShortcutCards: []
-                property bool shortcutSubPanelDismissed: false
-
-                function clearActiveShortcutVisualOnly() {
-                    activeShortcutGroupName = ""
-                    activeShortcutGroupIcon = ""
-                    activeShortcutCards = []
-                    shortcutSubPanelDismissed = false
-                }
-
-                function clearActiveShortcut() {
-                    clearActiveShortcutVisualOnly()
-                }
-                function setActiveShortcut(sc) {
-                    if (!sc) {
-                        clearActiveShortcut()
-                        return
+                property int selectedShortcutGroup: -1
+                readonly property var shortcutGroups: [
+                    {
+                        title: "日常办公",
+                        icon: "qrc:/images/shortcut/1.png",
+                        color: "#0F006BFF",
+                        cards: [
+                            {
+                                title: "文档处理",
+                                detail: "请帮我梳理这份文档的结构，提炼核心观点，并生成一份清晰的摘要。",
+                                icon: "qrc:/images/shortcut/1-1.png",
+                                image: "qrc:/images/shortcut/1-1-large.png",
+                                prompt: "请帮我梳理这份文档的结构，提炼核心观点，并生成一份清晰的摘要。"
+                            },
+                            {
+                                title: "数据分析和可视化",
+                                detail: "请分析我上传的数据，识别关键趋势，并选择合适的图表完成可视化。",
+                                icon: "qrc:/images/shortcut/1-2.png",
+                                image: "qrc:/images/shortcut/1-2-large.png",
+                                prompt: "请分析我上传的数据，识别关键趋势，并选择合适的图表完成可视化。"
+                            }
+                        ]
+                    },
+                    {
+                        title: "医疗科研",
+                        icon: "qrc:/images/shortcut/2.png",
+                        color: "#0F56CA00",
+                        cards: [
+                            {
+                                title: "文献检索",
+                                detail: "围绕我的研究主题检索高质量文献，归纳研究进展、争议与空白。",
+                                icon: "qrc:/images/shortcut/2-1.png",
+                                image: "qrc:/images/shortcut/2-1-large.png",
+                                prompt: "围绕我的研究主题检索高质量文献，归纳研究进展、争议与空白。"
+                            },
+                            {
+                                title: "论文撰写",
+                                detail: "根据研究材料协助撰写论文，先生成功符合学术规范的详细提纲。",
+                                icon: "qrc:/images/shortcut/2-2.png",
+                                image: "qrc:/images/shortcut/2-2-large.png",
+                                prompt: "根据研究材料协助撰写论文，先生成功符合学术规范的详细提纲。"
+                            },
+                            {
+                                title: "生信分析",
+                                detail: "请根据我的生物信息数据和研究目标，制定完整、可复现的分析方案。",
+                                icon: "qrc:/images/shortcut/2-3.png",
+                                image: "qrc:/images/shortcut/2-3-large.png",
+                                prompt: "请根据我的生物信息数据和研究目标，制定完整、可复现的分析方案。"
+                            }
+                        ]
+                    },
+                    {
+                        title: "政务助手",
+                        icon: "qrc:/images/shortcut/3.png",
+                        color: "#0FFF8D2F",
+                        cards: [
+                            {
+                                title: "政策匹配",
+                                detail: "请根据个人基本情况，匹配可能享受的相关政策与申报条件（如残疾）。",
+                                icon: "qrc:/images/shortcut/3-1.png",
+                                image: "qrc:/images/shortcut/3-1-large.png",
+                                prompt: "用户信息摘要：\n项目        内容\n家庭类型：非低保收入家庭\n子女情况：有子女\n户籍情况：本镇户籍（松江区）\n年龄：69周岁\n残疾情况：下肢残疾，二级残疾证\n交通工具：有电动残疾车\n疾病情况：患有尿毒症\n\n1、从知识库中检索：残疾人政策（含干扰项）政策\n2、根据用户信息，自动匹配可以享受的政策，并以EXCEL格式直接呈现，不需要EXCEL文件；\n3、用角标的形式标注引用政策来源，点击角标可以自动在右侧查看政策对应原文；\n4、结果输出：根据知识库的：“政策匹配模板”政策匹配模板输出结果"
+                            },
+                            {
+                                title: "12345分析月报",
+                                detail: "请根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件。",
+                                icon: "qrc:/images/shortcut/3-2.png",
+                                image: "qrc:/images/shortcut/3-2-large.png",
+                                prompt: "1、分析原始数据；\n2、根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件；\n3、检查报告格式：专报要保留模板的格式。包括红头文件格式，字体大小，行间距等全文本格式"
+                            }
+                        ]
+                    },
+                    {
+                        title: "行业研究",
+                        icon: "qrc:/images/shortcut/4.png",
+                        color: "#0FFF3D40",
+                        cards: [
+                            {
+                                title: "行业研究报告生成",
+                                detail: "深度全景式研究，一次性覆盖行业全貌。生成多维度对比 HTML 行业研究报告。",
+                                icon: "qrc:/images/shortcut/4-1.png",
+                                image: "qrc:/images/shortcut/4-1-large.png",
+                                prompt: "【行业名称】：[如：新能源汽车 / 集成电路 / 生物医药]\n【时间范围】：[近3年 / 2022-2025年 / 最新]\n【地域范围】：[全国 / 某省 / 某市]\n\n1、检索：该行业相关的政策文件、市场数据、企业资料、研报资讯；\n2、按研究重点维度组织分析，生成结构化行业研究报告，报告产能布局、技术路线、销售数据、研发投入、新产品创新等多个维度；\n3、关键结论用角标标注引用来源，点击角标可查看对应原文；\n4、结果输出：输出结果为 html 格式。"
+                            },
+                            {
+                                title: "行业产业链拆解",
+                                detail: "拆解某行业的产业链上下游结构，分析各环节价值分布，输出为 HTML 可视化报告。",
+                                icon: "qrc:/images/shortcut/4-2.png",
+                                image: "qrc:/images/shortcut/4-2-large.png",
+                                prompt: "【行业名称】：[如：半导体 / 新能源汽车 / 生物医药]\n【关注重点】：[价值分布 / 利润率 / 关键玩家 / 卡脖子点 / 投资切入环节（可多选）]\n\n1、基于行业认知，拆解产业链上下游结构；\n2、分析各环节价值分布、利润率、关键玩家与卡脖子点；\n3、识别高价值环节与投资切入机会；\n4、结果输出：直接生成产业链拆解报告全文，结果为 html 格式。"
+                            }
+                        ]
                     }
-                    var cards = sc.cards || []
-                    if (cards.length === 0) {
-                        clearActiveShortcut()
-                        return
-                    }
-                    shortcutSubPanelDismissed = false
-                    activeShortcutGroupName = sc.name || ""
-                    activeShortcutGroupIcon = sc.icon || ""
-                    activeShortcutCards = cards
-                }
+                ]
 
-                readonly property bool shortcutInlineListVisible: isNewTaskWelcome
-                                                              && activeShortcutGroupName.length > 0
-                                                              && !shortcutSubPanelDismissed
-                                                              && activeShortcutCards
-                                                              && activeShortcutCards.length > 0
+                readonly property var selectedShortcut: selectedShortcutGroup >= 0
+                                                        && selectedShortcutGroup < shortcutGroups.length
+                                                        ? shortcutGroups[selectedShortcutGroup] : null
+
+                function resetShortcutSelection() {
+                    selectedShortcutGroup = -1
+                }
 
                 function doSendMessage() {
                     var msg = textInputArea.text.trim()
@@ -1742,7 +1810,7 @@ ApplicationWindow {
                     target: chatModel
                     function onCountChanged() {
                         if (chatModel.count > 0)
-                            newTaskRec.clearActiveShortcutVisualOnly()
+                            newTaskRec.resetShortcutSelection()
                     }
                 }
                 Connections {
@@ -1758,7 +1826,7 @@ ApplicationWindow {
                         var aid = leftMidPanel.activeAgentId || ""
                         if (aid.length > 0) {
                             newTaskRec.selectedCollaborationAgentIds = [aid]
-                            newTaskRec.clearActiveShortcutVisualOnly()
+                            newTaskRec.resetShortcutSelection()
                             return
                         }
                         newTaskRec.selectedCollaborationAgentIds = []
@@ -3316,8 +3384,7 @@ ApplicationWindow {
                                         anchors.fill: parent
                                         radius: 8
                                         readonly property bool toolStripHover: toolIconMouse.containsMouse
-                                                                                || toolShortcutCloseMa.containsMouse
-                                        color: (toolIconMouse.pressed || toolShortcutCloseMa.pressed) ? "#14000000"
+                                        color: toolIconMouse.pressed ? "#14000000"
                                              : toolStripHover ? "#0A000000"
                                              : "transparent"
                                         Behavior on color { ColorAnimation { duration: 100 } }
@@ -3367,8 +3434,7 @@ ApplicationWindow {
 
                                                     Rectangle {
                                                         id: toolCountBadge
-                                                        visible: newTaskRec.activeShortcutGroupName.length === 0
-                                                                 && dropdownSelectionTool.selectedToolIds.length > 0
+                                                        visible: dropdownSelectionTool.selectedToolIds.length > 0
                                                         width: toolBadgeText.width + 8
                                                         height: 20
                                                         radius: 10
@@ -3387,44 +3453,6 @@ ApplicationWindow {
                                                 }
                                             }
 
-                                            Rectangle {
-                                                visible: newTaskRec.activeShortcutGroupName.length > 0
-                                                width: 1
-                                                height: 8
-                                                color: "#1F000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-
-                                            Label {
-                                                visible: newTaskRec.activeShortcutGroupName.length > 0
-                                                text: newTaskRec.activeShortcutGroupName
-                                                font.pixelSize: 14
-                                                color: "#006BFF"
-                                                elide: Text.ElideRight
-                                                width: Math.min(implicitWidth, 120)
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-
-                                            Item {
-                                                width: 22
-                                                height: 22
-                                                visible: newTaskRec.activeShortcutGroupName.length > 0
-                                                anchors.verticalCenter: parent.verticalCenter
-
-                                                Text {
-                                                    text: "\u2715"
-                                                    color: "#006BFF"
-                                                    font.pixelSize: 12
-                                                    anchors.centerIn: parent
-                                                }
-                                                MouseArea {
-                                                    id: toolShortcutCloseMa
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: newTaskRec.clearActiveShortcut()
-                                                }
-                                            }
                                         }
                                     }
 
@@ -3771,231 +3799,155 @@ ApplicationWindow {
                 }
 
                 Item {
-                    id: shortcutInlinePanel
-                    visible: newTaskRec.shortcutInlineListVisible
-                    width: 840
-                    height: visible ? listMaxHeight : 0
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    y: chatInputContainer.y + chatInputContainer.height + 12
-                    readonly property real listMaxHeight: window.height - y - 56 - 12
-                    Flickable {
-                        id: shortcutInlineFlick
-                        anchors.fill: parent
-                        anchors.margins: 1
-                        contentWidth: width
-                        contentHeight: shortcutInlineCol.implicitHeight
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        flickableDirection: Flickable.VerticalFlick
-                        interactive: contentHeight > height
-
-                        ScrollBar.vertical: ScrollBar {
-                            policy: shortcutInlineFlick.contentHeight > shortcutInlineFlick.height
-                                    ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
-                        }
-
-                        Column {
-                            id: shortcutInlineCol
-                            width: shortcutInlineFlick.width
-                            spacing: 0
-
-                            Repeater {
-                                model: newTaskRec.activeShortcutCards || []
-
-                                delegate: Rectangle {
-                                    width: shortcutInlineCol.width
-                                    implicitHeight: inlineCardRow.implicitHeight + 24
-                                    color: inlineCardHover.hovered || cardDescHover.hovered ? "#F7F9FA" : "transparent"
-                                    radius: 16
-                                    readonly property var card: modelData
-
-                                    HoverHandler {
-                                        id: inlineCardHover
-                                        cursorShape: Qt.PointingHandCursor
-                                    }
-
-                                    // 整行点击区在下层；hover 用 HoverHandler，避免列表刚出现时多个 MouseArea.containsMouse 误判
-                                    MouseArea {
-                                        id: inlineRowMouse
-                                        anchors.fill: parent
-                                        z: 0
-                                        hoverEnabled: false
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            var p = card && card.prompt !== undefined ? card.prompt : ""
-                                            textInputArea.text = p
-                                            newTaskRec.shortcutSubPanelDismissed = true
-                                        }
-                                    }
-
-                                    Row {
-                                        id: inlineCardRow
-                                        z: 1
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 12
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 12
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 12
-
-                                        Rectangle {
-                                            width: 36
-                                            height: 36
-                                            radius: 8
-                                            color: card.color ? card.color : "#0F006BFF"
-                                            anchors.verticalCenter: parent.verticalCenter
-
-                                            Image {
-                                                anchors.centerIn: parent
-                                                width: 20
-                                                height: 20
-                                                source: card && card.icon ? card.icon : ""
-                                                fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(20, 20)
-                                            }
-                                        }
-
-                                        Column {
-                                            width: inlineCardRow.width - 36 - 12 - 28
-                                            spacing: 2
-                                            anchors.verticalCenter: parent.verticalCenter
-
-                                            Label {
-                                                text: card ? (card.name || "") : ""
-                                                font.pixelSize: 16
-                                                font.bold: true
-                                                color: "#D9000000"
-                                                width: parent.width
-                                                maximumLineCount: 1
-                                                elide: Text.ElideRight
-                                            }
-                                            Label {
-                                                id: cardDescription
-                                                text: card ? (card.description || "") : ""
-                                                font.pixelSize: 14
-                                                color: "#73000000"
-                                                width: parent.width
-                                                maximumLineCount: 1
-                                                elide: Text.ElideRight
-                                                HoverHandler {
-                                                    id: cardDescHover
-                                                }
-                                                ToolTip {
-                                                    visible: cardDescHover.hovered && cardDescription.truncated
-                                                    text: cardDescription.text
-                                                    delay: 500
-                                                    x: 0
-                                                    y: -height - 4
-                                                    width: Math.min(implicitContentWidth + 20, cardDescription.width / 2 - 40)
-                                                    background: Rectangle {
-                                                        color: "#A6000000"
-                                                        radius: 4
-                                                    }
-                                                    contentItem: Text {
-                                                        text: cardDescription.text
-                                                        font.pixelSize: 14
-                                                        color: "#FFFFFF"
-                                                        font.family: "Alibaba PuHuiTi 3.0"
-                                                        wrapMode: Text.Wrap
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Text {
-                                            text: "\u2192"
-                                            font.pixelSize: 14
-                                            color: "#A6000000"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            visible: inlineCardHover.hovered || cardDescHover.hovered
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Item {
                     id: welcomeShortcutStrip
-                    readonly property int shortcutCount: (wsClient.shortcutList && wsClient.shortcutList.length)
-                                                        ? wsClient.shortcutList.length : 0
-                    visible: newTaskRec.isNewTaskWelcome && shortcutCount > 0 && !newTaskRec.shortcutInlineListVisible
-                    width: 840
-                    height: visible ? 64 : 0
+                    visible: newTaskRec.isNewTaskWelcome
+                    width: 960
+                    height: visible ? shortcutTopRow.height
+                                      + (newTaskRec.selectedShortcut
+                                         ? 52 + shortcutCardRow.implicitHeight : 0) : 0
                     anchors.horizontalCenter: parent.horizontalCenter
-                    y: chatInputContainer.y + chatInputContainer.height + 20
+                    y: chatInputContainer.y + chatInputContainer.height + 18
 
                     Row {
                         id: shortcutTopRow
-                        height: parent.height
+                        height: 36
                         anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: 20
+                        spacing: 10
 
                         Repeater {
-                            model: wsClient.shortcutList || []
+                            model: newTaskRec.shortcutGroups
 
                             delegate: Rectangle {
-                                id: topShortcutCard
-                                height: 56
-                                radius: 12
-                                color: topShortcutMouse.pressed ? "#F0F2F5"
-                                     : topShortcutMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
+                                id: shortcutTab
+                                readonly property var group: modelData
+                                readonly property bool selected: index === newTaskRec.selectedShortcutGroup
+                                width: tabContent.implicitWidth + 32
+                                height: 36
+                                radius: 18
+                                color: selected ? group.color
+                                      : tabMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
                                 border.width: 1
-                                border.color: "#E6E7EB"
-                                readonly property int n: welcomeShortcutStrip.shortcutCount
-                                width: Math.min(220, (welcomeShortcutStrip.width - shortcutTopRow.spacing * Math.max(0, n - 1)) / Math.max(1, n))
-
-                                readonly property var sc: modelData
+                                border.color: selected ? group.color : "#E6E7EB"
 
                                 Row {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 16
-                                    anchors.rightMargin: 16
-                                    spacing: 12
+                                    id: tabContent
+                                    anchors.centerIn: parent
+                                    spacing: 6
 
-                                    Rectangle {
-                                        width: 36
-                                        height: 36
-                                        radius: 8
-                                        color: sc.color ? sc.color : "#0F006BFF"
+                                    Image {
+                                        width: 20
+                                        height: 20
+                                        source: group.icon
+                                        fillMode: Image.PreserveAspectFit
+                                        sourceSize: Qt.size(20, 20)
                                         anchors.verticalCenter: parent.verticalCenter
-
-                                        Image {
-                                            anchors.centerIn: parent
-                                            width: 20
-                                            height: 20
-                                            source: (sc && sc.icon) ? sc.icon : ""
-                                            fillMode: Image.PreserveAspectFit
-                                            sourceSize: Qt.size(20, 20)
-                                        }
                                     }
 
                                     Label {
-                                        text: sc ? (sc.name || "") : ""
-                                        font.pixelSize: 16
-                                        font.bold: true
+                                        text: group.title
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
                                         color: "#D9000000"
-                                        elide: Text.ElideRight
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: parent.width - 36 - 12 - 16 - 12
-                                    }
-
-                                    Text {
-                                        text: "\u2192"
-                                        font.pixelSize: 16
-                                        color: "#A6000000"
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
 
                                 MouseArea {
-                                    id: topShortcutMouse
+                                    id: tabMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.selectedShortcutGroup = index
+                                }
+                            }
+                        }
+                    }
+
+                    Row {
+                        id: shortcutCardRow
+                        anchors.top: shortcutTopRow.bottom
+                        anchors.topMargin: 52
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 18
+
+                        Repeater {
+                            model: newTaskRec.selectedShortcut ? newTaskRec.selectedShortcut.cards : []
+
+                            delegate: Rectangle {
+                                id: shortcutLargeCard
+                                readonly property var card: modelData
+                                width: 300
+                                height: cardContent.implicitHeight + 32
+                                radius: 8
+                                color: largeCardMouse.containsMouse ? "#FAFBFC" : "#FFFFFF"
+                                border.width: 1
+                                border.color: largeCardMouse.containsMouse ? "#B8CFFF" : "#E1E4E8"
+                                clip: true
+
+                                Column {
+                                    id: cardContent
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.margins: 16
+                                    width: 268
+                                    spacing: 8
+
+                                    Column {
+                                        width: parent.width
+                                        spacing: 2
+
+                                        Row {
+                                            width: parent.width
+                                            spacing: 5
+
+                                            Image {
+                                                width: 20
+                                                height: 20
+                                                source: card.icon
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(20, 20)
+                                            }
+
+                                            Label {
+                                                width: parent.width - 25
+                                                text: card.title
+                                                font.pixelSize: 16
+                                                font.bold: true
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#D9000000"
+                                                maximumLineCount: 1
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+
+                                        Label {
+                                            width: parent.width
+                                            text: card.detail
+                                            font.pixelSize: 14
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            color: "#73000000"
+                                            wrapMode: Text.Wrap
+                                            lineHeight: 1.35
+                                        }
+                                    }
+
+                                    Image {
+                                        width: 268
+                                        height: 90
+                                        source: card.image
+                                        fillMode: Image.PreserveAspectFit
+                                        sourceSize: Qt.size(268, 90)
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: largeCardMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        newTaskRec.setActiveShortcut(sc)
+                                        textInputArea.text = card.prompt
+                                        textInputArea.forceActiveFocus()
                                     }
                                 }
                             }
