@@ -4,6 +4,7 @@
 #include "CommonFunc.h"
 #include <QObject>
 #include <QVariantList>
+#include <QVariantMap>
 
 class ChatModel;
 class GatewayClient;
@@ -25,6 +26,15 @@ public:
     Q_INVOKABLE QString fileSizeHuman(const QString &fileUrl) const;
 
     Q_INVOKABLE QVariantList listFolderFiles(const QString &folderUrl) const;
+
+    Q_INVOKABLE QVariantMap localFileInfo(const QString &fileUrl) const;
+
+    Q_INVOKABLE QVariantList listKnowledgeBaseFolderFiles(const QString &folderUrl) const;
+
+    Q_INVOKABLE QVariantMap loadKnowledgeBaseMetadata(const QString &userId) const;
+
+    Q_INVOKABLE void saveKnowledgeBaseMetadata(const QString &userId,
+                                               const QVariantMap &metadata) const;
 
     Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl,
                                             const QString &workspace) const;

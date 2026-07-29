@@ -33,6 +33,19 @@ ApplicationWindow {
     property int agentManageTabIndex: 0
     property bool agentEditorIsEdit: false
     property string agentEditorAgentId: ""
+    property var kbSources: []
+    property string kbSearchText: ""
+    property bool kbLoading: false
+    property string kbBusyText: ""
+    property var kbUploadQueue: []
+    property int kbUploadIndex: 0
+    property string kbUploadCollection: ""
+    property var kbMetadata: ({ "files": {}, "folders": [] })
+    property string kbMetadataUser: ""
+    property string kbCurrentFolder: ""
+    property var kbSelectedKeys: []
+    property var kbDeleteQueue: []
+    property var kbDeleteKeys: []
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
 
@@ -227,6 +240,454 @@ ApplicationWindow {
         return path
     }
 
+    function kbShowError(message) {
+        kbLoading = false
+        kbBusyText = ""
+        kbUploadQueue = []
+        kbUploadIndex = 0
+        kbUploadCollection = ""
+        errorToast.text = message || "知识库操作失败"
+        errorToast.visible = true
+        errorToastTimer.restart()
+    }
+
+    function kbUserCollection() {
+        if (!authController.loggedIn || !authController.userId)
+            return ""
+        var raw = String(authController.userId).trim()
+        var safe = raw.toLowerCase().replace(/[^a-z0-9_]/g, "_")
+        safe = safe.replace(/^_+|_+$/g, "").substring(0, 32)
+        if (!safe)
+            safe = "account"
+        var hash = 0
+        for (var i = 0; i < raw.length; i++)
+            hash = (hash * 131 + raw.charCodeAt(i)) % 4294967291
+        return "user_kb_" + safe + "_" + Math.floor(hash).toString(16)
+    }
+
+    function kbToolDetails(result) {
+        if (!result) return {}
+        if (result.details) return result.details
+        if (result.result && result.result.details) return result.result.details
+        return {}
+    }
+
+    function kbInvoke(tool, args, action, collection, done) {
+        var base = wsClient.gatewayHttpBaseUrl
+        var token = wsClient.gatewayAuthToken
+        if (!base || !token) {
+            kbShowError("知识库服务配置不完整")
+            return
+        }
+        var xhr = new XMLHttpRequest()
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState !== XMLHttpRequest.DONE)
+                return
+            var response = null
+            try { response = JSON.parse(xhr.responseText || "{}") } catch (e) {}
+            if (xhr.status < 200 || xhr.status >= 300 || !response || response.ok !== true) {
+                var message = response && response.error
+                        ? (response.error.message || response.error.type) : ""
+                kbShowError(message || ("知识库请求失败（HTTP " + xhr.status + "）"))
+                return
+            }
+            if (collection !== kbUserCollection()) {
+                kbLoading = false
+                kbBusyText = ""
+                return
+            }
+            var result = response.result || {}
+            var details = kbToolDetails(result)
+            if (details.error) {
+                var detailMessage = String(details.error)
+                detailMessage = detailMessage.replace(/^Error:\s*/, "")
+                kbShowError(detailMessage)
+                return
+            }
+            if (details.errors && details.errors.length > 0
+                    && (!details.results || details.results.length === 0)) {
+                var firstError = details.errors[0]
+                kbShowError(firstError.error || String(firstError))
+                return
+            }
+            done(result)
+        }
+        xhr.open("POST", base + "/tools/invoke")
+        xhr.setRequestHeader("Authorization", "Bearer " + token)
+        xhr.setRequestHeader("Content-Type", "application/json")
+        var body = { "tool": tool, "args": args || {} }
+        if (action)
+            body.action = action
+        xhr.send(JSON.stringify(body))
+    }
+
+    function kbRefreshFiles() {
+        var collection = kbUserCollection()
+        if (!collection) {
+            kbSources = []
+            return
+        }
+        if (kbMetadataUser !== String(authController.userId || ""))
+            kbLoadMetadata()
+        kbLoading = true
+        kbBusyText = "正在加载文件..."
+        kbInvoke("kb_manage", { "collection": collection }, "list_sources", collection,
+                 function(result) {
+            var details = kbToolDetails(result)
+            kbSources = details.sources || []
+            kbReconcileMetadata()
+            kbLoading = false
+            kbBusyText = ""
+        })
+    }
+
+    function kbDefaultMetadata() {
+        return { "files": {}, "folders": [] }
+    }
+
+    function kbLoadMetadata() {
+        if (!authController.loggedIn || !authController.userId) {
+            kbMetadata = kbDefaultMetadata()
+            kbMetadataUser = ""
+            return
+        }
+        var loaded = $MainViewController.loadKnowledgeBaseMetadata(String(authController.userId)) || {}
+        if (!loaded.files) loaded.files = {}
+        if (!loaded.folders) loaded.folders = []
+        kbMetadata = loaded
+        kbMetadataUser = String(authController.userId)
+    }
+
+    function kbSaveMetadata(metadata) {
+        var saved = JSON.parse(JSON.stringify(metadata))
+        kbMetadata = saved
+        if (authController.loggedIn && authController.userId)
+            $MainViewController.saveKnowledgeBaseMetadata(String(authController.userId), saved)
+    }
+
+    function kbNormalizeFolder(path) {
+        var value = String(path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
+        return value.replace(/\/+/g, "/")
+    }
+
+    function kbJoinFolder(parent, child) {
+        parent = kbNormalizeFolder(parent)
+        child = kbNormalizeFolder(child)
+        return parent && child ? parent + "/" + child : (parent || child)
+    }
+
+    function kbFolderName(path) {
+        var parts = kbNormalizeFolder(path).split("/")
+        return parts.length ? parts[parts.length - 1] : ""
+    }
+
+    function kbParentFolder(path) {
+        path = kbNormalizeFolder(path)
+        var slash = path.lastIndexOf("/")
+        return slash < 0 ? "" : path.substring(0, slash)
+    }
+
+    function kbFolderPath(folderEntry) {
+        return kbNormalizeFolder(typeof folderEntry === "string" ? folderEntry : folderEntry.path)
+    }
+
+    function kbFolderAddedAt(folderEntry) {
+        return typeof folderEntry === "string" ? 0 : Number(folderEntry.addedAt || 0)
+    }
+
+    function kbEnsureFolder(metadata, path, addedAt) {
+        path = kbNormalizeFolder(path)
+        if (!path) return
+        var parts = path.split("/")
+        var current = ""
+        for (var i = 0; i < parts.length; i++) {
+            current = kbJoinFolder(current, parts[i])
+            var exists = false
+            for (var j = 0; j < metadata.folders.length; j++) {
+                if (kbFolderPath(metadata.folders[j]) === current) {
+                    exists = true
+                    break
+                }
+            }
+            if (!exists)
+                metadata.folders.push({ "path": current, "addedAt": addedAt || Date.now() })
+        }
+    }
+
+    function kbReconcileMetadata() {
+        var metadata = kbMetadata || kbDefaultMetadata()
+        if (!metadata.files) metadata.files = {}
+        if (!metadata.folders) metadata.folders = []
+        var actual = {}
+        for (var i = 0; i < kbSources.length; i++) {
+            var source = String(kbSources[i] || "")
+            actual[source] = true
+            if (!metadata.files[source])
+                metadata.files[source] = { "folderPath": "", "addedAt": 0, "sizeBytes": -1, "fileSize": "--" }
+        }
+        var names = Object.keys(metadata.files)
+        for (var j = 0; j < names.length; j++) {
+            if (!actual[names[j]])
+                delete metadata.files[names[j]]
+        }
+        kbSaveMetadata(metadata)
+        kbSelectedKeys = []
+    }
+
+    function kbDeleteSource(source) {
+        kbDeleteEntries(["file:" + source])
+    }
+
+    function kbDeleteEntries(keys) {
+        var collection = kbUserCollection()
+        if (!collection) return
+        var sources = []
+        var seen = {}
+        var metadata = kbMetadata
+        for (var i = 0; i < keys.length; i++) {
+            var key = String(keys[i])
+            if (key.indexOf("file:") === 0) {
+                var source = key.substring(5)
+                if (!seen[source]) { seen[source] = true; sources.push(source) }
+            } else if (key.indexOf("folder:") === 0) {
+                var folder = key.substring(7)
+                var fileNames = Object.keys(metadata.files || {})
+                for (var j = 0; j < fileNames.length; j++) {
+                    var fileFolder = kbNormalizeFolder(metadata.files[fileNames[j]].folderPath)
+                    if (fileFolder === folder || fileFolder.indexOf(folder + "/") === 0) {
+                        if (!seen[fileNames[j]]) { seen[fileNames[j]] = true; sources.push(fileNames[j]) }
+                    }
+                }
+            }
+        }
+        kbDeleteQueue = sources
+        kbDeleteKeys = keys.slice(0)
+        kbLoading = true
+        kbBusyText = "正在删除..."
+        kbDeleteNext()
+    }
+
+    function kbDeleteNext() {
+        if (kbDeleteQueue.length === 0) {
+            var metadata = kbMetadata
+            for (var i = 0; i < kbDeleteKeys.length; i++) {
+                var key = String(kbDeleteKeys[i])
+                if (key.indexOf("file:") === 0) {
+                    delete metadata.files[key.substring(5)]
+                } else if (key.indexOf("folder:") === 0) {
+                    var folder = key.substring(7)
+                    var kept = []
+                    for (var j = 0; j < metadata.folders.length; j++) {
+                        var path = kbFolderPath(metadata.folders[j])
+                        if (path !== folder && path.indexOf(folder + "/") !== 0)
+                            kept.push(metadata.folders[j])
+                    }
+                    metadata.folders = kept
+                }
+            }
+            kbSaveMetadata(metadata)
+            kbDeleteKeys = []
+            kbSelectedKeys = []
+            kbRefreshFiles()
+            return
+        }
+        var collection = kbUserCollection()
+        var source = kbDeleteQueue[0]
+        kbInvoke("kb_manage", { "collection": collection, "source": source },
+                 "delete_source", collection, function(result) {
+            kbDeleteQueue = kbDeleteQueue.slice(1)
+            kbDeleteNext()
+        })
+    }
+
+    function kbStartUpload(urls) {
+        var entries = []
+        for (var i = 0; urls && i < urls.length; i++) {
+            var info = $MainViewController.localFileInfo(urls[i])
+            if (info && info.fileName) {
+                info.folderPath = kbCurrentFolder
+                entries.push(info)
+            }
+        }
+        kbStartUploadEntries(entries)
+    }
+
+    function kbStartFolderUpload(folderUrl) {
+        var entries = $MainViewController.listKnowledgeBaseFolderFiles(folderUrl) || []
+        var rootName = kbFolderName(localFilePathFromUrl(folderUrl))
+        var baseFolder = kbJoinFolder(kbCurrentFolder, rootName)
+        for (var i = 0; i < entries.length; i++)
+            entries[i].folderPath = kbJoinFolder(baseFolder, entries[i].relativeDir)
+        kbStartUploadEntries(entries)
+    }
+
+    function kbStartUploadEntries(entries) {
+        var collection = kbUserCollection()
+        if (!collection) {
+            kbShowError("请先登录后再上传文件")
+            return
+        }
+        var existing = {}
+        for (var i = 0; i < kbSources.length; i++) existing[String(kbSources[i])] = true
+        kbUploadQueue = []
+        for (var j = 0; entries && j < entries.length; j++) {
+            var entry = entries[j]
+            var source = String(entry.fileName || "")
+            if (source && !existing[source]) {
+                existing[source] = true
+                kbUploadQueue.push(entry)
+            }
+        }
+        if (kbUploadQueue.length === 0) {
+            kbShowError(entries.length ? "文件名与知识库现有文件重复" : "文件夹中没有支持的文件")
+            return
+        }
+        kbUploadIndex = 0
+        kbUploadCollection = collection
+        kbUploadNext()
+    }
+
+    function kbUploadNext() {
+        if (kbUploadCollection !== kbUserCollection()) {
+            kbShowError("登录用户已切换，上传已停止")
+            return
+        }
+        if (kbUploadIndex >= kbUploadQueue.length) {
+            kbUploadQueue = []
+            kbRefreshFiles()
+            return
+        }
+        kbLoading = true
+        kbBusyText = "正在上传 " + (kbUploadIndex + 1) + "/" + kbUploadQueue.length + "..."
+        var entry = kbUploadQueue[kbUploadIndex]
+        var path = entry.absolutePath || localFilePathFromUrl(entry.fileUrl)
+        kbInvoke("kb_ingest", { "path": path, "collection": kbUploadCollection }, "",
+                 kbUploadCollection, function(result) {
+            var metadata = kbMetadata
+            kbEnsureFolder(metadata, entry.folderPath, Date.now())
+            metadata.files[String(entry.fileName)] = {
+                "folderPath": kbNormalizeFolder(entry.folderPath),
+                "addedAt": Date.now(),
+                "sizeBytes": Number(entry.sizeBytes || 0),
+                "fileSize": String(entry.fileSize || "--")
+            }
+            kbSaveMetadata(metadata)
+            kbUploadIndex++
+            kbUploadNext()
+        })
+    }
+
+    function kbFileIcon(name) {
+        var lower = String(name || "").toLowerCase()
+        if (/\.(xlsx|xls)$/.test(lower)) return "qrc:/images/knowledge/excel.png"
+        if (/\.pptx$/.test(lower)) return "qrc:/images/knowledge/ppt.png"
+        if (/\.(docx|doc)$/.test(lower)) return "qrc:/images/knowledge/word.png"
+        return "qrc:/images/knowledge/others.png"
+    }
+
+    function kbFormatTime(value) {
+        var timestamp = Number(value || 0)
+        return timestamp > 0 ? Qt.formatDateTime(new Date(timestamp), "yyyy/M/d HH:mm") : "--"
+    }
+
+    function kbFolderSize(path) {
+        var total = 0
+        var known = false
+        var files = kbMetadata.files || {}
+        var names = Object.keys(files)
+        for (var i = 0; i < names.length; i++) {
+            var folder = kbNormalizeFolder(files[names[i]].folderPath)
+            if (folder === path || folder.indexOf(path + "/") === 0) {
+                var size = Number(files[names[i]].sizeBytes)
+                if (size >= 0) { total += size; known = true }
+            }
+        }
+        if (!known) return "--"
+        if (total < 1024) return total + " B"
+        if (total < 1024 * 1024) return (total / 1024).toFixed(1) + " KB"
+        if (total < 1024 * 1024 * 1024) return (total / 1024 / 1024).toFixed(1) + " MB"
+        return (total / 1024 / 1024 / 1024).toFixed(1) + " GB"
+    }
+
+    function kbVisibleEntries() {
+        var query = kbSearchText.trim().toLowerCase()
+        var rows = []
+        var folders = kbMetadata.folders || []
+        for (var i = 0; i < folders.length; i++) {
+            var path = kbFolderPath(folders[i])
+            if ((!query && kbParentFolder(path) === kbCurrentFolder)
+                    || (query && kbFolderName(path).toLowerCase().indexOf(query) >= 0)) {
+                rows.push({ "kind": "folder", "key": "folder:" + path, "name": kbFolderName(path),
+                              "path": path, "addedAt": kbFolderAddedAt(folders[i]), "size": kbFolderSize(path) })
+            }
+        }
+        var files = kbMetadata.files || {}
+        for (var j = 0; j < kbSources.length; j++) {
+            var source = String(kbSources[j] || "")
+            var info = files[source] || {}
+            var folderPath = kbNormalizeFolder(info.folderPath)
+            if ((!query && folderPath === kbCurrentFolder)
+                    || (query && source.toLowerCase().indexOf(query) >= 0)) {
+                rows.push({ "kind": "file", "key": "file:" + source, "name": source,
+                              "path": folderPath, "addedAt": Number(info.addedAt || 0),
+                              "size": String(info.fileSize || "--") })
+            }
+        }
+        return rows
+    }
+
+    function kbIsSelected(key) { return kbSelectedKeys.indexOf(key) >= 0 }
+
+    function kbToggleSelected(key) {
+        var selected = kbSelectedKeys.slice(0)
+        var index = selected.indexOf(key)
+        if (index >= 0) selected.splice(index, 1)
+        else selected.push(key)
+        kbSelectedKeys = selected
+    }
+
+    function kbToggleSelectAll() {
+        var rows = kbVisibleEntries()
+        if (rows.length > 0 && kbSelectedKeys.length === rows.length) {
+            kbSelectedKeys = []
+            return
+        }
+        var selected = []
+        for (var i = 0; i < rows.length; i++) selected.push(rows[i].key)
+        kbSelectedKeys = selected
+    }
+
+    function kbBreadcrumbs() {
+        var result = [{ "name": qsTr("全部文件"), "path": "", "current": !kbCurrentFolder }]
+        var parts = kbNormalizeFolder(kbCurrentFolder).split("/")
+        var path = ""
+        for (var i = 0; kbCurrentFolder && i < parts.length; i++) {
+            path = kbJoinFolder(path, parts[i])
+            result.push({ "name": parts[i], "path": path, "current": path === kbCurrentFolder })
+        }
+        return result
+    }
+
+    function kbCreateFolder(name) {
+        name = String(name || "").trim()
+        if (!name || name === "." || name === ".." || /[\\/:*?\"<>|]/.test(name)) {
+            kbShowError("文件夹名称不能为空，且不能包含 \\ / : * ? \" < > |")
+            return false
+        }
+        var path = kbJoinFolder(kbCurrentFolder, name)
+        var folders = kbMetadata.folders || []
+        for (var i = 0; i < folders.length; i++) {
+            if (kbFolderPath(folders[i]) === path) {
+                kbShowError("当前目录已存在同名文件夹")
+                return false
+            }
+        }
+        var metadata = kbMetadata
+        kbEnsureFolder(metadata, path, Date.now())
+        kbSaveMetadata(metadata)
+        return true
+    }
+
     /// Markdown / 富文本中的超链接点击（需 Text.textFormat 为 MarkdownText 等）
     function openMarkdownLink(link) {
         var raw = String(link || "")
@@ -273,6 +734,15 @@ ApplicationWindow {
             } else {
                 wsClient.disconnectFromServer()
                 chatModel.clear()
+                kbSources = []
+                kbSearchText = ""
+                kbLoading = false
+                kbBusyText = ""
+                kbUploadQueue = []
+                kbMetadata = kbDefaultMetadata()
+                kbMetadataUser = ""
+                kbCurrentFolder = ""
+                kbSelectedKeys = []
             }
         }
     }
@@ -285,6 +755,8 @@ ApplicationWindow {
                 wsClient.refreshCronStatus()
                 wsClient.refreshMcpList()
                 wsClient.refreshAgents()
+                if (window.leftSelectedIndex === 7)
+                    window.kbRefreshFiles()
             }
         }
         function onCronJobAdded(jobId){
@@ -447,9 +919,9 @@ ApplicationWindow {
                         visible: !window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "专家·技能·工具"/*, "MCP"*/]
+                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库"/*, "MCP"*/]
                             delegate: Rectangle{
-                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 5)
+                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 7)
                                 property bool isSelected: index === 2
                                                           ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
                                                           : targetIndex === window.leftSelectedIndex
@@ -476,6 +948,8 @@ ApplicationWindow {
                                                 return "qrc:/images/alarm.png"
                                             }else if(modelData === "专家·技能·工具"){
                                                 return "qrc:/images/category.png"
+                                            }else if(modelData === "知识库"){
+                                                return "qrc:/images/folder.png"
                                             }else if(modelData === "MCP"){
                                                 return "qrc:/images/puzzle.png"
                                             }
@@ -498,6 +972,10 @@ ApplicationWindow {
                                             leftMidPanel.activeSessionKey = ""
                                             chatModel.clear()
                                             wsClient.clearActiveAgentContext()
+                                            if (targetIndex === 7) {
+                                                window.kbSearchText = ""
+                                                window.kbRefreshFiles()
+                                            }
                                     }
                                 }
                                 ToolTip {
@@ -523,9 +1001,9 @@ ApplicationWindow {
                         visible: window.sidebarCollapsed
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "专家·技能·工具" /*, "MCP"*/ ]
+                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库" /*, "MCP"*/ ]
                             delegate: Rectangle{
-                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 5)
+                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 7)
                                 property bool isSelected: index === 2
                                                           ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
                                                           : targetIndex === window.leftSelectedIndex
@@ -546,6 +1024,8 @@ ApplicationWindow {
                                             return "qrc:/images/alarm.png"
                                         }else if(modelData === "专家·技能·工具"){
                                             return "qrc:/images/category.png"
+                                        }else if(modelData === "知识库"){
+                                            return "qrc:/images/folder.png"
                                         }else if(modelData === "MCP"){
                                             return "qrc:/images/puzzle.png"
                                         }
@@ -562,6 +1042,10 @@ ApplicationWindow {
                                         leftMidPanel.activeSessionKey = ""
                                         chatModel.clear()
                                         wsClient.clearActiveAgentContext()
+                                        if (targetIndex === 7) {
+                                            window.kbSearchText = ""
+                                            window.kbRefreshFiles()
+                                        }
                                     }
                                 }
                                 ToolTip {
@@ -5532,6 +6016,568 @@ ApplicationWindow {
                 }
             }
             Rectangle {
+                id: knowledgeBaseRec
+                anchors.fill: parent
+                visible: window.leftSelectedIndex === 7
+                color: "#FFFFFF"
+                property string pendingDeleteName: ""
+                property string pendingDeleteKey: ""
+                property bool busy: window.kbLoading
+
+                function navigateToFolder(path) {
+                    window.kbCurrentFolder = String(path || "")
+                    window.kbSearchText = ""
+                    window.kbSelectedKeys = []
+                }
+
+                function toggleEntrySelection(key) {
+                    window.kbToggleSelected(String(key || ""))
+                }
+
+                function isEntrySelected(key) {
+                    return window.kbIsSelected(String(key || ""))
+                }
+
+                function fileIconFor(name) {
+                    return window.kbFileIcon(String(name || ""))
+                }
+
+                function formatAddedAt(value) {
+                    return window.kbFormatTime(value)
+                }
+
+                Column {
+                    anchors.fill: parent
+                    anchors.leftMargin: 60
+                    anchors.rightMargin: 60
+                    anchors.topMargin: 24
+                    anchors.bottomMargin: 28
+                    spacing: 16
+
+                    Item {
+                        width: parent.width
+                        height: 40
+
+                        Label {
+                            id: kbPathLabel
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("知识库")
+                            font.pixelSize: 20
+                            font.weight: Font.Bold
+                            color: "#D9000000"
+                        }
+
+                        SingleLineTextInput {
+                            id: kbSearchInput
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            inputWidth: Math.min(240, knowledgeBaseRec.width * 0.28)
+                            inputHeight: 36
+                            icon: "qrc:/images/search.png"
+                            iconSize: 16
+                            placeholderText: qsTr("搜索知识库文件...")
+                            text: window.kbSearchText
+                            onTextChanged: {
+                                window.kbSearchText = text
+                                window.kbSelectedKeys = []
+                            }
+                        }
+                    }
+
+                    Item {
+                        width: parent.width
+                        height: 40
+
+                        Flickable {
+                            id: kbBreadcrumbView
+                            anchors.left: parent.left; anchors.leftMargin: 52
+                            anchors.right: kbActionsRow.left; anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            height: 32
+                            contentWidth: kbBreadcrumbRow.width
+                            contentHeight: height
+                            contentX: Math.max(0, contentWidth - width)
+                            interactive: contentWidth > width
+                            clip: true
+
+                            Row {
+                                id: kbBreadcrumbRow
+                                height: parent.height
+                                spacing: 0
+
+                                Repeater {
+                                    model: window.kbBreadcrumbs()
+                                    delegate: Item {
+                                        readonly property var pageController: knowledgeBaseRec
+                                        height: kbBreadcrumbRow.height
+                                        width: kbBreadcrumbSeparator.width + kbBreadcrumbName.implicitWidth
+                                        Label {
+                                            id: kbBreadcrumbSeparator
+                                            height: parent.height
+                                            visible: index > 0
+                                            width: visible ? implicitWidth : 0
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: "  /  "
+                                            font.pixelSize: 14
+                                            color: "#73000000"
+                                        }
+                                        Label {
+                                            id: kbBreadcrumbName
+                                            anchors.left: kbBreadcrumbSeparator.right
+                                            height: parent.height
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: String(modelData.name || "")
+                                            font.pixelSize: 14
+                                            color: modelData.current ? "#D9000000" : "#73000000"
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: !modelData.current
+                                            hoverEnabled: true
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: pageController.navigateToFolder(modelData.path)
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    height: parent.height
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: "  " + window.kbVisibleEntries().length + qsTr(" 个")
+                                    font.pixelSize: 14
+                                    color: "#73000000"
+                                }
+                            }
+                        }
+
+                        CheckBox {
+                            id: kbSelectAll
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 24; height: 24
+                            checked: window.kbVisibleEntries().length > 0
+                                     && window.kbSelectedKeys.length === window.kbVisibleEntries().length
+                            onClicked: window.kbToggleSelectAll()
+                            indicator: Rectangle {
+                                width: 22; height: 22; radius: 5
+                                anchors.centerIn: parent
+                                color: kbSelectAll.checked ? "#006BFF" : "#FFFFFF"
+                                border.width: 1
+                                border.color: kbSelectAll.checked ? "#006BFF" : "#D7D9DE"
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: "✓"
+                                    visible: kbSelectAll.checked
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 14
+                                }
+                            }
+                        }
+
+                        Row {
+                            id: kbActionsRow
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
+
+                            Rectangle {
+                                visible: window.kbSelectedKeys.length > 0
+                                width: visible ? 125 : 0
+                                height: 36
+                                radius: 6
+                                color: kbBatchDeleteMouse.pressed ? "#E72F33" : "#FF3D40"
+                                Row {
+                                    height: parent.height
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    spacing: 6
+                                    Image { source: "qrc:/images/delete-white.png";anchors.verticalCenter: parent.verticalCenter}
+                                    Label {
+                                        text: qsTr("批量删除") + "(" + window.kbSelectedKeys.length + ")"
+                                        color: "#FFFFFF"; font.pixelSize: 14; anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
+                                MouseArea {
+                                    id: kbBatchDeleteMouse
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: !window.kbLoading
+                                    onClicked: {
+                                        knowledgeBaseRec.pendingDeleteName = window.kbSelectedKeys.length + qsTr(" 个项目")
+                                        knowledgeBaseRec.pendingDeleteKey = "batch"
+                                        kbDeleteConfirm.open()
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 108; height: 36; radius: 6
+                                color: kbNewFolderMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
+                                border.width: 1; border.color: "#E1E3E8"
+                                Row {
+                                    height: parent.height; spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
+                                    Label { text: "+"; font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
+                                    Label { text: qsTr("新建文件夹"); font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                MouseArea {
+                                    id: kbNewFolderMouse
+                                    anchors.fill: parent; hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: !window.kbLoading
+                                    onClicked: { kbNewFolderInput.text = ""; kbNewFolderPopup.open(); kbNewFolderInput.forceActiveFocus() }
+                                }
+                            }
+
+                            Rectangle {
+                                id: kbUploadButton
+                                width: 124
+                                height: 36
+                                radius: 6
+                                color: kbUploadMouse.pressed ? "#075BCC" : "#006BFF"
+                                opacity: kbUploadMouse.enabled ? 1 : 0.5
+                                Row {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 14
+                                    height: parent.height
+                                    spacing: 7
+                                    Image {
+                                        width: 16; height: 16
+                                        source: "qrc:/images/upload-white.png"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Label {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("上传文件")
+                                        font.pixelSize: 14
+                                        color: "#FFFFFF"
+                                    }
+                                }
+                                MouseArea {
+                                    id: kbUploadMouse
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 96
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: !window.kbLoading
+                                    onClicked: kbFileDialog.open()
+                                }
+                                Rectangle {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 1; height: 20; color: "#66FFFFFF"
+                                }
+                                Image {
+                                    anchors.right: parent.right; anchors.rightMargin: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    source: "qrc:/images/Vector.png"
+                                }
+                                MouseArea {
+                                    anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+                                    width: 28; cursorShape: Qt.PointingHandCursor
+                                    enabled: !window.kbLoading
+                                    onClicked: kbUploadPopup.open()
+                                }
+                                Popup {
+                                    id: kbUploadPopup
+                                    readonly property point popupPosition: kbUploadButton.mapToItem(
+                                        Overlay.overlay, kbUploadButton.width - width, kbUploadButton.height + 6)
+                                    x: popupPosition.x
+                                    y: popupPosition.y
+                                    width: 150; height: 52; padding: 0
+                                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                    background: Rectangle {
+                                        color: "#FFFFFF"; radius: 6
+                                        border.width: 1; border.color: "#E1E3E8"
+                                    }
+                                    contentItem: Rectangle {
+                                        color: kbUploadFolderMouse.containsMouse ? "#F5F7FA" : "transparent"
+                                        Row {
+                                            height:parent.height; spacing: 8; anchors.left: parent.left; anchors.leftMargin: 20
+                                            Image { width: 16; height: 16; source: "qrc:/images/folder.png"; anchors.verticalCenter: parent.verticalCenter}
+                                            Label { text: qsTr("上传文件夹"); font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
+                                        }
+                                        MouseArea {
+                                            id: kbUploadFolderMouse
+                                            anchors.fill: parent; hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: { kbUploadPopup.close(); kbFolderDialog.open() }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Item {
+                        width: parent.width
+                        height: parent.height - 40 - 40 - 32
+
+                        Column {
+                            anchors.fill: parent
+
+                            ScrollView {
+                                id: kbFileScroll
+                                width: parent.width
+                                height: parent.height
+                                clip: true
+                                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                                Column {
+                                    width: kbFileScroll.width
+
+                                    Repeater {
+                                        model: window.kbVisibleEntries()
+                                        delegate: Rectangle {
+                                            id: kbFileRow
+                                            readonly property var pageController: knowledgeBaseRec
+                                            readonly property string sourceName: String(modelData.name || "")
+                                            readonly property string entryKey: String(modelData.key || "")
+                                            readonly property bool isFolder: modelData.kind === "folder"
+                                            width: kbFileScroll.width
+                                            height: 56
+                                            color: kbRowMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
+
+                                            MouseArea {
+                                                id: kbRowMouse
+                                                anchors.fill: parent
+                                                acceptedButtons: Qt.NoButton
+                                                hoverEnabled: true
+                                            }
+
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.bottom: parent.bottom
+                                                height: 1
+                                                color: "#ECEEF2"
+                                            }
+                                            CheckBox {
+                                                id: kbRowCheck
+                                                x: 16; anchors.verticalCenter: parent.verticalCenter
+                                                width: 24; height: 24
+                                                checked: kbFileRow.pageController.isEntrySelected(kbFileRow.entryKey)
+                                                onClicked: kbFileRow.pageController.toggleEntrySelection(kbFileRow.entryKey)
+                                                indicator: Rectangle {
+                                                    width: 22; height: 22; radius: 5
+                                                    anchors.centerIn: parent
+                                                    color: kbRowCheck.checked ? "#006BFF" : "#FFFFFF"
+                                                    border.width: 1
+                                                    border.color: kbRowCheck.checked ? "#006BFF" : "#D7D9DE"
+                                                    Label {
+                                                        anchors.centerIn: parent; text: "✓"
+                                                        visible: kbRowCheck.checked; color: "#FFFFFF"; font.pixelSize: 14
+                                                    }
+                                                }
+                                            }
+                                            Image {
+                                                x: 52; width: 24; height: 24
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                source: kbFileRow.isFolder ? "qrc:/images/knowledge/folder.png"
+                                                                           : kbFileRow.pageController.fileIconFor(kbFileRow.sourceName)
+                                            }
+                                            Label {
+                                                x: 88
+                                                width: parent.width * 0.64 - x - 20
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: kbFileRow.sourceName
+                                                elide: Text.ElideMiddle
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    enabled: kbFileRow.isFolder
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                    onClicked: kbFileRow.pageController.navigateToFolder(modelData.path)
+                                                }
+                                            }
+                                            Label {
+                                                x: parent.width * 0.64; width: 170
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: kbFileRow.pageController.formatAddedAt(modelData.addedAt)
+                                                font.pixelSize: 13; color: "#73000000"
+                                            }
+                                            Label {
+                                                x: parent.width * 0.83; width: 100
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: String(modelData.size || "--")
+                                                font.pixelSize: 13; color: "#73000000"
+                                            }
+                                            Rectangle {
+                                                id: kbDeleteButton
+                                                width: 36; height: 36; radius: 6
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 16
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                visible: kbRowMouse.containsMouse || kbDeleteMouse.containsMouse
+                                                color: kbDeleteMouse.containsMouse ? "#0FFF3D40" : "transparent"
+                                                Image {
+                                                    anchors.centerIn: parent
+                                                    width: 17; height: 17
+                                                    source: "qrc:/images/delete.png"
+                                                }
+                                                MouseArea {
+                                                    id: kbDeleteMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    enabled: !kbFileRow.pageController.busy
+                                                    onClicked: {
+                                                        knowledgeBaseRec.pendingDeleteName = kbFileRow.sourceName
+                                                        knowledgeBaseRec.pendingDeleteKey = kbFileRow.entryKey
+                                                        kbDeleteConfirm.open()
+                                                    }
+                                                }
+                                                ToolTip.visible: kbDeleteMouse.containsMouse
+                                                ToolTip.text: qsTr("删除")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Label {
+                            anchors.centerIn: parent
+                            visible: !window.kbLoading && window.kbVisibleEntries().length === 0
+                            text: window.kbSearchText ? qsTr("未找到匹配文件") : qsTr("暂无知识库文件")
+                            font.pixelSize: 14
+                            color: "#73000000"
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: window.kbLoading
+                            color: "#CCFFFFFF"
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 10
+                                BusyIndicator {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    running: window.kbLoading
+                                    width: 32; height: 32
+                                }
+                                Label {
+                                    text: window.kbBusyText
+                                    color: "#73000000"
+                                    font.pixelSize: 13
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Popup {
+                    id: kbNewFolderPopup
+                    anchors.centerIn: parent
+                    width: 380; height: 190
+                    modal: true
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    background: Rectangle {
+                        color: "#FFFFFF"; radius: 8
+                        border.width: 1; border.color: "#E1E3E8"
+                    }
+                    contentItem: Column {
+                        anchors.fill: parent; anchors.margins: 24; spacing: 16
+                        Label {
+                            text: qsTr("新建文件夹"); font.pixelSize: 17
+                            font.weight: Font.Bold; color: "#D9000000"
+                        }
+                        TextField {
+                            id: kbNewFolderInput
+                            width: parent.width; height: 38
+                            placeholderText: qsTr("请输入文件夹名称")
+                            selectByMouse: true
+                            onAccepted: {
+                                if (window.kbCreateFolder(text)) kbNewFolderPopup.close()
+                            }
+                        }
+                        Row {
+                            anchors.right: parent.right; spacing: 8
+                            CustomButton {
+                                width: 72; height: 34; text: qsTr("取消"); fontSize: 13
+                                backgroundColor: "#F0F1F4"; textColor: "#D9000000"; borderWidth: 0
+                                onClicked: kbNewFolderPopup.close()
+                            }
+                            CustomButton {
+                                width: 72; height: 34; text: qsTr("创建"); fontSize: 13
+                                backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
+                                onClicked: {
+                                    if (window.kbCreateFolder(kbNewFolderInput.text)) kbNewFolderPopup.close()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Popup {
+                    id: kbDeleteConfirm
+                    anchors.centerIn: parent
+                    width: 380
+                    height: 180
+                    modal: true
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    background: Rectangle {
+                        color: "#FFFFFF"
+                        radius: 8
+                        border.width: 1
+                        border.color: "#E1E3E8"
+                    }
+                    contentItem: Column {
+                        anchors.fill: parent
+                        anchors.margins: 24
+                        spacing: 20
+                        Label {
+                            width: parent.width
+                            text: knowledgeBaseRec.pendingDeleteKey === "batch"
+                                  ? qsTr("批量删除") : qsTr("删除知识库项目")
+                            font.pixelSize: 17
+                            font.weight: Font.Bold
+                            color: "#D9000000"
+                        }
+                        Label {
+                            width: parent.width
+                            text: qsTr("确定删除“") + knowledgeBaseRec.pendingDeleteName + qsTr("”？")
+                            elide: Text.ElideMiddle
+                            font.pixelSize: 14
+                            color: "#A6000000"
+                        }
+                        Row {
+                            anchors.right: parent.right
+                            spacing: 8
+                            CustomButton {
+                                width: 72; height: 34
+                                text: qsTr("取消")
+                                fontSize: 13
+                                backgroundColor: "#F0F1F4"
+                                textColor: "#D9000000"
+                                borderWidth: 0
+                                onClicked: kbDeleteConfirm.close()
+                            }
+                            CustomButton {
+                                width: 72; height: 34
+                                text: qsTr("删除")
+                                fontSize: 13
+                                backgroundColor: "#FF3D40"
+                                textColor: "#FFFFFF"
+                                borderWidth: 0
+                                onClicked: {
+                                    kbDeleteConfirm.close()
+                                    if (knowledgeBaseRec.pendingDeleteKey === "batch")
+                                        window.kbDeleteEntries(window.kbSelectedKeys)
+                                    else
+                                        window.kbDeleteEntries([knowledgeBaseRec.pendingDeleteKey])
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
                 id: mcpSettingRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 5
@@ -6516,6 +7562,21 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    FileDialog {
+        id: kbFileDialog
+        title: qsTr("选择知识库文件")
+        nameFilters: ["Documents (*.pdf *.docx *.xlsx *.xls *.pptx *.md *.txt *.text)", "All files (*)"]
+        selectMultiple: true
+        onAccepted: window.kbStartUpload(kbFileDialog.fileUrls)
+    }
+
+    FileDialog {
+        id: kbFolderDialog
+        title: qsTr("选择知识库文件夹")
+        selectFolder: true
+        onAccepted: window.kbStartFolderUpload(kbFolderDialog.fileUrl)
     }
 
     FileDialog {

@@ -68,5 +68,14 @@
         <file>images/loginTitle.png</file>
         <file>images/logoImage.png</file>
         <file>images/mainTitle.png</file>
+        <file>images/knowledge/excel.png</file>
+        <file>images/knowledge/folder.png</file>
+        <file>images/knowledge/others.png</file>
+        <file>images/knowledge/ppt.png</file>
+        <file>images/knowledge/word.png</file>
+        <file>images/knowledge.png</file>
+        <file>images/delete-white.png</file>
+        <file>images/upload-white.png</file>
+        <file>images/Vector.png</file>
     </qresource>
 </RCC>

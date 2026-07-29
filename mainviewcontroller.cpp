@@ -2,11 +2,15 @@
 #include "chatmodel.h"
 #include "gateway_client.h"
 #include <QDebug>
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QStringList>
 #include <QUrl>
 
@@ -126,6 +130,94 @@ QVariantList MainViewController::listFolderFiles(const QString &folderUrl) const
         result.append(entry);
     }
     return result;
+}
+
+QVariantMap MainViewController::localFileInfo(const QString &fileUrl) const
+{
+    QString path = fileUrl;
+    if (path.startsWith(QStringLiteral("file://")))
+        path = QUrl(path).toLocalFile();
+
+    const QFileInfo fi(path);
+    if (!fi.exists() || !fi.isFile())
+        return QVariantMap();
+
+    QVariantMap entry;
+    entry[QStringLiteral("fileName")] = fi.fileName();
+    entry[QStringLiteral("absolutePath")] = fi.absoluteFilePath();
+    entry[QStringLiteral("fileUrl")] = QUrl::fromLocalFile(fi.absoluteFilePath()).toString();
+    entry[QStringLiteral("sizeBytes")] = fi.size();
+    entry[QStringLiteral("fileSize")] = fileSizeHumanBytes(fi.size());
+    entry[QStringLiteral("modifiedAt")] = fi.lastModified().toMSecsSinceEpoch();
+    entry[QStringLiteral("ext")] = fi.suffix().toLower();
+    return entry;
+}
+
+QVariantList MainViewController::listKnowledgeBaseFolderFiles(const QString &folderUrl) const
+{
+    QString path = folderUrl;
+    if (path.startsWith(QStringLiteral("file://")))
+        path = QUrl(path).toLocalFile();
+
+    QVariantList result;
+    const QFileInfo rootInfo(path);
+    if (!rootInfo.exists() || !rootInfo.isDir())
+        return result;
+
+    const QStringList supported = {
+        QStringLiteral("pdf"), QStringLiteral("docx"), QStringLiteral("xlsx"),
+        QStringLiteral("xls"), QStringLiteral("pptx"), QStringLiteral("md"),
+        QStringLiteral("txt"), QStringLiteral("text")
+    };
+    QDir root(path);
+    QDirIterator it(path, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo fi = it.fileInfo();
+        const QString ext = fi.suffix().toLower();
+        if (!supported.contains(ext))
+            continue;
+
+        const QString relativePath = QDir::fromNativeSeparators(
+            root.relativeFilePath(fi.absoluteFilePath()));
+        const int slash = relativePath.lastIndexOf(QLatin1Char('/'));
+        QVariantMap entry;
+        entry[QStringLiteral("fileName")] = fi.fileName();
+        entry[QStringLiteral("absolutePath")] = fi.absoluteFilePath();
+        entry[QStringLiteral("fileUrl")] = QUrl::fromLocalFile(fi.absoluteFilePath()).toString();
+        entry[QStringLiteral("relativePath")] = relativePath;
+        entry[QStringLiteral("relativeDir")] = slash >= 0 ? relativePath.left(slash) : QString();
+        entry[QStringLiteral("sizeBytes")] = fi.size();
+        entry[QStringLiteral("fileSize")] = fileSizeHumanBytes(fi.size());
+        entry[QStringLiteral("modifiedAt")] = fi.lastModified().toMSecsSinceEpoch();
+        entry[QStringLiteral("ext")] = ext;
+        result.append(entry);
+    }
+    return result;
+}
+
+QVariantMap MainViewController::loadKnowledgeBaseMetadata(const QString &userId) const
+{
+    if (userId.trimmed().isEmpty())
+        return QVariantMap();
+    const QByteArray userHash = QCryptographicHash::hash(userId.toUtf8(), QCryptographicHash::Sha256).toHex();
+    QSettings settings;
+    const QByteArray json = settings.value(
+        QStringLiteral("knowledgeBase/%1/metadata").arg(QString::fromLatin1(userHash))).toByteArray();
+    const QJsonDocument document = QJsonDocument::fromJson(json);
+    return document.isObject() ? document.toVariant().toMap() : QVariantMap();
+}
+
+void MainViewController::saveKnowledgeBaseMetadata(const QString &userId,
+                                                    const QVariantMap &metadata) const
+{
+    if (userId.trimmed().isEmpty())
+        return;
+    const QByteArray userHash = QCryptographicHash::hash(userId.toUtf8(), QCryptographicHash::Sha256).toHex();
+    QSettings settings;
+    settings.setValue(
+        QStringLiteral("knowledgeBase/%1/metadata").arg(QString::fromLatin1(userHash)),
+        QJsonDocument::fromVariant(metadata).toJson(QJsonDocument::Compact));
 }
 
 QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
