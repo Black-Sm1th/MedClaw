@@ -1,5 +1,5 @@
 ==============================================================
-MedClaw 在 ARM64 (aarch64) Linux 上打包 AppImage 流程
+Aether study 在 ARM64 (aarch64) Linux 上打包 AppImage 流程
 ==============================================================
 
 前提：
@@ -106,7 +106,7 @@ export PATH="$HOME/.local/bin:$PATH"
 appimagetool --version
 
 ==============================================================
-4. 编译 MedClaw (Release)
+4. 编译 Aether study (Release)
 ==============================================================
 
 cd /path/to/MedClaw
@@ -117,8 +117,8 @@ cd build/release-arm64
 $QT_DIR/bin/qmake CONFIG+=release ../../MedClaw.pro
 make -j$(nproc)
 
-# 产出：build/release-arm64/MedClaw  (aarch64 ELF)
-file MedClaw   # 应包含 'ARM aarch64'
+# 产出：build/release-arm64/AetherStudy  (aarch64 ELF)
+file AetherStudy   # 应包含 'ARM aarch64'
 
 ==============================================================
 5. 构建 AppDir 目录结构
@@ -131,10 +131,10 @@ mkdir -p build/AppDir/usr/share/applications
 mkdir -p build/AppDir/usr/share/icons/hicolor/256x256/apps
 mkdir -p build/AppDir/usr/share/doc/libc6
 
-cp build/release-arm64/MedClaw build/AppDir/usr/bin/MedClaw
-strip --strip-unneeded build/AppDir/usr/bin/MedClaw
+cp build/release-arm64/AetherStudy build/AppDir/usr/bin/AetherStudy
+strip --strip-unneeded build/AppDir/usr/bin/AetherStudy
 
-cp images/256*256.png build/AppDir/usr/share/icons/hicolor/256x256/apps/medclaw.png
+cp images/256*256.png build/AppDir/usr/share/icons/hicolor/256x256/apps/aether-study.png
 
 # linuxdeployqt 在 -unsupported-allow-new-glibc 模式下会强制
 # 检查这个文件存在；本机的 libc6 copyright 可直接复用
@@ -142,16 +142,16 @@ cp /usr/share/doc/libc6/copyright build/AppDir/usr/share/doc/libc6/copyright \
     || echo "libc6 copyright placeholder" > build/AppDir/usr/share/doc/libc6/copyright
 
 # desktop 文件
-cat > build/AppDir/usr/share/applications/medclaw.desktop <<'EOF'
+cat > build/AppDir/usr/share/applications/aether-study.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=MedClaw
-Comment=MedClaw client
-Exec=MedClaw
-Icon=medclaw
+Name=Aether study
+Comment=Aether study client
+Exec=AetherStudy
+Icon=aether-study
 Categories=Network;Office;
 Terminal=false
-StartupWMClass=MedClaw
+StartupWMClass=AetherStudy
 EOF
 
 ==============================================================
@@ -160,7 +160,7 @@ EOF
 
 export PATH="$QT_DIR/bin:$PATH"
 
-linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
+linuxdeployqt build/AppDir/usr/share/applications/aether-study.desktop \
     -qmake=$QT_DIR/bin/qmake \
     -qmldir=. \
     -extra-plugins=iconengines,imageformats,platforminputcontexts \
@@ -194,7 +194,7 @@ cp -rn "$QT_QML_DIR/QtQuick/Controls/Private" build/AppDir/usr/qml/QtQuick/Contr
 cp -rn "$QT_QML_DIR/QtQuick/Controls/Styles"  build/AppDir/usr/qml/QtQuick/Controls/ 2>/dev/null || true
 
 # 第二次跑 linuxdeployqt：拾取上面新增 .so 的二级依赖
-linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
+linuxdeployqt build/AppDir/usr/share/applications/aether-study.desktop \
     -qmake=$QT_DIR/bin/qmake \
     -qmldir=. \
     -extra-plugins=iconengines,imageformats,platforminputcontexts \
@@ -213,28 +213,28 @@ linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
 ==============================================================
 
 cd /path/to/MedClaw
-rm -f build/MedClaw-aarch64.AppImage          # 旧文件先删，避免不覆盖
-ARCH=aarch64 appimagetool build/AppDir build/MedClaw-aarch64.AppImage
+rm -f build/AetherStudy-aarch64.AppImage          # 旧文件先删，避免不覆盖
+ARCH=aarch64 appimagetool build/AppDir build/AetherStudy-aarch64.AppImage
 
 # 不带 FUSE 的环境改用：
 #   ARCH=aarch64 appimagetool --appimage-extract-and-run \
-#       build/AppDir build/MedClaw-aarch64.AppImage
+#       build/AppDir build/AetherStudy-aarch64.AppImage
 
-ls -lh build/MedClaw-aarch64.AppImage
-file  build/MedClaw-aarch64.AppImage   # 应该是 ELF 64-bit aarch64
+ls -lh build/AetherStudy-aarch64.AppImage
+file  build/AetherStudy-aarch64.AppImage   # 应该是 ELF 64-bit aarch64
 
 ==============================================================
 8. 验证
 ==============================================================
 
 # 直接运行
-./build/MedClaw-aarch64.AppImage
+./build/AetherStudy-aarch64.AppImage
 
 # 没装 FUSE 的目标机
-./build/MedClaw-aarch64.AppImage --appimage-extract-and-run
+./build/AetherStudy-aarch64.AppImage --appimage-extract-and-run
 
 # 排错时输出更多日志
-QT_DEBUG_PLUGINS=1 ./build/MedClaw-aarch64.AppImage
+QT_DEBUG_PLUGINS=1 ./build/AetherStudy-aarch64.AppImage
 
 ==============================================================
 常见问题
@@ -295,25 +295,25 @@ mkdir -p build/release-arm64
 ( cd build/release-arm64 && qmake CONFIG+=release ../../MedClaw.pro && make -j"$(nproc)" )
 
 mkdir -p build/AppDir/usr/{bin,share/applications,share/icons/hicolor/256x256/apps,share/doc/libc6}
-cp build/release-arm64/MedClaw build/AppDir/usr/bin/MedClaw
-strip --strip-unneeded build/AppDir/usr/bin/MedClaw
-cp images/256*256.png build/AppDir/usr/share/icons/hicolor/256x256/apps/medclaw.png
+cp build/release-arm64/AetherStudy build/AppDir/usr/bin/AetherStudy
+strip --strip-unneeded build/AppDir/usr/bin/AetherStudy
+cp images/256*256.png build/AppDir/usr/share/icons/hicolor/256x256/apps/aether-study.png
 cp /usr/share/doc/libc6/copyright build/AppDir/usr/share/doc/libc6/copyright \
     || echo placeholder > build/AppDir/usr/share/doc/libc6/copyright
 
-cat > build/AppDir/usr/share/applications/medclaw.desktop <<'EOF'
+cat > build/AppDir/usr/share/applications/aether-study.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=MedClaw
-Comment=MedClaw client
-Exec=MedClaw
-Icon=medclaw
+Name=Aether study
+Comment=Aether study client
+Exec=AetherStudy
+Icon=aether-study
 Categories=Network;Office;
 Terminal=false
-StartupWMClass=MedClaw
+StartupWMClass=AetherStudy
 EOF
 
-linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
+linuxdeployqt build/AppDir/usr/share/applications/aether-study.desktop \
     -qmake="$QT_DIR/bin/qmake" \
     -qmldir=. \
     -extra-plugins=iconengines,imageformats,platforminputcontexts \
@@ -331,7 +331,7 @@ cp -rn "$QT_QML_DIR/QtQuick/Controls/Private" build/AppDir/usr/qml/QtQuick/Contr
 cp -rn "$QT_QML_DIR/QtQuick/Controls/Styles"  build/AppDir/usr/qml/QtQuick/Controls/ 2>/dev/null || true
 
 # 二次扫描，捕获新增 .so 的二级依赖
-linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
+linuxdeployqt build/AppDir/usr/share/applications/aether-study.desktop \
     -qmake="$QT_DIR/bin/qmake" \
     -qmldir=. \
     -extra-plugins=iconengines,imageformats,platforminputcontexts \
@@ -339,6 +339,6 @@ linuxdeployqt build/AppDir/usr/share/applications/medclaw.desktop \
     -unsupported-allow-new-glibc \
     -verbose=1
 
-rm -f build/MedClaw-aarch64.AppImage
-ARCH=aarch64 appimagetool build/AppDir build/MedClaw-aarch64.AppImage
-echo "Done -> build/MedClaw-aarch64.AppImage"
+rm -f build/AetherStudy-aarch64.AppImage
+ARCH=aarch64 appimagetool build/AppDir build/AetherStudy-aarch64.AppImage
+echo "Done -> build/AetherStudy-aarch64.AppImage"

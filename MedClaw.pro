@@ -1,6 +1,6 @@
 QT += quick quickcontrols2 websockets sql webengine network
 
-TARGET = Aether_ClawDESK
+TARGET = AetherStudy
 
 CONFIG += c++11
 

@@ -41,33 +41,12 @@
         <file>images/chatLine.png</file>
         <file>images/ai.png</file>
         <file>images/filePicture.png</file>
-        <file>images/largeIcon.png</file>
-        <file>images/titleIcon.png</file>
-        <file>images/icon.ico</file>
         <file>images/alarm.png</file>
         <file>images/history.png</file>
         <file>images/play.png</file>
         <file>images/tools.png</file>
-        <file>images/shortcut/3.png</file>
-        <file>images/shortcut/3.6.png</file>
-        <file>images/shortcut/3.5.png</file>
-        <file>images/shortcut/3.4.png</file>
-        <file>images/shortcut/3.3.png</file>
-        <file>images/shortcut/3.2.png</file>
-        <file>images/shortcut/3.1.png</file>
-        <file>images/shortcut/2.png</file>
-        <file>images/shortcut/2.2.png</file>
-        <file>images/shortcut/2.1.png</file>
-        <file>images/shortcut/1.png</file>
-        <file>images/shortcut/1.4.png</file>
-        <file>images/shortcut/1.3.png</file>
-        <file>images/shortcut/1.2.png</file>
-        <file>images/shortcut/1.1.png</file>
         <file>images/expertBackground.png</file>
         <file>images/expert.png</file>
-        <file>images/loginTitle.png</file>
-        <file>images/logoImage.png</file>
-        <file>images/mainTitle.png</file>
         <file>images/knowledge/excel.png</file>
         <file>images/knowledge/folder.png</file>
         <file>images/knowledge/others.png</file>
@@ -77,5 +56,31 @@
         <file>images/delete-white.png</file>
         <file>images/upload-white.png</file>
         <file>images/Vector.png</file>
+        <file>images/loginTitle.png</file>
+        <file>images/icon.ico</file>
+        <file>images/logoImage.png</file>
+        <file>images/mainTitle.png</file>
+        <file>images/shortcut/1.png</file>
+        <file>images/shortcut/1-1.png</file>
+        <file>images/shortcut/1-1-large.png</file>
+        <file>images/shortcut/1-2.png</file>
+        <file>images/shortcut/1-2-large.png</file>
+        <file>images/shortcut/2.png</file>
+        <file>images/shortcut/2-1.png</file>
+        <file>images/shortcut/2-1-large.png</file>
+        <file>images/shortcut/2-2.png</file>
+        <file>images/shortcut/2-2-large.png</file>
+        <file>images/shortcut/2-3.png</file>
+        <file>images/shortcut/2-3-large.png</file>
+        <file>images/shortcut/3.png</file>
+        <file>images/shortcut/3-1.png</file>
+        <file>images/shortcut/3-1-large.png</file>
+        <file>images/shortcut/3-2.png</file>
+        <file>images/shortcut/3-2-large.png</file>
+        <file>images/shortcut/4.png</file>
+        <file>images/shortcut/4-1.png</file>
+        <file>images/shortcut/4-1-large.png</file>
+        <file>images/shortcut/4-2.png</file>
+        <file>images/shortcut/4-2-large.png</file>
     </qresource>
 </RCC>

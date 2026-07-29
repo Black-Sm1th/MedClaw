@@ -52,12 +52,21 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
-    QCoreApplication::setApplicationName(QStringLiteral("Aether_ClawDESK"));
+    QCoreApplication::setApplicationName(QStringLiteral("Aether study"));
 
-    // Keep relative runtime data paths stable regardless of how the EXE is launched.
-    const QString dataRoot = QDir(
-        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
-                                 .filePath(QStringLiteral("Aether_ClawDESK"));
+    // Keep relative runtime data paths stable and carry existing installs forward.
+    const QString genericDataRoot =
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    const QString preferredDataRoot =
+        QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy"));
+    const QString legacyDataRoot =
+        QDir(genericDataRoot).filePath(QStringLiteral("Aether_ClawDESK"));
+    QString dataRoot = preferredDataRoot;
+    if (!QFileInfo::exists(preferredDataRoot) && QFileInfo::exists(legacyDataRoot)
+        && !QDir(genericDataRoot).rename(QStringLiteral("Aether_ClawDESK"),
+                                         QStringLiteral("AetherStudy"))) {
+        dataRoot = legacyDataRoot;
+    }
     if (!QDir().mkpath(dataRoot) || !QDir::setCurrent(dataRoot))
         qWarning() << "Unable to use application data directory:" << dataRoot;
 

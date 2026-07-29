@@ -49,7 +49,7 @@ ApplicationWindow {
     width: 960
     height: 720
     visible: true
-    title: qsTr("WebSocket Test Client — Aether_ClawDESK")
+    title: qsTr("WebSocket Test Client — Aether study")
     color: "#F5F6FA"
 
     // ═══════════════════════════════════════════════════════════════
@@ -341,7 +341,7 @@ ApplicationWindow {
     function testExportSkillsToTxt(savePath) {
         var list = wsClient.skillList
         var lines = []
-        lines.push("# Aether_ClawDESK skill list export")
+        lines.push("# Aether study skill list export")
         lines.push("# " + Qt.formatDateTime(new Date(), "yyyy-MM-dd HH:mm:ss"))
         lines.push("# count: " + list.length)
         lines.push("")

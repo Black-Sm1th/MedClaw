@@ -48,7 +48,7 @@ public:
     /// 设置身份认证 Token
     void setToken(const QString &token);
 
-    /// 存放技能路径（JSON：skillsStoragePath，默认 ~/Aether_ClawDESK/skills）
+    /// 存放技能路径（JSON：skillsStoragePath，默认 ~/AetherStudy/skills）
     QString skillsStoragePath() const;
     void setSkillsStoragePath(const QString &path);
 

@@ -9,7 +9,7 @@ ApplicationWindow {
     width: 1440
     height: 800
     visible: true
-    title: qsTr("Aether_ClawDESK")
+    title: qsTr("Aether study")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
@@ -876,7 +876,7 @@ ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Label{
-                    text: "Aether_ClawDESK"
+                    text: "Aether study"
                     font.family: "Alimama ShuHeiTi"
                     font.pixelSize: 18
                     anchors.left: logoImage.right

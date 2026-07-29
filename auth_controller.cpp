@@ -7,6 +7,7 @@
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QStringList>
 #include <QUrl>
 
 namespace {
@@ -54,26 +55,33 @@ AuthController::AuthController(QObject *parent)
     , m_network(new QNetworkAccessManager(this))
 {
     QSettings settings;
-    // Preserve the last authenticated account after the product name changed.
+    // Preserve the last authenticated account after product-name changes.
     if (settings.value(QStringLiteral("auth/accessToken")).toString().isEmpty()) {
-        QSettings legacySettings(QStringLiteral("AetherMED"), QStringLiteral("ClawDESK"));
-        const QString legacyToken =
-            legacySettings.value(QStringLiteral("auth/accessToken")).toString();
-        const QString legacyPhone =
-            legacySettings.value(QStringLiteral("auth/phone")).toString().trimmed();
-        QString legacyUserId =
-            legacySettings.value(QStringLiteral("auth/userId")).toString().trimmed();
-        if (legacyUserId.isEmpty() && !legacyPhone.isEmpty())
-            legacyUserId = QStringLiteral("phone:%1").arg(legacyPhone);
-        if (!legacyToken.isEmpty() && !legacyUserId.isEmpty()) {
-            settings.setValue(QStringLiteral("auth/accessToken"), legacyToken);
-            settings.setValue(QStringLiteral("auth/refreshToken"),
-                              legacySettings.value(QStringLiteral("auth/refreshToken")));
-            settings.setValue(QStringLiteral("auth/userId"), legacyUserId);
-            settings.setValue(QStringLiteral("auth/phone"), legacyPhone);
-            settings.setValue(QStringLiteral("auth/apiBaseUrl"),
-                              legacySettings.value(QStringLiteral("auth/apiBaseUrl"),
-                                                   QString::fromLatin1(kDefaultApiBaseUrl)));
+        const QStringList legacyApplicationNames = {
+            QStringLiteral("Aether_ClawDESK"),
+            QStringLiteral("ClawDESK")
+        };
+        for (const QString &applicationName : legacyApplicationNames) {
+            QSettings legacySettings(QStringLiteral("AetherMED"), applicationName);
+            const QString legacyToken =
+                legacySettings.value(QStringLiteral("auth/accessToken")).toString();
+            const QString legacyPhone =
+                legacySettings.value(QStringLiteral("auth/phone")).toString().trimmed();
+            QString legacyUserId =
+                legacySettings.value(QStringLiteral("auth/userId")).toString().trimmed();
+            if (legacyUserId.isEmpty() && !legacyPhone.isEmpty())
+                legacyUserId = QStringLiteral("phone:%1").arg(legacyPhone);
+            if (!legacyToken.isEmpty() && !legacyUserId.isEmpty()) {
+                settings.setValue(QStringLiteral("auth/accessToken"), legacyToken);
+                settings.setValue(QStringLiteral("auth/refreshToken"),
+                                  legacySettings.value(QStringLiteral("auth/refreshToken")));
+                settings.setValue(QStringLiteral("auth/userId"), legacyUserId);
+                settings.setValue(QStringLiteral("auth/phone"), legacyPhone);
+                settings.setValue(QStringLiteral("auth/apiBaseUrl"),
+                                  legacySettings.value(QStringLiteral("auth/apiBaseUrl"),
+                                                       QString::fromLatin1(kDefaultApiBaseUrl)));
+                break;
+            }
         }
     }
     m_apiBaseUrl = normalizedBaseUrl(settings.value(QStringLiteral("auth/apiBaseUrl"),
