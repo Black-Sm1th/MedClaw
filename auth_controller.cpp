@@ -55,8 +55,11 @@ AuthController::AuthController(QObject *parent)
     , m_network(new QNetworkAccessManager(this))
 {
     QSettings settings;
-    // Preserve the last authenticated account after product-name changes.
-    if (settings.value(QStringLiteral("auth/accessToken")).toString().isEmpty()) {
+    // Import credentials from an earlier product name once. Without the marker,
+    // a later logout could be undone by importing the stale token on next launch.
+    const QString migrationKey = QStringLiteral("auth/legacyMigrationCompleted");
+    if (!settings.value(migrationKey, false).toBool()
+        && settings.value(QStringLiteral("auth/accessToken")).toString().isEmpty()) {
         const QStringList legacyApplicationNames = {
             QStringLiteral("Aether_ClawDESK"),
             QStringLiteral("ClawDESK")
@@ -83,6 +86,10 @@ AuthController::AuthController(QObject *parent)
                 break;
             }
         }
+    }
+    if (!settings.value(migrationKey, false).toBool()) {
+        settings.setValue(migrationKey, true);
+        settings.sync();
     }
     m_apiBaseUrl = normalizedBaseUrl(settings.value(QStringLiteral("auth/apiBaseUrl"),
                                                     QString::fromLatin1(kDefaultApiBaseUrl)).toString());
@@ -231,6 +238,21 @@ void AuthController::clearSession()
     settings.remove(QStringLiteral("auth/refreshToken"));
     settings.remove(QStringLiteral("auth/userId"));
     settings.remove(QStringLiteral("auth/phone"));
+    settings.setValue(QStringLiteral("auth/legacyMigrationCompleted"), true);
+
+    const QStringList legacyApplicationNames = {
+        QStringLiteral("Aether_ClawDESK"),
+        QStringLiteral("ClawDESK")
+    };
+    for (const QString &applicationName : legacyApplicationNames) {
+        QSettings legacySettings(QStringLiteral("AetherMED"), applicationName);
+        legacySettings.remove(QStringLiteral("auth/accessToken"));
+        legacySettings.remove(QStringLiteral("auth/refreshToken"));
+        legacySettings.remove(QStringLiteral("auth/userId"));
+        legacySettings.remove(QStringLiteral("auth/phone"));
+        legacySettings.sync();
+    }
+    settings.sync();
     emit userChanged();
     if (wasLoggedIn)
         emit loggedInChanged();
@@ -243,15 +265,13 @@ void AuthController::logout()
         return;
     }
 
-    setBusy(true);
+    const QByteArray authorization = QByteArray("Bearer ") + m_accessToken.toUtf8();
+    clearSession();
+
     QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/v1/auth/logout")));
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/x-www-form-urlencoded"));
-    request.setRawHeader("Authorization", QByteArray("Bearer ") + m_accessToken.toUtf8());
+    request.setRawHeader("Authorization", authorization);
     QNetworkReply *reply = m_network->post(request, QByteArray());
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        setBusy(false);
-        clearSession();
-        reply->deleteLater();
-    });
+    connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
 }

@@ -17,7 +17,7 @@ Item {
     }
 
     Column {
-        width: 254
+        width: 320
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -8
@@ -26,28 +26,28 @@ Item {
         Item { width: 1; height: showPhoneForm ? 40 : 38 }
 
         Column {
-            width: parent.width; spacing: 14; visible: loginPage.showPhoneForm; height: visible ? implicitHeight : 0
+            width: parent.width; spacing: 16; visible: loginPage.showPhoneForm; height: visible ? implicitHeight : 0
             Rectangle {
-                width: parent.width; height: 36; radius: 6; color: "#F7F8FA"
+                width: parent.width; height: 44; radius: 7; color: "#F7F8FA"
                 Label {
                     text: "+86"
                     anchors.left: parent.left
-                    anchors.leftMargin: 9
+                    anchors.leftMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     color: "#595959"
-                    font.pixelSize: 12
+                    font.pixelSize: 16
                 }
                 SingleLineTextInput {
                     id: phoneInput
                     anchors.left: parent.left
-                    anchors.leftMargin: 42
+                    anchors.leftMargin: 50
                     anchors.right: parent.right
-                    inputWidth: parent.width - 42
+                    inputWidth: parent.width - 50
                     inputHeight: parent.height
                     backgroundColor: "transparent"
                     borderWidth: 0
                     inputRadius: 0
-                    fontSize: 12
+                    fontSize: 16
                     textColor: "#262626"
                     placeholderColor: "#BFBFBF"
                     placeholderText: "请输入手机号"
@@ -57,15 +57,15 @@ Item {
                 }
             }
             Row {
-                width: parent.width; height: 36; spacing: 10
+                width: parent.width; height: 44; spacing: 12
                 SingleLineTextInput {
                     id: codeInput
-                    inputWidth: 190
+                    inputWidth: 224
                     inputHeight: parent.height
                     backgroundColor: "#F7F8FA"
                     borderWidth: 0
-                    inputRadius: 6
-                    fontSize: 12
+                    inputRadius: 7
+                    fontSize: 16
                     textColor: "#262626"
                     placeholderColor: "#BFBFBF"
                     placeholderText: "请输入验证码"
@@ -76,7 +76,7 @@ Item {
                 }
                 Item {
                     id: sendCodeSlot
-                    width: 54
+                    width: 84
                     height: parent.height
                     Button {
                         id: sendCodeButton
@@ -85,7 +85,7 @@ Item {
                         hoverEnabled: true
                         text: loginPage.resendSeconds > 0 ? loginPage.resendSeconds + "s" : "获取验证码"
                         font.family: "Alibaba PuHuiTi 3.0"
-                        font.pixelSize: 12
+                        font.pixelSize: 16
                         padding: 0
                         contentItem: Text {
                             text: parent.text
@@ -111,14 +111,14 @@ Item {
                 }
             }
         }
-        Item { width: 1; height: loginPage.showPhoneForm ? 14 : 0 }
+        Item { width: 1; height: loginPage.showPhoneForm ? 18 : 0 }
         CustomButton {
             buttonWidth: parent.width
-            buttonHeight: 40
-            buttonRadius: 6
+            buttonHeight: 48
+            buttonRadius: 7
             enabled: !authController.busy
             text: authController.busy ? (loginPage.showPhoneForm ? "登录中" : "请稍候") : "登录"
-            fontSize: 14
+            fontSize: 20
             backgroundColor: "#006BFF"
             hoverBackgroundColor: "#1677FF"
             pressedBackgroundColor: "#0057D9"
@@ -134,10 +134,10 @@ Item {
                 }
             }
         }
-        Label { visible: authController.errorMessage.length > 0; width: parent.width; topPadding: 12; text: authController.errorMessage; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: "#E54D42"; font.pixelSize: 12 }
+        Label { visible: authController.errorMessage.length > 0; width: parent.width; topPadding: 14; text: authController.errorMessage; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: "#E54D42"; font.pixelSize: 16 }
     }
 
-    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 26; color: "#A6A6A6"; font.pixelSize: 12 }
+    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 30; color: "#A6A6A6"; font.pixelSize: 16 }
     Timer { interval: 1000; repeat: true; running: loginPage.resendSeconds > 0; onTriggered: loginPage.resendSeconds-- }
     Connections { target: authController; function onSmsCodeSent() { loginPage.resendSeconds = 60; codeInput.forceActiveFocus() } }
     onVisibleChanged: {

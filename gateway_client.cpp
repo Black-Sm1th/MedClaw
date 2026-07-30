@@ -34,8 +34,23 @@
 #include <functional>
 #include <limits>
 #include <QVariantMap>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 namespace {
+
+void configureBackgroundProcess(QProcess *process)
+{
+#ifdef Q_OS_WIN
+    process->setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) {
+            args->flags |= CREATE_NO_WINDOW;
+        });
+#else
+    Q_UNUSED(process)
+#endif
+}
 
 QDir applicationInstallRoot()
 {
@@ -2357,21 +2372,14 @@ void GatewayClient::onDisconnected()
     }
 
     if (prevState == Connecting || prevState == Handshaking) {
-        m_autoReconnectFailureCount += 1;
-        if (m_autoReconnectFailureCount >= kMaxAutoReconnectFailures) {
-            qWarning().noquote()
-                << "[Gateway] auto-reconnect gave up after"
-                << kMaxAutoReconnectFailures << "failed attempts" << url;
-            if (m_skillInstallBusy) {
-                m_skillInstallBusy = false;
-                emit skillInstallBusyChanged();
-            }
-            return;
-        }
-        qDebug().noquote() << "[Gateway] auto-reconnect retry in 1000ms (fail"
-                           << m_autoReconnectFailureCount << "/" << kMaxAutoReconnectFailures << ")"
-                           << url;
-        scheduleAutoReconnectConnect(url, 1000);
+        if (m_autoReconnectFailureCount < std::numeric_limits<int>::max())
+            m_autoReconnectFailureCount += 1;
+        const int backoffStep = std::min(m_autoReconnectFailureCount - 1, 4);
+        const int retryDelayMs = std::min(500 << backoffStep, 5000);
+        qDebug().noquote() << "[Gateway] auto-reconnect retry in"
+                           << retryDelayMs << "ms (failure"
+                           << m_autoReconnectFailureCount << ")" << url;
+        scheduleAutoReconnectConnect(url, retryDelayMs);
         return;
     }
 
@@ -2537,7 +2545,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         const int expected =
             payload.value(QStringLiteral("restartExpectedMs")).toInt(0);
         if (expected > 0) {
-            m_pendingReconnectDelayMs = expected + 8000;
+            m_pendingReconnectDelayMs = expected + 500;
             qDebug().noquote() << "[Gateway] shutdown event restartExpectedMs=" << expected
                                << "→ reconnect delay" << m_pendingReconnectDelayMs << "ms";
         }
@@ -3957,6 +3965,7 @@ void GatewayClient::summonAgent(const QString &agentId)
     emit agentInstallStateChanged();
 
     auto *proc = new QProcess(this);
+    configureBackgroundProcess(proc);
     proc->setWorkingDirectory(backendRoot);
     connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc]() {
         consumeAgentInstallOutput(proc->readAllStandardOutput());
@@ -4424,6 +4433,7 @@ void GatewayClient::addSkillFromZip(const QString &zipPathRaw)
     }
 
     auto *proc = new QProcess(this);
+    configureBackgroundProcess(proc);
     QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
                        this, [this, proc, destZip, extractDir](int exitCode,
                                                                 QProcess::ExitStatus exitStatus) {
@@ -4541,6 +4551,7 @@ void GatewayClient::addSkillFromGit(const QString &urlRaw)
     }
 
     auto *proc = new QProcess(this);
+    configureBackgroundProcess(proc);
     QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
                        this, [this, proc](int exitCode, QProcess::ExitStatus exitStatus) {
                            const QByteArray errBytes = proc->readAllStandardError();
@@ -5654,6 +5665,7 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
             emit toolInstallStateChanged();
 
             auto *proc = new QProcess(this);
+            configureBackgroundProcess(proc);
             proc->setWorkingDirectory(backendRoot);
             connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc]() {
                 consumeToolInstallOutput(proc->readAllStandardOutput());

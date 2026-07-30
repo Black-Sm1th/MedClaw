@@ -961,8 +961,7 @@ private:
     QString m_lastConnectedWsUrl;      ///< 最近一次 connectToServer 的 URL（自动重连用）
     /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费
     int m_pendingReconnectDelayMs = 0;
-    /// 自动重连：非用户主动断开时尝试恢复；失败后间隔 1s 再试，累计失败达上限后停止
-    static constexpr int kMaxAutoReconnectFailures = 10;
+    /// 自动重连：非用户主动断开时持续尝试恢复，退避间隔最大 5 秒
     bool m_userRequestedDisconnect = false;         ///< disconnectFromServer() 触发的断开，不自动重连
     bool m_skipAutoReconnectOnNextDisconnect = false; ///< connectToServer 为换新连接而 close 旧 socket
     bool m_connectFromAutoReconnect = false;        ///< 当前 connectToServer 由自动重连定时器发起

@@ -1279,8 +1279,8 @@ ApplicationWindow {
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
-                Label { text: "用户管理"; color: "#D9000000"; font.pixelSize: 13 }
-                Label { width: parent.width; text: authController.phone; color: "#73000000"; font.pixelSize: 11; elide: Text.ElideMiddle }
+                Label { text: "用户管理"; color: "#D9000000"; font.pixelSize: 14 }
+                Label { width: parent.width; text: authController.phone; color: "#73000000"; font.pixelSize: 14; elide: Text.ElideMiddle }
             }
             Label {
                 id: accountArrow
@@ -1327,8 +1327,8 @@ ApplicationWindow {
                 color: "transparent"
                 Row {
                     anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                    Label { text: "账号"; color: "#73000000"; font.pixelSize: 12 }
-                    Label { text: authController.phone; color: "#D9000000"; font.pixelSize: 12 }
+                    Label { text: "账号"; color: "#73000000"; font.pixelSize: 14 }
+                    Label { text: authController.phone; color: "#D9000000"; font.pixelSize: 14 }
                 }
             }
             Rectangle {
@@ -1339,7 +1339,7 @@ ApplicationWindow {
                 Row {
                     anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     Label { text: "↪"; color: "#D9000000"; font.pixelSize: 16 }
-                    Label { text: authController.busy ? "正在退出..." : "退出登录"; color: "#D9000000"; font.pixelSize: 13 }
+                    Label { text: authController.busy ? "正在退出..." : "退出登录"; color: "#D9000000"; font.pixelSize: 14 }
                 }
                 MouseArea {
                     id: logoutMouse
@@ -1803,9 +1803,11 @@ ApplicationWindow {
                             files.push({ fileUrl: item.fileUrl || "", fileName: item.fileName || "" })
                         }
                         attachmentModel.clear()
-                        $MainViewController.sendMessageWithFiles(msg, files, wsPath)
+                        $MainViewController.sendMessageWithFiles(
+                            msg, files, wsPath, window.kbUserCollection())
                     } else {
-                    $MainViewController.sendMessage(msg, wsPath)
+                        $MainViewController.sendMessage(
+                            msg, wsPath, window.kbUserCollection())
                     }
                 }
 
@@ -3845,8 +3847,8 @@ ApplicationWindow {
                                 readonly property var group: modelData
                                 readonly property bool selected: index === newTaskRec.selectedShortcutGroup
                                 width: tabContent.implicitWidth + 32
-                                height: 36
-                                radius: 18
+                                height: 40
+                                radius: 20
                                 color: selected ? group.color
                                       : tabMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
                                 border.width: 1
@@ -3868,7 +3870,7 @@ ApplicationWindow {
 
                                     Label {
                                         text: group.title
-                                        font.pixelSize: 14
+                                        font.pixelSize: 16
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         color: "#D9000000"
                                         anchors.verticalCenter: parent.verticalCenter
@@ -5058,6 +5060,19 @@ ApplicationWindow {
                     onTextChanged: agentManageRec.searchText = text
                 }
 
+                SingleLineTextInput {
+                    visible: window.leftSelectedIndex === 4
+                    anchors.right: parent.right
+                    anchors.rightMargin: 60
+                    anchors.verticalCenter: parent.verticalCenter
+                    inputWidth: Math.min(220, capabilityHubHeader.width * 0.24)
+                    inputHeight: 36
+                    icon: "qrc:/images/search.png"
+                    iconSize: 16
+                    placeholderText: qsTr("搜索工具...")
+                    onTextChanged: toolsSettingRec.toolSearchText = text
+                }
+
                 Row {
                     visible: window.leftSelectedIndex === 3
                     anchors.right: parent.right
@@ -5533,6 +5548,41 @@ ApplicationWindow {
                     "clawhub": "场景调度"
                 })
 
+                function visibleSkillCategories() {
+                    var present = {}
+                    var list = wsClient.skillList || []
+                    for (var i = 0; i < list.length; i++) {
+                        var id = String(list[i].skillKey || list[i].name || "").toLowerCase()
+                        var category = skillCategoryById[id] || ""
+                        if (category)
+                            present[category] = true
+                    }
+                    var result = ["全部"]
+                    for (var j = 1; j < skillCategories.length; j++) {
+                        if (present[skillCategories[j]])
+                            result.push(skillCategories[j])
+                    }
+                    return result
+                }
+
+                function ensureSelectedSkillCategory() {
+                    var categories = visibleSkillCategories()
+                    if (categories.indexOf(selectedSkillCategory) < 0)
+                        selectedSkillCategory = "全部"
+                }
+
+                onVisibleChanged: {
+                    if (visible)
+                        ensureSelectedSkillCategory()
+                }
+
+                Connections {
+                    target: wsClient
+                    function onSkillListChanged() {
+                        skillSettingRec.ensureSelectedSkillCategory()
+                    }
+                }
+
                 function filteredSkillList() {
                     var list = wsClient.skillList || []
                     var kw = skillSearchText.toLowerCase()
@@ -5571,7 +5621,7 @@ ApplicationWindow {
                             spacing: 8
 
                             Repeater {
-                                model: skillSettingRec.skillCategories
+                                model: skillSettingRec.visibleSkillCategories()
 
                                 delegate: Rectangle {
                                     readonly property bool selected: skillSettingRec.selectedSkillCategory === modelData
@@ -5604,7 +5654,7 @@ ApplicationWindow {
                     ScrollView {
                         id: skillScrollView
                         width: parent.width - 120
-                        height: skillSettingRec.height - skillCategoryBar.height - 48
+                        height: skillSettingRec.height - skillCategoryBar.height - 16 - 16
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         Grid {
@@ -5694,304 +5744,350 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
+                property string selectedToolCategory: "深度问数"
+                property var toolCategories: ["深度问数", "生信分析", "政务助手", "系统自带"]
+                property var deepDataToolIds: ({
+                    "data_execute_code": true,
+                    "data_explore": true,
+                    "data_clean": true,
+                    "echarts_transform": true,
+                    "file_extract": true,
+                    "file_list_archive": true,
+                    "ml_export_model": true,
+                    "ml_recommend_models": true,
+                    "ml_run_pipeline": true,
+                    "read_file_content": true,
+                    "stats_association": true,
+                    "stats_comparative": true,
+                    "stats_correlation": true,
+                    "stats_crosstab": true,
+                    "stats_linear_regression": true,
+                    "stats_logistic_regression": true,
+                    "stats_tableone": true
+                })
+                property var bioinformaticsToolIds: ({
+                    "scrna_annotate": true,
+                    "scrna_cluster": true,
+                    "scrna_preprocess": true,
+                    "scrna_validate": true,
+                    "spatial_cluster": true,
+                    "spatial_deg": true,
+                    "spatial_enrichment": true,
+                    "spatial_load": true,
+                    "spatial_qc": true
+                })
+                property var governmentToolIds: ({
+                    "policy_eligibility_match": true,
+                    "enterprise_profile_query": true,
+                    "policy_document_drafting": true,
+                    "12345_monthly_analysis_report": true,
+                    "knowledge_base_qa": true,
+                    "document_summary": true,
+                    "policy_law_fast_search": true,
+                    "comprehensive_judgment_analysis": true,
+                    "data_analysis": true,
+                    "policy_interpretation": true,
+                    "official_document_draft": true,
+                    "report_material": true,
+                    "work_summary": true,
+                    "meeting_minutes": true
+                })
                 onVisibleChanged: {
                     if (visible && wsClient.connectionState === 3)
                         wsClient.refreshToolsCatalog("main")
                 }
-                function filteredToolGroups(sourceFilter) {
-                    var seen = {}
-                    var groups = []
-                    var list = wsClient.toolList
-                    var search = toolSearchText.toLowerCase()
-                    for (var i = 0; i < list.length; i++) {
-                        var t = list[i]
-                        if (sourceFilter === "plugin" && t.source !== "plugin") continue
-                        if (sourceFilter === "other" && t.source === "plugin") continue
-                        if (search && (t.label || "").toLowerCase().indexOf(search) < 0
-                            && (t.description || "").toLowerCase().indexOf(search) < 0) continue
-                        var gid = t.groupId || ""
-                        if (!seen[gid]) {
-                            seen[gid] = true
-                            groups.push({ groupId: gid, groupLabel: t.groupLabel || gid })
-                        }
+
+                function toolIdMatches(id, idMap) {
+                    if (idMap[id])
+                        return true
+                    for (var knownId in idMap) {
+                        if (id.length > knownId.length
+                                && id.lastIndexOf(knownId) === id.length - knownId.length)
+                            return true
                     }
-                    return groups
+                    return false
                 }
-                function filteredToolsInGroup(groupId, sourceFilter) {
+
+                function categoryForTool(tool) {
+                    var id = String(tool.toolId || "").trim().toLowerCase()
+                    if (toolIdMatches(id, deepDataToolIds))
+                        return "深度问数"
+                    if (toolIdMatches(id, bioinformaticsToolIds))
+                        return "生信分析"
+                    if (toolIdMatches(id, governmentToolIds))
+                        return "政务助手"
+                    return "系统自带"
+                }
+
+                function filteredTools(category) {
                     var result = []
-                    var list = wsClient.toolList
+                    var list = wsClient.toolList || []
                     var search = toolSearchText.toLowerCase()
                     for (var i = 0; i < list.length; i++) {
                         var t = list[i]
-                        if ((t.groupId || "") !== groupId) continue
-                        if (sourceFilter === "plugin" && t.source !== "plugin") continue
-                        if (sourceFilter === "other" && t.source === "plugin") continue
-                        if (search && (t.label || "").toLowerCase().indexOf(search) < 0
-                            && (t.description || "").toLowerCase().indexOf(search) < 0) continue
+                        if (categoryForTool(t) !== category)
+                            continue
+                        if (search && (t.label || "").toLowerCase().indexOf(search) < 0)
+                            continue
                         result.push(t)
                     }
                     return result
                 }
-                function toolCountForSource(sourceFilter) {
-                    var count = 0
-                    var list = wsClient.toolList
-                    for (var i = 0; i < list.length; i++) {
-                        if (sourceFilter === "plugin" && list[i].source === "plugin") count++
-                        else if (sourceFilter === "other" && list[i].source !== "plugin") count++
-                    }
-                    return count
-                }
+
                 Column{
                     anchors.fill: parent
                     leftPadding: 60
                     rightPadding: 60
                     spacing: 16
+
                     Row {
                         id: toolsTab
-                        spacing: 12
-                        property int currentIndex: 0
+                        spacing: 8
 
-                        CustomButton {
-                            width: 76
-                            height: 29
-                            buttonRadius: 8
-                            fontSize: 14
-                            text: qsTr("深度问数")
-                            backgroundColor: toolsTab.currentIndex === 0 ? "#0F006BFF" : "#F7F9FA"
-                            textColor: toolsTab.currentIndex === 0 ? "#006BFF" : "#A6000000"
-                            borderWidth: 0
-                            onClicked: toolsTab.currentIndex = 0
-                        }
-                        CustomButton {
-                            width: 48
-                            height: 29
-                            buttonRadius: 8
-                            fontSize: 14
-                            text: qsTr("其他")
-                            backgroundColor: toolsTab.currentIndex === 1 ? "#0F006BFF" : "#F7F9FA"
-                            textColor: toolsTab.currentIndex === 1 ? "#006BFF" : "#A6000000"
-                            borderWidth: 0
-                            onClicked: toolsTab.currentIndex = 1
+                        Repeater {
+                            model: toolsSettingRec.toolCategories
+
+                            delegate: Rectangle {
+                                readonly property bool selected:
+                                    toolsSettingRec.selectedToolCategory === modelData
+                                width: toolCategoryLabel.implicitWidth + 24
+                                height: 32
+                                radius: 6
+                                color: selected ? "#0F006BFF"
+                                     : toolCategoryMouse.containsMouse ? "#F7F8FA" : "#F7F9FA"
+
+                                Label {
+                                    id: toolCategoryLabel
+                                    anchors.centerIn: parent
+                                    text: modelData
+                                    font.pixelSize: 14
+                                    font.weight: parent.selected ? Font.Medium : Font.Normal
+                                    color: parent.selected ? "#006BFF" : "#A6000000"
+                                }
+
+                                MouseArea {
+                                    id: toolCategoryMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: toolsSettingRec.selectedToolCategory = modelData
+                                }
+                            }
                         }
                     }
+
                     ScrollView {
                         id: toolsScrollView
                         width: parent.width - 120
-                        height: toolsSettingRec.height - 24 - toolsTab.height - 32
+                        height: toolsSettingRec.height - 16 - toolsTab.height - 16
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
                         Column {
                             id: toolsScrollContent
                             width: toolsScrollView.width
-                            spacing: 20
-                            property string currentSourceFilter: toolsTab.currentIndex === 0 ? "plugin" : "other"
+                            spacing: 12
 
                             Label {
-                                visible: toolsSettingRec.filteredToolGroups(toolsScrollContent.currentSourceFilter).length === 0
+                                visible: toolsSettingRec.filteredTools(
+                                    toolsSettingRec.selectedToolCategory).length === 0
                                 width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 topPadding: 40
-                                text: toolsScrollContent.currentSourceFilter === "plugin"
-                                      ? qsTr("暂无深度问数工具")
-                                      : qsTr("暂无其他工具")
+                                text: qsTr("暂无%1工具").arg(toolsSettingRec.selectedToolCategory)
                                 font.pixelSize: 14
                                 color: "#73000000"
                                 wrapMode: Text.WordWrap
                             }
 
-                            Repeater {
-                                model: toolsSettingRec.filteredToolGroups(toolsScrollContent.currentSourceFilter)
+                            Grid {
+                                id: toolCardGrid
+                                columns: 2
+                                spacing: 12
+                                width: parent.width
+                                property real cellWidth: (width - spacing) / 2
 
-                                delegate: Column {
-                                    width: toolsScrollContent.width
-                                    spacing: 4
-                                    property string delegateGroupId: modelData.groupId
-                                    property string delegateGroupLabel: modelData.groupLabel
+                                Repeater {
+                                    model: toolsSettingRec.filteredTools(
+                                        toolsSettingRec.selectedToolCategory)
 
-                                    Label {
-                                        text: delegateGroupLabel
-                                        font.pixelSize: 16
-                                        font.weight: Font.Bold
-                                        color: "#D9000000"
-                                    }
+                                    delegate: Rectangle {
+                                        width: toolCardGrid.cellWidth
+                                        height: toolsLabelColumn.height
+                                        radius: 8
+                                        border.color: "#E1E4EA"
+                                        border.width: 1
+                                        color: "#FFFFFF"
 
-                                    Grid {
-                                        columns: 2
-                                        spacing: 12
-                                        width: parent.width
-                                        property real cellWidth: (width - spacing) / 2
+                                        Column {
+                                            id: toolsLabelColumn
+                                            width: parent.width
+                                            padding: 20
+                                            spacing: 10
 
-                                        Repeater {
-                                            model: toolsSettingRec.filteredToolsInGroup(
-                                                delegateGroupId,
-                                                toolsScrollContent.currentSourceFilter
-                                            )
+                                            Item {
+                                                width: parent.width - 40
+                                                height: 44
 
-                                            delegate: Rectangle {
-                                                width: parent.cellWidth
-                                                height: toolsLabelColumn.implicitHeight
-                                                radius: 8
-                                                border.color: "#E6E7EB"
-                                                border.width: 1
-                                                color: "#FFFFFF"
+                                                Image {
+                                                    id: toolIcon
+                                                    anchors.left: parent.left
+                                                    width: 28
+                                                    height: 28
+                                                    source: "qrc:/images/skillIcon.png"
+                                                    fillMode: Image.PreserveAspectFit
+                                                }
 
                                                 Column {
-                                                    id: toolsLabelColumn
-                                                    width: parent.width
-                                                    padding: 20
-                                                    spacing: 8
+                                                    anchors.left: toolIcon.right
+                                                    anchors.leftMargin: 12
+                                                    anchors.right: toolEnabledSwitch.left
+                                                    anchors.rightMargin: 16
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    spacing: 2
 
-                                                    Item {
-                                                        width: parent.width -  40
-                                                        height: 24
-
-                                                        Row {
-                                                            spacing: 8
-                                                            width: parent.width - 56
-                                                            anchors.left: parent.left
-                                                            anchors.verticalCenter: parent.verticalCenter
-
-                                                            Label {
-                                                                text: modelData.label || modelData.toolId || ""
-                                                                font.pixelSize: 14
-                                                                font.weight: Font.Bold
-                                                                color: "#D9000000"
-                                                                width: Math.max(0, Math.min(implicitWidth, parent.width
-                                                                    - (toolPluginLabel.visible ? toolPluginLabel.width + 8 : 0)))
-                                                                elide: Text.ElideRight
-                                                            }
-                                                            Label {
-                                                                id: toolPluginLabel
-                                                                text: "plugin:" + (modelData.pluginId || "")
-                                                                visible: modelData.pluginId !== ""
-                                                                font.pixelSize: 14
-                                                                color: "#D9000000"
-                                                                width: Math.min(implicitWidth, parent.width * 0.48)
-                                                                elide: Text.ElideRight
-                                                            }
-                                                        }
-
-                                                        Switch {
-                                                            id: toolEnabledSwitch
-                                                            property bool syncGuard: false
-                                                            function syncFromModel() {
-                                                                syncGuard = true
-                                                                checked = modelData.enabled === true
-                                                                syncGuard = false
-                                                            }
-                                                            Component.onCompleted: syncFromModel()
-                                                            Connections {
-                                                                target: wsClient
-                                                                function onToolListChanged() {
-                                                                    toolEnabledSwitch.syncFromModel()
-                                                                }
-                                                            }
-                                                            anchors.right: parent.right
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                            enabled: wsClient.connectionState === 3
-                                                                     && !wsClient.toolInstallBusy
-                                                                     && !wsClient.agentInstallBusy
-                                                            onCheckedChanged: {
-                                                                if (syncGuard)
-                                                                    return
-                                                                wsClient.setAgentToolEnabled(
-                                                                    "main",
-                                                                    modelData.toolId || "",
-                                                                    checked,
-                                                                    modelData.pluginId || "")
-                                                            }
-                                                            indicator: Rectangle {
-                                                                implicitWidth: 44
-                                                                implicitHeight: 22
-                                                                x: toolEnabledSwitch.leftPadding
-                                                                y: parent.height / 2 - height / 2
-                                                                radius: 12
-                                                                color: toolEnabledSwitch.checked ? "#006BFF" : "#D9D9D9"
-                                                                opacity: toolEnabledSwitch.enabled ? 1 : 0.55
-                                                                Behavior on color { ColorAnimation { duration: 150 } }
-                                                                Rectangle {
-                                                                    x: toolEnabledSwitch.checked ? parent.width - width - 3 : 3
-                                                                    y: parent.height / 2 - height / 2
-                                                                    width: 18
-                                                                    height: 18
-                                                                    radius: 9
-                                                                    color: "#FFFFFF"
-                                                                    Behavior on x {
-                                                                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
+                                                    Label {
+                                                        width: parent.width
+                                                        text: modelData.label || modelData.toolId || ""
+                                                        font.pixelSize: 14
+                                                        font.weight: Font.DemiBold
+                                                        color: "#D9000000"
+                                                        elide: Text.ElideRight
                                                     }
 
                                                     Label {
-                                                        id: toolDescLabel
-                                                        text: modelData.description || ""
+                                                        width: parent.width
+                                                        text: modelData.pluginId || modelData.toolId || ""
                                                         font.pixelSize: 14
-                                                        color: "#73000000"
-                                                        wrapMode: Text.Wrap
-                                                        width: parent.width - 40
-                                                        maximumLineCount: 3
+                                                        color: "#40000000"
                                                         elide: Text.ElideRight
+                                                    }
+                                                }
 
-                                                        ToolTip {
-                                                            visible: toolDescHover.containsMouse && toolDescLabel.truncated
-                                                            text: toolDescLabel.text
-                                                            delay: 500
-                                                            x: 0
-                                                            y: -height - 4
-                                                            width: Math.min(implicitContentWidth + 20, toolsScrollView.width / 2 - 40)
-                                                            background: Rectangle {
-                                                                color: "#A6000000"
-                                                                radius: 4
-                                                            }
-                                                            contentItem: Text {
-                                                                text: toolDescLabel.text
-                                                                font.pixelSize: 14
-                                                                color: "#FFFFFF"
-                                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                                wrapMode: Text.Wrap
-                                                            }
-                                                        }
-                                                        MouseArea {
-                                                            id: toolDescHover
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            acceptedButtons: Qt.NoButton
+                                                Switch {
+                                                    id: toolEnabledSwitch
+                                                    property bool syncGuard: false
+                                                    function syncFromModel() {
+                                                        syncGuard = true
+                                                        checked = modelData.enabled === true
+                                                        syncGuard = false
+                                                    }
+                                                    Component.onCompleted: syncFromModel()
+                                                    Connections {
+                                                        target: wsClient
+                                                        function onToolListChanged() {
+                                                            toolEnabledSwitch.syncFromModel()
                                                         }
                                                     }
-
-                                                    Column {
-                                                        width: parent.width - 40
-                                                        spacing: 5
-                                                        visible: wsClient.toolInstallBusy
-                                                                 && wsClient.toolInstallingId === (modelData.toolId || "")
-                                                        height: visible ? implicitHeight : 0
-
+                                                    anchors.right: parent.right
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    enabled: wsClient.connectionState === 3
+                                                             && !wsClient.toolInstallBusy
+                                                             && !wsClient.agentInstallBusy
+                                                    onCheckedChanged: {
+                                                        if (syncGuard)
+                                                            return
+                                                        wsClient.setAgentToolEnabled(
+                                                            "main",
+                                                            modelData.toolId || "",
+                                                            checked,
+                                                            modelData.pluginId || "")
+                                                    }
+                                                    indicator: Rectangle {
+                                                        implicitWidth: 44
+                                                        implicitHeight: 22
+                                                        x: toolEnabledSwitch.leftPadding
+                                                        radius: 11
+                                                        color: toolEnabledSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                                        opacity: toolEnabledSwitch.enabled ? 1 : 0.55
+                                                        Behavior on color { ColorAnimation { duration: 150 } }
                                                         Rectangle {
-                                                            width: parent.width
-                                                            height: 6
-                                                            radius: 3
-                                                            color: "#E6E7EB"
-                                                            Rectangle {
-                                                                width: parent.width * Math.max(0, Math.min(100,
-                                                                    wsClient.toolInstallProgress)) / 100
-                                                                height: parent.height
-                                                                radius: 3
-                                                                color: "#006BFF"
-                                                                Behavior on width { NumberAnimation { duration: 180 } }
+                                                            x: toolEnabledSwitch.checked ? parent.width - width - 3 : 3
+                                                            y: parent.height / 2 - height / 2
+                                                            width: 18
+                                                            height: 18
+                                                            radius: 9
+                                                            color: "#FFFFFF"
+                                                            Behavior on x {
+                                                                NumberAnimation {
+                                                                    duration: 150
+                                                                    easing.type: Easing.OutCubic
+                                                                }
                                                             }
                                                         }
-                                                        Label {
-                                                            width: parent.width
-                                                            text: (wsClient.toolInstallMessage || "")
-                                                                  + "  " + wsClient.toolInstallProgress + "%"
-                                                            font.pixelSize: 12
-                                                            color: "#73000000"
-                                                            elide: Text.ElideRight
+                                                    }
+                                                }
+                                            }
+
+                                            Label {
+                                                id: toolDescLabel
+                                                width: parent.width - 40
+                                                text: modelData.description || ""
+                                                font.pixelSize: 14
+                                                lineHeight: 1.35
+                                                color: "#73000000"
+                                                wrapMode: Text.Wrap
+                                                maximumLineCount: 2
+                                                elide: Text.ElideRight
+
+                                                ToolTip {
+                                                    visible: toolDescHover.containsMouse && toolDescLabel.truncated
+                                                    text: toolDescLabel.text
+                                                    delay: 500
+                                                    x: 0
+                                                    y: -height - 4
+                                                    width: Math.min(implicitContentWidth + 20,
+                                                                    toolsScrollView.width / 2 - 40)
+                                                    background: Rectangle {
+                                                        color: "#A6000000"
+                                                        radius: 4
+                                                    }
+                                                    contentItem: Text {
+                                                        text: toolDescLabel.text
+                                                        font.pixelSize: 14
+                                                        color: "#FFFFFF"
+                                                        font.family: "Alibaba PuHuiTi 3.0"
+                                                        wrapMode: Text.Wrap
+                                                    }
+                                                }
+                                                MouseArea {
+                                                    id: toolDescHover
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    acceptedButtons: Qt.NoButton
+                                                }
+                                            }
+
+                                            Column {
+                                                width: parent.width - 40
+                                                spacing: 5
+                                                visible: wsClient.toolInstallBusy
+                                                         && wsClient.toolInstallingId === (modelData.toolId || "")
+                                                height: visible ? implicitHeight : 0
+
+                                                Rectangle {
+                                                    width: parent.width
+                                                    height: 6
+                                                    radius: 3
+                                                    color: "#E6E7EB"
+                                                    Rectangle {
+                                                        width: parent.width * Math.max(0, Math.min(100,
+                                                            wsClient.toolInstallProgress)) / 100
+                                                        height: parent.height
+                                                        radius: 3
+                                                        color: "#006BFF"
+                                                        Behavior on width {
+                                                            NumberAnimation { duration: 180 }
                                                         }
                                                     }
+                                                }
+                                                Label {
+                                                    width: parent.width
+                                                    text: (wsClient.toolInstallMessage || "")
+                                                          + "  " + wsClient.toolInstallProgress + "%"
+                                                    font.pixelSize: 12
+                                                    color: "#73000000"
+                                                    elide: Text.ElideRight
                                                 }
                                             }
                                         }

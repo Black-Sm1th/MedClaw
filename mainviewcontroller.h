@@ -17,11 +17,13 @@ public:
     void init(ChatModel *chatModel, GatewayClient *wsClient);
 
     Q_INVOKABLE void sendMessage(const QString &text,
-                                 const QString &workspaceForNewAgent = QString());
+                                 const QString &workspaceForNewAgent = QString(),
+                                 const QString &knowledgeCollection = QString());
 
     Q_INVOKABLE void sendMessageWithFiles(const QString &text,
                                           const QVariantList &files,
-                                          const QString &workspaceForNewAgent = QString());
+                                          const QString &workspaceForNewAgent = QString(),
+                                          const QString &knowledgeCollection = QString());
 
     Q_INVOKABLE QString fileSizeHuman(const QString &fileUrl) const;
 
@@ -46,6 +48,8 @@ private:
     static QString resolveWorkspacePath(const QString &ws);
     static QString fileSizeHumanBytes(qint64 bytes);
     static QString normalizeLocalFileCandidate(const QString &link);
+    static QString withKnowledgeScope(const QString &text,
+                                      const QString &knowledgeCollection);
 
     ChatModel      *m_chatModel  = nullptr;
     GatewayClient  *m_wsClient   = nullptr;
