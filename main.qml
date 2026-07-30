@@ -5777,6 +5777,10 @@ ApplicationWindow {
                     "spatial_qc": true
                 })
                 property var governmentToolIds: ({
+                    "docx_generate": true,
+                    "docx_install_font": true,
+                    "docx_check_fonts": true,
+                    "data_profile": true,
                     "policy_eligibility_match": true,
                     "enterprise_profile_query": true,
                     "policy_document_drafting": true,
