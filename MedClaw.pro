@@ -44,6 +44,9 @@ SOURCES += \
 
 RESOURCES += qml.qrc
 
+OTHER_FILES += \
+    components/ExpertPage.qml
+
 RC_ICONS = images/icon.ico
 
 # Additional import path used to resolve QML modules in Qt Creator's code model

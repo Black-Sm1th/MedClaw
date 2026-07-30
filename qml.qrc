@@ -28,6 +28,7 @@
         <file>components/DatePicker.qml</file>
         <file>components/TimePicker.qml</file>
         <file>components/LoginPage.qml</file>
+        <file>components/ExpertPage.qml</file>
         <file>images/chatNew.png</file>
         <file>images/folder.png</file>
         <file>images/puzzle.png</file>
@@ -82,5 +83,19 @@
         <file>images/shortcut/4-1-large.png</file>
         <file>images/shortcut/4-2.png</file>
         <file>images/shortcut/4-2-large.png</file>
+        <file>images/expert/data-orchestrator.png</file>
+        <file>images/expert/forensics-orchestrator.png</file>
+        <file>images/expert/mi-orchestrator.png</file>
+        <file>images/expert/omics-orchestrator.png</file>
+        <file>images/expert/paper-orchestrator.png</file>
+        <file>images/expert/research-orchestrator.png</file>
+        <file>images/expert/1.png</file>
+        <file>images/expert/2.png</file>
+        <file>images/expert/3.png</file>
+        <file>images/expert/4.png</file>
+        <file>images/expert/5.png</file>
+        <file>images/expert/6.png</file>
+        <file>images/expert/7.png</file>
+        <file>images/expert/8.png</file>
     </qresource>
 </RCC>

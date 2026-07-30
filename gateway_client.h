@@ -1006,6 +1006,8 @@ private:
     QHash<QString, QString> m_agentWorkspaceById; ///< agents.list[].id → workspace
     QString                 m_agentsDefaultWorkspace; ///< agents.defaults.workspace
 
+    QHash<QString, QStringList> m_agentSubagentsById;
+
     void scheduleAutoReconnectConnect(const QString &url, int delayMs);
     static QString expandTildePath(const QString &path);
     static bool copyDirectoryRecursive(const QString &srcDir, const QString &dstDir);

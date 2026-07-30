@@ -48,6 +48,7 @@ ApplicationWindow {
     property var kbDeleteKeys: []
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
+    property string pendingExpertPrompt: ""
 
     /// 若整段里出现第二对「()」，只保留到第一对括号结束（含前面文字与第一对括号）
     function trimToFirstParenPairOnly(s) {
@@ -209,6 +210,19 @@ ApplicationWindow {
         wsClient.clearActiveAgentContext()
         newTaskRec.selectedCollaborationAgentIds = ids
         window.leftSelectedIndex = 0
+    }
+
+    function summonExpert(agentId, promptText) {
+        var id = String(agentId || "").trim()
+        if (!id)
+            return
+        pendingExpertPrompt = String(promptText || "")
+        startTaskWithAgents([id])
+        if (pendingExpertPrompt.length > 0) {
+            textInputArea.text = pendingExpertPrompt
+            textInputArea.forceActiveFocus()
+        }
+        wsClient.summonAgent(id)
     }
 
     function taskSessionDisplayTitle(task) {
@@ -796,8 +810,17 @@ ApplicationWindow {
             }
         }
         function onAgentInstallFinished(agentId, success, message) {
-            if (success && String(agentId || "").length > 0)
-                window.startTaskWithAgents([agentId])
+            if (success && String(agentId || "").length > 0) {
+                var selected = newTaskRec.selectedCollaborationAgentIds || []
+                if (window.leftSelectedIndex !== 0 || selected.length !== 1
+                        || String(selected[0] || "") !== String(agentId || ""))
+                    window.startTaskWithAgents([agentId])
+                if (window.pendingExpertPrompt.length > 0) {
+                    textInputArea.text = window.pendingExpertPrompt
+                    textInputArea.forceActiveFocus()
+                }
+            }
+            window.pendingExpertPrompt = ""
         }
         function onCurrentSessionChanged() {
             var sk = wsClient.currentSessionKey || ""
@@ -951,7 +974,7 @@ ApplicationWindow {
                                             }else if(modelData === "专家·技能·工具"){
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "知识库"){
-                                                return "qrc:/images/folder.png"
+                                                return "qrc:/images/knowledge.png"
                                             }else if(modelData === "MCP"){
                                                 return "qrc:/images/puzzle.png"
                                             }
@@ -1027,7 +1050,7 @@ ApplicationWindow {
                                         }else if(modelData === "专家·技能·工具"){
                                             return "qrc:/images/category.png"
                                         }else if(modelData === "知识库"){
-                                            return "qrc:/images/folder.png"
+                                            return "qrc:/images/knowledge.png"
                                         }else if(modelData === "MCP"){
                                             return "qrc:/images/puzzle.png"
                                         }
@@ -5196,6 +5219,7 @@ ApplicationWindow {
 
                 ScrollView {
                     id: expertCardScroll
+                    visible: false
                     anchors.fill: parent
                     anchors.leftMargin: 60
                     anchors.rightMargin: 60
@@ -5400,6 +5424,17 @@ ApplicationWindow {
                             font.pixelSize: 14
                             color: "#73000000"
                         }
+                    }
+                }
+                ExpertPage {
+                    anchors.fill: parent
+                    agentList: wsClient.agentList || []
+                    searchText: agentManageRec.searchText
+                    installBusy: wsClient.agentInstallBusy
+                    hostWidth: window.width
+                    hostHeight: window.height
+                    onSummonRequested: function(agentId, promptText) {
+                        window.summonExpert(agentId, promptText)
                     }
                 }
             }

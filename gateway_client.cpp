@@ -3104,6 +3104,11 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             entry[QStringLiteral("workspace")] = workspace;
             entry[QStringLiteral("identity")] =
                 a.value(QStringLiteral("identity")).toObject().toVariantMap();
+            QVariantList subagentIds;
+            const QStringList configuredSubagents = m_agentSubagentsById.value(id);
+            for (const QString &subagentId : configuredSubagents)
+                subagentIds.append(subagentId);
+            entry[QStringLiteral("subagents")] = subagentIds;
 
             m_agentList.append(entry);
         }
@@ -5398,6 +5403,7 @@ void GatewayClient::rebuildAgentWorkspaceMapFromConfigObject(
     const QJsonObject &root)
 {
     m_agentWorkspaceById.clear();
+    m_agentSubagentsById.clear();
     m_agentsDefaultWorkspace.clear();
     if (root.isEmpty())
         return;
@@ -5414,6 +5420,19 @@ void GatewayClient::rebuildAgentWorkspaceMapFromConfigObject(
         const QString ws = a.value(QStringLiteral("workspace")).toString().trimmed();
         if (!id.isEmpty() && !ws.isEmpty())
             m_agentWorkspaceById.insert(id, ws);
+        if (!id.isEmpty()) {
+            QStringList allowAgents;
+            const QJsonArray configured =
+                a.value(QStringLiteral("subagents")).toObject()
+                    .value(QStringLiteral("allowAgents")).toArray();
+            for (const QJsonValue &allowed : configured) {
+                const QString subagentId = allowed.toString().trimmed();
+                if (!subagentId.isEmpty() && !allowAgents.contains(subagentId))
+                    allowAgents.append(subagentId);
+            }
+            if (!allowAgents.isEmpty())
+                m_agentSubagentsById.insert(id, allowAgents);
+        }
     }
 }
 
