@@ -1079,6 +1079,16 @@ void GatewayClient::reconcileCronTaskSessionsWithJobs()
 QString GatewayClient::taskTitleFromFirstMessage(const QString &message)
 {
     QString title = message.trimmed();
+    const QString begin = QStringLiteral("<knowledge-base-policy>");
+    const QString end = QStringLiteral("</knowledge-base-policy>");
+    const int beginPos = title.indexOf(begin);
+    if (beginPos >= 0) {
+        const int endPos = title.indexOf(end, beginPos + begin.size());
+        title = endPos >= 0
+            ? title.left(beginPos) + title.mid(endPos + end.size())
+            : title.left(beginPos);
+    }
+    title = title.trimmed();
     title.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
     if (title.length() > 120)
         title = title.left(117) + QStringLiteral("...");
@@ -1421,7 +1431,17 @@ QString GatewayClient::firstUserMessageFromHistoryList(const QVariantList &histo
         const QString mt = m.value(QStringLiteral("msgType")).toString();
         if (mt == QLatin1String("toolCall") || mt == QLatin1String("toolResult"))
             continue;
-        const QString t = m.value(QStringLiteral("content")).toString().trimmed();
+        QString t = m.value(QStringLiteral("content")).toString().trimmed();
+        const QString begin = QStringLiteral("<knowledge-base-policy>");
+        const QString end = QStringLiteral("</knowledge-base-policy>");
+        const int beginPos = t.indexOf(begin);
+        if (beginPos >= 0) {
+            const int endPos = t.indexOf(end, beginPos + begin.size());
+            t = endPos >= 0
+                ? t.left(beginPos) + t.mid(endPos + end.size())
+                : t.left(beginPos);
+            t = t.trimmed();
+        }
         if (!t.isEmpty())
             return t;
     }

@@ -48,6 +48,20 @@ ApplicationWindow {
     property var kbDeleteKeys: []
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
+
+    function stripKnowledgePolicyText(value) {
+        var text = String(value || "")
+        var begin = "<knowledge-base-policy>"
+        var end = "</knowledge-base-policy>"
+        var beginPos = text.indexOf(begin)
+        if (beginPos < 0)
+            return text
+        var endPos = text.indexOf(end, beginPos + begin.length)
+        if (endPos < 0)
+            return text.substring(0, beginPos).trim()
+        return (text.substring(0, beginPos)
+                + text.substring(endPos + end.length)).trim()
+    }
     property string pendingExpertPrompt: ""
 
     /// 若整段里出现第二对「()」，只保留到第一对括号结束（含前面文字与第一对括号）
@@ -87,7 +101,7 @@ ApplicationWindow {
                 return body.substring(0, lastDash)
             return body
         }
-        var t = agent.activeSessionTitle || ""
+        var t = window.stripKnowledgePolicyText(agent.activeSessionTitle || "")
         if (t.length === 0) {
             if (nm.match(/^task-\d+$/))
                 return qsTr("新对话")
@@ -227,7 +241,7 @@ ApplicationWindow {
 
     function taskSessionDisplayTitle(task) {
         if (!task) return ""
-        var t = task.title || ""
+        var t = window.stripKnowledgePolicyText(task.title || "")
         if (t.length === 0)
             t = qsTr("新对话")
         return t
@@ -3882,7 +3896,13 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: newTaskRec.selectedShortcutGroup = index
+                                    onClicked: {
+                                        if(newTaskRec.selectedShortcutGroup === index){
+                                            newTaskRec.selectedShortcutGroup = -1
+                                        }else{
+                                            newTaskRec.selectedShortcutGroup = index
+                                        }
+                                    }
                                 }
                             }
                         }

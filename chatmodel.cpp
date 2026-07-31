@@ -1,5 +1,18 @@
 #include "chatmodel.h"
 
+static QString chatDisplayContent(const QString &content)
+{
+    const QString begin = QStringLiteral("<knowledge-base-policy>");
+    const QString end = QStringLiteral("</knowledge-base-policy>");
+    const int beginPos = content.indexOf(begin);
+    if (beginPos < 0)
+        return content;
+    const int endPos = content.indexOf(end, beginPos + begin.size());
+    if (endPos < 0)
+        return content.left(beginPos).trimmed();
+    return (content.left(beginPos) + content.mid(endPos + end.size())).trimmed();
+}
+
 ChatModel::ChatModel(QObject *parent)
     : QAbstractListModel(parent)
 {
@@ -75,7 +88,8 @@ void ChatModel::addMessage(const QString &role, const QString &content)
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
     msg.role      = role;
-    msg.content   = content;
+    msg.content   = role == QLatin1String("user")
+        ? chatDisplayContent(content) : content;
     msg.timestamp = QDateTime::currentDateTime();
     msg.msgType   = QStringLiteral("text");
     msg.isError   = false;
@@ -324,7 +338,9 @@ void ChatModel::loadHistory(const QVariantList &messages)
 
         ChatMessage msg;
         msg.role = m.value(QStringLiteral("role")).toString();
-        msg.content = m.value(QStringLiteral("content")).toString();
+        msg.content = msg.role == QLatin1String("user")
+            ? chatDisplayContent(m.value(QStringLiteral("content")).toString())
+            : m.value(QStringLiteral("content")).toString();
         msg.timestamp = QDateTime::currentDateTime();
         msg.msgType = QStringLiteral("text");
         msg.isError = false;
