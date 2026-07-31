@@ -4089,6 +4089,18 @@ ApplicationWindow {
 
                 readonly property bool hasWorkspaceSelected: effectiveWorkspacePath.length > 0
 
+                function openWorkspaceInFileSystem() {
+                    var path = String(effectiveWorkspacePath || "").trim()
+                    if (!path)
+                        return
+
+                    // Qt.openUrlExternally delegates the file URL to the OS file manager.
+                    var normalized = path.replace(/\\/g, "/")
+                    if (Qt.platform.os === "windows" && normalized.charAt(0) !== "/")
+                        normalized = "/" + normalized
+                    Qt.openUrlExternally(encodeURI("file://" + normalized))
+                }
+
                 function resetPicker() {
                     absolutePath = ""
                     currentText = qsTr("workspace")
@@ -4184,8 +4196,17 @@ ApplicationWindow {
                         id: wsMouseArea
                         anchors.fill: parent
                         hoverEnabled: true
-                        cursorShape: dropdownSelectionWorkSpace.pickerLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
+                        cursorShape: (dropdownSelectionWorkSpace.state === "topbar"
+                                      || !dropdownSelectionWorkSpace.pickerLocked)
+                                     ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: {
+                            // The compact top-bar control opens the selected workspace
+                            // in the system file manager; the larger task-dialog control
+                            // keeps the folder-selection menu behavior.
+                            if (dropdownSelectionWorkSpace.state === "topbar") {
+                                dropdownSelectionWorkSpace.openWorkspaceInFileSystem()
+                                return
+                            }
                             if (dropdownSelectionWorkSpace.pickerLocked)
                                 return
                             wsPopup.visible ? wsPopup.close() : wsPopup.open()
