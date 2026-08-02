@@ -1226,14 +1226,23 @@ ApplicationWindow {
                                         }
 
                                         // 最近活跃会话的更新时间（与上行标题为同一条 session）
-                                        Label {
-                                            text: {
-                                                var ms = Number(modelData.updated_at || modelData.created_at || 0)
-                                                if (!ms || ms <= 0) return ""
-                                                return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
+                                        Row {
+                                            spacing: 5
+
+                                            TaskSessionStatusIndicator {
+                                                running: modelData.isRunning || false
+                                                anchors.verticalCenter: parent.verticalCenter
                                             }
-                                            font.pixelSize: 12
-                                            color: "#73000000"
+
+                                            Label {
+                                                text: {
+                                                    var ms = Number(modelData.updated_at || modelData.created_at || 0)
+                                                    if (!ms || ms <= 0) return ""
+                                                    return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
+                                                }
+                                                font.pixelSize: 12
+                                                color: "#73000000"
+                                            }
                                         }
                                     }
 
@@ -1467,14 +1476,23 @@ ApplicationWindow {
                                 }
                             }
 
-                            Label {
-                                text: {
-                                    var ms = Number(modelData.updated_at || modelData.created_at || 0)
-                                    if (!ms || ms <= 0) return ""
-                                    return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
+                            Row {
+                                spacing: 5
+
+                                TaskSessionStatusIndicator {
+                                    running: modelData.isRunning || false
+                                    anchors.verticalCenter: parent.verticalCenter
                                 }
-                                font.pixelSize: 12
-                                color: "#73000000"
+
+                                Label {
+                                    text: {
+                                        var ms = Number(modelData.updated_at || modelData.created_at || 0)
+                                        if (!ms || ms <= 0) return ""
+                                        return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
+                                    }
+                                    font.pixelSize: 12
+                                    color: "#73000000"
+                                }
                             }
                         }
 
@@ -1871,105 +1889,12 @@ ApplicationWindow {
                         newTaskRec.selectedCollaborationAgentIds = []
                     }
                 }
-                Rectangle {
-                    id: collaborationTabBar
-                    visible: newTaskRec.hasActiveTask
-                             && wsClient.collaborationParticipants
-                             && wsClient.collaborationParticipants.length > 0
-                    anchors.top: parent.top
-                    anchors.topMargin: 12
-                    width: 840
-                    height: visible ? 40 : 0
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    color: "transparent"
-                    clip: true
-
-                    Flickable {
-                        anchors.fill: parent
-                        contentWidth: collaborationTabRow.implicitWidth
-                        contentHeight: height
-                        boundsBehavior: Flickable.StopAtBounds
-                        clip: true
-
-                        Row {
-                            id: collaborationTabRow
-                            spacing: 8
-                            height: parent.height
-
-                            Repeater {
-                                model: wsClient.collaborationParticipants
-
-                                delegate: Rectangle {
-                                    height: 32
-                                    width: Math.min(220, Math.max(92, participantLabel.implicitWidth + rolePill.width + 34))
-                                    radius: 8
-                                    readonly property bool activeTab: modelData.isPending
-                                                                  ? false
-                                                                  : (modelData.sessionKey === wsClient.currentViewSessionKey)
-                                    color: activeTab ? "#EAF2FF"
-                                         : participantMouse.containsMouse ? "#F7F9FA"
-                                         : "#FFFFFF"
-                                    border.width: 1
-                                    border.color: activeTab ? "#66A3FF" : "#E6E7EB"
-
-                                    Row {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 10
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 10
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 6
-
-                                        Rectangle {
-                                            id: rolePill
-                                            width: rolePillText.implicitWidth + 10
-                                            height: 20
-                                            radius: 6
-                                            color: modelData.isController ? "#14006BFF" : "#1400A37A"
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            Text {
-                                                id: rolePillText
-                                                anchors.centerIn: parent
-                                                text: modelData.roleLabel || ""
-                                                font.pixelSize: 11
-                                                color: modelData.isController ? "#006BFF" : "#007A5A"
-                                            }
-                                        }
-
-                                        Label {
-                                            id: participantLabel
-                                            text: modelData.agentName || modelData.title || modelData.agentId || ""
-                                            font.pixelSize: 13
-                                            color: "#D9000000"
-                                            elide: Text.ElideRight
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            width: Math.max(0, parent.width - rolePill.width - parent.spacing)
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: participantMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (modelData.isPending)
-                                                wsClient.switchCollaborationViewSession(wsClient.currentTaskSessionKey)
-                                            else
-                                                wsClient.switchCollaborationViewSession(modelData.sessionKey || "")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 ChatWebView {
                     id: chatWebView
                     visible: newTaskRec.hasMessages
-                    anchors.top: collaborationTabBar.visible ? collaborationTabBar.bottom : parent.top
-                    anchors.topMargin: collaborationTabBar.visible ? 8 : 16
-                    anchors.bottom: generatingRow.top
+                    anchors.top: parent.top
+                    anchors.topMargin: 16
+                    anchors.bottom: chatInputContainer.top
                     anchors.bottomMargin: 8
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -1979,9 +1904,9 @@ ApplicationWindow {
 
                 Label {
                     visible: newTaskRec.hasActiveTask && !newTaskRec.hasMessages
-                    anchors.top: collaborationTabBar.visible ? collaborationTabBar.bottom : parent.top
-                    anchors.topMargin: collaborationTabBar.visible ? 8 : 16
-                    anchors.bottom: generatingRow.top
+                    anchors.top: parent.top
+                    anchors.topMargin: 16
+                    anchors.bottom: chatInputContainer.top
                     anchors.left: parent.left
                     anchors.right: parent.right
                     horizontalAlignment: Text.AlignHCenter
@@ -1994,9 +1919,9 @@ ApplicationWindow {
                 // ListView {
                 //     id: chatListView
                 //     visible: false
-                //     anchors.top: collaborationTabBar.visible ? collaborationTabBar.bottom : parent.top
-                //     anchors.topMargin: collaborationTabBar.visible ? 8 : 16
-                //     anchors.bottom: generatingRow.top
+                //     anchors.top: parent.top
+                //     anchors.topMargin: 16
+                //     anchors.bottom: chatInputContainer.top
                 //     anchors.bottomMargin: 8
                 //     width: 840
                 //     anchors.horizontalCenter: parent.horizontalCenter
@@ -2554,55 +2479,6 @@ ApplicationWindow {
                 //     }
                 // }
 
-                /// 固定在输入框上方、列表可视区域下方（不参与 ListView 滚动）
-                Item {
-                    id: generatingRow
-                    width: 840
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottom: chatInputContainer.top
-                    height: (newTaskRec.hasMessages && chatModel.isStreaming)
-                            ? (generatingStatusLabel.implicitHeight + 12)
-                            : 0
-                    visible: height > 0
-
-                    Connections {
-                        target: chatModel
-                        function onIsStreamingChanged() {
-                            if (!chatModel.isStreaming)
-                                generatingStatusLabel.opacity = 1
-                        }
-                    }
-
-                    Label {
-                        id: generatingStatusLabel
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("生成中...")
-                        font.pixelSize: 14
-                        font.family: window.font.family
-                        color: "#8A8F98"
-                        opacity: 1
-
-                        SequentialAnimation on opacity {
-                            running: chatModel.isStreaming && generatingRow.visible
-                            loops: Animation.Infinite
-                            NumberAnimation {
-                                from: 1.0
-                                to: 0.3
-                                duration: 700
-                                easing.type: Easing.InOutSine
-                            }
-                            NumberAnimation {
-                                from: 0.3
-                                to: 1.0
-                                duration: 700
-                                easing.type: Easing.InOutSine
-                            }
-                        }
-                    }
-                }
-
                 ListModel {
                     id: attachmentModel
                 }
@@ -2943,6 +2819,22 @@ ApplicationWindow {
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                                CollaborationPicker {
+                                    id: collaborationPicker
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: newTaskRec.hasActiveTask
+                                             && wsClient.collaborationParticipants
+                                             && wsClient.collaborationParticipants.length > 1
+                                    width: visible ? implicitWidth : 0
+                                    height: 36
+                                    participants: wsClient.collaborationParticipants || []
+                                    currentSessionKey: (wsClient.currentViewSessionKey || "")
+                                                       || (wsClient.currentTaskSessionKey || "")
+                                    controllerRunning: chatModel.isStreaming
+                                    onSessionSelected: function(sessionKey) {
+                                        wsClient.switchCollaborationViewSession(sessionKey)
                                     }
                                 }
                                 Item {
@@ -3699,7 +3591,8 @@ ApplicationWindow {
                                     width: Math.max(0, parent.width - workspaceDialogSlot.width
                                                     - dropdownSelectionModel.width
                                                     - expertSelectionTag.width
-                                                    - inputLeftRow.width - 4 * 4)
+                                                    - collaborationPicker.width
+                                                    - inputLeftRow.width - 5 * 4)
                                     height: 1
                                 }
                                 Row{

@@ -769,6 +769,8 @@ private:
     void softDeleteTaskSessionLocal(const QString &sessionKey);
     QVariantMap taskSessionInfoByKey(const QString &sessionKey) const;
     QStringList taskSessionAgentIds(const QVariantMap &row) const;
+    void setTaskSessionRunning(const QString &sessionKey, bool running);
+    void updateTaskSessionRuntimeFromEvent(const QJsonObject &payload);
     bool isLocalOnlyCronTaskSession(const QString &sessionKey) const;
     QString cronJobIdFromSessionKey(const QString &sessionKey) const;
     void softDeleteCronTaskSessionsForJob(const QString &jobId);
@@ -875,6 +877,7 @@ private:
     QVariantList     m_taskSessionList; ///< SQLite 任务会话缓存
     QSqlDatabase     m_taskSessionDb;   ///< 本地任务会话 SQLite
     bool             m_taskSessionDbReady = false;
+    QSet<QString>    m_runningTaskSessionKeys;
     QString          m_taskSessionUserId;
     QSet<QString>    m_currentUserCronJobIds; ///< 当前登录用户拥有的 cron job ID
     QString          m_defaultAgentId;  ///< 默认 agent ID

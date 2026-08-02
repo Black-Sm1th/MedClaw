@@ -323,6 +323,7 @@ void GatewayClient::setTaskSessionUserId(const QString &userId)
         return;
 
     m_taskSessionUserId = normalized;
+    m_runningTaskSessionKeys.clear();
     clearActiveAgentContext();
     loadTaskSessionListFromDb();
     loadCronJobOwnershipFromDb();
@@ -398,6 +399,11 @@ QVariantList GatewayClient::collaborationParticipants() const
     controller[QStringLiteral("role")] = QStringLiteral("controller");
     controller[QStringLiteral("roleLabel")] = QStringLiteral("\u4e3b\u63a7");
     controller[QStringLiteral("isController")] = true;
+    controller[QStringLiteral("isPending")] = false;
+    controller[QStringLiteral("isRunning")] = false;
+    controller[QStringLiteral("isCompleted")] = true;
+    controller[QStringLiteral("identity")] =
+        controllerAgent.value(QStringLiteral("identity"));
     if (!controllerAgent.value(QStringLiteral("name")).toString().isEmpty())
         controller[QStringLiteral("agentName")] =
             controllerAgent.value(QStringLiteral("name")).toString();
@@ -431,16 +437,62 @@ QVariantList GatewayClient::collaborationParticipants() const
         row[QStringLiteral("role")] = role;
         row[QStringLiteral("roleLabel")] = QStringLiteral("\u5b50 Agent");
         row[QStringLiteral("isController")] = false;
+        row[QStringLiteral("identity")] = agent.value(QStringLiteral("identity"));
         const qint64 startedAt = s.value(QStringLiteral("startedAt")).toLongLong();
         const qint64 updatedAt = s.value(QStringLiteral("updatedAt")).toLongLong();
         row[QStringLiteral("startedAt")] = QVariant(static_cast<qlonglong>(startedAt));
         row[QStringLiteral("updatedAt")] = QVariant(static_cast<qlonglong>(updatedAt));
+
+        const QString sessionState =
+            (s.value(QStringLiteral("status")).toString() + QLatin1Char(' ')
+             + s.value(QStringLiteral("state")).toString()).trimmed().toLower();
+        const QVariantMap hinted = collaborationChildHintForAgent(aid, taskKey);
+        const bool matchingHint =
+            hinted.value(QStringLiteral("sessionKey")).toString() == key;
+        bool isRunning = false;
+        if (matchingHint && hinted.contains(QStringLiteral("isRunning"))) {
+            isRunning = hinted.value(QStringLiteral("isRunning")).toBool();
+        } else if (s.contains(QStringLiteral("isRunning"))) {
+            isRunning = s.value(QStringLiteral("isRunning")).toBool();
+        } else if (s.contains(QStringLiteral("running"))) {
+            isRunning = s.value(QStringLiteral("running")).toBool();
+        } else if (s.contains(QStringLiteral("active"))) {
+            isRunning = s.value(QStringLiteral("active")).toBool();
+        } else {
+            isRunning = sessionState == QLatin1String("running")
+                || sessionState == QLatin1String("active")
+                || sessionState == QLatin1String("starting")
+                || sessionState == QLatin1String("queued");
+        }
+        const bool explicitlyComplete =
+            s.value(QStringLiteral("completed")).toBool()
+            || s.value(QStringLiteral("aborted")).toBool()
+            || s.value(QStringLiteral("completedAt")).toLongLong() > 0
+            || s.value(QStringLiteral("endedAt")).toLongLong() > 0
+            || sessionState.contains(QLatin1String("complete"))
+            || sessionState.contains(QLatin1String("finished"))
+            || sessionState.contains(QLatin1String("done"))
+            || sessionState.contains(QLatin1String("failed"))
+            || sessionState.contains(QLatin1String("aborted"));
+        if (explicitlyComplete)
+            isRunning = false;
+        row[QStringLiteral("isPending")] = false;
+        row[QStringLiteral("isRunning")] = isRunning;
+        row[QStringLiteral("isCompleted")] = !isRunning;
         out.append(row);
         seenSessionKeys.insert(key);
     }
 
     const QVariantMap taskRow = taskSessionInfoByKey(taskKey);
-    const QStringList selectedAgents = taskSessionAgentIds(taskRow);
+    QStringList selectedAgents = taskSessionAgentIds(taskRow);
+    // Expert teams declare their full roster in subagents.allowAgents. Most
+    // of those agents do not have a session until the controller summons
+    // them, so include the configured roster as pending participants.
+    for (const QString &configuredId : m_agentSubagentsById.value(controllerAgentId)) {
+        const QString aid = configuredId.trimmed();
+        if (!aid.isEmpty() && !selectedAgents.contains(aid))
+            selectedAgents.append(aid);
+    }
     for (const QString &aidRaw : selectedAgents) {
         const QString aid = aidRaw.trimmed();
         if (aid.isEmpty() || seenAgentIds.contains(aid))
@@ -464,7 +516,11 @@ QVariantList GatewayClient::collaborationParticipants() const
                              : QStringLiteral("\u6267\u884c\u4e2d");
         row[QStringLiteral("isController")] = false;
         row[QStringLiteral("isPending")] = hinted.isEmpty();
-        row[QStringLiteral("isRunning")] = !hinted.isEmpty();
+        row[QStringLiteral("isRunning")] = !hinted.isEmpty()
+            && hinted.value(QStringLiteral("isRunning"), true).toBool();
+        row[QStringLiteral("isCompleted")] = !hinted.isEmpty()
+            && !row.value(QStringLiteral("isRunning")).toBool();
+        row[QStringLiteral("identity")] = agent.value(QStringLiteral("identity"));
         row[QStringLiteral("startedAt")] = hinted.isEmpty()
             ? QVariant(static_cast<qlonglong>(std::numeric_limits<qint64>::max()))
             : hinted.value(QStringLiteral("startedAt"));
@@ -506,7 +562,11 @@ QVariantList GatewayClient::collaborationParticipants() const
         row[QStringLiteral("roleLabel")] = QStringLiteral("\u6267\u884c\u4e2d");
         row[QStringLiteral("isController")] = false;
         row[QStringLiteral("isPending")] = false;
-        row[QStringLiteral("isRunning")] = true;
+        row[QStringLiteral("isRunning")] =
+            hinted.value(QStringLiteral("isRunning"), true).toBool();
+        row[QStringLiteral("isCompleted")] =
+            !row.value(QStringLiteral("isRunning")).toBool();
+        row[QStringLiteral("identity")] = agent.value(QStringLiteral("identity"));
         row[QStringLiteral("startedAt")] = hinted.value(QStringLiteral("startedAt"));
         row[QStringLiteral("updatedAt")] = hinted.value(QStringLiteral("updatedAt"));
         out.append(row);
@@ -571,7 +631,14 @@ QVariantList GatewayClient::agentList() const
 
 QVariantList GatewayClient::taskSessionList() const
 {
-    return m_taskSessionList;
+    QVariantList rows = m_taskSessionList;
+    for (int i = 0; i < rows.size(); ++i) {
+        QVariantMap row = rows.at(i).toMap();
+        const QString key = row.value(QStringLiteral("session_id")).toString();
+        row[QStringLiteral("isRunning")] = m_runningTaskSessionKeys.contains(key);
+        rows[i] = row;
+    }
+    return rows;
 }
 
 /// 获取默认 agent ID
@@ -966,6 +1033,7 @@ void GatewayClient::softDeleteTaskSessionLocal(const QString &sessionKey)
     const QString key = sessionKey.trimmed();
     if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
         return;
+    m_runningTaskSessionKeys.remove(key);
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QSqlQuery q(m_taskSessionDb);
@@ -1010,6 +1078,77 @@ QStringList GatewayClient::taskSessionAgentIds(const QVariantMap &row) const
             ids.append(aid);
     }
     return ids;
+}
+
+void GatewayClient::setTaskSessionRunning(const QString &sessionKey, bool running)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || taskSessionInfoByKey(key).isEmpty())
+        return;
+
+    const bool changed = running
+        ? !m_runningTaskSessionKeys.contains(key)
+        : m_runningTaskSessionKeys.contains(key);
+    if (!changed)
+        return;
+
+    if (running)
+        m_runningTaskSessionKeys.insert(key);
+    else
+        m_runningTaskSessionKeys.remove(key);
+    emit taskSessionListChanged();
+}
+
+void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload)
+{
+    const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
+    const QString phase = data.value(QStringLiteral("phase")).toString(
+        payload.value(QStringLiteral("phase")).toString()).trimmed().toLower();
+    const QString subEvent = payload.value(QStringLiteral("event"))
+                                 .toString().trimmed().toLower();
+    const QString dataType = data.value(QStringLiteral("type"))
+                                 .toString().trimmed().toLower();
+    const bool marksComplete = phase == QLatin1String("complete")
+        || phase == QLatin1String("done")
+        || phase == QLatin1String("end")
+        || subEvent.contains(QLatin1String("complete"))
+        || subEvent.contains(QLatin1String("done"))
+        || subEvent.contains(QLatin1String("finish"))
+        || subEvent.contains(QLatin1String("end"))
+        || dataType == QLatin1String("message_end");
+    const bool marksRunning = !marksComplete
+        && (phase == QLatin1String("start")
+            || data.contains(QStringLiteral("delta"))
+            || subEvent.contains(QLatin1String("start"))
+            || subEvent.contains(QLatin1String("delta"))
+            || subEvent.contains(QLatin1String("chunk"))
+            || dataType == QLatin1String("message_start"));
+    if (!marksComplete && !marksRunning)
+        return;
+
+    const QString eventKey = extractPayloadSessionKey(payload).trimmed();
+    QString taskKey = taskSessionInfoByKey(eventKey).isEmpty() ? QString() : eventKey;
+
+    // Events without an explicit session key may be normalized to
+    // agent:<id>:main. Resolve them only when exactly one running task uses
+    // that controller agent; child-agent events then cannot stop the parent.
+    if (taskKey.isEmpty() && marksComplete
+        && !eventKey.contains(QLatin1String(":subagent:"))
+        && !eventKey.contains(QLatin1String(":acp:"))) {
+        const QString agentId = agentIdFromSessionKey(eventKey);
+        for (const QString &runningKey : m_runningTaskSessionKeys) {
+            if (agentIdFromSessionKey(runningKey) != agentId)
+                continue;
+            if (!taskKey.isEmpty()) {
+                taskKey.clear();
+                break;
+            }
+            taskKey = runningKey;
+        }
+    }
+
+    if (!taskKey.isEmpty())
+        setTaskSessionRunning(taskKey, marksRunning);
 }
 
 bool GatewayClient::isLocalOnlyCronTaskSession(const QString &sessionKey) const
@@ -1907,6 +2046,7 @@ bool GatewayClient::maybeConfigureSubagentAllowAgents(
     const QJsonObject cfg = buildConfigWithSubagentAllowAgents(
         m_lastConfigSnapshot, controllerAgentId, targets, &changed);
     if (cfg.isEmpty()) {
+        setTaskSessionRunning(controllerSessionKey, false);
         clearPendingCollaborationSend();
         emit errorOccurred(QStringLiteral("\u65e0\u6cd5\u6784\u5efa\u534f\u4f5c Agent \u6743\u9650\u914d\u7f6e"));
         return true;
@@ -1932,6 +2072,7 @@ void GatewayClient::sendPendingCollaborationChatNow()
 {
     if (m_pendingCollabControllerSessionKey.trimmed().isEmpty()
         || m_pendingCollabUserMessage.trimmed().isEmpty()) {
+        setTaskSessionRunning(m_pendingCollabControllerSessionKey, false);
         clearPendingCollaborationSend();
         return;
     }
@@ -1958,8 +2099,11 @@ void GatewayClient::sendPendingCollaborationChatNow()
         return;
     }
 
-    sendRequest(QStringLiteral("chat.send"),
-                m_session.buildChatSendParams(msg, controllerKey));
+    const QString reqId = sendRequest(
+        QStringLiteral("chat.send"),
+        m_session.buildChatSendParams(msg, controllerKey));
+    m_chatSendReqSession.insert(reqId, controllerKey);
+    m_chatSendReqMessage.insert(reqId, msg);
 }
 
 QJsonObject GatewayClient::buildSessionsCreateParams(
@@ -2586,6 +2730,9 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         return;
     }
 
+    if (event == QLatin1String("agent") || event == QLatin1String("chat"))
+        updateTaskSessionRuntimeFromEvent(payload);
+
     // ── 调试日志（前 50 条 agent/chat 事件） ──
     static int debugCount = 0;
     if (event == QLatin1String("agent")
@@ -2835,7 +2982,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_sidebarTitleHistReqBatch.remove(id);
         m_sessionTitleHistReqSession.remove(id);
         m_sessionTitleHistReqBatch.remove(id);
-        m_chatSendReqSession.remove(id);
+        const QString failedChatSession = m_chatSendReqSession.take(id);
+        if (!failedChatSession.isEmpty())
+            setTaskSessionRunning(failedChatSession, false);
         m_chatSendReqMessage.remove(id);
 
         if (method == QLatin1String("config.patch")) {
@@ -2880,12 +3029,15 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
         if (method == QLatin1String("config.set")
             && m_collabAllowConfigSetReqIds.remove(id)) {
+            const QString failedTaskKey = m_pendingCollabControllerSessionKey;
             clearPendingCollaborationSend();
+            setTaskSessionRunning(failedTaskKey, false);
         }
 
         if (method == QLatin1String("sessions.create")) {
             const QString key = m_pendingSessionsCreateReqSession.take(id);
             if (!key.isEmpty()) {
+                setTaskSessionRunning(key, false);
                 m_localOnlyTaskSessionKeys.remove(key);
                 softDeleteTaskSessionLocal(key);
             }
@@ -3168,6 +3320,8 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         std::reverse(m_agentList.begin(), m_agentList.end());
 
         emit agentListChanged();
+        if (!m_currentTaskSessionKey.trimmed().isEmpty())
+            emit collaborationParticipantsChanged();
         scheduleAgentListFirstUserTitles();
         return;
     }
@@ -4937,6 +5091,7 @@ void GatewayClient::sendChatMessage(const QString &message,
         }
         upsertTaskSessionLocal(controllerKey, businessWorkspace,
                                title, taskAgents, now, now);
+        setTaskSessionRunning(controllerKey, true);
         m_localOnlyTaskSessionKeys.insert(controllerKey);
 
         m_session.setCurrentSessionKey(controllerKey);
@@ -4970,6 +5125,7 @@ void GatewayClient::sendChatMessage(const QString &message,
 
     {
         const QString controllerKey = activeKey;
+        setTaskSessionRunning(controllerKey, true);
         QString controllerId = controllerAgentId;
         if (controllerId.isEmpty())
             controllerId = agentIdFromSessionKey(controllerKey);
@@ -4987,8 +5143,11 @@ void GatewayClient::sendChatMessage(const QString &message,
                                                    businessWorkspace);
     }
 
-    sendRequest(QStringLiteral("chat.send"),
-                m_session.buildChatSendParams(outboundMessage, activeKey));
+    const QString reqId = sendRequest(
+        QStringLiteral("chat.send"),
+        m_session.buildChatSendParams(outboundMessage, activeKey));
+    m_chatSendReqSession.insert(reqId, activeKey);
+    m_chatSendReqMessage.insert(reqId, trimmed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -5327,6 +5486,8 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     rebuildMcpListFromConfigObject(m_lastConfigSnapshot);
     rebuildAgentWorkspaceMapFromConfigObject(m_lastConfigSnapshot);
     mergeWorkspaceIntoAgentIdentity();
+    if (!m_currentTaskSessionKey.trimmed().isEmpty())
+        emit collaborationParticipantsChanged();
     parseSettingsFromConfig();
 
     if (m_pendingCollabAwaitingConfigGet
@@ -6096,6 +6257,26 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     };
     visit(QJsonValue(payload), 0);
 
+    const QJsonObject eventData = payload.value(QStringLiteral("data")).toObject();
+    const QString phase = eventData.value(QStringLiteral("phase")).toString(
+        payload.value(QStringLiteral("phase")).toString()).trimmed().toLower();
+    const QString subEvent = payload.value(QStringLiteral("event"))
+                                 .toString().trimmed().toLower();
+    const bool marksComplete = phase == QLatin1String("complete")
+        || phase == QLatin1String("done")
+        || phase == QLatin1String("end")
+        || subEvent.contains(QLatin1String("complete"))
+        || subEvent.contains(QLatin1String("done"))
+        || subEvent.contains(QLatin1String("finish"))
+        || subEvent.contains(QLatin1String("end"));
+    const bool marksRunning = !marksComplete
+        && (phase == QLatin1String("start")
+            || eventData.contains(QStringLiteral("delta"))
+            || subEvent.contains(QLatin1String("start"))
+            || subEvent.contains(QLatin1String("delta"))
+            || subEvent.contains(QLatin1String("chunk")));
+    const bool hasLifecycleState = marksComplete || marksRunning;
+
     for (const QString &candidate : eventSessionKeys) {
         if ((candidate.contains(QLatin1String(":subagent:"))
              || candidate.contains(QLatin1String(":acp:")))
@@ -6103,8 +6284,36 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
             childSessionKeys.append(candidate);
         }
     }
-    if (childSessionKeys.isEmpty())
+    if (childSessionKeys.isEmpty()) {
+        // Some completion events only carry agentId (or the agent main key).
+        // Update the latest known child for that agent instead of leaving the
+        // picker spinner running forever.
+        if (hasLifecycleState) {
+            const QString eventKey = extractPayloadSessionKey(payload).trimmed();
+            const QString eventAgentId = agentIdFromSessionKey(eventKey);
+            for (int i = m_collaborationChildSessionHints.size() - 1; i >= 0; --i) {
+                QVariantMap existing = m_collaborationChildSessionHints.at(i).toMap();
+                const QString existingKey =
+                    existing.value(QStringLiteral("sessionKey")).toString();
+                const bool sameSession = !eventKey.isEmpty() && eventKey == existingKey;
+                const bool sameAgent = !eventAgentId.isEmpty()
+                    && eventAgentId == existing.value(QStringLiteral("agentId")).toString();
+                if (!sameSession && !sameAgent)
+                    continue;
+                const bool nextRunning = marksRunning;
+                if (existing.value(QStringLiteral("isRunning"), true).toBool()
+                    != nextRunning) {
+                    existing[QStringLiteral("isRunning")] = nextRunning;
+                    existing[QStringLiteral("updatedAt")] = QVariant(
+                        static_cast<qlonglong>(QDateTime::currentMSecsSinceEpoch()));
+                    m_collaborationChildSessionHints[i] = existing;
+                    emit collaborationParticipantsChanged();
+                }
+                break;
+            }
+        }
         return;
+    }
 
     const QString sessionKey = childSessionKeys.constFirst().trimmed();
     if (sessionKey.isEmpty() || sessionKey == taskKey)
@@ -6133,32 +6342,57 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     if (agentId.isEmpty())
         return;
 
+    int existingIndex = -1;
+    for (int i = 0; i < m_collaborationChildSessionHints.size(); ++i) {
+        if (m_collaborationChildSessionHints.at(i).toMap()
+                .value(QStringLiteral("sessionKey")).toString() == sessionKey) {
+            existingIndex = i;
+            break;
+        }
+    }
+
     // Old preselected teams may emit only a bare subagent key. Keep that
     // fallback, but require dynamic expert-selected agents to carry an
     // explicit relationship to the active controller session.
-    if (parentKey.isEmpty()) {
-        const QStringList selectedAgents =
+    if (parentKey.isEmpty() && existingIndex < 0) {
+        QStringList selectedAgents =
             taskSessionAgentIds(taskSessionInfoByKey(taskKey));
+        const QString controllerAgentId = agentIdFromSessionKey(taskKey);
+        for (const QString &configuredId :
+             m_agentSubagentsById.value(controllerAgentId)) {
+            const QString aid = configuredId.trimmed();
+            if (!aid.isEmpty() && !selectedAgents.contains(aid))
+                selectedAgents.append(aid);
+        }
         if (!selectedAgents.contains(agentId))
             return;
     }
 
     QVariantMap row;
+    const QVariantMap previous = existingIndex >= 0
+        ? m_collaborationChildSessionHints.at(existingIndex).toMap()
+        : QVariantMap();
     row[QStringLiteral("sessionKey")] = sessionKey;
     row[QStringLiteral("agentId")] = agentId;
-    row[QStringLiteral("parentSessionKey")] = parentKey.isEmpty() ? taskKey : parentKey;
-    row[QStringLiteral("spawnedBy")] = parentKey.isEmpty() ? taskKey : parentKey;
+    row[QStringLiteral("parentSessionKey")] = parentKey.isEmpty()
+        ? previous.value(QStringLiteral("parentSessionKey"), taskKey)
+        : QVariant(parentKey);
+    row[QStringLiteral("spawnedBy")] = parentKey.isEmpty()
+        ? previous.value(QStringLiteral("spawnedBy"), taskKey)
+        : QVariant(parentKey);
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    row[QStringLiteral("startedAt")] = QVariant(static_cast<qlonglong>(now));
+    row[QStringLiteral("startedAt")] = previous.isEmpty()
+        ? QVariant(static_cast<qlonglong>(now))
+        : previous.value(QStringLiteral("startedAt"));
     row[QStringLiteral("updatedAt")] = QVariant(static_cast<qlonglong>(now));
+    row[QStringLiteral("isRunning")] = hasLifecycleState
+        ? QVariant(marksRunning)
+        : previous.value(QStringLiteral("isRunning"), true);
 
-    for (int i = 0; i < m_collaborationChildSessionHints.size(); ++i) {
-        const QVariantMap existing = m_collaborationChildSessionHints.at(i).toMap();
-        if (existing.value(QStringLiteral("sessionKey")).toString() == sessionKey) {
-            m_collaborationChildSessionHints[i] = row;
-            emit collaborationParticipantsChanged();
-            return;
-        }
+    if (existingIndex >= 0) {
+        m_collaborationChildSessionHints[existingIndex] = row;
+        emit collaborationParticipantsChanged();
+        return;
     }
     m_collaborationChildSessionHints.append(row);
     emit collaborationParticipantsChanged();

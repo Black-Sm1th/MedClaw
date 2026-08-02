@@ -203,6 +203,8 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
         const QString subagentRole = s.value(QStringLiteral("subagentRole")).toString();
         const QString kind = s.value(QStringLiteral("kind")).toString();
         const QString agentId = s.value(QStringLiteral("agentId")).toString();
+        const QString status = s.value(QStringLiteral("status")).toString();
+        const QString state = s.value(QStringLiteral("state")).toString();
 
         QVariantMap entry;
         entry[QStringLiteral("sessionKey")]   = key;
@@ -227,6 +229,23 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
             entry[QStringLiteral("kind")] = kind;
         if (!agentId.isEmpty())
             entry[QStringLiteral("agentId")] = agentId;
+        if (!status.isEmpty())
+            entry[QStringLiteral("status")] = status;
+        if (!state.isEmpty())
+            entry[QStringLiteral("state")] = state;
+        for (const QString &field : {QStringLiteral("isRunning"),
+                                     QStringLiteral("running"),
+                                     QStringLiteral("active"),
+                                     QStringLiteral("completed"),
+                                     QStringLiteral("aborted")}) {
+            if (s.contains(field))
+                entry[field] = s.value(field).toVariant();
+        }
+        for (const QString &field : {QStringLiteral("completedAt"),
+                                     QStringLiteral("endedAt")}) {
+            if (s.contains(field))
+                entry[field] = s.value(field).toVariant();
+        }
         if (s.contains(QStringLiteral("spawnDepth"))) {
             const QJsonValue dVal = s.value(QStringLiteral("spawnDepth"));
             if (dVal.isDouble())

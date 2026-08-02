@@ -29,6 +29,8 @@
         <file>components/TimePicker.qml</file>
         <file>components/LoginPage.qml</file>
         <file>components/ExpertPage.qml</file>
+        <file>components/CollaborationPicker.qml</file>
+        <file>components/TaskSessionStatusIndicator.qml</file>
         <file>images/chatNew.png</file>
         <file>images/folder.png</file>
         <file>images/puzzle.png</file>
