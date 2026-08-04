@@ -8,10 +8,26 @@ Rectangle {
     property var agentList: []
     property string searchText: ""
     property bool installBusy: false
+    property int installProgress: 0
+    property string installMessage: ""
+    property string installingId: ""
     property real hostWidth: width
     property real hostHeight: height
     property var selectedAgent: null
     property var selectedProfile: null
+    property bool detailPopupActive: false
+    readonly property bool selectedInstalling: installBusy && selectedAgent
+                                                && installingId
+                                                   === String(selectedAgent.id || "")
+
+    onSelectedInstallingChanged: {
+        if (selectedInstalling) {
+            expertDetailPopup.close()
+            expertInstallPopup.open()
+        } else {
+            expertInstallPopup.close()
+        }
+    }
 
     signal summonRequested(string agentId, string promptText)
 
@@ -171,7 +187,15 @@ Rectangle {
     function openExpert(agent) {
         selectedAgent = agent
         selectedProfile = profileForAgent(agent)
-        expertDetailPopup.open()
+        root.detailPopupActive = true
+        detailPopupOpenTimer.restart()
+    }
+
+    Timer {
+        id: detailPopupOpenTimer
+        interval: 0
+        repeat: false
+        onTriggered: expertDetailPopup.open()
     }
 
     ScrollView {
@@ -197,7 +221,10 @@ Rectangle {
                     id: expertCard
                     property var agent: modelData
                     property var profile: root.profileForAgent(agent)
-                    readonly property bool activeHover: cardHover.hovered && !expertDetailPopup.visible
+                    readonly property bool activeHover: cardHover.hovered
+                                                        && !root.detailPopupActive
+                                                        && !expertInstallPopup.visible
+                                                        && !root.installBusy
                     width: cardGrid.cardWidth
                     height: 206
                     radius: 8
@@ -253,7 +280,13 @@ Rectangle {
                         backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
                         onClicked: root.openExpert(expertCard.agent)
                     }
-                    HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
+                    HoverHandler {
+                        id: cardHover
+                        enabled: !root.detailPopupActive
+                                 && !expertInstallPopup.visible
+                                 && !root.installBusy
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    }
                 }
             }
 
@@ -278,6 +311,8 @@ Rectangle {
         x: Math.round((root.hostWidth - width) / 2)
         y: Math.round((root.hostHeight - height) / 2)
         padding: 0
+        onOpened: root.detailPopupActive = true
+        onClosed: root.detailPopupActive = false
         Overlay.modal: Rectangle { color: "#99000000" }
         background: Rectangle { radius: 8; color: "#FFFFFF" }
 
@@ -311,7 +346,6 @@ Rectangle {
                             enabled: !root.installBusy
                             onClicked: {
                                 var prompt = root.selectedProfile ? root.selectedProfile.promptTemplate || "" : ""
-                                expertDetailPopup.close()
                                 root.summonRequested(root.selectedAgent.id, prompt)
                             }
                         }
@@ -368,7 +402,7 @@ Rectangle {
                                 border.width: 1; border.color: questionMouse.containsMouse ? "#8AB9FF" : "#E4E7EC"
                                 Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.right: questionArrow.left; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: "\"" + modelData + "\""; font.pixelSize: 14; color: "#D9000000"; elide: Text.ElideRight }
                                 Label { id: questionArrow; anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: "→"; font.pixelSize: 20; color: "#73000000" }
-                                MouseArea { id: questionMouse; anchors.fill: parent; hoverEnabled: true; enabled: !root.installBusy; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { var prompt = modelData; expertDetailPopup.close(); root.summonRequested(root.selectedAgent.id, prompt) } }
+                                MouseArea { id: questionMouse; anchors.fill: parent; hoverEnabled: true; enabled: !root.installBusy; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { var prompt = modelData; root.summonRequested(root.selectedAgent.id, prompt) } }
                             }
                         }
                         Item { width: 1; height: 18 }
@@ -382,6 +416,75 @@ Rectangle {
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 color: closeMouse.containsMouse ? "#D9000000" : "#73000000"
                 MouseArea { id: closeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: expertDetailPopup.close() }
+            }
+        }
+    }
+
+    Popup {
+        id: expertInstallPopup
+        parent: Overlay.overlay
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+        width: Math.min(560, root.hostWidth - 48)
+        height: 112
+        x: Math.round((root.hostWidth - width) / 2)
+        y: Math.round((root.hostHeight - height) / 2)
+        padding: 0
+        Overlay.modal: Rectangle { color: "#66000000" }
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.width: 1
+            border.color: "#E4E7EC"
+        }
+
+        contentItem: Column {
+            leftPadding: 24
+            rightPadding: 24
+            topPadding: 22
+            bottomPadding: 20
+            spacing: 14
+
+            Row {
+                width: parent.width - 48
+                height: 20
+
+                Label {
+                    width: parent.width - installPercentLabel.width - 16
+                    text: root.installMessage || qsTr("专家召唤中...")
+                    font.pixelSize: 13
+                    color: "#A6000000"
+                    elide: Text.ElideRight
+                }
+
+                Label {
+                    id: installPercentLabel
+                    text: root.installProgress + "%"
+                    font.pixelSize: 13
+                    font.weight: Font.DemiBold
+                    color: "#006BFF"
+                }
+            }
+
+            Rectangle {
+                width: parent.width - 48
+                height: 8
+                radius: 4
+                color: "#E6E7EB"
+
+                Rectangle {
+                    width: parent.width * Math.max(0, Math.min(100,
+                        root.installProgress)) / 100
+                    height: parent.height
+                    radius: 4
+                    color: "#006BFF"
+                    Behavior on width {
+                        enabled: root.selectedInstalling
+                                 && root.installProgress > 0
+                        NumberAnimation { duration: 180 }
+                    }
+                }
             }
         }
     }

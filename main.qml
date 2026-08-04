@@ -231,11 +231,6 @@ ApplicationWindow {
         if (!id)
             return
         pendingExpertPrompt = String(promptText || "")
-        startTaskWithAgents([id])
-        if (pendingExpertPrompt.length > 0) {
-            textInputArea.text = pendingExpertPrompt
-            textInputArea.forceActiveFocus()
-        }
         wsClient.summonAgent(id)
     }
 
@@ -824,7 +819,7 @@ ApplicationWindow {
             }
         }
         function onAgentInstallFinished(agentId, success, message) {
-            if (success && String(agentId || "").length > 0) {
+            if (String(agentId || "").length > 0) {
                 var selected = newTaskRec.selectedCollaborationAgentIds || []
                 if (window.leftSelectedIndex !== 0 || selected.length !== 1
                         || String(selected[0] || "") !== String(agentId || ""))
@@ -4687,6 +4682,11 @@ ApplicationWindow {
                                                 wsClient.setCronJobEnabled(cronJobRow.job.id, checked)
                                             }
                                             anchors.verticalCenter: parent.verticalCenter
+                                            HoverHandler {
+                                                cursorShape: taskSwitch.enabled
+                                                             ? Qt.PointingHandCursor
+                                                             : Qt.ArrowCursor
+                                            }
                                             indicator: Rectangle {
                                                 implicitWidth: 44
                                                 implicitHeight: 22
@@ -5340,6 +5340,8 @@ ApplicationWindow {
                                             radius: 3
                                             color: "#006BFF"
                                             Behavior on width {
+                                                enabled: expertCard.installing
+                                                         && wsClient.agentInstallProgress > 0
                                                 NumberAnimation { duration: 180 }
                                             }
                                         }
@@ -5388,6 +5390,9 @@ ApplicationWindow {
                     agentList: wsClient.agentList || []
                     searchText: agentManageRec.searchText
                     installBusy: wsClient.agentInstallBusy
+                    installProgress: wsClient.agentInstallProgress
+                    installMessage: wsClient.agentInstallMessage
+                    installingId: wsClient.agentInstallingId
                     hostWidth: window.width
                     hostHeight: window.height
                     onSummonRequested: function(agentId, promptText) {
@@ -5912,32 +5917,23 @@ ApplicationWindow {
 
                                                 Switch {
                                                     id: toolEnabledSwitch
-                                                    property bool syncGuard: false
-                                                    function syncFromModel() {
-                                                        syncGuard = true
-                                                        checked = modelData.enabled === true
-                                                        syncGuard = false
-                                                    }
-                                                    Component.onCompleted: syncFromModel()
-                                                    Connections {
-                                                        target: wsClient
-                                                        function onToolListChanged() {
-                                                            toolEnabledSwitch.syncFromModel()
-                                                        }
-                                                    }
+                                                    checked: modelData.enabled === true
                                                     anchors.right: parent.right
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     enabled: wsClient.connectionState === 3
                                                              && !wsClient.toolInstallBusy
                                                              && !wsClient.agentInstallBusy
-                                                    onCheckedChanged: {
-                                                        if (syncGuard)
-                                                            return
+                                                    onToggled: {
                                                         wsClient.setAgentToolEnabled(
                                                             "main",
                                                             modelData.toolId || "",
                                                             checked,
                                                             modelData.pluginId || "")
+                                                    }
+                                                    HoverHandler {
+                                                        cursorShape: toolEnabledSwitch.enabled
+                                                                     ? Qt.PointingHandCursor
+                                                                     : Qt.ArrowCursor
                                                     }
                                                     indicator: Rectangle {
                                                         implicitWidth: 44
@@ -6023,6 +6019,8 @@ ApplicationWindow {
                                                         radius: 3
                                                         color: "#006BFF"
                                                         Behavior on width {
+                                                            enabled: wsClient.toolInstallBusy
+                                                                     && wsClient.toolInstallProgress > 0
                                                             NumberAnimation { duration: 180 }
                                                         }
                                                     }
