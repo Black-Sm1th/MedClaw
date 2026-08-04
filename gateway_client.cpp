@@ -29,6 +29,7 @@
 #include <QRegularExpression>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QStandardPaths>
 #include <QTextStream>
 #include <algorithm>
 #include <functional>
@@ -60,6 +61,16 @@ QDir applicationInstallRoot()
         installRoot.cdUp();
     }
     return installRoot;
+}
+
+QString defaultTaskWorkspaceRoot()
+{
+    QString dataRoot =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (dataRoot.trimmed().isEmpty())
+        dataRoot = QDir::homePath();
+    return QDir(dataRoot).absoluteFilePath(
+        QStringLiteral("AetherStudy/workspace"));
 }
 
 QString resolvedBackendRoot()
@@ -1830,13 +1841,7 @@ QString GatewayClient::prepareTaskWorkspace(const QString &workspace)
 {
     QString target = normalizeWorkspacePath(workspace);
     if (target.isEmpty()) {
-        QDir installDir(QCoreApplication::applicationDirPath());
-        if (installDir.dirName().compare(QStringLiteral("client"),
-                                         Qt::CaseInsensitive) == 0) {
-            installDir.cdUp();
-        }
-        const QString workspaceRoot =
-            installDir.absoluteFilePath(QStringLiteral("workspace"));
+        const QString workspaceRoot = defaultTaskWorkspaceRoot();
         target = QDir(workspaceRoot).absoluteFilePath(
             QStringLiteral("%1").arg(
                 QDateTime::currentDateTime().toString(
@@ -1856,13 +1861,7 @@ QString GatewayClient::prepareCronWorkspace(const QString &workspace)
     if (!workspace.trimmed().isEmpty())
         return prepareTaskWorkspace(workspace);
 
-    QDir installDir(QCoreApplication::applicationDirPath());
-    if (installDir.dirName().compare(QStringLiteral("client"),
-                                     Qt::CaseInsensitive) == 0) {
-        installDir.cdUp();
-    }
-    const QString workspaceRoot =
-        installDir.absoluteFilePath(QStringLiteral("workspace"));
+    const QString workspaceRoot = defaultTaskWorkspaceRoot();
     const QString target = QDir(workspaceRoot).absoluteFilePath(
         QStringLiteral("cron-%1").arg(
             QDateTime::currentDateTime().toString(

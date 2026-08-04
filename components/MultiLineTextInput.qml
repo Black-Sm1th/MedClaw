@@ -20,6 +20,7 @@ Rectangle {
     // 文本属性
     property alias text: textArea.text
     property alias readOnly: textArea.readOnly
+    readonly property real textContentHeight: textArea.contentHeight
     signal enterPressed()
     // 设置尺寸
     width: inputWidth

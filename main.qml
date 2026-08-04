@@ -2485,10 +2485,17 @@ ApplicationWindow {
 
                 Rectangle{
                     id: chatInputContainer
+                    readonly property int defaultTextInputHeight: 66
+                    readonly property int maxTextInputHeight: 220
+                    readonly property int currentTextInputHeight: newTaskRec.selectedShortcut
+                                                                  ? defaultTextInputHeight
+                                                                  : Math.min(maxTextInputHeight,
+                                                                             Math.max(defaultTextInputHeight,
+                                                                                      Math.ceil(textInputArea.textContentHeight) + 12))
                     border.color: "#40000000"
                     border.width: 1
                     radius: 20
-                    height: attachmentModel.count > 0 ? 142 + 72 : 142
+                    height: currentTextInputHeight + 76 + (attachmentModel.count > 0 ? 72 : 0)
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: newTaskRec.isNewTaskWelcome
@@ -2638,7 +2645,7 @@ ApplicationWindow {
                                                 : "当前为子 Agent 记录，仅支持查看")
                                              : "正在连接服务器，请稍候..."
                             width: parent.width - 24
-                            height: 66
+                            height: chatInputContainer.currentTextInputHeight
                             readOnly: wsClient.connectionState !== 3 || !newTaskRec.viewingControllerSession
                             onEnterPressed: newTaskRec.doSendMessage()
                         }
@@ -3886,6 +3893,7 @@ ApplicationWindow {
                                     onClicked: {
                                         textInputArea.text = card.prompt
                                         textInputArea.forceActiveFocus()
+                                        newTaskRec.selectedShortcutGroup = -1
                                     }
                                 }
                             }
