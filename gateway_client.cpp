@@ -4039,7 +4039,7 @@ void GatewayClient::consumeAgentInstallOutput(const QByteArray &bytes, bool flus
         bool changed = false;
         if (event.value(QStringLiteral("pct")).isDouble()) {
             const int progress = qBound(0, event.value(QStringLiteral("pct")).toInt(), 100);
-            if (progress != m_agentInstallProgress) {
+            if (progress > m_agentInstallProgress) {
                 m_agentInstallProgress = progress;
                 changed = true;
             }
@@ -4063,15 +4063,11 @@ void GatewayClient::finishAgentInstall(bool success, const QString &message)
         ? (success ? QStringLiteral("专家召唤完成") : QStringLiteral("专家召唤失败"))
         : message.trimmed();
 
-    if (success) {
+    if (success)
         m_agentInstallProgress = 100;
-        m_agentInstallMessage = resultMessage;
-        emit agentInstallStateChanged();
-    }
+    m_agentInstallMessage = resultMessage;
 
     m_agentInstallBusy = false;
-    m_agentInstallProgress = 0;
-    m_agentInstallMessage.clear();
     m_agentInstallingId.clear();
     m_agentInstallStdoutBuffer.clear();
     emit agentInstallStateChanged();
@@ -5709,7 +5705,7 @@ void GatewayClient::consumeToolInstallOutput(const QByteArray &bytes, bool flush
         bool changed = false;
         if (event.value(QStringLiteral("pct")).isDouble()) {
             const int progress = qBound(0, event.value(QStringLiteral("pct")).toInt(), 100);
-            if (progress != m_toolInstallProgress) {
+            if (progress > m_toolInstallProgress) {
                 m_toolInstallProgress = progress;
                 changed = true;
             }
@@ -5728,9 +5724,15 @@ void GatewayClient::consumeToolInstallOutput(const QByteArray &bytes, bool flush
 
 void GatewayClient::finishToolInstall(const QString &errorMessage)
 {
+    const QString resultMessage = errorMessage.trimmed();
+    if (resultMessage.isEmpty()) {
+        m_toolInstallProgress = 100;
+        m_toolInstallMessage = QStringLiteral("安装完成");
+    } else {
+        m_toolInstallMessage = resultMessage;
+    }
+
     m_toolInstallBusy = false;
-    m_toolInstallProgress = 0;
-    m_toolInstallMessage.clear();
     m_toolInstallingId.clear();
     m_pendingToolInstallAgentId.clear();
     m_pendingToolInstallConfigGetReqId.clear();
@@ -5739,8 +5741,8 @@ void GatewayClient::finishToolInstall(const QString &errorMessage)
     m_toolInstallScriptFinished = false;
     emit toolInstallStateChanged();
     emit toolListChanged();
-    if (!errorMessage.trimmed().isEmpty())
-        emit errorOccurred(errorMessage.trimmed());
+    if (!resultMessage.isEmpty())
+        emit errorOccurred(resultMessage);
 }
 
 void GatewayClient::applyPendingInstalledToolPolicy()
