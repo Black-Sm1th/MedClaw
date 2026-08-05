@@ -326,7 +326,7 @@ Rectangle {
                 Column {
                     width: expertDetailPopup.width
                     padding: 40
-                    spacing: 22
+                    spacing: 8
 
                     Row {
                         width: parent.width - 80; height: 62; spacing: 14
@@ -351,7 +351,8 @@ Rectangle {
                         }
                     }
 
-                    Label { width: parent.width - 80; text: root.selectedProfile ? root.selectedProfile.ability : ""; font.pixelSize: 14; lineHeight: 1.5; color: "#99000000"; wrapMode: Text.Wrap }
+                    Label { width: parent.width - 80; text: root.selectedProfile ? root.selectedProfile.ability : ""; font.pixelSize: 14; color: "#A6000000"; wrapMode: Text.Wrap }
+                    Item { width: 1; height: 12; }
                     Label { width: parent.width - 80; text: "子专员团队 · 技能清单"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000" }
 
                     Grid {
@@ -390,10 +391,11 @@ Rectangle {
                             }
                         }
                     }
-
+                    Item { width: 1; height: 12; }
                     Label { width: parent.width - 80; text: "试试这样问我"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000" }
+                    Item { width: 1; height: 4; }
                     Column {
-                        width: parent.width - 80; spacing: 10
+                        width: parent.width - 80; spacing: 12
                         Repeater {
                             model: root.selectedProfile ? root.selectedProfile.questions : []
                             Rectangle {

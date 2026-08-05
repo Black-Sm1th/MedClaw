@@ -17,18 +17,29 @@ Item {
     }
 
     Column {
-        width: 320
+        width: 577
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
-        anchors.verticalCenterOffset: -8
+        anchors.verticalCenterOffset: -56
         spacing: 0
-        Image { source: "qrc:/images/loginTitle.png";height:!showPhoneForm ? 209 : 128 ;width: !showPhoneForm ? 840 : 514;  fillMode: Image.PreserveAspectFit; anchors.horizontalCenter: parent.horizontalCenter }
-        Item { width: 1; height: showPhoneForm ? 40 : 38 }
-
+        Image { source: "qrc:/images/login/loginTitle.png"; anchors.horizontalCenter: parent.horizontalCenter }
+        Item { width: 1; height: showPhoneForm ? 80 : 68 }
+        Row {
+            height: 175
+            spacing: 32
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: !loginPage.showPhoneForm
+            Image { source: "qrc:/images/login/loginShortcut1.png"}
+            Image { source: "qrc:/images/login/loginShortcut2.png"}
+            Image { source: "qrc:/images/login/loginShortcut3.png"}
+            Image { source: "qrc:/images/login/loginShortcut4.png"}
+        }
+        Item { width: 1; height: 68; visible: !loginPage.showPhoneForm }
         Column {
-            width: parent.width; spacing: 16; visible: loginPage.showPhoneForm; height: visible ? implicitHeight : 0
+            width: parent.width; spacing: 24; visible: loginPage.showPhoneForm; height: visible ? implicitHeight : 0
             Rectangle {
-                width: parent.width; height: 44; radius: 7; color: "#F7F8FA"
+                width: 400; height: 56; radius: 7; color: "#F7F8FA"
+                anchors.horizontalCenter: parent.horizontalCenter
                 Label {
                     text: "+86"
                     anchors.left: parent.left
@@ -57,10 +68,11 @@ Item {
                 }
             }
             Row {
-                width: parent.width; height: 44; spacing: 12
+                width: 400; height: 56; spacing: 12
+                anchors.horizontalCenter: parent.horizontalCenter
                 SingleLineTextInput {
                     id: codeInput
-                    inputWidth: 224
+                    inputWidth: parent.width - 84 - 12
                     inputHeight: parent.height
                     backgroundColor: "#F7F8FA"
                     borderWidth: 0
@@ -83,7 +95,7 @@ Item {
                         anchors.fill: parent
                         enabled: !authController.busy && loginPage.resendSeconds === 0
                         hoverEnabled: true
-                        text: loginPage.resendSeconds > 0 ? loginPage.resendSeconds + "s" : "获取验证码"
+                        text: loginPage.resendSeconds > 0 ? loginPage.resendSeconds + "s后重发" : "获取验证码"
                         font.family: "Alibaba PuHuiTi 3.0"
                         font.pixelSize: 16
                         padding: 0
@@ -111,11 +123,12 @@ Item {
                 }
             }
         }
-        Item { width: 1; height: loginPage.showPhoneForm ? 18 : 0 }
+        Item { width: 1; height: 24; visible: loginPage.showPhoneForm}
         CustomButton {
-            buttonWidth: parent.width
-            buttonHeight: 48
-            buttonRadius: 7
+            buttonWidth: loginPage.showPhoneForm ? 400 : 240
+            buttonHeight: 62
+            buttonRadius: 8
+            anchors.horizontalCenter: parent.horizontalCenter
             enabled: !authController.busy
             text: authController.busy ? (loginPage.showPhoneForm ? "登录中" : "请稍候") : "登录"
             fontSize: 20
@@ -137,7 +150,7 @@ Item {
         Label { visible: authController.errorMessage.length > 0; width: parent.width; topPadding: 14; text: authController.errorMessage; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: "#E54D42"; font.pixelSize: 16 }
     }
 
-    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 30; color: "#A6A6A6"; font.pixelSize: 16 }
+    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: "#73000000"; font.pixelSize: 16 }
     Timer { interval: 1000; repeat: true; running: loginPage.resendSeconds > 0; onTriggered: loginPage.resendSeconds-- }
     Connections { target: authController; function onSmsCodeSent() { loginPage.resendSeconds = 60; codeInput.forceActiveFocus() } }
     onVisibleChanged: {

@@ -59,7 +59,6 @@
         <file>images/delete-white.png</file>
         <file>images/upload-white.png</file>
         <file>images/Vector.png</file>
-        <file>images/loginTitle.png</file>
         <file>images/icon.ico</file>
         <file>images/logoImage.png</file>
         <file>images/mainTitle.png</file>
@@ -99,5 +98,10 @@
         <file>images/expert/6.png</file>
         <file>images/expert/7.png</file>
         <file>images/expert/8.png</file>
+        <file>images/login/loginShortcut1.png</file>
+        <file>images/login/loginShortcut2.png</file>
+        <file>images/login/loginShortcut3.png</file>
+        <file>images/login/loginShortcut4.png</file>
+        <file>images/login/loginTitle.png</file>
     </qresource>
 </RCC>
