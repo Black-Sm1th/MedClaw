@@ -27,6 +27,7 @@ Rectangle {
     property real fileTipHeight: 0
 
     signal submitRequested(string message)
+    signal linkActivated(string link)
 
     color: backgroundColor
     border.color: activeFocus && !readOnly ? focusedBorderColor : borderColor
@@ -125,6 +126,11 @@ Rectangle {
                 root.fileTipVisible = root.fileTipText.length > 0
             } else if (payload.type === "fileHoverEnd") {
                 root.fileTipVisible = false
+            } else if (payload.type === "fileOpen") {
+                root.fileTipVisible = false
+                var path = String(payload.path || "")
+                if (path.length > 0)
+                    root.linkActivated("medclaw-local:" + encodeURIComponent(path))
             }
         }
     }

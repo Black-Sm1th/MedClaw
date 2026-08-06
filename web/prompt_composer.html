@@ -16,6 +16,41 @@
       line-height: 24px;
     }
 
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    html::-webkit-scrollbar-track,
+    body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    html::-webkit-scrollbar-thumb,
+    body::-webkit-scrollbar-thumb {
+      min-height: 28px;
+      border-radius: 3px;
+      background: rgba(0, 0, 0, .24);
+    }
+
+    html::-webkit-scrollbar-thumb:hover,
+    body::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, .4);
+    }
+
+    html::-webkit-scrollbar-button,
+    body::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    html::-webkit-scrollbar-corner,
+    body::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
     #editor {
       box-sizing: border-box;
       min-height: 52px;
@@ -52,6 +87,7 @@
       vertical-align: middle;
       white-space: nowrap;
       user-select: none;
+      cursor: pointer;
     }
 
     .file-icon {
@@ -244,7 +280,7 @@
       });
 
       editor.addEventListener('mousedown', function (event) {
-        if (event.target.closest && event.target.closest('.file-remove'))
+        if (event.target.closest && event.target.closest('.file-chip'))
           event.preventDefault();
       });
 
@@ -276,8 +312,16 @@
 
       editor.addEventListener('click', function (event) {
         var button = event.target.closest ? event.target.closest('.file-remove') : null;
-        if (!button)
+        if (!button) {
+          var openChip = event.target.closest ? event.target.closest('.file-chip') : null;
+          if (openChip) {
+            emit({
+              type: 'fileOpen',
+              path: openChip.getAttribute('data-file-path') || ''
+            });
+          }
           return;
+        }
         var chip = button.closest('.file-chip');
         var next = chip && chip.nextSibling;
         if (chip)

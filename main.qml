@@ -380,6 +380,7 @@ ApplicationWindow {
             selected = collections.length > 0 ? String(collections[0].id || "") : ""
         if (!chatExists)
             chatKnowledgeCollection = ""
+        metadata.chatSelectedCollection = chatKnowledgeCollection
 
         metadata.collections = collections
         metadata.filesByCollection = filesByCollection
@@ -393,6 +394,18 @@ ApplicationWindow {
         var collectionId = String(collection || "")
         chatKnowledgeCollection = chatKnowledgeCollection === collectionId
                 ? "" : collectionId
+        var metadata = kbMetadata || kbDefaultMetadata()
+        metadata.chatSelectedCollection = chatKnowledgeCollection
+        kbSaveMetadata(metadata)
+    }
+
+    function chatHasSelectedExpert() {
+        var ids = newTaskRec.selectedCollaborationAgentIds || []
+        if (newTaskRec.isNewTaskWelcome)
+            return ids.length > 0
+        var activeAgentId = String(leftMidPanel.activeAgentId || "")
+        var defaultAgentId = String(wsClient.defaultAgentId || "main")
+        return activeAgentId.length > 0 && activeAgentId !== defaultAgentId
     }
 
     function kbToolDetails(result) {
@@ -508,7 +521,8 @@ ApplicationWindow {
     }
 
     function kbDefaultMetadata() {
-        return { "version": 2, "collections": [], "selectedCollection": "", "filesByCollection": {} }
+        return { "version": 2, "collections": [], "selectedCollection": "",
+                 "chatSelectedCollection": "", "filesByCollection": {} }
     }
 
     function kbCollectionFiles(metadata, collection) {
@@ -569,11 +583,22 @@ ApplicationWindow {
         }
         if (!selectedExists)
             selected = metadata.collections.length > 0 ? metadata.collections[0].id : ""
+        var chatSelected = String(loaded.chatSelectedCollection || "")
+        var chatSelectedExists = false
+        for (var m = 0; m < metadata.collections.length; m++) {
+            if (String(metadata.collections[m].id || "") === chatSelected) {
+                chatSelectedExists = true
+                break
+            }
+        }
+        if (!chatSelectedExists)
+            chatSelected = ""
         metadata.selectedCollection = selected
+        metadata.chatSelectedCollection = chatSelected
         kbMetadata = metadata
         kbCollections = metadata.collections.slice(0)
         kbSelectedCollection = selected
-        chatKnowledgeCollection = ""
+        chatKnowledgeCollection = chatSelected
         kbMetadataUser = String(authController.userId)
         kbSaveMetadata(metadata)
     }
@@ -1971,7 +1996,8 @@ ApplicationWindow {
                                                 && !hasActiveTask && !hasMessages
                 property var selectedCollaborationAgentIds: []
                 onSelectedCollaborationAgentIdsChanged: {
-                    if ((selectedCollaborationAgentIds || []).length > 0) {
+                    if (newTaskRec.isNewTaskWelcome
+                            && (selectedCollaborationAgentIds || []).length > 0) {
                         window.chatKnowledgeCollection = ""
                         knowledgePopup.close()
                     }
@@ -2790,6 +2816,9 @@ ApplicationWindow {
                             onSubmitRequested: function(message) {
                                 newTaskRec.doSendMessage(message)
                             }
+                            onLinkActivated: function(link) {
+                                window.openMarkdownLink(link)
+                            }
                         }
                         Rectangle{
                             height: 40
@@ -2907,7 +2936,7 @@ ApplicationWindow {
                                     id: knowledgePickerWrap
                                     anchors.verticalCenter: parent.verticalCenter
                                     readonly property bool expertSelected:
-                                            (newTaskRec.selectedCollaborationAgentIds || []).length > 0
+                                            window.chatHasSelectedExpert()
                                     readonly property string selectedName: window.chatKnowledgeCollection
                                             ? window.kbCollectionName(window.chatKnowledgeCollection)
                                             : qsTr("知识库")
