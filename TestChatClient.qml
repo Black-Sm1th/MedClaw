@@ -13,8 +13,7 @@
  *   ⑥ 刷新会话：  testRefreshSessions()  → wsClient.refreshSessions()
  *   ⑦ 加载历史：  testLoadHistory()      → wsClient.loadHistory()
  *   ⑧ HTTP 工具： testToolsInvokeExecLs() → POST /tools/invoke（exec + ls）
- *   ⑨ KB 工具： testToolsInvokeKbManageListCollections() / testToolsInvokeKbSearch()
- *              → tool=kb_manage（list_collections）/ kb_search（需 KB 集合名与 query）
+ *   ⑨ KB 工具：覆盖 kb_ingest、kb_search，以及 kb_manage 的全部管理操作
  *
  * ═══════════════════════════════════════════════════════════════
  *  maincontrol 调用说明
@@ -46,8 +45,10 @@ import QtQuick.Dialogs 1.3
 
 ApplicationWindow {
     id: testWindow
-    width: 960
-    height: 720
+    width: 1180
+    height: 860
+    minimumWidth: 980
+    minimumHeight: 760
     visible: true
     title: qsTr("WebSocket Test Client — Aether study")
     color: "#F5F6FA"
@@ -198,10 +199,23 @@ ApplicationWindow {
             try {
                 var j = JSON.parse(raw)
                 if (j.ok === true) {
+                    var details = {}
+                    if (j.result && j.result.details)
+                        details = j.result.details
+                    else if (j.result && j.result.result && j.result.result.details)
+                        details = j.result.result.details
                     var out = JSON.stringify(j.result)
                     if (out.length > 4000)
                         out = out.substring(0, 4000) + "…(truncated)"
-                    testAddLog("✓ result: " + out)
+                    if (details.error) {
+                        testAddLog("✖ tool error: " + String(details.error))
+                        testAddLog("  result: " + out)
+                    } else if (details.errors && details.errors.length > 0) {
+                        testAddLog("⚠ partial errors: " + JSON.stringify(details.errors))
+                        testAddLog("✓ result: " + out)
+                    } else {
+                        testAddLog("✓ result: " + out)
+                    }
                 } else {
                     testAddLog("✖ tools/invoke 失败: " + JSON.stringify(j))
                 }
@@ -219,6 +233,7 @@ ApplicationWindow {
         var sk = wsClient.currentSessionKey
         if (sk && sk.length > 0)
             body.sessionKey = sk
+        testAddLog("  request: " + JSON.stringify(body))
         xhr.send(JSON.stringify(body))
     }
 
@@ -237,28 +252,83 @@ ApplicationWindow {
      * 依赖网关已加载 kb 插件，且当前 Agent 的 tools 策略允许 kb_manage（否则返回 404 not_found）。
      */
     function testToolsInvokeKbManageListCollections() {
-        testToolsInvokeHttp("kb_manage", {}, "list_collections", "kb_manage")
+        testToolsInvokeHttp("kb_manage", {}, "list_collections", "kb.list")
+    }
+
+    function testKbRequiredValue(field, label, operation) {
+        var value = field.text.trim()
+        if (value.length === 0)
+            testAddLog("⚠ [" + operation + "] " + label + "不能为空")
+        return value
+    }
+
+    /** KB：kb_ingest 文件或目录入库。目录路径可直接粘贴到输入框。 */
+    function testToolsInvokeKbIngest() {
+        var path = testKbRequiredValue(kbTestPathField, "文件/目录路径", "kb.ingest")
+        var coll = testKbRequiredValue(kbTestCollectionField, "集合", "kb.ingest")
+        if (!path || !coll)
+            return
+        testToolsInvokeHttp("kb_ingest", {
+                                "path": path,
+                                "collection": coll,
+                                "chunkSize": kbTestChunkSize.value
+                            }, "", "kb.ingest")
     }
 
     /**
      * @brief KB：kb_search 语义检索（使用下方「KB集合」「KB检索」输入框）
      */
     function testToolsInvokeKbSearch() {
-        var coll = kbTestCollectionField.text.trim()
-        var q = kbTestQueryField.text.trim()
-        if (coll.length === 0) {
-            testAddLog("⚠ kb_search → KB集合名为空")
+        var coll = testKbRequiredValue(kbTestCollectionField, "集合", "kb.search")
+        var q = testKbRequiredValue(kbTestQueryField, "检索内容", "kb.search")
+        if (!coll || !q)
             return
-        }
-        if (q.length === 0) {
-            testAddLog("⚠ kb_search → 检索 query 为空")
-            return
-        }
         testToolsInvokeHttp("kb_search", {
                                    "query": q,
                                    "collection": coll,
-                                   "topK": 5
-                               }, "", "kb_search")
+                                   "topK": kbTestTopK.value
+                               }, "", "kb.search")
+    }
+
+    /** KB：列出指定集合内的全部来源文档。 */
+    function testToolsInvokeKbListSources() {
+        var coll = testKbRequiredValue(kbTestCollectionField, "集合", "kb.list-sources")
+        if (!coll)
+            return
+        testToolsInvokeHttp("kb_manage", { "collection": coll },
+                            "list_sources", "kb.list-sources")
+    }
+
+    /** KB：删除指定集合内的来源文档。 */
+    function testToolsInvokeKbDeleteSource() {
+        var coll = testKbRequiredValue(kbTestCollectionField, "集合", "kb.delete-source")
+        var source = testKbRequiredValue(kbTestSourceField, "来源文档", "kb.delete-source")
+        if (!coll || !source)
+            return
+        testToolsInvokeHttp("kb_manage", {
+                                "collection": coll,
+                                "source": source
+                            }, "delete_source", "kb.delete-source")
+    }
+
+    /** KB：删除整个集合。 */
+    function testToolsInvokeKbDeleteCollection() {
+        var coll = testKbRequiredValue(kbTestCollectionField, "集合", "kb.delete-collection")
+        if (!coll)
+            return
+        testToolsInvokeHttp("kb_manage", { "collection": coll },
+                            "delete_collection", "kb.delete-collection")
+    }
+
+    /** KB：设置或清空集合描述。空描述会清除现有描述。 */
+    function testToolsInvokeKbSetDescription() {
+        var coll = testKbRequiredValue(kbTestCollectionField, "集合", "kb.describe")
+        if (!coll)
+            return
+        testToolsInvokeHttp("kb_manage", {
+                                "collection": coll,
+                                "description": kbTestDescriptionField.text.trim()
+                            }, "set_description", "kb.describe")
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -679,50 +749,6 @@ ApplicationWindow {
                     }
                 }
 
-                /// openclaw KB：/tools/invoke 的 kb_search 参数（collection + query）
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    Label {
-                        text: "KB集合:"
-                        font.pixelSize: 12
-                        color: "#666666"
-                    }
-                    TextField {
-                        id: kbTestCollectionField
-                        Layout.preferredWidth: 140
-                        text: "default"
-                        placeholderText: "collection 名称"
-                        font.pixelSize: 12
-                        selectByMouse: true
-                        background: Rectangle {
-                            radius: 6
-                            border.color: kbTestCollectionField.activeFocus ? "#006BFF" : "#D0D0D0"
-                            border.width: 1
-                            color: "#FAFAFA"
-                        }
-                    }
-                    Label {
-                        text: "KB检索:"
-                        font.pixelSize: 12
-                        color: "#666666"
-                    }
-                    TextField {
-                        id: kbTestQueryField
-                        Layout.fillWidth: true
-                        placeholderText: "语义检索问题（kb_search）"
-                        font.pixelSize: 12
-                        selectByMouse: true
-                        background: Rectangle {
-                            radius: 6
-                            border.color: kbTestQueryField.activeFocus ? "#006BFF" : "#D0D0D0"
-                            border.width: 1
-                            color: "#FAFAFA"
-                        }
-                    }
-                }
-
                 // 操作按钮行
                 RowLayout {
                     Layout.fillWidth: true
@@ -907,56 +933,205 @@ ApplicationWindow {
                         implicitWidth: 118
                     }
 
-                    /// HTTP /tools/invoke：kb_manage list_collections
-                    Button {
-                        text: "HTTP kb_manage"
-                        enabled: wsClient.gatewayAuthToken.length > 0
-                                && wsClient.gatewayHttpBaseUrl.length > 0
-                        onClicked: testToolsInvokeKbManageListCollections()
-                        ToolTip.visible: hovered
-                        ToolTip.text: qsTr("POST /tools/invoke，tool=kb_manage，action=list_collections")
-                        background: Rectangle {
-                            radius: 6
-                            color: parent.enabled
-                                   ? (parent.down ? "#1B5E20" : "#2E7D32")
-                                   : "#BDBDBD"
-                        }
-                        contentItem: Label {
-                            text: parent.text
-                            color: "#FFFFFF"
-                            font.pixelSize: 12
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        implicitHeight: 34
-                        implicitWidth: 128
-                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+        }
 
-                    /// HTTP /tools/invoke：kb_search（使用 KB集合 + KB检索 输入）
+        // ─────────────────────────────────────────────────────────
+        //  Knowledge Base：覆盖插件暴露的全部工具与管理 action
+        // ─────────────────────────────────────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: kbTestPanel.implicitHeight + 24
+            radius: 10
+            color: "#FFFFFF"
+            border.color: "#DDE5E1"
+            border.width: 1
+
+            ColumnLayout {
+                id: kbTestPanel
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Label {
+                        text: "Knowledge Base API"
+                        font.pixelSize: 14
+                        font.bold: true
+                        color: "#1F3B32"
+                    }
+                    Label {
+                        text: "kb_ingest · kb_search · kb_manage"
+                        font.pixelSize: 11
+                        color: "#6F7F79"
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: wsClient.gatewayHttpBaseUrl
+                        font.pixelSize: 10
+                        color: "#8A9792"
+                        elide: Text.ElideMiddle
+                        Layout.maximumWidth: 360
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Label { text: "集合"; font.pixelSize: 11; color: "#56635E" }
+                    TextField {
+                        id: kbTestCollectionField
+                        Layout.preferredWidth: 170
+                        text: "default"
+                        placeholderText: "collection"
+                        font.pixelSize: 11
+                        selectByMouse: true
+                    }
+                    Label { text: "来源"; font.pixelSize: 11; color: "#56635E" }
+                    TextField {
+                        id: kbTestSourceField
+                        Layout.preferredWidth: 220
+                        placeholderText: "delete_source 使用的文件名"
+                        font.pixelSize: 11
+                        selectByMouse: true
+                    }
+                    Label { text: "Top K"; font.pixelSize: 11; color: "#56635E" }
+                    SpinBox {
+                        id: kbTestTopK
+                        from: 1
+                        to: 20
+                        value: 5
+                        editable: true
+                        Layout.preferredWidth: 86
+                    }
+                    Label { text: "分块"; font.pixelSize: 11; color: "#56635E" }
+                    SpinBox {
+                        id: kbTestChunkSize
+                        from: 100
+                        to: 4000
+                        stepSize: 100
+                        value: 800
+                        editable: true
+                        Layout.preferredWidth: 108
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Label { text: "路径"; font.pixelSize: 11; color: "#56635E" }
+                    TextField {
+                        id: kbTestPathField
+                        Layout.fillWidth: true
+                        placeholderText: "待入库文件或目录的绝对路径"
+                        font.pixelSize: 11
+                        selectByMouse: true
+                    }
                     Button {
-                        text: "HTTP kb_search"
+                        text: "选择文件"
+                        implicitWidth: 82
+                        onClicked: kbIngestFileDialog.open()
+                    }
+                    Label { text: "检索"; font.pixelSize: 11; color: "#56635E" }
+                    TextField {
+                        id: kbTestQueryField
+                        Layout.fillWidth: true
+                        placeholderText: "语义检索问题或关键词"
+                        font.pixelSize: 11
+                        selectByMouse: true
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Label { text: "描述"; font.pixelSize: 11; color: "#56635E" }
+                    TextField {
+                        id: kbTestDescriptionField
+                        Layout.fillWidth: true
+                        placeholderText: "集合描述；留空后执行“设置描述”可清空"
+                        font.pixelSize: 11
+                        selectByMouse: true
+                    }
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 4
+                    columnSpacing: 8
+                    rowSpacing: 6
+
+                    Button {
+                        text: "入库"
+                        Layout.fillWidth: true
                         enabled: wsClient.gatewayAuthToken.length > 0
-                                && wsClient.gatewayHttpBaseUrl.length > 0
+                                 && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbIngest()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "kb_ingest: path + collection + chunkSize"
+                    }
+                    Button {
+                        text: "语义检索"
+                        Layout.fillWidth: true
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                 && wsClient.gatewayHttpBaseUrl.length > 0
                         onClicked: testToolsInvokeKbSearch()
                         ToolTip.visible: hovered
-                        ToolTip.text: qsTr("POST /tools/invoke，tool=kb_search，args.query + collection")
-                        background: Rectangle {
-                            radius: 6
-                            color: parent.enabled
-                                   ? (parent.down ? "#004D40" : "#00695C")
-                                   : "#BDBDBD"
-                        }
-                        contentItem: Label {
-                            text: parent.text
-                            color: "#FFFFFF"
-                            font.pixelSize: 12
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        implicitHeight: 34
-                        implicitWidth: 118
+                        ToolTip.text: "kb_search: query + collection + topK"
                     }
-
+                    Button {
+                        text: "列出集合"
+                        Layout.fillWidth: true
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                 && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbManageListCollections()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "kb_manage: list_collections"
+                    }
+                    Button {
+                        text: "列出来源"
+                        Layout.fillWidth: true
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                 && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbListSources()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "kb_manage: list_sources"
+                    }
+                    Button {
+                        text: "删除来源"
+                        Layout.fillWidth: true
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                 && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbDeleteSource()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "kb_manage: delete_source"
+                    }
+                    Button {
+                        text: "删除集合"
+                        Layout.fillWidth: true
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                 && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbDeleteCollection()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "kb_manage: delete_collection"
+                    }
+                    Button {
+                        text: "设置描述"
+                        Layout.fillWidth: true
+                        enabled: wsClient.gatewayAuthToken.length > 0
+                                 && wsClient.gatewayHttpBaseUrl.length > 0
+                        onClicked: testToolsInvokeKbSetDescription()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "kb_manage: set_description"
+                    }
                     Item { Layout.fillWidth: true }
                 }
             }
@@ -2190,7 +2365,21 @@ ApplicationWindow {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  初始化
+    //  KB 入库文件选择
+    // ═══════════════════════════════════════════════════════════════
+
+    FileDialog {
+        id: kbIngestFileDialog
+        title: qsTr("选择要测试入库的文件")
+        nameFilters: [
+            "Knowledge files (*.pdf *.docx *.xlsx *.xls *.pptx *.md *.txt)",
+            "All files (*)"
+        ]
+        selectExisting: true
+        selectMultiple: false
+        onAccepted: kbTestPathField.text = testWindow.localFilePathFromUrl(fileUrl)
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  \u6280\u80fd\u5217\u8868\u5bfc\u51fa TXT
     // ═══════════════════════════════════════════════════════════════

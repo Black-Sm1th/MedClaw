@@ -16,6 +16,12 @@ ApplicationWindow {
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
+    property string knowledgeBaseReadyUserId: ""
+    readonly property bool userSessionReady: authController.loggedIn
+                                             && String(authController.userId || "").length > 0
+                                             && knowledgeBaseReadyUserId === String(authController.userId || "")
+                                             && wsClient.connectionState === 3
+                                             && wsClient.knowledgeBaseDataDirReady
     /// 非空表示「编辑」已有定时任务；空为新建
     property string editingCronJobId: ""
     property string editingCronPayloadKind: "agentTurn"
@@ -34,18 +40,23 @@ ApplicationWindow {
     property bool agentEditorIsEdit: false
     property string agentEditorAgentId: ""
     property var kbSources: []
+    property var kbCollections: []
+    property string kbSelectedCollection: ""
+    property string chatKnowledgeCollection: ""
     property string kbSearchText: ""
     property bool kbLoading: false
     property string kbBusyText: ""
     property var kbUploadQueue: []
     property int kbUploadIndex: 0
     property string kbUploadCollection: ""
-    property var kbMetadata: ({ "files": {}, "folders": [] })
+    property int kbUploadSuccessCount: 0
+    property var kbUploadFailures: []
+    property var kbMetadata: ({ "version": 2, "collections": [], "selectedCollection": "", "filesByCollection": {} })
     property string kbMetadataUser: ""
-    property string kbCurrentFolder: ""
     property var kbSelectedKeys: []
     property var kbDeleteQueue: []
     property var kbDeleteKeys: []
+    property int kbListRequestGeneration: 0
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
 
@@ -269,12 +280,16 @@ ApplicationWindow {
         kbUploadQueue = []
         kbUploadIndex = 0
         kbUploadCollection = ""
+        kbUploadSuccessCount = 0
+        kbUploadFailures = []
+        kbDeleteQueue = []
+        kbDeleteKeys = []
         errorToast.text = message || "知识库操作失败"
         errorToast.visible = true
         errorToastTimer.restart()
     }
 
-    function kbUserCollection() {
+    function kbDefaultCollectionId() {
         if (!authController.loggedIn || !authController.userId)
             return ""
         var raw = String(authController.userId).trim()
@@ -288,6 +303,98 @@ ApplicationWindow {
         return "user_kb_" + safe + "_" + Math.floor(hash).toString(16)
     }
 
+    function kbUserCollection() {
+        return kbSelectedCollection
+    }
+
+    function kbOwnsCollection(collection) {
+        var base = kbDefaultCollectionId()
+        var value = String(collection || "")
+        return base.length > 0 && (value === base || value.indexOf(base + "_") === 0)
+    }
+
+    function kbCollectionName(collection) {
+        for (var i = 0; i < kbCollections.length; i++) {
+            if (String(kbCollections[i].id || "") === String(collection || ""))
+                return String(kbCollections[i].name || qsTr("未命名知识库"))
+        }
+        return qsTr("请选择知识库")
+    }
+
+    function kbReconcileCollectionsFromServer(serverCollections) {
+        var metadata = kbMetadata || kbDefaultMetadata()
+        var localCollections = metadata.collections || []
+        var actualIds = {}
+        var serverItems = {}
+        for (var i = 0; serverCollections && i < serverCollections.length; i++) {
+            var item = serverCollections[i]
+            var serverId = typeof item === "string"
+                    ? String(item) : String(item.name || "")
+            if (kbOwnsCollection(serverId)) {
+                actualIds[serverId] = true
+                serverItems[serverId] = item
+            }
+        }
+
+        var collections = []
+        var filesByCollection = {}
+        var included = {}
+        for (var j = 0; j < localCollections.length; j++) {
+            var local = localCollections[j]
+            var id = String(local.id || "")
+            var existsOnServer = actualIds[id] === true
+            if (!existsOnServer && local.pending !== true)
+                continue
+            collections.push({
+                "id": id,
+                "name": String(local.name || qsTr("未命名知识库")),
+                "pending": !existsOnServer
+            })
+            filesByCollection[id] = kbCollectionFiles(metadata, id)
+            included[id] = true
+        }
+
+        var ids = Object.keys(actualIds)
+        for (var k = 0; k < ids.length; k++) {
+            var actualId = ids[k]
+            if (included[actualId])
+                continue
+            var actualItem = serverItems[actualId]
+            var displayName = typeof actualItem === "object"
+                    ? String(actualItem.description || actualId) : actualId
+            collections.push({ "id": actualId, "name": displayName, "pending": false })
+            filesByCollection[actualId] = kbCollectionFiles(metadata, actualId)
+        }
+
+        var selected = String(metadata.selectedCollection || "")
+        var selectedExists = false
+        var chatExists = false
+        for (var n = 0; n < collections.length; n++) {
+            var collectionId = String(collections[n].id || "")
+            if (collectionId === selected)
+                selectedExists = true
+            if (collectionId === chatKnowledgeCollection)
+                chatExists = true
+        }
+        if (!selectedExists)
+            selected = collections.length > 0 ? String(collections[0].id || "") : ""
+        if (!chatExists)
+            chatKnowledgeCollection = ""
+
+        metadata.collections = collections
+        metadata.filesByCollection = filesByCollection
+        metadata.selectedCollection = selected
+        kbSelectedCollection = selected
+        kbSaveMetadata(metadata)
+        return actualIds[selected] === true
+    }
+
+    function kbToggleChatCollection(collection) {
+        var collectionId = String(collection || "")
+        chatKnowledgeCollection = chatKnowledgeCollection === collectionId
+                ? "" : collectionId
+    }
+
     function kbToolDetails(result) {
         if (!result) return {}
         if (result.details) return result.details
@@ -295,28 +402,31 @@ ApplicationWindow {
         return {}
     }
 
-    function kbInvoke(tool, args, action, collection, done) {
+    function kbInvoke(tool, args, action, collection, done, acceptInactiveCollection, failed) {
         var base = wsClient.gatewayHttpBaseUrl
         var token = wsClient.gatewayAuthToken
+        var requestUser = String(authController.userId || "")
         if (!base || !token) {
-            kbShowError("知识库服务配置不完整")
+            if (typeof failed === "function") failed("知识库服务配置不完整")
+            else kbShowError("知识库服务配置不完整")
             return
         }
         var xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE)
                 return
+            if (requestUser !== String(authController.userId || "")
+                    || (!acceptInactiveCollection && collection !== kbUserCollection())) {
+                return
+            }
             var response = null
             try { response = JSON.parse(xhr.responseText || "{}") } catch (e) {}
             if (xhr.status < 200 || xhr.status >= 300 || !response || response.ok !== true) {
                 var message = response && response.error
                         ? (response.error.message || response.error.type) : ""
-                kbShowError(message || ("知识库请求失败（HTTP " + xhr.status + "）"))
-                return
-            }
-            if (collection !== kbUserCollection()) {
-                kbLoading = false
-                kbBusyText = ""
+                message = message || ("知识库请求失败（HTTP " + xhr.status + "）")
+                if (typeof failed === "function") failed(message)
+                else kbShowError(message)
                 return
             }
             var result = response.result || {}
@@ -324,13 +434,16 @@ ApplicationWindow {
             if (details.error) {
                 var detailMessage = String(details.error)
                 detailMessage = detailMessage.replace(/^Error:\s*/, "")
-                kbShowError(detailMessage)
+                if (typeof failed === "function") failed(detailMessage)
+                else kbShowError(detailMessage)
                 return
             }
             if (details.errors && details.errors.length > 0
                     && (!details.results || details.results.length === 0)) {
                 var firstError = details.errors[0]
-                kbShowError(firstError.error || String(firstError))
+                var firstMessage = firstError.error || String(firstError)
+                if (typeof failed === "function") failed(firstMessage)
+                else kbShowError(firstMessage)
                 return
             }
             done(result)
@@ -345,116 +458,250 @@ ApplicationWindow {
     }
 
     function kbRefreshFiles() {
-        var collection = kbUserCollection()
-        if (!collection) {
-            kbSources = []
-            return
-        }
+        var requestGeneration = ++kbListRequestGeneration
+        kbSources = []
+        kbSelectedKeys = []
         if (kbMetadataUser !== String(authController.userId || ""))
             kbLoadMetadata()
+        if (!wsClient.knowledgeBaseDataDirReady) {
+            kbLoading = true
+            kbBusyText = wsClient.knowledgeBaseDataDirMessage
+                    || qsTr("正在切换当前用户的知识库目录...")
+            return
+        }
+        var collection = kbUserCollection()
         kbLoading = true
-        kbBusyText = "正在加载文件..."
-        kbInvoke("kb_manage", { "collection": collection }, "list_sources", collection,
-                 function(result) {
-            var details = kbToolDetails(result)
-            kbSources = details.sources || []
-            kbReconcileMetadata()
-            kbLoading = false
-            kbBusyText = ""
+        kbBusyText = "正在加载知识库..."
+        kbInvoke("kb_manage", {}, "list_collections", collection, function(collectionResult) {
+            if (requestGeneration !== kbListRequestGeneration
+                    || collection !== kbUserCollection()) {
+                return
+            }
+            var collectionDetails = kbToolDetails(collectionResult)
+            var selectedExistsOnServer = kbReconcileCollectionsFromServer(
+                collectionDetails.collections || [])
+            var selectedCollection = kbUserCollection()
+            if (!selectedCollection || !selectedExistsOnServer) {
+                kbSources = []
+                if (selectedCollection)
+                    kbReconcileMetadata()
+                kbLoading = false
+                kbBusyText = ""
+                return
+            }
+
+            kbBusyText = "正在加载文件..."
+            kbInvoke("kb_manage", { "collection": selectedCollection },
+                     "list_sources", selectedCollection, function(result) {
+                if (requestGeneration !== kbListRequestGeneration
+                        || selectedCollection !== kbUserCollection()) {
+                    return
+                }
+                var details = kbToolDetails(result)
+                var sources = details.sources || []
+                kbSources = sources.slice ? sources.slice(0) : []
+                kbReconcileMetadata()
+                kbLoading = false
+                kbBusyText = ""
+            })
         })
     }
 
     function kbDefaultMetadata() {
-        return { "files": {}, "folders": [] }
+        return { "version": 2, "collections": [], "selectedCollection": "", "filesByCollection": {} }
+    }
+
+    function kbCollectionFiles(metadata, collection) {
+        if (!metadata || !metadata.filesByCollection || !collection)
+            return {}
+        return metadata.filesByCollection[collection] || {}
     }
 
     function kbLoadMetadata() {
         if (!authController.loggedIn || !authController.userId) {
             kbMetadata = kbDefaultMetadata()
             kbMetadataUser = ""
+            kbCollections = []
+            kbSelectedCollection = ""
+            chatKnowledgeCollection = ""
             return
         }
         var loaded = $MainViewController.loadKnowledgeBaseMetadata(String(authController.userId)) || {}
-        if (!loaded.files) loaded.files = {}
-        if (!loaded.folders) loaded.folders = []
-        kbMetadata = loaded
+        var defaultId = kbDefaultCollectionId()
+        var metadata = kbDefaultMetadata()
+        var isCurrentSchema = Number(loaded.version || 0) >= 2
+        var loadedCollections = loaded.collections || []
+        var names = {}
+        for (var i = 0; i < loadedCollections.length; i++) {
+            var id = String(loadedCollections[i].id || "")
+            var name = String(loadedCollections[i].name || "").trim()
+            if (!kbOwnsCollection(id) || !name || names[name])
+                continue
+            names[name] = true
+            metadata.collections.push({
+                "id": id,
+                "name": name,
+                "pending": loadedCollections[i].pending === true
+            })
+        }
+        if (!isCurrentSchema && metadata.collections.length === 0)
+            metadata.collections.push({
+                "id": defaultId,
+                "name": qsTr("知识库1"),
+                "pending": false
+            })
+
+        var loadedFiles = loaded.filesByCollection || {}
+        for (var j = 0; j < metadata.collections.length; j++) {
+            var collectionId = metadata.collections[j].id
+            metadata.filesByCollection[collectionId] = loadedFiles[collectionId] || {}
+        }
+        if (!isCurrentSchema && loaded.files)
+            metadata.filesByCollection[defaultId] = loaded.files
+
+        var selected = String(loaded.selectedCollection || "")
+        var selectedExists = false
+        for (var k = 0; k < metadata.collections.length; k++) {
+            if (metadata.collections[k].id === selected) {
+                selectedExists = true
+                break
+            }
+        }
+        if (!selectedExists)
+            selected = metadata.collections.length > 0 ? metadata.collections[0].id : ""
+        metadata.selectedCollection = selected
+        kbMetadata = metadata
+        kbCollections = metadata.collections.slice(0)
+        kbSelectedCollection = selected
+        chatKnowledgeCollection = ""
         kbMetadataUser = String(authController.userId)
+        kbSaveMetadata(metadata)
     }
 
     function kbSaveMetadata(metadata) {
         var saved = JSON.parse(JSON.stringify(metadata))
         kbMetadata = saved
+        kbCollections = (saved.collections || []).slice(0)
         if (authController.loggedIn && authController.userId)
             $MainViewController.saveKnowledgeBaseMetadata(String(authController.userId), saved)
     }
 
-    function kbNormalizeFolder(path) {
-        var value = String(path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
-        return value.replace(/\/+/g, "/")
-    }
-
-    function kbJoinFolder(parent, child) {
-        parent = kbNormalizeFolder(parent)
-        child = kbNormalizeFolder(child)
-        return parent && child ? parent + "/" + child : (parent || child)
-    }
-
-    function kbFolderName(path) {
-        var parts = kbNormalizeFolder(path).split("/")
-        return parts.length ? parts[parts.length - 1] : ""
-    }
-
-    function kbParentFolder(path) {
-        path = kbNormalizeFolder(path)
-        var slash = path.lastIndexOf("/")
-        return slash < 0 ? "" : path.substring(0, slash)
-    }
-
-    function kbFolderPath(folderEntry) {
-        return kbNormalizeFolder(typeof folderEntry === "string" ? folderEntry : folderEntry.path)
-    }
-
-    function kbFolderAddedAt(folderEntry) {
-        return typeof folderEntry === "string" ? 0 : Number(folderEntry.addedAt || 0)
-    }
-
-    function kbEnsureFolder(metadata, path, addedAt) {
-        path = kbNormalizeFolder(path)
-        if (!path) return
-        var parts = path.split("/")
-        var current = ""
-        for (var i = 0; i < parts.length; i++) {
-            current = kbJoinFolder(current, parts[i])
-            var exists = false
-            for (var j = 0; j < metadata.folders.length; j++) {
-                if (kbFolderPath(metadata.folders[j]) === current) {
-                    exists = true
-                    break
-                }
-            }
-            if (!exists)
-                metadata.folders.push({ "path": current, "addedAt": addedAt || Date.now() })
-        }
-    }
-
     function kbReconcileMetadata() {
         var metadata = kbMetadata || kbDefaultMetadata()
-        if (!metadata.files) metadata.files = {}
-        if (!metadata.folders) metadata.folders = []
+        if (!metadata.filesByCollection) metadata.filesByCollection = {}
+        var files = kbCollectionFiles(metadata, kbUserCollection())
         var actual = {}
         for (var i = 0; i < kbSources.length; i++) {
             var source = String(kbSources[i] || "")
             actual[source] = true
-            if (!metadata.files[source])
-                metadata.files[source] = { "folderPath": "", "addedAt": 0, "sizeBytes": -1, "fileSize": "--" }
+            if (!files[source])
+                files[source] = { "addedAt": 0, "sizeBytes": -1, "fileSize": "--" }
         }
-        var names = Object.keys(metadata.files)
+        var names = Object.keys(files)
         for (var j = 0; j < names.length; j++) {
             if (!actual[names[j]])
-                delete metadata.files[names[j]]
+                delete files[names[j]]
         }
+        metadata.filesByCollection[kbUserCollection()] = files
         kbSaveMetadata(metadata)
         kbSelectedKeys = []
+    }
+
+    function kbSelectCollection(collection) {
+        collection = String(collection || "")
+        if (kbLoading || !kbOwnsCollection(collection) || collection === kbSelectedCollection)
+            return
+        var exists = false
+        for (var i = 0; i < kbCollections.length; i++) {
+            if (String(kbCollections[i].id || "") === collection) {
+                exists = true
+                break
+            }
+        }
+        if (!exists)
+            return
+        kbSelectedCollection = collection
+        kbSearchText = ""
+        kbSelectedKeys = []
+        kbSources = []
+        var metadata = kbMetadata
+        metadata.selectedCollection = collection
+        kbSaveMetadata(metadata)
+        kbRefreshFiles()
+    }
+
+    function kbCreateCollection(name) {
+        name = String(name || "").trim()
+        if (!name) {
+            kbShowError(qsTr("知识库名称不能为空"))
+            return false
+        }
+        if (name.length > 40) {
+            kbShowError(qsTr("知识库名称不能超过 40 个字符"))
+            return false
+        }
+        for (var i = 0; i < kbCollections.length; i++) {
+            if (String(kbCollections[i].name || "") === name) {
+                kbShowError(qsTr("已存在同名知识库"))
+                return false
+            }
+        }
+        var id = kbDefaultCollectionId() + "_" + Date.now().toString(36)
+        var metadata = kbMetadata
+        var collections = (metadata.collections || []).slice(0)
+        collections.push({ "id": id, "name": name, "pending": true })
+        metadata.collections = collections
+        if (!metadata.filesByCollection) metadata.filesByCollection = {}
+        metadata.filesByCollection[id] = {}
+        metadata.selectedCollection = id
+        kbSelectedCollection = id
+        kbSources = []
+        kbSearchText = ""
+        kbSelectedKeys = []
+        kbSaveMetadata(metadata)
+        if (wsClient.connectionState === 3)
+            kbRefreshFiles()
+        return true
+    }
+
+    function kbDeleteCollection(collection) {
+        collection = String(collection || "")
+        if (!wsClient.knowledgeBaseDataDirReady) {
+            kbShowError(wsClient.knowledgeBaseDataDirMessage
+                        || qsTr("当前用户的知识库目录尚未就绪"))
+            return
+        }
+        if (!kbOwnsCollection(collection) || kbLoading)
+            return
+        kbLoading = true
+        kbBusyText = qsTr("正在删除知识库...")
+        kbInvoke("kb_manage", { "collection": collection }, "delete_collection", collection,
+                 function(result) {
+            var metadata = kbMetadata
+            var kept = []
+            var collections = metadata.collections || []
+            for (var i = 0; i < collections.length; i++) {
+                if (String(collections[i].id || "") !== collection)
+                    kept.push(collections[i])
+            }
+            metadata.collections = kept
+            if (metadata.filesByCollection)
+                delete metadata.filesByCollection[collection]
+            if (chatKnowledgeCollection === collection)
+                chatKnowledgeCollection = ""
+            if (kbSelectedCollection === collection) {
+                kbSelectedCollection = kept.length > 0 ? String(kept[0].id || "") : ""
+                metadata.selectedCollection = kbSelectedCollection
+                kbSources = []
+                kbSearchText = ""
+                kbSelectedKeys = []
+            }
+            kbSaveMetadata(metadata)
+            kbLoading = false
+            kbBusyText = ""
+            if (kbSelectedCollection && wsClient.connectionState === 3)
+                kbRefreshFiles()
+        }, true)
     }
 
     function kbDeleteSource(source) {
@@ -466,21 +713,11 @@ ApplicationWindow {
         if (!collection) return
         var sources = []
         var seen = {}
-        var metadata = kbMetadata
         for (var i = 0; i < keys.length; i++) {
             var key = String(keys[i])
             if (key.indexOf("file:") === 0) {
                 var source = key.substring(5)
                 if (!seen[source]) { seen[source] = true; sources.push(source) }
-            } else if (key.indexOf("folder:") === 0) {
-                var folder = key.substring(7)
-                var fileNames = Object.keys(metadata.files || {})
-                for (var j = 0; j < fileNames.length; j++) {
-                    var fileFolder = kbNormalizeFolder(metadata.files[fileNames[j]].folderPath)
-                    if (fileFolder === folder || fileFolder.indexOf(folder + "/") === 0) {
-                        if (!seen[fileNames[j]]) { seen[fileNames[j]] = true; sources.push(fileNames[j]) }
-                    }
-                }
             }
         }
         kbDeleteQueue = sources
@@ -493,21 +730,13 @@ ApplicationWindow {
     function kbDeleteNext() {
         if (kbDeleteQueue.length === 0) {
             var metadata = kbMetadata
+            var files = kbCollectionFiles(metadata, kbUserCollection())
             for (var i = 0; i < kbDeleteKeys.length; i++) {
                 var key = String(kbDeleteKeys[i])
-                if (key.indexOf("file:") === 0) {
-                    delete metadata.files[key.substring(5)]
-                } else if (key.indexOf("folder:") === 0) {
-                    var folder = key.substring(7)
-                    var kept = []
-                    for (var j = 0; j < metadata.folders.length; j++) {
-                        var path = kbFolderPath(metadata.folders[j])
-                        if (path !== folder && path.indexOf(folder + "/") !== 0)
-                            kept.push(metadata.folders[j])
-                    }
-                    metadata.folders = kept
-                }
+                if (key.indexOf("file:") === 0)
+                    delete files[key.substring(5)]
             }
+            metadata.filesByCollection[kbUserCollection()] = files
             kbSaveMetadata(metadata)
             kbDeleteKeys = []
             kbSelectedKeys = []
@@ -518,6 +747,13 @@ ApplicationWindow {
         var source = kbDeleteQueue[0]
         kbInvoke("kb_manage", { "collection": collection, "source": source },
                  "delete_source", collection, function(result) {
+            var details = kbToolDetails(result)
+            if (Number(details.deleted || 0) <= 0) {
+                kbSelectedKeys = []
+                kbShowError(qsTr("文件“%1”不在当前知识库中，列表将重新同步。").arg(source))
+                kbRefreshFiles()
+                return
+            }
             kbDeleteQueue = kbDeleteQueue.slice(1)
             kbDeleteNext()
         })
@@ -527,25 +763,19 @@ ApplicationWindow {
         var entries = []
         for (var i = 0; urls && i < urls.length; i++) {
             var info = $MainViewController.localFileInfo(urls[i])
-            if (info && info.fileName) {
-                info.folderPath = kbCurrentFolder
+            if (info && info.fileName)
                 entries.push(info)
-            }
         }
-        kbStartUploadEntries(entries)
-    }
-
-    function kbStartFolderUpload(folderUrl) {
-        var entries = $MainViewController.listKnowledgeBaseFolderFiles(folderUrl) || []
-        var rootName = kbFolderName(localFilePathFromUrl(folderUrl))
-        var baseFolder = kbJoinFolder(kbCurrentFolder, rootName)
-        for (var i = 0; i < entries.length; i++)
-            entries[i].folderPath = kbJoinFolder(baseFolder, entries[i].relativeDir)
         kbStartUploadEntries(entries)
     }
 
     function kbStartUploadEntries(entries) {
         var collection = kbUserCollection()
+        if (!wsClient.knowledgeBaseDataDirReady) {
+            kbShowError(wsClient.knowledgeBaseDataDirMessage
+                        || qsTr("当前用户的知识库目录尚未就绪"))
+            return
+        }
         if (!collection) {
             kbShowError("请先登录后再上传文件")
             return
@@ -553,16 +783,20 @@ ApplicationWindow {
         var existing = {}
         for (var i = 0; i < kbSources.length; i++) existing[String(kbSources[i])] = true
         kbUploadQueue = []
+        kbUploadFailures = []
+        kbUploadSuccessCount = 0
         for (var j = 0; entries && j < entries.length; j++) {
             var entry = entries[j]
             var source = String(entry.fileName || "")
             if (source && !existing[source]) {
                 existing[source] = true
                 kbUploadQueue.push(entry)
+            } else if (source) {
+                kbUploadFailures.push({ "name": source, "message": qsTr("文件名重复") })
             }
         }
         if (kbUploadQueue.length === 0) {
-            kbShowError(entries.length ? "文件名与知识库现有文件重复" : "文件夹中没有支持的文件")
+            kbShowError(entries.length ? "文件名与知识库现有文件重复" : "没有可上传的文件")
             return
         }
         kbUploadIndex = 0
@@ -576,8 +810,28 @@ ApplicationWindow {
             return
         }
         if (kbUploadIndex >= kbUploadQueue.length) {
+            var successCount = kbUploadSuccessCount
+            var failures = kbUploadFailures.slice(0)
             kbUploadQueue = []
+            kbUploadIndex = 0
+            kbUploadCollection = ""
+            kbUploadSuccessCount = 0
+            kbUploadFailures = []
             kbRefreshFiles()
+            var message = qsTr("上传完成：成功 %1 个，失败 %2 个")
+                    .arg(successCount).arg(failures.length)
+            if (failures.length > 0) {
+                var failedNames = []
+                var shown = Math.min(3, failures.length)
+                for (var i = 0; i < shown; i++)
+                    failedNames.push(String(failures[i].name || qsTr("未命名文件")))
+                message += qsTr("。失败文件：") + failedNames.join("、")
+                if (failures.length > shown)
+                    message += qsTr(" 等")
+            }
+            errorToast.text = message
+            errorToast.visible = true
+            errorToastTimer.restart()
             return
         }
         kbLoading = true
@@ -587,14 +841,31 @@ ApplicationWindow {
         kbInvoke("kb_ingest", { "path": path, "collection": kbUploadCollection }, "",
                  kbUploadCollection, function(result) {
             var metadata = kbMetadata
-            kbEnsureFolder(metadata, entry.folderPath, Date.now())
-            metadata.files[String(entry.fileName)] = {
-                "folderPath": kbNormalizeFolder(entry.folderPath),
+            var files = kbCollectionFiles(metadata, kbUploadCollection)
+            files[String(entry.fileName)] = {
                 "addedAt": Date.now(),
                 "sizeBytes": Number(entry.sizeBytes || 0),
                 "fileSize": String(entry.fileSize || "--")
             }
+            metadata.filesByCollection[kbUploadCollection] = files
+            var collections = metadata.collections || []
+            for (var i = 0; i < collections.length; i++) {
+                if (String(collections[i].id || "") === kbUploadCollection) {
+                    collections[i].pending = false
+                    break
+                }
+            }
             kbSaveMetadata(metadata)
+            kbUploadSuccessCount++
+            kbUploadIndex++
+            kbUploadNext()
+        }, false, function(message) {
+            var failures = kbUploadFailures.slice(0)
+            failures.push({
+                "name": String(entry.fileName || qsTr("未命名文件")),
+                "message": String(message || qsTr("上传失败"))
+            })
+            kbUploadFailures = failures
             kbUploadIndex++
             kbUploadNext()
         })
@@ -613,46 +884,16 @@ ApplicationWindow {
         return timestamp > 0 ? Qt.formatDateTime(new Date(timestamp), "yyyy/M/d HH:mm") : "--"
     }
 
-    function kbFolderSize(path) {
-        var total = 0
-        var known = false
-        var files = kbMetadata.files || {}
-        var names = Object.keys(files)
-        for (var i = 0; i < names.length; i++) {
-            var folder = kbNormalizeFolder(files[names[i]].folderPath)
-            if (folder === path || folder.indexOf(path + "/") === 0) {
-                var size = Number(files[names[i]].sizeBytes)
-                if (size >= 0) { total += size; known = true }
-            }
-        }
-        if (!known) return "--"
-        if (total < 1024) return total + " B"
-        if (total < 1024 * 1024) return (total / 1024).toFixed(1) + " KB"
-        if (total < 1024 * 1024 * 1024) return (total / 1024 / 1024).toFixed(1) + " MB"
-        return (total / 1024 / 1024 / 1024).toFixed(1) + " GB"
-    }
-
     function kbVisibleEntries() {
         var query = kbSearchText.trim().toLowerCase()
         var rows = []
-        var folders = kbMetadata.folders || []
-        for (var i = 0; i < folders.length; i++) {
-            var path = kbFolderPath(folders[i])
-            if ((!query && kbParentFolder(path) === kbCurrentFolder)
-                    || (query && kbFolderName(path).toLowerCase().indexOf(query) >= 0)) {
-                rows.push({ "kind": "folder", "key": "folder:" + path, "name": kbFolderName(path),
-                              "path": path, "addedAt": kbFolderAddedAt(folders[i]), "size": kbFolderSize(path) })
-            }
-        }
-        var files = kbMetadata.files || {}
-        for (var j = 0; j < kbSources.length; j++) {
-            var source = String(kbSources[j] || "")
+        var files = kbCollectionFiles(kbMetadata, kbUserCollection())
+        for (var i = 0; i < kbSources.length; i++) {
+            var source = String(kbSources[i] || "")
             var info = files[source] || {}
-            var folderPath = kbNormalizeFolder(info.folderPath)
-            if ((!query && folderPath === kbCurrentFolder)
-                    || (query && source.toLowerCase().indexOf(query) >= 0)) {
+            if (!query || source.toLowerCase().indexOf(query) >= 0) {
                 rows.push({ "kind": "file", "key": "file:" + source, "name": source,
-                              "path": folderPath, "addedAt": Number(info.addedAt || 0),
+                              "addedAt": Number(info.addedAt || 0),
                               "size": String(info.fileSize || "--") })
             }
         }
@@ -678,37 +919,6 @@ ApplicationWindow {
         var selected = []
         for (var i = 0; i < rows.length; i++) selected.push(rows[i].key)
         kbSelectedKeys = selected
-    }
-
-    function kbBreadcrumbs() {
-        var result = [{ "name": qsTr("全部文件"), "path": "", "current": !kbCurrentFolder }]
-        var parts = kbNormalizeFolder(kbCurrentFolder).split("/")
-        var path = ""
-        for (var i = 0; kbCurrentFolder && i < parts.length; i++) {
-            path = kbJoinFolder(path, parts[i])
-            result.push({ "name": parts[i], "path": path, "current": path === kbCurrentFolder })
-        }
-        return result
-    }
-
-    function kbCreateFolder(name) {
-        name = String(name || "").trim()
-        if (!name || name === "." || name === ".." || /[\\/:*?\"<>|]/.test(name)) {
-            kbShowError("文件夹名称不能为空，且不能包含 \\ / : * ? \" < > |")
-            return false
-        }
-        var path = kbJoinFolder(kbCurrentFolder, name)
-        var folders = kbMetadata.folders || []
-        for (var i = 0; i < folders.length; i++) {
-            if (kbFolderPath(folders[i]) === path) {
-                kbShowError("当前目录已存在同名文件夹")
-                return false
-            }
-        }
-        var metadata = kbMetadata
-        kbEnsureFolder(metadata, path, Date.now())
-        kbSaveMetadata(metadata)
-        return true
     }
 
     /// Markdown / 富文本中的超链接点击（需 Text.textFormat 为 MarkdownText 等）
@@ -746,27 +956,65 @@ ApplicationWindow {
 
     // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
-        if (authController.loggedIn)
+        if (authController.loggedIn) {
+            kbLoadMetadata()
             wsClient.connectToServer(wsClient.serverUrl)
+        }
     }
     Connections {
         target: authController
+        function onUserChanged() {
+            if (!authController.loggedIn
+                    || window.kbMetadataUser === String(authController.userId || ""))
+                return
+            window.knowledgeBaseReadyUserId = ""
+            window.kbListRequestGeneration++
+            kbSources = []
+            kbSearchText = ""
+            kbSelectedKeys = []
+            kbLoadMetadata()
+            if (wsClient.connectionState === 3)
+                wsClient.configureKnowledgeBaseForUser(String(authController.userId || ""))
+            if (wsClient.connectionState === 3 && window.leftSelectedIndex === 7)
+                kbRefreshFiles()
+        }
         function onLoggedInChanged() {
             if (authController.loggedIn) {
+                window.knowledgeBaseReadyUserId = ""
+                kbLoadMetadata()
                 wsClient.connectToServer(wsClient.serverUrl)
             } else {
+                window.knowledgeBaseReadyUserId = ""
+                window.kbListRequestGeneration++
+                knowledgePopup.close()
+                wsClient.configureKnowledgeBaseForUser("")
+                wsClient.clearActiveAgentContext()
                 wsClient.disconnectFromServer()
                 chatModel.clear()
+                window.leftSelectedIndex = 0
+                window.isNewTask = true
+                leftMidPanel.activeAgentId = ""
+                leftMidPanel.activeSessionKey = ""
                 textInputArea.text = ""
+                attachmentModel.clear()
                 newTaskRec.resetShortcutSelection()
+                newTaskRec.selectedCollaborationAgentIds = []
+                dropdownSelectionWorkSpace.currentText = qsTr("workspace")
+                dropdownSelectionWorkSpace.absolutePath = ""
+                dropdownSelectionModel.currentIndex = 0
+                window.pendingExpertPrompt = ""
                 kbSources = []
                 kbSearchText = ""
                 kbLoading = false
                 kbBusyText = ""
                 kbUploadQueue = []
+                kbDeleteQueue = []
+                kbDeleteKeys = []
                 kbMetadata = kbDefaultMetadata()
                 kbMetadataUser = ""
-                kbCurrentFolder = ""
+                kbCollections = []
+                kbSelectedCollection = ""
+                chatKnowledgeCollection = ""
                 kbSelectedKeys = []
             }
         }
@@ -775,6 +1023,7 @@ ApplicationWindow {
         target: wsClient
         function onConnectionStateChanged(){
             if(wsClient.connectionState === 3){
+                wsClient.configureKnowledgeBaseForUser(String(authController.userId || ""))
                 wsClient.refreshSkills()
                 wsClient.refreshCronJobs(true)
                 wsClient.refreshCronStatus()
@@ -782,6 +1031,31 @@ ApplicationWindow {
                 wsClient.refreshAgents()
                 if (window.leftSelectedIndex === 7)
                     window.kbRefreshFiles()
+            }
+        }
+        function onKnowledgeBaseDataDirStateChanged() {
+            if (wsClient.knowledgeBaseDataDirReady) {
+                window.knowledgeBaseReadyUserId = String(authController.userId || "")
+                window.kbLoading = false
+                window.kbBusyText = ""
+                if (window.leftSelectedIndex === 7)
+                    window.kbRefreshFiles()
+            } else if (authController.loggedIn) {
+                window.knowledgeBaseReadyUserId = ""
+                window.kbListRequestGeneration++
+                window.kbSources = []
+                var message = wsClient.knowledgeBaseDataDirMessage
+                        || qsTr("正在切换当前用户的知识库目录...")
+                if (message.indexOf(qsTr("知识库目录切换失败")) === 0) {
+                    window.kbLoading = false
+                    window.kbBusyText = ""
+                    errorToast.text = message
+                    errorToast.visible = true
+                    errorToastTimer.restart()
+                } else {
+                    window.kbLoading = true
+                    window.kbBusyText = message
+                }
             }
         }
         function onCronJobAdded(jobId){
@@ -883,8 +1157,8 @@ ApplicationWindow {
     }
     Rectangle{
         id: leftContainer
-        enabled: authController.loggedIn
-        width: authController.loggedIn ? (window.sidebarCollapsed ? 68 : 280) : 0
+        enabled: window.userSessionReady
+        width: window.userSessionReady ? (window.sidebarCollapsed ? 68 : 280) : 0
         height: parent.height
         anchors.left: parent.left
         anchors.top: parent.top
@@ -1558,7 +1832,7 @@ ApplicationWindow {
                 }
             }
             Rectangle{
-                visible: authController.loggedIn
+                visible: window.userSessionReady
                 color: "#F7F9FA"
                 width: statusRow.width
                 height: 31
@@ -1610,7 +1884,7 @@ ApplicationWindow {
                 spacing: 0
                 Item {
                     id: workspaceTopBarSlot
-                    width: (authController.loggedIn
+                    width: (window.userSessionReady
                             && (window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6)
                             && !newTaskRec.isNewTaskWelcome) ? 137 : 0
                     height: parent.height
@@ -1623,25 +1897,25 @@ ApplicationWindow {
                 }
                 ImageButton{
                     id: settingBtn
-                    visible: authController.loggedIn
+                    visible: window.userSessionReady
                     source: "qrc:/images/setting.png"
                     onClicked: settingsDialog.open()
                 }
                 Rectangle{
-                    visible: authController.loggedIn
+                    visible: window.userSessionReady
                     width: 20
                     height: 1
                     color: "transparent"
                 }
                 Rectangle{
-                    visible: authController.loggedIn
+                    visible: window.userSessionReady
                     width: 1
                     height: 16
                     color: "#1F000000"
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Rectangle{
-                    visible: authController.loggedIn
+                    visible: window.userSessionReady
                     width: 20
                     height: 1
                     color: "transparent"
@@ -1683,7 +1957,7 @@ ApplicationWindow {
         }
         Rectangle{
             id: rightMainPanel
-            enabled: authController.loggedIn
+            enabled: window.userSessionReady
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: rightTopPanel.bottom
@@ -1697,6 +1971,12 @@ ApplicationWindow {
                 property bool isNewTaskWelcome: window.leftSelectedIndex === 0
                                                 && !hasActiveTask && !hasMessages
                 property var selectedCollaborationAgentIds: []
+                onSelectedCollaborationAgentIdsChanged: {
+                    if ((selectedCollaborationAgentIds || []).length > 0) {
+                        window.chatKnowledgeCollection = ""
+                        knowledgePopup.close()
+                    }
+                }
                 readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
                                                              || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
 
@@ -1810,6 +2090,12 @@ ApplicationWindow {
                         return
                     if (!newTaskRec.viewingControllerSession)
                         return
+                    if (window.chatKnowledgeCollection
+                            && !wsClient.knowledgeBaseDataDirReady) {
+                        window.kbShowError(wsClient.knowledgeBaseDataDirMessage
+                                           || qsTr("当前用户的知识库目录尚未就绪"))
+                        return
+                    }
                     var wsPath = ""
                     if (!newTaskRec.hasActiveTask) {
                         wsPath = wsClient.prepareTaskWorkspace(
@@ -1831,10 +2117,10 @@ ApplicationWindow {
                         }
                         attachmentModel.clear()
                         $MainViewController.sendMessageWithFiles(
-                            msg, files, wsPath, window.kbUserCollection())
+                            msg, files, wsPath, window.chatKnowledgeCollection)
                     } else {
                         $MainViewController.sendMessage(
-                            msg, wsPath, window.kbUserCollection())
+                            msg, wsPath, window.chatKnowledgeCollection)
                     }
                 }
 
@@ -2757,6 +3043,201 @@ ApplicationWindow {
                                     }
                                 }
                                 Item {
+                                    id: knowledgePickerWrap
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    readonly property bool expertSelected:
+                                            (newTaskRec.selectedCollaborationAgentIds || []).length > 0
+                                    readonly property string selectedName: window.chatKnowledgeCollection
+                                            ? window.kbCollectionName(window.chatKnowledgeCollection)
+                                            : qsTr("知识库")
+                                    visible: !expertSelected
+                                    width: visible
+                                           ? Math.min(220, Math.max(104, knowledgeTriggerTextMetrics.advanceWidth + 58))
+                                           : 0
+                                    height: 36
+
+                                    Rectangle {
+                                        id: knowledgeTrigger
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: knowledgeTriggerMouse.pressed ? "#14000000"
+                                             : knowledgeTriggerMouse.containsMouse ? "#0A000000"
+                                             : "transparent"
+
+                                        Row {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 12
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 6
+
+                                            Image {
+                                                width: 16
+                                                height: 16
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                source: window.chatKnowledgeCollection
+                                                        ? "qrc:/images/knowledgeSelected.png"
+                                                        : "qrc:/images/knowledge.png"
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(16, 16)
+                                            }
+
+                                            Label {
+                                                width: Math.max(0, knowledgePickerWrap.width - 54)
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: knowledgePickerWrap.selectedName
+                                                elide: Text.ElideRight
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                            }
+                                        }
+
+                                        Canvas {
+                                            width: 16
+                                            height: 16
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 10
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            rotation: knowledgePopup.visible ? 180 : 0
+
+                                            Behavior on rotation {
+                                                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                                            }
+
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.reset()
+                                                ctx.strokeStyle = "#73000000"
+                                                ctx.lineWidth = 1.2
+                                                ctx.lineCap = "round"
+                                                ctx.lineJoin = "round"
+                                                ctx.beginPath()
+                                                ctx.moveTo(5, 6.5)
+                                                ctx.lineTo(8, 9.5)
+                                                ctx.lineTo(11, 6.5)
+                                                ctx.stroke()
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: knowledgeTriggerMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (window.kbCollections.length === 0)
+                                                    return
+                                                if (knowledgePopup.visible)
+                                                    knowledgePopup.close()
+                                                else
+                                                    knowledgePopup.open()
+                                            }
+                                        }
+                                    }
+
+                                    TextMetrics {
+                                        id: knowledgeTriggerTextMetrics
+                                        text: knowledgePickerWrap.selectedName
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                    }
+
+                                    Popup {
+                                        id: knowledgePopup
+                                        x: 0
+                                        y: -height - 8
+                                        width: 212
+                                        height: Math.min(260, window.kbCollections.length * 40 + 16)
+                                        padding: 8
+                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                                        background: Rectangle {
+                                            radius: 8
+                                            color: "#FFFFFF"
+                                            border.width: 1
+                                            border.color: "#14000000"
+                                        }
+
+                                        contentItem: ListView {
+                                            clip: true
+                                            model: window.kbCollections
+                                            boundsBehavior: Flickable.StopAtBounds
+                                            ScrollBar.vertical: ScrollBar {
+                                                policy: ScrollBar.AsNeeded
+                                            }
+
+                                            delegate: Rectangle {
+                                                id: knowledgeOption
+                                                readonly property string collectionId: String(modelData.id || "")
+                                                readonly property bool selected: window.chatKnowledgeCollection === collectionId
+                                                width: ListView.view.width
+                                                height: 40
+                                                radius: 6
+                                                color: knowledgeOptionMouse.pressed ? "#14000000"
+                                                     : knowledgeOptionMouse.containsMouse ? "#0A000000"
+                                                     : "transparent"
+
+                                                Image {
+                                                    width: 16
+                                                    height: 16
+                                                    anchors.left: parent.left
+                                                    anchors.leftMargin: 12
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    source: "qrc:/images/knowledge.png"
+                                                    fillMode: Image.PreserveAspectFit
+                                                    sourceSize: Qt.size(16, 16)
+                                                }
+
+                                                Label {
+                                                    anchors.left: parent.left
+                                                    anchors.leftMargin: 38
+                                                    anchors.right: knowledgeCheck.left
+                                                    anchors.rightMargin: 8
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: String(modelData.name || qsTr("未命名知识库"))
+                                                    elide: Text.ElideRight
+                                                    font.pixelSize: 14
+                                                    color: "#D9000000"
+                                                }
+
+                                                Canvas {
+                                                    id: knowledgeCheck
+                                                    width: 16
+                                                    height: 16
+                                                    anchors.right: parent.right
+                                                    anchors.rightMargin: 10
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: knowledgeOption.selected
+
+                                                    onPaint: {
+                                                        var ctx = getContext("2d")
+                                                        ctx.reset()
+                                                        ctx.strokeStyle = "#D9000000"
+                                                        ctx.lineWidth = 1.8
+                                                        ctx.lineCap = "round"
+                                                        ctx.lineJoin = "round"
+                                                        ctx.beginPath()
+                                                        ctx.moveTo(3.5, 8)
+                                                        ctx.lineTo(6.7, 11)
+                                                        ctx.lineTo(12.5, 4.8)
+                                                        ctx.stroke()
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: knowledgeOptionMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        window.kbToggleChatCollection(knowledgeOption.collectionId)
+                                                        knowledgePopup.close()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Item {
                                     id: expertSelectionTag
                                     anchors.verticalCenter: parent.verticalCenter
                                     readonly property string expertId: {
@@ -3592,9 +4073,10 @@ ApplicationWindow {
                                 Rectangle{
                                     width: Math.max(0, parent.width - workspaceDialogSlot.width
                                                     - dropdownSelectionModel.width
+                                                    - knowledgePickerWrap.width
                                                     - expertSelectionTag.width
                                                     - collaborationPicker.width
-                                                    - inputLeftRow.width - 5 * 4)
+                                                    - inputLeftRow.width - 6 * 4)
                                     height: 1
                                 }
                                 Row{
@@ -6049,13 +6531,9 @@ ApplicationWindow {
                 color: "#FFFFFF"
                 property string pendingDeleteName: ""
                 property string pendingDeleteKey: ""
+                property string pendingDeleteCollectionId: ""
+                property string pendingDeleteCollectionName: ""
                 property bool busy: window.kbLoading
-
-                function navigateToFolder(path) {
-                    window.kbCurrentFolder = String(path || "")
-                    window.kbSearchText = ""
-                    window.kbSelectedKeys = []
-                }
 
                 function toggleEntrySelection(key) {
                     window.kbToggleSelected(String(key || ""))
@@ -6085,14 +6563,283 @@ ApplicationWindow {
                         width: parent.width
                         height: 40
 
-                        Label {
-                            id: kbPathLabel
+                        Rectangle {
+                            id: kbCollectionSelector
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("知识库")
-                            font.pixelSize: 20
-                            font.weight: Font.Bold
-                            color: "#D9000000"
+                            width: 240
+                            height: 40
+                            radius: 6
+                            color: kbCollectionSelectorMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
+                            border.width: 1
+                            border.color: "#E1E3E8"
+
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 14
+                                anchors.right: kbCollectionChevron.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: window.kbSelectedCollection
+                                      ? window.kbCollectionName(window.kbSelectedCollection)
+                                      : qsTr("请选择知识库")
+                                elide: Text.ElideRight
+                                font.pixelSize: 16
+                                font.weight: Font.Medium
+                                color: "#D9000000"
+                            }
+                            Canvas {
+                                id: kbCollectionChevron
+                                width: 16; height: 16
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                rotation: kbCollectionPopup.visible ? 180 : 0
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = "#73000000"
+                                    ctx.lineWidth = 1.5
+                                    ctx.lineCap = "round"
+                                    ctx.beginPath()
+                                    ctx.moveTo(4, 6)
+                                    ctx.lineTo(8, 10)
+                                    ctx.lineTo(12, 6)
+                                    ctx.stroke()
+                                }
+                            }
+                            MouseArea {
+                                id: kbCollectionSelectorMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                enabled: !window.kbLoading
+                                onClicked: kbCollectionPopup.open()
+                            }
+
+                            Popup {
+                                id: kbCollectionPopup
+                                readonly property real collectionListHeight: Math.min(
+                                    280, Math.max(44, window.kbCollections.length * 44))
+                                readonly property point popupPosition: kbCollectionSelector.mapToItem(
+                                    Overlay.overlay, 0, kbCollectionSelector.height + 6)
+                                x: popupPosition.x
+                                y: popupPosition.y
+                                width: kbCollectionSelector.width
+                                height: collectionListHeight + 55
+                                padding: 4
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                background: Rectangle {
+                                    color: "#FFFFFF"; radius: 6
+                                    border.width: 1; border.color: "#E1E3E8"
+                                }
+                                contentItem: Column {
+                                    spacing: 0
+                                    ScrollView {
+                                        width: parent.width
+                                        height: kbCollectionPopup.collectionListHeight
+                                        clip: true
+                                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                                        Column {
+                                            width: parent.width
+                                            Repeater {
+                                                model: window.kbCollections
+                                                delegate: Rectangle {
+                                                    id: kbCollectionRow
+                                                    readonly property string collectionId: String(modelData.id || "")
+                                                    readonly property bool hovered: kbCollectionRowMouse.containsMouse
+                                                                                      || kbCollectionMoreMouse.containsMouse
+                                                    readonly property bool actionMenuOpen: kbCollectionActionPopup.visible
+                                                                                             && knowledgeBaseRec.pendingDeleteCollectionId === collectionId
+                                                    width: parent.width
+                                                    height: 44
+                                                    radius: 4
+                                                    color: hovered || actionMenuOpen ? "#F7F8FA" : "transparent"
+                                                    Image {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 12
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        width: 16
+                                                        height: 16
+                                                        fillMode: Image.PreserveAspectFit
+                                                        source: "qrc:/images/knowledge.png"
+                                                    }
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 40
+                                                        anchors.right: kbCollectionTrailing.left
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: String(modelData.name || "")
+                                                        elide: Text.ElideRight
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                    }
+                                                    MouseArea {
+                                                        id: kbCollectionRowMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            window.kbSelectCollection(modelData.id)
+                                                            kbCollectionPopup.close()
+                                                        }
+                                                    }
+                                                    Item {
+                                                        id: kbCollectionTrailing
+                                                        width: 36
+                                                        height: parent.height
+                                                        anchors.right: parent.right
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        z: 2
+
+                                                        Label {
+                                                            anchors.centerIn: parent
+                                                            visible: kbCollectionRow.collectionId === window.kbSelectedCollection
+                                                                     && !kbCollectionRow.hovered
+                                                                     && !kbCollectionRow.actionMenuOpen
+                                                            text: "✓"
+                                                            font.pixelSize: 14
+                                                            color: "#D9000000"
+                                                        }
+
+                                                        Rectangle {
+                                                            id: kbCollectionMore
+                                                            width: 28
+                                                            height: 28
+                                                            radius: 5
+                                                            anchors.centerIn: parent
+                                                            visible: kbCollectionRow.hovered || kbCollectionRow.actionMenuOpen
+                                                            color: kbCollectionMoreMouse.containsMouse
+                                                                   ? "#14000000" : "#0A000000"
+                                                            Image {
+                                                                anchors.centerIn: parent
+                                                                width: 20
+                                                                height: 20
+                                                                source: "qrc:/images/more.png"
+                                                            }
+                                                            MouseArea {
+                                                                id: kbCollectionMoreMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: {
+                                                                    knowledgeBaseRec.pendingDeleteCollectionId = kbCollectionRow.collectionId
+                                                                    knowledgeBaseRec.pendingDeleteCollectionName = String(modelData.name || "")
+                                                                    var point = kbCollectionMore.mapToItem(
+                                                                        kbCollectionSelector,
+                                                                        kbCollectionMore.width + 6,
+                                                                        (kbCollectionMore.height - kbCollectionActionPopup.height) / 2)
+                                                                    kbCollectionActionPopup.popupX = point.x
+                                                                    kbCollectionActionPopup.popupY = point.y
+                                                                    kbCollectionActionPopup.open()
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Label {
+                                                width: parent.width
+                                                height: window.kbCollections.length === 0 ? 44 : 0
+                                                visible: window.kbCollections.length === 0
+                                                verticalAlignment: Text.AlignVCenter
+                                                horizontalAlignment: Text.AlignHCenter
+                                                text: qsTr("暂无知识库")
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: parent.width - 16
+                                        height: 1
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        color: "#1A000000"
+                                    }
+                                    Rectangle {
+                                        width: parent.width; height: 46; radius: 5
+                                        color: kbCreateCollectionMouse.containsMouse ? "#F7F8FA" : "transparent"
+                                        Label {
+                                            id: addKnowledgeIcon
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: "+"
+                                            font.pixelSize: 20
+                                            color: "#D9000000"
+                                        }
+                                        Label {
+                                            anchors.left: addKnowledgeIcon.right; anchors.leftMargin: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: qsTr("新建知识库")
+                                            font.pixelSize: 14; color: "#D9000000"
+                                        }
+                                        MouseArea {
+                                            id: kbCreateCollectionMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                kbCollectionPopup.close()
+                                                kbCollectionNameInput.text = ""
+                                                kbCreateCollectionPopup.open()
+                                                kbCollectionNameInput.forceActiveFocus()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Popup {
+                                id: kbCollectionActionPopup
+                                property real popupX: 0
+                                property real popupY: 0
+                                x: popupX
+                                y: popupY
+                                width: 76
+                                height: 40
+                                padding: 0
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                background: Rectangle {
+                                    color: "#FFFFFF"
+                                    radius: 6
+                                    border.width: 1
+                                    border.color: "#E1E3E8"
+                                }
+                                contentItem: Rectangle {
+                                    color: kbCollectionActionDeleteMouse.containsMouse ? "#FFF2F2" : "transparent"
+                                    radius: 6
+                                    Row {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Image {
+                                            width: 16
+                                            height: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            source: "qrc:/images/delete.png"
+                                        }
+                                        Label {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: qsTr("删除")
+                                            font.pixelSize: 14
+                                            color: "#FF3D40"
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: kbCollectionActionDeleteMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            kbCollectionActionPopup.close()
+                                            kbCollectionPopup.close()
+                                            kbDeleteCollectionConfirm.open()
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         SingleLineTextInput {
@@ -6116,68 +6863,14 @@ ApplicationWindow {
                         width: parent.width
                         height: 40
 
-                        Flickable {
-                            id: kbBreadcrumbView
-                            anchors.left: parent.left; anchors.leftMargin: 52
-                            anchors.right: kbActionsRow.left; anchors.rightMargin: 16
+                        Label {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 52
                             anchors.verticalCenter: parent.verticalCenter
-                            height: 32
-                            contentWidth: kbBreadcrumbRow.width
-                            contentHeight: height
-                            contentX: Math.max(0, contentWidth - width)
-                            interactive: contentWidth > width
-                            clip: true
-
-                            Row {
-                                id: kbBreadcrumbRow
-                                height: parent.height
-                                spacing: 0
-
-                                Repeater {
-                                    model: window.kbBreadcrumbs()
-                                    delegate: Item {
-                                        readonly property var pageController: knowledgeBaseRec
-                                        height: kbBreadcrumbRow.height
-                                        width: kbBreadcrumbSeparator.width + kbBreadcrumbName.implicitWidth
-                                        Label {
-                                            id: kbBreadcrumbSeparator
-                                            height: parent.height
-                                            visible: index > 0
-                                            width: visible ? implicitWidth : 0
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: "  /  "
-                                            font.pixelSize: 14
-                                            color: "#73000000"
-                                        }
-                                        Label {
-                                            id: kbBreadcrumbName
-                                            anchors.left: kbBreadcrumbSeparator.right
-                                            height: parent.height
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: String(modelData.name || "")
-                                            font.pixelSize: 14
-                                            color: modelData.current ? "#D9000000" : "#73000000"
-                                        }
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            enabled: !modelData.current
-                                            hoverEnabled: true
-                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: pageController.navigateToFolder(modelData.path)
-                                        }
-                                    }
-                                }
-
-                                Label {
-                                    height: parent.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: "  " + window.kbVisibleEntries().length + qsTr(" 个")
-                                    font.pixelSize: 14
-                                    color: "#73000000"
-                                }
-                            }
+                            text: qsTr("全部文件") + " " + window.kbVisibleEntries().length + qsTr(" 个")
+                            font.pixelSize: 14
+                            color: "#73000000"
                         }
-
                         CheckBox {
                             id: kbSelectAll
                             anchors.left: parent.left
@@ -6239,24 +6932,6 @@ ApplicationWindow {
                             }
 
                             Rectangle {
-                                width: 108; height: 36; radius: 6
-                                color: kbNewFolderMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
-                                border.width: 1; border.color: "#E1E3E8"
-                                Row {
-                                    height: parent.height; spacing: 6; anchors.horizontalCenter: parent.horizontalCenter
-                                    Label { text: "+"; font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
-                                    Label { text: qsTr("新建文件夹"); font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
-                                }
-                                MouseArea {
-                                    id: kbNewFolderMouse
-                                    anchors.fill: parent; hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    enabled: !window.kbLoading
-                                    onClicked: { kbNewFolderInput.text = ""; kbNewFolderPopup.open(); kbNewFolderInput.forceActiveFocus() }
-                                }
-                            }
-
-                            Rectangle {
                                 id: kbUploadButton
                                 width: 124
                                 height: 36
@@ -6264,8 +6939,7 @@ ApplicationWindow {
                                 color: kbUploadMouse.pressed ? "#075BCC" : "#006BFF"
                                 opacity: kbUploadMouse.enabled ? 1 : 0.5
                                 Row {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 14
+                                    anchors.horizontalCenter: parent.horizontalCenter
                                     height: parent.height
                                     spacing: 7
                                     Image {
@@ -6282,57 +6956,13 @@ ApplicationWindow {
                                 }
                                 MouseArea {
                                     id: kbUploadMouse
-                                    anchors.left: parent.left
-                                    anchors.top: parent.top
-                                    anchors.bottom: parent.bottom
-                                    width: 96
+                                    anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     enabled: !window.kbLoading
+                                             && wsClient.knowledgeBaseDataDirReady
+                                             && window.kbSelectedCollection.length > 0
                                     onClicked: kbFileDialog.open()
-                                }
-                                Rectangle {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 1; height: 20; color: "#66FFFFFF"
-                                }
-                                Image {
-                                    anchors.right: parent.right; anchors.rightMargin: 12
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    source: "qrc:/images/Vector.png"
-                                }
-                                MouseArea {
-                                    anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
-                                    width: 28; cursorShape: Qt.PointingHandCursor
-                                    enabled: !window.kbLoading
-                                    onClicked: kbUploadPopup.open()
-                                }
-                                Popup {
-                                    id: kbUploadPopup
-                                    readonly property point popupPosition: kbUploadButton.mapToItem(
-                                        Overlay.overlay, kbUploadButton.width - width, kbUploadButton.height + 6)
-                                    x: popupPosition.x
-                                    y: popupPosition.y
-                                    width: 150; height: 52; padding: 0
-                                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                                    background: Rectangle {
-                                        color: "#FFFFFF"; radius: 6
-                                        border.width: 1; border.color: "#E1E3E8"
-                                    }
-                                    contentItem: Rectangle {
-                                        color: kbUploadFolderMouse.containsMouse ? "#F5F7FA" : "transparent"
-                                        Row {
-                                            height:parent.height; spacing: 8; anchors.left: parent.left; anchors.leftMargin: 20
-                                            Image { width: 16; height: 16; source: "qrc:/images/folder.png"; anchors.verticalCenter: parent.verticalCenter}
-                                            Label { text: qsTr("上传文件夹"); font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
-                                        }
-                                        MouseArea {
-                                            id: kbUploadFolderMouse
-                                            anchors.fill: parent; hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: { kbUploadPopup.close(); kbFolderDialog.open() }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -6363,7 +6993,6 @@ ApplicationWindow {
                                             readonly property var pageController: knowledgeBaseRec
                                             readonly property string sourceName: String(modelData.name || "")
                                             readonly property string entryKey: String(modelData.key || "")
-                                            readonly property bool isFolder: modelData.kind === "folder"
                                             width: kbFileScroll.width
                                             height: 56
                                             color: kbRowMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
@@ -6375,13 +7004,6 @@ ApplicationWindow {
                                                 hoverEnabled: true
                                             }
 
-                                            Rectangle {
-                                                anchors.left: parent.left
-                                                anchors.right: parent.right
-                                                anchors.bottom: parent.bottom
-                                                height: 1
-                                                color: "#ECEEF2"
-                                            }
                                             CheckBox {
                                                 id: kbRowCheck
                                                 x: 16; anchors.verticalCenter: parent.verticalCenter
@@ -6403,8 +7025,7 @@ ApplicationWindow {
                                             Image {
                                                 x: 52; width: 24; height: 24
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                source: kbFileRow.isFolder ? "qrc:/images/knowledge/folder.png"
-                                                                           : kbFileRow.pageController.fileIconFor(kbFileRow.sourceName)
+                                                source: kbFileRow.pageController.fileIconFor(kbFileRow.sourceName)
                                             }
                                             Label {
                                                 x: 88
@@ -6414,12 +7035,6 @@ ApplicationWindow {
                                                 elide: Text.ElideMiddle
                                                 font.pixelSize: 14
                                                 color: "#D9000000"
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    enabled: kbFileRow.isFolder
-                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                    onClicked: kbFileRow.pageController.navigateToFolder(modelData.path)
-                                                }
                                             }
                                             Label {
                                                 x: parent.width * 0.64; width: 170
@@ -6470,7 +7085,8 @@ ApplicationWindow {
                         Label {
                             anchors.centerIn: parent
                             visible: !window.kbLoading && window.kbVisibleEntries().length === 0
-                            text: window.kbSearchText ? qsTr("未找到匹配文件") : qsTr("暂无知识库文件")
+                            text: !window.kbSelectedCollection ? qsTr("请先新建知识库")
+                                  : window.kbSearchText ? qsTr("未找到匹配文件") : qsTr("暂无知识库文件")
                             font.pixelSize: 14
                             color: "#73000000"
                         }
@@ -6498,7 +7114,7 @@ ApplicationWindow {
                 }
 
                 Popup {
-                    id: kbNewFolderPopup
+                    id: kbCreateCollectionPopup
                     anchors.centerIn: parent
                     width: 380; height: 190
                     modal: true
@@ -6510,16 +7126,16 @@ ApplicationWindow {
                     contentItem: Column {
                         anchors.fill: parent; anchors.margins: 24; spacing: 16
                         Label {
-                            text: qsTr("新建文件夹"); font.pixelSize: 17
+                            text: qsTr("新建知识库"); font.pixelSize: 17
                             font.weight: Font.Bold; color: "#D9000000"
                         }
                         TextField {
-                            id: kbNewFolderInput
+                            id: kbCollectionNameInput
                             width: parent.width; height: 38
-                            placeholderText: qsTr("请输入文件夹名称")
+                            placeholderText: qsTr("请输入知识库名称")
                             selectByMouse: true
                             onAccepted: {
-                                if (window.kbCreateFolder(text)) kbNewFolderPopup.close()
+                                if (window.kbCreateCollection(text)) kbCreateCollectionPopup.close()
                             }
                         }
                         Row {
@@ -6527,13 +7143,58 @@ ApplicationWindow {
                             CustomButton {
                                 width: 72; height: 34; text: qsTr("取消"); fontSize: 13
                                 backgroundColor: "#F0F1F4"; textColor: "#D9000000"; borderWidth: 0
-                                onClicked: kbNewFolderPopup.close()
+                                onClicked: kbCreateCollectionPopup.close()
                             }
                             CustomButton {
                                 width: 72; height: 34; text: qsTr("创建"); fontSize: 13
                                 backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
                                 onClicked: {
-                                    if (window.kbCreateFolder(kbNewFolderInput.text)) kbNewFolderPopup.close()
+                                    if (window.kbCreateCollection(kbCollectionNameInput.text))
+                                        kbCreateCollectionPopup.close()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Popup {
+                    id: kbDeleteCollectionConfirm
+                    anchors.centerIn: parent
+                    width: 400; height: 190
+                    modal: true
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    background: Rectangle {
+                        color: "#FFFFFF"; radius: 8
+                        border.width: 1; border.color: "#E1E3E8"
+                    }
+                    contentItem: Column {
+                        anchors.fill: parent; anchors.margins: 24; spacing: 20
+                        Label {
+                            width: parent.width
+                            text: qsTr("删除知识库")
+                            font.pixelSize: 17; font.weight: Font.Bold; color: "#D9000000"
+                        }
+                        Label {
+                            width: parent.width
+                            text: qsTr("删除后知识库内所有文件将无法恢复，确定删除“")
+                                  + knowledgeBaseRec.pendingDeleteCollectionName + qsTr("”？")
+                            wrapMode: Text.WordWrap
+                            font.pixelSize: 14; color: "#A6000000"
+                        }
+                        Row {
+                            anchors.right: parent.right; spacing: 8
+                            CustomButton {
+                                width: 72; height: 34; text: qsTr("取消"); fontSize: 13
+                                backgroundColor: "#F0F1F4"; textColor: "#D9000000"; borderWidth: 0
+                                onClicked: kbDeleteCollectionConfirm.close()
+                            }
+                            CustomButton {
+                                width: 72; height: 34; text: qsTr("删除"); fontSize: 13
+                                backgroundColor: "#FF3D40"; textColor: "#FFFFFF"; borderWidth: 0
+                                onClicked: {
+                                    var collection = knowledgeBaseRec.pendingDeleteCollectionId
+                                    kbDeleteCollectionConfirm.close()
+                                    window.kbDeleteCollection(collection)
                                 }
                             }
                         }
@@ -7286,8 +7947,16 @@ ApplicationWindow {
                     fontSize: 14
                     onClicked: {
                         var sid = window.pendingDeleteTaskSessionId
+                        var deletingCurrent = sid.length > 0
+                                && sid === String(wsClient.currentTaskSessionKey || "")
                         if (sid.length > 0)
                             wsClient.deleteTaskSession(sid)
+                        if (deletingCurrent) {
+                            leftMidPanel.activeAgentId = ""
+                            leftMidPanel.activeSessionKey = ""
+                            chatModel.clear()
+                            window.leftSelectedIndex = 0
+                        }
                         deleteSessionPopup.close()
                     }
                 }
@@ -7597,13 +8266,6 @@ ApplicationWindow {
         nameFilters: ["Documents (*.pdf *.docx *.xlsx *.xls *.pptx *.md *.txt *.text)", "All files (*)"]
         selectMultiple: true
         onAccepted: window.kbStartUpload(kbFileDialog.fileUrls)
-    }
-
-    FileDialog {
-        id: kbFolderDialog
-        title: qsTr("选择知识库文件夹")
-        selectFolder: true
-        onAccepted: window.kbStartFolderUpload(kbFolderDialog.fileUrl)
     }
 
     FileDialog {
@@ -9236,7 +9898,9 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.topMargin: rightTopPanel.height
         anchors.bottom: parent.bottom
-        visible: !authController.loggedIn
+        initializing: authController.loggedIn && !window.userSessionReady
+        initializingText: wsClient.knowledgeBaseDataDirMessage
+        visible: !window.userSessionReady
         enabled: visible
         z: 20000
     }

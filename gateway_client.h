@@ -133,6 +133,10 @@ class GatewayClient : public QObject
     Q_PROPERTY(QString gatewayHttpBaseUrl READ gatewayHttpBaseUrl CONSTANT)
     /// config.json 中的 gateway 认证 token（与 WebSocket 握手一致）
     Q_PROPERTY(QString gatewayAuthToken READ gatewayAuthToken CONSTANT)
+    Q_PROPERTY(bool knowledgeBaseDataDirReady READ knowledgeBaseDataDirReady
+               NOTIFY knowledgeBaseDataDirStateChanged)
+    Q_PROPERTY(QString knowledgeBaseDataDirMessage READ knowledgeBaseDataDirMessage
+               NOTIFY knowledgeBaseDataDirStateChanged)
     /// 技能市场列表；新数据源接入前保持为空
     Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
                NOTIFY skillMarketFoldersChanged)
@@ -177,6 +181,8 @@ public:
     QString serverUrl() const;
     QString gatewayHttpBaseUrl() const;
     QString gatewayAuthToken() const;
+    bool knowledgeBaseDataDirReady() const { return m_knowledgeBaseDataDirReady; }
+    QString knowledgeBaseDataDirMessage() const { return m_knowledgeBaseDataDirMessage; }
     /// 切换本地任务会话所属用户；列表和后续写入均按该用户隔离。
     void setTaskSessionUserId(const QString &userId);
 
@@ -501,6 +507,9 @@ public:
     /// 拉取配置快照并解析 mcp.servers（config.get）
     Q_INVOKABLE void refreshMcpList();
 
+    /// 按登录用户通过 config.set 更新 KB 插件 dataDir，不主动重启 Gateway。
+    Q_INVOKABLE void configureKnowledgeBaseForUser(const QString &userId);
+
     /// 拉取 tools.catalog（agentId 空则用 defaultAgentId）
     Q_INVOKABLE void refreshToolsCatalog(const QString &agentId = QString());
 
@@ -556,6 +565,7 @@ public:
 signals:
     // ── 连接状态 ──
     void connectionStateChanged();  ///< 连接状态发生变化
+    void knowledgeBaseDataDirStateChanged();
 
     // ── 聊天消息 ──
     void chatMessageReceived(const QString &role,
@@ -797,6 +807,10 @@ private:
      * 并解析 agents.list[].workspace 供界面展示（agent.identity.get 不含 workspace）。
      */
     void applyMcpListFromConfigGetPayload(const QJsonObject &payload);
+    void applyPendingKnowledgeBaseDataDir();
+    void setKnowledgeBaseDataDirState(bool ready, const QString &message);
+    static QString knowledgeBaseDataDirForUser(const QString &userId,
+                                                const QString &baseDataDir);
     /// 从完整 config 对象填充 m_mcpList（按名称排序）
     void rebuildMcpListFromConfigObject(const QJsonObject &config);
     /// 从 config 根对象重建 agentId → workspace（及 agents.defaults.workspace）
@@ -1000,6 +1014,14 @@ private:
     QJsonObject    m_stashedConfigMutationParams;
     bool           m_configHashRetryAfterGet = false;
     bool           m_configHashRetryInFlight = false;
+    QString        m_knowledgeBaseDataDirUserId;
+    QString        m_knowledgeBaseDesiredDataDir;
+    QString        m_pendingKnowledgeBaseConfigMutationReqId;
+    bool           m_knowledgeBaseConfigMutationAwaitingRetry = false;
+    bool           m_knowledgeBaseAwaitingRestart = false;
+    bool           m_knowledgeBaseRestartObserved = false;
+    bool           m_knowledgeBaseDataDirReady = false;
+    QString        m_knowledgeBaseDataDirMessage;
     QVariantList   m_mcpList;          ///< mcp.servers 展示列表
 
     WsTools        m_tools;            ///< tools.catalog 与 tools 策略展平

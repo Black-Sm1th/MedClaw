@@ -5,6 +5,8 @@ Item {
     id: loginPage
     property bool showPhoneForm: false
     property int resendSeconds: 0
+    property bool initializing: false
+    property string initializingText: ""
 
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
     function submitLogin() { authController.loginWithPhone(phoneInput.text, codeInput.text) }
@@ -22,6 +24,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -56
         spacing: 0
+        visible: !loginPage.initializing
         Image { source: "qrc:/images/login/loginTitle.png"; anchors.horizontalCenter: parent.horizontalCenter }
         Item { width: 1; height: showPhoneForm ? 80 : 68 }
         Row {
@@ -150,11 +153,39 @@ Item {
         Label { visible: authController.errorMessage.length > 0; width: parent.width; topPadding: 14; text: authController.errorMessage; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: "#E54D42"; font.pixelSize: 16 }
     }
 
+    Column {
+        width: 577
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenterOffset: -56
+        spacing: 32
+        visible: loginPage.initializing
+
+        Image {
+            source: "qrc:/images/login/loginTitle.png"
+            anchors.horizontalCenter: parent.horizontalCenter
+        }
+        BusyIndicator {
+            width: 48
+            height: 48
+            running: loginPage.initializing
+            anchors.horizontalCenter: parent.horizontalCenter
+        }
+        Label {
+            width: parent.width
+            text: loginPage.initializingText || qsTr("正在初始化当前用户的知识库...")
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            color: "#A6000000"
+            font.pixelSize: 16
+        }
+    }
+
     Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: "#73000000"; font.pixelSize: 16 }
     Timer { interval: 1000; repeat: true; running: loginPage.resendSeconds > 0; onTriggered: loginPage.resendSeconds-- }
     Connections { target: authController; function onSmsCodeSent() { loginPage.resendSeconds = 60; codeInput.forceActiveFocus() } }
     onVisibleChanged: {
-        if (visible) {
+        if (visible && !initializing) {
             showPhoneForm = false
             resendSeconds = 0
             phoneInput.clear()

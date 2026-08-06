@@ -458,7 +458,7 @@ QJsonObject WsSession::buildListSessionsParams() const
 QJsonObject WsSession::buildDeleteSessionParams(const QString &sessionKey) const
 {
     QJsonObject params;
-    params[QStringLiteral("sessionKey")] = sessionKey;
+    params[QStringLiteral("key")] = sessionKey;
     return params;
 }
 

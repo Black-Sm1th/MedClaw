@@ -14,6 +14,7 @@
 #include "gateway_client.h"
 #include <QAbstractSocket>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -2489,6 +2490,16 @@ void GatewayClient::onDisconnected()
     m_sessionFirstUserTitleDebounce.stop();
     m_agentFirstUserTitleDebounce.stop();
 
+    if (!m_knowledgeBaseDesiredDataDir.isEmpty()) {
+        m_pendingKnowledgeBaseConfigMutationReqId.clear();
+        if (m_knowledgeBaseAwaitingRestart)
+            m_knowledgeBaseRestartObserved = true;
+        setKnowledgeBaseDataDirState(
+            false, m_knowledgeBaseAwaitingRestart
+                ? QStringLiteral("正在等待知识库服务恢复...")
+                : QStringLiteral("正在连接当前用户的知识库..."));
+    }
+
     setState(Disconnected);
 
     if (m_skipAutoReconnectOnNextDisconnect) {
@@ -2996,6 +3007,19 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
              || id == m_pendingToolInstallMutationReqId)
             && !looksLikeConfigHashStaleError(errMsg)) {
             finishToolInstall(errMsg);
+        }
+
+        if (id == m_pendingKnowledgeBaseConfigMutationReqId) {
+            m_pendingKnowledgeBaseConfigMutationReqId.clear();
+            if (looksLikeConfigHashStaleError(errMsg)) {
+                m_knowledgeBaseConfigMutationAwaitingRetry = true;
+            } else {
+                m_knowledgeBaseConfigMutationAwaitingRetry = false;
+                m_knowledgeBaseAwaitingRestart = false;
+                m_knowledgeBaseRestartObserved = false;
+                setKnowledgeBaseDataDirState(
+                    false, QStringLiteral("知识库目录切换失败：%1").arg(errMsg));
+            }
         }
 
         // sessions.patch 失败 → 清空"用户意图"，让下拉框回退到 currentModel
@@ -3516,12 +3540,18 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         return;
     }
 
-    // config.set → 全量写入成功（不触发重启），刷新配置快照
+    // config.set → 全量写入成功；KB dataDir 仍需等待 Gateway 重启并重连确认
     if (method == QLatin1String("config.set")) {
         m_configHashRetryInFlight = false;
         m_configHashRetryAfterGet = false;
         qDebug() << "[Gateway] config.set ok, follow-up config.get";
         const bool wasCollabAllowConfigSet = m_collabAllowConfigSetReqIds.remove(id);
+        if (id == m_pendingKnowledgeBaseConfigMutationReqId) {
+            m_pendingKnowledgeBaseConfigMutationReqId.clear();
+            m_knowledgeBaseConfigMutationAwaitingRetry = false;
+            setKnowledgeBaseDataDirState(
+                false, QStringLiteral("正在重启知识库服务..."));
+        }
 
         // config.set 已被服务端处理完毕，deny 列表已生效，
         // 此时可以安全地发出新 agent 的首条消息
@@ -3876,6 +3906,11 @@ void GatewayClient::maybeRetryStashedConfigMutationAfterGet()
     qDebug() << "[Gateway] retrying" << m_stashedConfigMutationMethod << "with fresh baseHash";
     m_stashedConfigMutationParams = p;
     const QString reqId = sendRequest(m_stashedConfigMutationMethod, p);
+    if (m_knowledgeBaseConfigMutationAwaitingRetry
+        && m_stashedConfigMutationMethod == QLatin1String("config.set")) {
+        m_knowledgeBaseConfigMutationAwaitingRetry = false;
+        m_pendingKnowledgeBaseConfigMutationReqId = reqId;
+    }
     if (m_toolInstallBusy && !m_pendingToolInstallMutationReqId.isEmpty())
         m_pendingToolInstallMutationReqId = reqId;
     if (m_stashedConfigMutationMethod == QLatin1String("config.set")
@@ -5584,6 +5619,7 @@ void GatewayClient::applyMcpListFromConfigGetPayload(const QJsonObject &payload)
     emit skillListChanged();
 
     maybeRetryStashedConfigMutationAfterGet();
+    applyPendingKnowledgeBaseDataDir();
 }
 
 void GatewayClient::rebuildAgentWorkspaceMapFromConfigObject(
@@ -5652,6 +5688,139 @@ void GatewayClient::refreshMcpList()
     if (m_state != Connected)
         return;
     sendRequest(QStringLiteral("config.get"), QJsonObject());
+}
+
+QString GatewayClient::knowledgeBaseDataDirForUser(const QString &userId,
+                                                    const QString &baseDataDir)
+{
+    const QByteArray digest = QCryptographicHash::hash(
+        userId.trimmed().toUtf8(), QCryptographicHash::Sha256).toHex();
+    QString base = baseDataDir.trimmed();
+    base.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    while (base.endsWith(QLatin1Char('/')))
+        base.chop(1);
+    base.remove(QRegularExpression(
+        QStringLiteral("/users/[0-9a-fA-F]{64}$")));
+    if (base.isEmpty())
+        base = QStringLiteral("~/.openclaw/kb-data");
+    return QStringLiteral("%1/users/%2")
+        .arg(base, QString::fromLatin1(digest));
+}
+
+void GatewayClient::setKnowledgeBaseDataDirState(bool ready,
+                                                  const QString &message)
+{
+    if (m_knowledgeBaseDataDirReady == ready
+        && m_knowledgeBaseDataDirMessage == message) {
+        return;
+    }
+    m_knowledgeBaseDataDirReady = ready;
+    m_knowledgeBaseDataDirMessage = message;
+    emit knowledgeBaseDataDirStateChanged();
+}
+
+void GatewayClient::configureKnowledgeBaseForUser(const QString &userId)
+{
+    const QString normalizedUserId = userId.trimmed();
+    if (normalizedUserId.isEmpty()) {
+        m_knowledgeBaseDataDirUserId.clear();
+        m_knowledgeBaseDesiredDataDir.clear();
+        m_pendingKnowledgeBaseConfigMutationReqId.clear();
+        m_knowledgeBaseConfigMutationAwaitingRetry = false;
+        m_knowledgeBaseAwaitingRestart = false;
+        m_knowledgeBaseRestartObserved = false;
+        setKnowledgeBaseDataDirState(false, QString());
+        return;
+    }
+
+    if (normalizedUserId != m_knowledgeBaseDataDirUserId) {
+        m_knowledgeBaseDataDirUserId = normalizedUserId;
+        m_knowledgeBaseDesiredDataDir.clear();
+        m_pendingKnowledgeBaseConfigMutationReqId.clear();
+        m_knowledgeBaseConfigMutationAwaitingRetry = false;
+        m_knowledgeBaseAwaitingRestart = false;
+        m_knowledgeBaseRestartObserved = false;
+    }
+
+    setKnowledgeBaseDataDirState(
+        false, m_knowledgeBaseAwaitingRestart
+            ? QStringLiteral("正在确认重启后的知识库目录...")
+            : QStringLiteral("正在初始化当前用户的知识库..."));
+    if (m_state == Connected)
+        refreshMcpList();
+}
+
+void GatewayClient::applyPendingKnowledgeBaseDataDir()
+{
+    if (m_state != Connected || m_knowledgeBaseDataDirUserId.isEmpty()
+        || m_lastConfigSnapshot.isEmpty() || m_configHashRetryAfterGet
+        || m_configHashRetryInFlight) {
+        return;
+    }
+
+    const QJsonObject plugins =
+        m_lastConfigSnapshot.value(QStringLiteral("plugins")).toObject();
+    const QJsonObject entries =
+        plugins.value(QStringLiteral("entries")).toObject();
+    const QJsonObject kbEntry = entries.value(QStringLiteral("kb")).toObject();
+    const QString currentDataDir =
+        kbEntry.value(QStringLiteral("config")).toObject()
+            .value(QStringLiteral("dataDir")).toString().trimmed();
+    if (m_knowledgeBaseDesiredDataDir.isEmpty()) {
+        m_knowledgeBaseDesiredDataDir = knowledgeBaseDataDirForUser(
+            m_knowledgeBaseDataDirUserId, currentDataDir);
+    }
+
+    if (currentDataDir == m_knowledgeBaseDesiredDataDir) {
+        m_pendingKnowledgeBaseConfigMutationReqId.clear();
+        if (m_knowledgeBaseAwaitingRestart
+            && !m_knowledgeBaseRestartObserved) {
+            setKnowledgeBaseDataDirState(
+                false, QStringLiteral("正在重启知识库服务..."));
+            return;
+        }
+        m_knowledgeBaseAwaitingRestart = false;
+        m_knowledgeBaseRestartObserved = false;
+        setKnowledgeBaseDataDirState(true, QString());
+        qDebug().noquote() << "[Gateway][KB] dataDir ready:"
+                           << m_knowledgeBaseDesiredDataDir;
+        return;
+    }
+
+    if (!m_pendingKnowledgeBaseConfigMutationReqId.isEmpty()
+        || m_knowledgeBaseConfigMutationAwaitingRetry) {
+        return;
+    }
+
+    QJsonObject fullConfig = m_lastConfigSnapshot;
+    QJsonObject fullPlugins =
+        fullConfig.value(QStringLiteral("plugins")).toObject();
+    QJsonObject fullEntries =
+        fullPlugins.value(QStringLiteral("entries")).toObject();
+    QJsonObject fullKbEntry =
+        fullEntries.value(QStringLiteral("kb")).toObject();
+    QJsonObject kbConfig =
+        fullKbEntry.value(QStringLiteral("config")).toObject();
+    kbConfig[QStringLiteral("dataDir")] = m_knowledgeBaseDesiredDataDir;
+    fullKbEntry[QStringLiteral("config")] = kbConfig;
+    fullEntries[QStringLiteral("kb")] = fullKbEntry;
+    fullPlugins[QStringLiteral("entries")] = fullEntries;
+    fullConfig[QStringLiteral("plugins")] = fullPlugins;
+
+    QJsonObject params;
+    params[QStringLiteral("raw")] = QString::fromUtf8(
+        QJsonDocument(fullConfig).toJson(QJsonDocument::Compact));
+    if (!m_configSnapshotHash.isEmpty())
+        params[QStringLiteral("baseHash")] = m_configSnapshotHash;
+
+    m_knowledgeBaseAwaitingRestart = true;
+    m_knowledgeBaseRestartObserved = false;
+    m_pendingKnowledgeBaseConfigMutationReqId =
+        sendConfigMutation(QStringLiteral("config.set"), params);
+    setKnowledgeBaseDataDirState(
+        false, QStringLiteral("正在应用当前用户的知识库目录..."));
+    qDebug().noquote() << "[Gateway][KB] switching dataDir to"
+                       << m_knowledgeBaseDesiredDataDir;
 }
 
 void GatewayClient::refreshToolsCatalog(const QString &agentId)

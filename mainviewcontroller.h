@@ -45,11 +45,11 @@ public:
                                              const QString &workspace) const;
 
 private:
+    static QString withKnowledgeScope(const QString &text,
+                                      const QString &knowledgeCollection);
     static QString resolveWorkspacePath(const QString &ws);
     static QString fileSizeHumanBytes(qint64 bytes);
     static QString normalizeLocalFileCandidate(const QString &link);
-    static QString withKnowledgeScope(const QString &text,
-                                      const QString &knowledgeCollection);
 
     ChatModel      *m_chatModel  = nullptr;
     GatewayClient  *m_wsClient   = nullptr;

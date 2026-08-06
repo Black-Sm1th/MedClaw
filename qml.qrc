@@ -103,5 +103,6 @@
         <file>images/login/loginShortcut3.png</file>
         <file>images/login/loginShortcut4.png</file>
         <file>images/login/loginTitle.png</file>
+        <file>images/knowledgeSelected.png</file>
     </qresource>
 </RCC>
