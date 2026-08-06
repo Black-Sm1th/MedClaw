@@ -996,7 +996,6 @@ ApplicationWindow {
                 leftMidPanel.activeAgentId = ""
                 leftMidPanel.activeSessionKey = ""
                 textInputArea.text = ""
-                attachmentModel.clear()
                 newTaskRec.resetShortcutSelection()
                 newTaskRec.selectedCollaborationAgentIds = []
                 dropdownSelectionWorkSpace.currentText = qsTr("workspace")
@@ -2083,8 +2082,9 @@ ApplicationWindow {
                     selectedShortcutGroup = -1
                 }
 
-                function doSendMessage() {
-                    var msg = textInputArea.text.trim()
+                function doSendMessage(requestedText) {
+                    var msg = (requestedText === undefined
+                               ? textInputArea.text : String(requestedText)).trim()
                     if (msg === "") return
                     if (wsClient.connectionState !== 3)
                         return
@@ -2108,20 +2108,8 @@ ApplicationWindow {
                     wsClient.setPendingCollaborationAgents(
                         newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
                     textInputArea.text = ""
-
-                    if (attachmentModel.count > 0) {
-                        var files = []
-                        for (var i = 0; i < attachmentModel.count; i++) {
-                            var item = attachmentModel.get(i)
-                            files.push({ fileUrl: item.fileUrl || "", fileName: item.fileName || "" })
-                        }
-                        attachmentModel.clear()
-                        $MainViewController.sendMessageWithFiles(
-                            msg, files, wsPath, window.chatKnowledgeCollection)
-                    } else {
-                        $MainViewController.sendMessage(
-                            msg, wsPath, window.chatKnowledgeCollection)
-                    }
+                    $MainViewController.sendMessage(
+                        msg, wsPath, window.chatKnowledgeCollection)
                 }
 
                 Column{
@@ -2760,10 +2748,6 @@ ApplicationWindow {
                 //     }
                 // }
 
-                ListModel {
-                    id: attachmentModel
-                }
-
                 Rectangle{
                     id: chatInputContainer
                     readonly property int defaultTextInputHeight: 66
@@ -2776,7 +2760,7 @@ ApplicationWindow {
                     border.color: "#40000000"
                     border.width: 1
                     radius: 20
-                    height: currentTextInputHeight + 76 + (attachmentModel.count > 0 ? 72 : 0)
+                    height: currentTextInputHeight + 76
                     width: 840
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: newTaskRec.isNewTaskWelcome
@@ -2790,132 +2774,7 @@ ApplicationWindow {
                         padding: 12
                         spacing: 8
 
-                        Row {
-                            id: attachmentRow
-                            visible: attachmentModel.count > 0
-                            width: parent.width - 24
-                            height: visible ? 60 : 0
-                            spacing: 8
-
-                            Repeater {
-                                model: attachmentModel
-
-                                delegate: Rectangle {
-                                    id: attachCard
-                                    width: 168
-                                    height: 56
-                                    radius: 12
-                                    color: "#F7F9FA"
-
-                                    MouseArea {
-                                        id: attachCardHover
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        acceptedButtons: Qt.NoButton
-                                    }
-
-                                    Row {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 10
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 4
-
-                                        Image {
-                                            width: 32; height: 32
-                                            source: (model.isFolder || false)
-                                                    ? "qrc:/images/folder.png"
-                                                    : (model.isImage && model.filePath)
-                                                      ? model.filePath
-                                                      : "qrc:/images/filePicture.png"
-                                            fillMode: (model.isImage && model.filePath && !(model.isFolder || false))
-                                                      ? Image.PreserveAspectCrop : Image.Pad
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            sourceSize.width: 32
-                                            sourceSize.height: 32
-                                        Rectangle {
-                                                anchors.fill: parent
-                                            radius: 6
-                                            color: "transparent"
-                                                border.color: (model.isImage && model.filePath)
-                                                              ? "#0A000000" : "transparent"
-                                                border.width: 1
-                                                z: -1
-                                            }
-                                        }
-
-                                        Column {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            width: attachCard.width - 10 - 32 - 8 - 10
-                                            spacing: 4
-
-                                            Text {
-                                                id: attachNameText
-                                                width: parent.width
-                                                text: model.fileName || ""
-                                                font.pixelSize: 14
-                                                color: "#D9000000"
-                                                elide: Text.ElideRight
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                ToolTip {
-                                                    visible: attachNameHover.containsMouse && attachNameText.truncated
-                                                    text: attachNameText.text
-                                                    delay: 500
-                                                    x: 0; y: attachNameText.height + 4
-                                                    background: Rectangle { color: "#A6000000"; radius: 4 }
-                                                    contentItem: Text {
-                                                        text: attachNameText.text
-                                                        font.pixelSize: 14; color: "#FFFFFF"
-                                                        wrapMode: Text.Wrap
-                                                        font.family: "Alibaba PuHuiTi 3.0"
-                                                    }
-                                                }
-                                                MouseArea {
-                                                    id: attachNameHover
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    acceptedButtons: Qt.NoButton
-                                                }
-                                            }
-                                            Text {
-                                                text: model.fileSize || ""
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                font.pixelSize: 12
-                                                color: "#40000000"
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        id: attachDelBtn
-                                        width: 20; height: 20; radius: 10
-                                        color: attachDelMouse.containsMouse ? "#B0000000" : "#80000000"
-                                        visible: attachCardHover.containsMouse || attachDelMouse.containsMouse || attachNameHover.containsMouse
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: -4
-                                        anchors.top: parent.top
-                                        anchors.topMargin: -4
-                                        z: 9999
-
-                                        Text {
-                                            text: "\u2715"
-                                            font.pixelSize: 10
-                                            color: "#FFFFFF"
-                                            anchors.centerIn: parent
-                                        }
-                                            MouseArea {
-                                            id: attachDelMouse
-                                                anchors.fill: parent
-                                                anchors.margins: -4
-                                            hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: attachmentModel.remove(index)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        MultiLineTextInput{
+                        PromptComposer {
                             id: textInputArea
                             focusedBorderColor: "transparent"
                             backgroundColor: "transparent"
@@ -2928,7 +2787,9 @@ ApplicationWindow {
                             width: parent.width - 24
                             height: chatInputContainer.currentTextInputHeight
                             readOnly: wsClient.connectionState !== 3 || !newTaskRec.viewingControllerSession
-                            onEnterPressed: newTaskRec.doSendMessage()
+                            onSubmitRequested: function(message) {
+                                newTaskRec.doSendMessage(message)
+                            }
                         }
                         Rectangle{
                             height: 40
@@ -4150,22 +4011,10 @@ ApplicationWindow {
                                         onAccepted: {
                                             for (var i = 0; i < fileUrls.length; i++) {
                                                 var url = fileUrls[i].toString()
-                                                var path = url.replace(/^file:\/\/\//, "")
-                                                var parts = path.split("/")
-                                                var name = decodeURIComponent(parts[parts.length - 1] || "")
-                                                var dotIdx = name.lastIndexOf(".")
-                                                var ext = dotIdx >= 0 ? name.substring(dotIdx + 1).toUpperCase() : ""
-                                                var imgExts = ["JPG", "JPEG", "PNG", "GIF", "BMP", "WEBP"]
-                                                var isImg = imgExts.indexOf(ext) >= 0
-                                                var size = $MainViewController.fileSizeHuman(url)
-                                                attachmentModel.append({
-                                                    fileName: name,
-                                                    filePath: isImg ? url : "",
-                                                    fileUrl: url,
-                                                    fileSize: size,
-                                                    ext: ext,
-                                                    isImage: isImg
-                                                })
+                                                var path = window.localFilePathFromUrl(url)
+                                                var parts = path.split(/[\\\/]/)
+                                                var name = parts[parts.length - 1] || path
+                                                textInputArea.insertFile(name, path, false)
                                             }
                                         }
                                     }
@@ -4175,19 +4024,10 @@ ApplicationWindow {
                                         selectFolder: true
                                         onAccepted: {
                                             var url = fileUrl.toString()
-                                            var path = url.replace(/^file:\/\/\//, "")
-                                            var parts = path.split("/")
-                                            var name = decodeURIComponent(parts[parts.length - 1] || "folder")
-                                            var size = $MainViewController.fileSizeHuman(url)
-                                            attachmentModel.append({
-                                                fileName: name,
-                                                filePath: "",
-                                                fileUrl: url,
-                                                fileSize: size,
-                                                ext: "",
-                                                isImage: false,
-                                                isFolder: true
-                                            })
+                                            var path = window.localFilePathFromUrl(url).replace(/[\\\/]+$/, "")
+                                            var parts = path.split(/[\\\/]/)
+                                            var name = parts[parts.length - 1] || path
+                                            textInputArea.insertFile(name, path, true)
                                         }
                                     }
                                     Rectangle{
@@ -4206,7 +4046,7 @@ ApplicationWindow {
                                         enabled: textInputArea.text !== "" && newTaskRec.viewingControllerSession
                                         backgroundColor: "#006BFF"
                                         iconSource: "qrc:/images/send.png"
-                                        onClicked: newTaskRec.doSendMessage()
+                                        onClicked: textInputArea.submit()
                                     }
                                 }
                             }

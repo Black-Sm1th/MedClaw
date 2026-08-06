@@ -112,6 +112,51 @@
       color: rgba(0, 0, 0, .9);
     }
 
+    .user-file-ref,
+    .user-file-ref:hover {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 260px;
+      margin: 1px 3px;
+      padding: 3px 8px;
+      border: 1px solid rgba(84, 73, 180, .18);
+      border-radius: 6px;
+      background: rgba(116, 103, 214, .14);
+      color: rgba(0, 0, 0, .82);
+      text-decoration: none;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .user-file-icon {
+      position: relative;
+      width: 12px;
+      height: 14px;
+      flex: 0 0 12px;
+      border: 1px solid rgba(84, 73, 180, .55);
+      border-radius: 2px;
+      box-sizing: border-box;
+    }
+
+    .user-file-icon:before,
+    .user-file-icon:after {
+      content: "";
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      height: 1px;
+      background: rgba(84, 73, 180, .55);
+    }
+
+    .user-file-icon:before { top: 4px; }
+    .user-file-icon:after { top: 8px; }
+
+    .user-file-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .bubble.assistant {
       width: 100%;
       padding: 12px 16px;
@@ -585,6 +630,32 @@
         return protectNumericRuns(escapeHtml(normalizeNumericSpacing(text)));
       }
 
+      function fileNameFromPath(path) {
+        var normalized = String(path || '').replace(/[\\/]+$/, '');
+        var parts = normalized.split(/[\\/]/);
+        return parts[parts.length - 1] || normalized;
+      }
+
+      function renderUserContent(text) {
+        var value = String(text || '');
+        var pattern = /"((?:[A-Za-z]:[\\/]|\\\\|\/)[^"\r\n]+)"/g;
+        var html = [];
+        var cursor = 0;
+        var match;
+        while ((match = pattern.exec(value)) !== null) {
+          html.push(plainTextHtml(value.slice(cursor, match.index)));
+          var path = match[1];
+          html.push('<a class="user-file-ref" href="'
+            + escapeAttr(localLinkHref(path)) + '" data-file-path="' + escapeAttr(path) + '">'
+            + '<span class="user-file-icon"></span>'
+            + '<span class="user-file-name">' + escapeHtml(fileNameFromPath(path)) + '</span>'
+            + '</a>');
+          cursor = match.index + match[0].length;
+        }
+        html.push(plainTextHtml(value.slice(cursor)));
+        return html.join('');
+      }
+
       function isCompactionMarker(msg) {
         var c = String(msg.content || '').trim().toLowerCase();
         return msg.msgType !== 'toolCall'
@@ -649,7 +720,9 @@
         var classes = 'bubble ' + (isUser ? 'user' : 'assistant markdown-body');
         if (msg.isIntermediate) classes += ' intermediate';
         var body = '';
-        if (isUser || msg.isStreaming)
+        if (isUser)
+          body = renderUserContent(msg.content || '');
+        else if (msg.isStreaming)
           body = plainTextHtml(msg.content || '');
         else
           body = renderMarkdown(msg.content || '');
@@ -760,6 +833,32 @@
         event.preventDefault();
         var href = node.getAttribute('href') || node.href;
         window.location.href = href.indexOf('medclaw-local:') === 0 ? href : node.href;
+      });
+
+      document.addEventListener('mouseover', function (event) {
+        var file = event.target.closest ? event.target.closest('.user-file-ref') : null;
+        if (!file)
+          return;
+        var rect = file.getBoundingClientRect();
+        console.log('MEDCLAW_CHAT:' + JSON.stringify({
+          type: 'fileHover',
+          path: file.getAttribute('data-file-path') || '',
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height
+        }));
+      });
+
+      document.addEventListener('mouseout', function (event) {
+        var file = event.target.closest ? event.target.closest('.user-file-ref') : null;
+        if (!file || (event.relatedTarget && file.contains(event.relatedTarget)))
+          return;
+        console.log('MEDCLAW_CHAT:' + JSON.stringify({ type: 'fileHoverEnd' }));
+      });
+
+      window.addEventListener('blur', function () {
+        console.log('MEDCLAW_CHAT:' + JSON.stringify({ type: 'fileHoverEnd' }));
       });
 
       document.addEventListener('scroll', function (event) {

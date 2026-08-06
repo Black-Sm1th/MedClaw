@@ -44,31 +44,23 @@ void MainViewController::sendMessageWithFiles(const QString &text,
                                               const QString &workspaceForNewAgent,
                                               const QString &knowledgeCollection)
 {
-    if (!m_chatModel || text.trimmed().isEmpty())
-        return;
-
-    if (!m_wsClient) {
-        sendMessage(text, workspaceForNewAgent, knowledgeCollection);
-        return;
+    QString message = text.trimmed();
+    for (const QVariant &value : files) {
+        const QVariantMap file = value.toMap();
+        QString path = file.value(QStringLiteral("fileUrl")).toString();
+        if (path.startsWith(QStringLiteral("file://")))
+            path = QUrl(path).toLocalFile();
+        path = QDir::toNativeSeparators(path.trimmed());
+        if (path.isEmpty())
+            continue;
+        if (!message.isEmpty())
+            message += QLatin1Char(' ');
+        message += QLatin1Char('"') + path + QLatin1Char('"');
     }
 
-    const QString scopedText = withKnowledgeScope(text, knowledgeCollection);
-    const bool isNewAgent = m_wsClient->currentSessionKey().isEmpty();
-
-    if (!isNewAgent && !files.isEmpty()) {
-        const QVariantMap identity = m_wsClient->agentIdentity();
-        const QString ws = identity.value(QStringLiteral("workspace")).toString();
-        m_wsClient->resolveAndCopyFiles(files, ws);
-
-        m_chatModel->addMessage(QStringLiteral("user"), text);
-        m_wsClient->sendChatMessage(scopedText);
-    } else if (!files.isEmpty()) {
-        m_wsClient->setPendingChatFiles(files);
-        m_chatModel->addMessage(QStringLiteral("user"), text);
-        m_wsClient->sendChatMessage(scopedText, QString(), workspaceForNewAgent);
-    } else {
-        sendMessage(text, workspaceForNewAgent, knowledgeCollection);
-    }
+    if (!m_chatModel || message.isEmpty())
+        return;
+    sendMessage(message, workspaceForNewAgent, knowledgeCollection);
 }
 
 QString MainViewController::withKnowledgeScope(const QString &text,

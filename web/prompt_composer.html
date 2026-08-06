@@ -1,0 +1,329 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: transparent;
+      overflow-x: hidden;
+      color: rgba(0, 0, 0, .86);
+      font-family: Arial, "Alibaba PuHuiTi 3.0", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 24px;
+    }
+
+    #editor {
+      box-sizing: border-box;
+      min-height: 52px;
+      padding: 5px 4px;
+      outline: none;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      caret-color: #111827;
+    }
+
+    #editor:empty:before {
+      content: attr(data-placeholder);
+      color: rgba(0, 0, 0, .25);
+      pointer-events: none;
+    }
+
+    #editor[contenteditable="false"] {
+      cursor: default;
+    }
+
+    .file-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 260px;
+      height: 30px;
+      margin: 0 3px;
+      padding: 0 6px 0 8px;
+      border: 1px solid rgba(84, 73, 180, .18);
+      border-radius: 6px;
+      box-sizing: border-box;
+      background: rgba(116, 103, 214, .14);
+      color: rgba(0, 0, 0, .82);
+      vertical-align: middle;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    .file-icon {
+      position: relative;
+      width: 12px;
+      height: 14px;
+      flex: 0 0 12px;
+      border: 1px solid rgba(84, 73, 180, .55);
+      border-radius: 2px;
+      box-sizing: border-box;
+    }
+
+    .file-icon:before,
+    .file-icon:after {
+      content: "";
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      height: 1px;
+      background: rgba(84, 73, 180, .55);
+    }
+
+    .file-icon:before { top: 4px; }
+    .file-icon:after { top: 8px; }
+
+    .file-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-remove {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: rgba(0, 0, 0, .52);
+      font: 16px/18px Arial, sans-serif;
+      cursor: pointer;
+    }
+
+    .file-remove:hover {
+      background: rgba(0, 0, 0, .08);
+      color: rgba(0, 0, 0, .82);
+    }
+  </style>
+</head>
+<body>
+  <div id="editor" contenteditable="true" spellcheck="false"></div>
+  <script>
+    (function () {
+      var editor = document.getElementById('editor');
+      var savedRange = null;
+      var configured = false;
+
+      function emit(payload) {
+        console.log('MEDCLAW_COMPOSER:' + JSON.stringify(payload));
+      }
+
+      function isInsideEditor(node) {
+        return node === editor || (node && editor.contains(node));
+      }
+
+      function saveSelection() {
+        var selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0)
+          return;
+        var range = selection.getRangeAt(0);
+        if (isInsideEditor(range.commonAncestorContainer))
+          savedRange = range.cloneRange();
+      }
+
+      function placeCaretAtEnd() {
+        var range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        savedRange = range.cloneRange();
+        return range;
+      }
+
+      function restoreSelection() {
+        var range = savedRange;
+        if (!range || !isInsideEditor(range.commonAncestorContainer))
+          return placeCaretAtEnd();
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return range;
+      }
+
+      function semanticText() {
+        var clone = editor.cloneNode(true);
+        var chips = clone.querySelectorAll('.file-chip');
+        for (var i = 0; i < chips.length; i++) {
+          var path = chips[i].getAttribute('data-file-path') || '';
+          chips[i].parentNode.replaceChild(document.createTextNode('"' + path + '"'), chips[i]);
+        }
+        return String(clone.innerText || clone.textContent || '')
+          .replace(/\u200b/g, '')
+          .replace(/\u00a0/g, ' ');
+      }
+
+      function reportState() {
+        var text = semanticText();
+        emit({
+          type: 'state',
+          text: text,
+          height: Math.max(52, Math.ceil(editor.scrollHeight))
+        });
+        return text;
+      }
+
+      function submit() {
+        emit({ type: 'submit', text: reportState() });
+      }
+
+      function createFileChip(name, path, isFolder) {
+        var chip = document.createElement('span');
+        chip.className = 'file-chip' + (isFolder ? ' folder' : '');
+        chip.contentEditable = 'false';
+        chip.setAttribute('data-file-path', path);
+
+        var icon = document.createElement('span');
+        icon.className = 'file-icon';
+        chip.appendChild(icon);
+
+        var label = document.createElement('span');
+        label.className = 'file-name';
+        label.textContent = name || path;
+        chip.appendChild(label);
+
+        var remove = document.createElement('button');
+        remove.className = 'file-remove';
+        remove.type = 'button';
+        remove.setAttribute('aria-label', '删除文件');
+        remove.textContent = '\u00d7';
+        chip.appendChild(remove);
+        return chip;
+      }
+
+      function insertFile(name, path, isFolder) {
+        if (!path)
+          return;
+        editor.focus();
+        var range = restoreSelection();
+        range.deleteContents();
+        var chip = createFileChip(name, path, isFolder);
+        var caretNode = document.createTextNode('\u200b');
+        range.insertNode(caretNode);
+        range.insertNode(chip);
+        range.setStartAfter(caretNode);
+        range.collapse(true);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        savedRange = range.cloneRange();
+        reportState();
+      }
+
+      function setPlainText(value) {
+        editor.textContent = String(value || '');
+        placeCaretAtEnd();
+        reportState();
+      }
+
+      function setReadOnly(value) {
+        editor.contentEditable = value ? 'false' : 'true';
+      }
+
+      function setPlaceholder(value) {
+        editor.setAttribute('data-placeholder', String(value || ''));
+      }
+
+      editor.addEventListener('input', function () {
+        saveSelection();
+        reportState();
+      });
+
+      editor.addEventListener('keydown', function (event) {
+        if ((event.key === 'Enter' || event.keyCode === 13)
+            && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+            && !event.isComposing) {
+          event.preventDefault();
+          submit();
+        }
+      });
+
+      editor.addEventListener('mousedown', function (event) {
+        if (event.target.closest && event.target.closest('.file-remove'))
+          event.preventDefault();
+      });
+
+      editor.addEventListener('mouseover', function (event) {
+        var chip = event.target.closest ? event.target.closest('.file-chip') : null;
+        if (!chip)
+          return;
+        var rect = chip.getBoundingClientRect();
+        emit({
+          type: 'fileHover',
+          path: chip.getAttribute('data-file-path') || '',
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height
+        });
+      });
+
+      editor.addEventListener('mouseout', function (event) {
+        var chip = event.target.closest ? event.target.closest('.file-chip') : null;
+        if (!chip || (event.relatedTarget && chip.contains(event.relatedTarget)))
+          return;
+        emit({ type: 'fileHoverEnd' });
+      });
+
+      window.addEventListener('blur', function () {
+        emit({ type: 'fileHoverEnd' });
+      });
+
+      editor.addEventListener('click', function (event) {
+        var button = event.target.closest ? event.target.closest('.file-remove') : null;
+        if (!button)
+          return;
+        var chip = button.closest('.file-chip');
+        var next = chip && chip.nextSibling;
+        if (chip)
+          chip.remove();
+        editor.focus();
+        var range = document.createRange();
+        if (next && isInsideEditor(next))
+          range.setStart(next, Math.min(1, next.nodeValue ? next.nodeValue.length : 0));
+        else {
+          range.selectNodeContents(editor);
+          range.collapse(false);
+        }
+        range.collapse(true);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        savedRange = range.cloneRange();
+        reportState();
+      });
+
+      document.addEventListener('selectionchange', saveSelection);
+      window.addEventListener('resize', reportState);
+
+      window.MedClawComposer = {
+        configure: function (text, placeholder, readOnly) {
+          setPlaceholder(placeholder);
+          setReadOnly(readOnly);
+          if (!configured) {
+            configured = true;
+            setPlainText(text);
+          }
+        },
+        setPlainText: setPlainText,
+        setReadOnly: setReadOnly,
+        setPlaceholder: setPlaceholder,
+        insertFile: insertFile,
+        submit: submit,
+        focus: function () {
+          editor.focus();
+          restoreSelection();
+        }
+      };
+
+      setPlaceholder('请输入...');
+      reportState();
+    })();
+  </script>
+</body>
+</html>

@@ -10,8 +10,11 @@
         <file>images/minus.png</file>
         <file>components/ImageButton.qml</file>
         <file>components/ChatWebView.qml</file>
+        <file>components/PromptComposer.qml</file>
+        <file>components/FilePathToolTip.qml</file>
         <file>components/MarkdownWebView.qml</file>
         <file>web/chat_view.html</file>
+        <file>web/prompt_composer.html</file>
         <file>web/markdown_renderer.html</file>
         <file>images/sidebarMinimalistic.png</file>
         <file>fonts/AlimamaShuHeiTi-Bold.ttf</file>

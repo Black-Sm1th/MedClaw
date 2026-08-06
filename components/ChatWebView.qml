@@ -6,6 +6,12 @@ Item {
 
     property var model: null
     property bool webReady: false
+    property bool fileTipVisible: false
+    property string fileTipText: ""
+    property real fileTipX: 0
+    property real fileTipY: 0
+    property real fileTipWidth: 0
+    property real fileTipHeight: 0
 
     signal linkActivated(string link)
 
@@ -98,5 +104,36 @@ Item {
                 root.linkActivated(request.url.toString())
             }
         }
+
+        onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceId) {
+            var prefix = "MEDCLAW_CHAT:"
+            if (message.indexOf(prefix) !== 0)
+                return
+            var payload
+            try {
+                payload = JSON.parse(message.substring(prefix.length))
+            } catch (error) {
+                return
+            }
+            if (payload.type === "fileHover") {
+                root.fileTipText = payload.path || ""
+                root.fileTipX = Number(payload.x) || 0
+                root.fileTipY = Number(payload.y) || 0
+                root.fileTipWidth = Number(payload.width) || 0
+                root.fileTipHeight = Number(payload.height) || 0
+                root.fileTipVisible = root.fileTipText.length > 0
+            } else if (payload.type === "fileHoverEnd") {
+                root.fileTipVisible = false
+            }
+        }
+    }
+
+    FilePathToolTip {
+        visible: root.fileTipVisible
+        text: root.fileTipText
+        targetX: root.fileTipX
+        targetY: root.fileTipY
+        targetWidth: root.fileTipWidth
+        targetHeight: root.fileTipHeight
     }
 }
