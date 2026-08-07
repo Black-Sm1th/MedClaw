@@ -1627,7 +1627,7 @@ ApplicationWindow {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
                     var pt = accountEntry.mapToItem(window.contentItem,
-                                                    window.sidebarExpanded ? accountEntry.width + 6 : 0,
+                                                    window.sidebarExpanded ? 0 : accountEntry.width + 6,
                                                     -accountPopup.height - 6)
                     accountPopup.x = pt.x
                     accountPopup.y = Math.max(8, pt.y)
