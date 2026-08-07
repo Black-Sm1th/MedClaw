@@ -5,7 +5,11 @@
 #include <QFontDatabase>
 #include <QDir>
 #include <QFileInfo>
+#include <QPainterPath>
+#include <QRegion>
 #include <QStandardPaths>
+#include <QTimer>
+#include <QWindow>
 #include <QtWebEngine/QtWebEngine>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
@@ -38,10 +42,33 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     }
 }
 
+static void updateRoundedWindowMask(QWindow *window)
+{
+    if (!window || window->width() <= 0 || window->height() <= 0)
+        return;
+
+    const Qt::WindowStates states = window->windowStates();
+    if (states.testFlag(Qt::WindowMaximized) || states.testFlag(Qt::WindowFullScreen)) {
+        window->setMask(QRegion());
+        return;
+    }
+
+    constexpr qreal cornerRadius = 12.0;
+    QPainterPath path;
+    path.addRoundedRect(QRectF(0, 0, window->width(), window->height()),
+                        cornerRadius, cornerRadius);
+    window->setMask(QRegion(path.toFillPolygon().toPolygon()));
+}
+
 int main(int argc, char *argv[])
 {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#endif
 #endif
     if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
         qputenv("QT_OPENGL", "angle");
@@ -181,6 +208,19 @@ int main(int argc, char *argv[])
         [url](QObject *obj, const QUrl &objUrl) {
             if (!obj && url == objUrl)
                 QCoreApplication::exit(-1);
+
+            QWindow *window = qobject_cast<QWindow *>(obj);
+            if (!window || url != objUrl)
+                return;
+
+            QObject::connect(window, &QWindow::widthChanged, window,
+                             [window]() { updateRoundedWindowMask(window); });
+            QObject::connect(window, &QWindow::heightChanged, window,
+                             [window]() { updateRoundedWindowMask(window); });
+            QObject::connect(window, &QWindow::windowStateChanged, window,
+                             [window]() { updateRoundedWindowMask(window); });
+            QTimer::singleShot(0, window,
+                               [window]() { updateRoundedWindowMask(window); });
         },
         Qt::QueuedConnection);
     engine.load(url);

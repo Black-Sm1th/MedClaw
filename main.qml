@@ -6,11 +6,23 @@ import QtGraphicalEffects 1.0
 import "./components"
 ApplicationWindow {
     id: window
-    width: 1440
-    height: 800
+    // Use logical (DIP) screen dimensions so the initial window fits on
+    // high-DPI displays instead of opening larger than the work area.
+    readonly property real availableScreenWidth: Screen.desktopAvailableWidth > 0
+                                                  ? Screen.desktopAvailableWidth : 1440
+    readonly property real availableScreenHeight: Screen.desktopAvailableHeight > 0
+                                                   ? Screen.desktopAvailableHeight : 800
+    readonly property bool compactLayout: width < 1100
+    readonly property bool sidebarExpanded: !sidebarCollapsed && !compactLayout
+    readonly property int windowCornerRadius: 12
+    width: Math.min(1440, Math.max(640, availableScreenWidth - 48), availableScreenWidth)
+    height: Math.min(800, Math.max(480, availableScreenHeight - 80), availableScreenHeight)
+    minimumWidth: Math.min(1024, Math.max(560, availableScreenWidth - 96), availableScreenWidth)
+    minimumHeight: Math.min(640, Math.max(420, availableScreenHeight - 120), availableScreenHeight)
     visible: true
     title: qsTr("Aether study")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
+    color: "transparent"
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
     property bool isNewTask: true
@@ -1182,7 +1194,7 @@ ApplicationWindow {
     Rectangle{
         id: leftContainer
         enabled: window.userSessionReady
-        width: window.userSessionReady ? (window.sidebarCollapsed ? 68 : 280) : 0
+        width: window.userSessionReady ? (window.sidebarExpanded ? 280 : 68) : 0
         height: parent.height
         anchors.left: parent.left
         anchors.top: parent.top
@@ -1213,14 +1225,14 @@ ApplicationWindow {
                     font.pixelSize: 18
                     anchors.left: logoImage.right
                     anchors.leftMargin: 8
-                    visible: !window.sidebarCollapsed
+                    visible: window.sidebarExpanded
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 ImageButton{
                     source: "qrc:/images/sidebarMinimalistic.png"
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.right: parent.right
-                    visible: !window.sidebarCollapsed
+                    visible: window.sidebarExpanded
                     onClicked: window.sidebarCollapsed = !window.sidebarCollapsed
                 }
             }
@@ -1241,14 +1253,14 @@ ApplicationWindow {
                     width: parent.width
                     ImageButton{
                         source: "qrc:/images/sidebarMinimalistic.png"
-                        visible: window.sidebarCollapsed
+                        visible: !window.sidebarExpanded
                         anchors.horizontalCenter: parent.horizontalCenter
                         onClicked: window.sidebarCollapsed = !window.sidebarCollapsed
                     }
                     Column{
                         spacing: 4
                         width: parent.width
-                        visible: !window.sidebarCollapsed
+                        visible: window.sidebarExpanded
                         Repeater {
                             id: selectionRepeater
                             model: ["新建任务", "定时任务", "专家·技能·工具", "知识库"/*, "MCP"*/]
@@ -1330,7 +1342,7 @@ ApplicationWindow {
                     Column{
                         spacing: 4
                         width: parent.width
-                        visible: window.sidebarCollapsed
+                        visible: !window.sidebarExpanded
                         Repeater {
                             id: selectionRepeaterCollapsed
                             model: ["新建任务", "定时任务", "专家·技能·工具", "知识库" /*, "MCP"*/ ]
@@ -1436,7 +1448,7 @@ ApplicationWindow {
                 //  任务记录列表（本地 SQLite 会话列表）
                 // ═══════════════════════════════════════════════
                 Item {
-                    visible: !window.sidebarCollapsed
+                    visible: window.sidebarExpanded
                     anchors.top: leftMenuColumn.bottom
                     anchors.topMargin: 16
                     anchors.bottom: parent.bottom
@@ -1584,11 +1596,11 @@ ApplicationWindow {
                 height: 28
                 source: "qrc:/images/logoImage.png"
                 anchors.left: parent.left
-                anchors.leftMargin: window.sidebarCollapsed ? 4 : 8
+                anchors.leftMargin: window.sidebarExpanded ? 8 : 4
                 anchors.verticalCenter: parent.verticalCenter
             }
             Column {
-                visible: !window.sidebarCollapsed
+                visible: window.sidebarExpanded
                 anchors.left: parent.left
                 anchors.leftMargin: 46
                 anchors.right: accountArrow.left
@@ -1600,7 +1612,7 @@ ApplicationWindow {
             }
             Label {
                 id: accountArrow
-                visible: !window.sidebarCollapsed
+                visible: window.sidebarExpanded
                 anchors.right: parent.right
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
@@ -1615,7 +1627,7 @@ ApplicationWindow {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
                     var pt = accountEntry.mapToItem(window.contentItem,
-                                                    window.sidebarCollapsed ? accountEntry.width + 6 : 0,
+                                                    window.sidebarExpanded ? accountEntry.width + 6 : 0,
                                                     -accountPopup.height - 6)
                     accountPopup.x = pt.x
                     accountPopup.y = Math.max(8, pt.y)
@@ -1628,7 +1640,7 @@ ApplicationWindow {
     Popup {
         id: accountPopup
         parent: window.contentItem
-        width: window.sidebarCollapsed ? 190 : 248
+        width: window.sidebarExpanded ? 248 : 190
         height: 92
         padding: 8
         modal: false
@@ -2141,13 +2153,16 @@ ApplicationWindow {
                 Column{
                     id: titleCol
                     visible: newTaskRec.isNewTaskWelcome
-                    width: 840
+                    width: Math.min(840, Math.max(320, parent.width - 48))
                     spacing: 11
                     anchors.topMargin: 80
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
                     Image{
                         source: "qrc:/images/mainTitle.png"
+                        width: Math.min(implicitWidth, parent.width)
+                        height: width * 89 / 431
+                        fillMode: Image.PreserveAspectFit
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
@@ -2787,7 +2802,7 @@ ApplicationWindow {
                     border.width: 1
                     radius: 20
                     height: currentTextInputHeight + 76
-                    width: 840
+                    width: Math.min(840, Math.max(320, parent.width - 48))
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: newTaskRec.isNewTaskWelcome
                        ? titleCol.y + titleCol.height + 40
@@ -2828,14 +2843,15 @@ ApplicationWindow {
                                 spacing: 4
                                 Item {
                                     id: workspaceDialogSlot
-                                    width: newTaskRec.isNewTaskWelcome ? 137 : 0
+                                    width: newTaskRec.isNewTaskWelcome
+                                           ? (chatInputContainer.width < 700 ? 110 : 137) : 0
                                     height: 36
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Item {
                                     id: modelPickerWrap
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 220
+                                    width: chatInputContainer.width < 700 ? 160 : 220
                                     height: 36
                                     property var modelIds: []
 
@@ -3143,7 +3159,8 @@ ApplicationWindow {
                                         return expertId
                                     }
                                     visible: newTaskRec.isNewTaskWelcome && expertId.length > 0
-                                    width: visible ? Math.min(240, expertTagRow.implicitWidth + 24) : 0
+                                    width: visible ? Math.min(chatInputContainer.width < 700 ? 180 : 240,
+                                                              expertTagRow.implicitWidth + 24) : 0
                                     height: 36
 
                                     Rectangle {
@@ -4086,7 +4103,7 @@ ApplicationWindow {
                 Item {
                     id: welcomeShortcutStrip
                     visible: newTaskRec.isNewTaskWelcome
-                    width: 960
+                    width: Math.min(960, Math.max(320, parent.width - 32))
                     height: visible ? shortcutTopRow.height
                                       + (newTaskRec.selectedShortcut
                                          ? 52 + shortcutCardRow.implicitHeight : 0) : 0
@@ -4167,7 +4184,10 @@ ApplicationWindow {
                             delegate: Rectangle {
                                 id: shortcutLargeCard
                                 readonly property var card: modelData
-                                width: 300
+                                width: Math.max(160, Math.min(300,
+                                      (welcomeShortcutStrip.width
+                                       - 18 * Math.max(0, (newTaskRec.selectedShortcut.cards.length || 1) - 1))
+                                       / Math.max(1, newTaskRec.selectedShortcut.cards.length || 1)))
                                 height: cardContent.implicitHeight + 32
                                 radius: 8
                                 color: largeCardMouse.containsMouse ? "#FAFBFC" : "#FFFFFF"
@@ -4180,7 +4200,7 @@ ApplicationWindow {
                                     anchors.left: parent.left
                                     anchors.top: parent.top
                                     anchors.margins: 16
-                                    width: 268
+                                    width: parent.width - 32
                                     spacing: 8
 
                                     Column {
@@ -4223,11 +4243,11 @@ ApplicationWindow {
                                     }
 
                                     Image {
-                                        width: 268
+                                        width: parent.width
                                         height: 90
                                         source: card.image
                                         fillMode: Image.PreserveAspectFit
-                                        sourceSize: Qt.size(268, 90)
+                                        sourceSize: Qt.size(width, height)
                                     }
                                 }
 
@@ -5957,11 +5977,11 @@ ApplicationWindow {
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         Grid {
                             id: skillGrid
-                            columns: 2
+                            columns: width >= 680 ? 2 : 1
                             spacing: 12
                             width: skillScrollView.width
 
-                            property real cellWidth: (width - spacing) / 2
+                            property real cellWidth: columns === 2 ? (width - spacing) / 2 : width
 
                             Repeater {
                                 model: skillSettingRec.filteredSkillList()
@@ -6204,10 +6224,10 @@ ApplicationWindow {
 
                             Grid {
                                 id: toolCardGrid
-                                columns: 2
+                                columns: width >= 680 ? 2 : 1
                                 spacing: 12
                                 width: parent.width
-                                property real cellWidth: (width - spacing) / 2
+                                property real cellWidth: columns === 2 ? (width - spacing) / 2 : width
 
                                 Repeater {
                                     model: toolsSettingRec.filteredTools(
@@ -7029,7 +7049,7 @@ ApplicationWindow {
                 Popup {
                     id: kbDeleteCollectionConfirm
                     anchors.centerIn: parent
-                    width: 400; height: 190
+                    width: Math.min(400, parent.width - 32); height: 190
                     modal: true
                     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                     background: Rectangle {
@@ -7232,10 +7252,10 @@ ApplicationWindow {
 
                         Grid {
                             id: mcpInstalledGrid
-                            columns: 2
+                            columns: width >= 680 ? 2 : 1
                             spacing: 12
                             width: mcpInstalledScrollView.width
-                            property real cellWidth: (width - spacing) / 2
+                            property real cellWidth: columns === 2 ? (width - spacing) / 2 : width
 
                             Label {
                                 visible: wsClient.mcpList.length === 0
@@ -7391,7 +7411,7 @@ ApplicationWindow {
 
             Rectangle {
                 id: dialogCard
-                width: 600
+                width: Math.min(600, parent.width - 32)
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 height: dialogTitleBar.height + dialogContent.implicitHeight + 24 + 16
@@ -7925,7 +7945,7 @@ ApplicationWindow {
             }
 
             Rectangle {
-                width: 560
+                width: Math.min(560, parent.width - 32)
                 anchors.centerIn: parent
                 height: agentEditorTitleBar.height + agentEditorContent.implicitHeight + 24 + 16
                 radius: 16
@@ -8206,7 +8226,7 @@ ApplicationWindow {
             }
 
             Rectangle {
-                width: 600
+                width: Math.min(600, parent.width - 32)
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 height: githubTitleBar.height + githubDialogContent.implicitHeight + 24 + 16
@@ -8382,7 +8402,7 @@ ApplicationWindow {
             }
 
             Rectangle {
-                width: 560
+                width: Math.min(560, parent.width - 32)
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 height: mcpDialogTitleBar.height + mcpDialogScrollView.height + mcpDialogFooter.height
@@ -8773,7 +8793,7 @@ ApplicationWindow {
                 onClicked: deleteMcpPopup.close()
             }
             Rectangle {
-                width: 400
+                width: Math.min(400, parent.width - 32)
                 height: deleteMcpCol.implicitHeight
                 anchors.centerIn: parent
                 radius: 16
@@ -8885,8 +8905,8 @@ ApplicationWindow {
             }
 
             Rectangle {
-                width: 720
-                height: Math.min(600, window.height - 100)
+                width: Math.min(720, parent.width - 32)
+                height: Math.min(600, Math.max(360, parent.height - 32))
                 anchors.centerIn: parent
                 radius: 16
                 color: "#FFFFFF"
@@ -9645,7 +9665,7 @@ ApplicationWindow {
                 onClicked: memoryEditPopup.close()
             }
             Rectangle {
-                width: 480
+                width: Math.min(480, parent.width - 32)
                 height: memEditCol.implicitHeight
                 anchors.centerIn: parent
                 radius: 16
@@ -9772,5 +9792,16 @@ ApplicationWindow {
         visible: !window.userSessionReady
         enabled: visible
         z: 20000
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: window.windowCornerRadius
+        color: "transparent"
+        border.width: 1
+        border.color: "#1A000000"
+        visible: window.visibility !== Window.Maximized
+                 && window.visibility !== Window.FullScreen
+        z: 30000
     }
 }

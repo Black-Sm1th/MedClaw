@@ -7,6 +7,9 @@ Item {
     property int resendSeconds: 0
     property bool initializing: false
     property string initializingText: ""
+    readonly property real contentWidth: Math.min(577, Math.max(280, width - 48))
+    readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
+    readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
 
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
     function submitLogin() { authController.loginWithPhone(phoneInput.text, codeInput.text) }
@@ -19,29 +22,39 @@ Item {
     }
 
     Column {
-        width: 577
+        width: loginPage.shortcutAreaWidth
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -56
         spacing: 0
         visible: !loginPage.initializing
-        Image { source: "qrc:/images/login/loginTitle.png"; anchors.horizontalCenter: parent.horizontalCenter }
+        Image {
+            source: "qrc:/images/login/loginTitle.png"
+            width: Math.min(577, parent.width)
+            height: width * 110 / 577
+            fillMode: Image.PreserveAspectFit
+            anchors.horizontalCenter: parent.horizontalCenter
+        }
         Item { width: 1; height: showPhoneForm ? 80 : 68 }
         Row {
-            height: 175
-            spacing: 32
+            id: shortcutRow
+            readonly property real shortcutWidth: Math.min(202,
+                                                            Math.max(1, (width - spacing * 3) / 4))
+            width: parent.width
+            height: shortcutWidth * 175 / 202
+            spacing: Math.min(32, Math.max(8, width * 0.055))
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !loginPage.showPhoneForm
-            Image { source: "qrc:/images/login/loginShortcut1.png"}
-            Image { source: "qrc:/images/login/loginShortcut2.png"}
-            Image { source: "qrc:/images/login/loginShortcut3.png"}
-            Image { source: "qrc:/images/login/loginShortcut4.png"}
+            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut1.png"; fillMode: Image.PreserveAspectFit }
+            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut2.png"; fillMode: Image.PreserveAspectFit }
+            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut3.png"; fillMode: Image.PreserveAspectFit }
+            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut4.png"; fillMode: Image.PreserveAspectFit }
         }
         Item { width: 1; height: 68; visible: !loginPage.showPhoneForm }
         Column {
             width: parent.width; spacing: 24; visible: loginPage.showPhoneForm; height: visible ? implicitHeight : 0
             Rectangle {
-                width: 400; height: 56; radius: 7; color: "#F7F8FA"
+                width: loginPage.formWidth; height: 56; radius: 7; color: "#F7F8FA"
                 anchors.horizontalCenter: parent.horizontalCenter
                 Label {
                     text: "+86"
@@ -71,7 +84,7 @@ Item {
                 }
             }
             Row {
-                width: 400; height: 56; spacing: 12
+                width: loginPage.formWidth; height: 56; spacing: 12
                 anchors.horizontalCenter: parent.horizontalCenter
                 SingleLineTextInput {
                     id: codeInput
@@ -128,7 +141,7 @@ Item {
         }
         Item { width: 1; height: 24; visible: loginPage.showPhoneForm}
         CustomButton {
-            buttonWidth: loginPage.showPhoneForm ? 400 : 240
+            buttonWidth: loginPage.showPhoneForm ? loginPage.formWidth : Math.min(240, loginPage.contentWidth)
             buttonHeight: 62
             buttonRadius: 8
             anchors.horizontalCenter: parent.horizontalCenter
@@ -154,7 +167,7 @@ Item {
     }
 
     Column {
-        width: 577
+        width: loginPage.contentWidth
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: -56
@@ -163,6 +176,9 @@ Item {
 
         Image {
             source: "qrc:/images/login/loginTitle.png"
+            width: parent.width
+            height: width * 110 / 577
+            fillMode: Image.PreserveAspectFit
             anchors.horizontalCenter: parent.horizontalCenter
         }
         BusyIndicator {
