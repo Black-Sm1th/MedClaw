@@ -2054,10 +2054,10 @@ ApplicationWindow {
                             },
                             {
                                 title: "论文撰写",
-                                detail: "根据研究材料协助撰写论文，先生成功符合学术规范的详细提纲。",
+                                detail: "根据研究材料协助撰写论文，先生成符合学术规范的详细提纲。",
                                 icon: "qrc:/images/shortcut/2-2.png",
                                 image: "qrc:/images/shortcut/2-2-large.png",
-                                prompt: "根据研究材料协助撰写论文，先生成功符合学术规范的详细提纲。"
+                                prompt: "根据研究材料协助撰写论文，先生成符合学术规范的详细提纲。"
                             },
                             {
                                 title: "生信分析",

@@ -3,14 +3,21 @@
 #include "gateway_client.h"
 #include <QDebug>
 #include <QCryptographicHash>
+#include <QClipboard>
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QImage>
 #include <QJsonDocument>
+#include <QMimeData>
+#include <QPixmap>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QStandardPaths>
+#include <QUuid>
 #include <QStringList>
 #include <QUrl>
 
@@ -270,6 +277,110 @@ QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
     }
     qDebug() << "[MainVC] copied" << srcPath << "->" << destPath;
     return destName;
+}
+
+QVariantList MainViewController::importClipboardFiles() const
+{
+    QVariantList result;
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard || !clipboard->mimeData())
+        return result;
+
+    const QMimeData *mime = clipboard->mimeData();
+    auto appendPath = [&result](const QString &rawPath) {
+        const QString path = rawPath.trimmed();
+        if (path.isEmpty())
+            return;
+        const QFileInfo info(path);
+        if (!info.exists())
+            return;
+        const QString absolutePath = info.absoluteFilePath();
+        for (const QVariant &value : result) {
+            if (value.toMap().value(QStringLiteral("path")).toString()
+                    == absolutePath)
+                return;
+        }
+        QVariantMap entry;
+        entry[QStringLiteral("name")] = info.fileName();
+        entry[QStringLiteral("path")] = absolutePath;
+        entry[QStringLiteral("fileUrl")] = absolutePath;
+        entry[QStringLiteral("folder")] = info.isDir();
+        result.append(entry);
+    };
+    QList<QUrl> urls = mime->urls();
+    // Some Windows clipboard providers expose the URI list without letting
+    // QMimeData materialize urls() until the format is requested explicitly.
+    if (urls.isEmpty() && mime->hasFormat(QStringLiteral("text/uri-list"))) {
+        const QList<QByteArray> lines = mime->data(
+            QStringLiteral("text/uri-list")).split('\n');
+        for (const QByteArray &line : lines) {
+            const QByteArray trimmed = line.trimmed();
+            if (!trimmed.isEmpty() && !trimmed.startsWith('#'))
+                urls.append(QUrl(QString::fromUtf8(trimmed)));
+        }
+    }
+    for (const QUrl &url : urls) {
+        if (!url.isLocalFile())
+            continue;
+        appendPath(url.toLocalFile());
+    }
+
+    // Qt 5's Windows MIME adapter can expose Explorer copies as FileNameW
+    // instead of text/uri-list. Read those native formats as a fallback.
+    if (result.isEmpty()) {
+        for (const QString &format : mime->formats()) {
+            if (!format.contains(QStringLiteral("FileNameW"), Qt::CaseInsensitive)
+                && !format.contains(QStringLiteral("FileName"), Qt::CaseInsensitive)) {
+                continue;
+            }
+            const QByteArray raw = mime->data(format);
+            if (format.contains(QStringLiteral("FileNameW"), Qt::CaseInsensitive)) {
+                const int charCount = raw.size() / 2;
+                const QString decoded = QString::fromUtf16(
+                    reinterpret_cast<const ushort *>(raw.constData()), charCount);
+                const QStringList paths = decoded.split(QChar('\0'), Qt::SkipEmptyParts);
+                for (const QString &path : paths)
+                    appendPath(path);
+            } else {
+                const QString decoded = QString::fromLocal8Bit(raw);
+                const QStringList paths = decoded.split(QChar('\0'), Qt::SkipEmptyParts);
+                for (const QString &path : paths)
+                    appendPath(path);
+            }
+            if (!result.isEmpty())
+                break;
+        }
+    }
+    if (!result.isEmpty() || !mime->hasImage())
+        return result;
+
+    const QVariant imageData = mime->imageData();
+    QImage image = imageData.value<QImage>();
+    if (image.isNull() && imageData.canConvert<QPixmap>())
+        image = imageData.value<QPixmap>().toImage();
+    if (image.isNull())
+        return result;
+
+    const QString tempRoot = QStandardPaths::writableLocation(
+        QStandardPaths::TempLocation);
+    const QString dirPath = QDir(tempRoot).filePath(
+        QStringLiteral("AetherStudy/clipboard"));
+    if (!QDir().mkpath(dirPath))
+        return result;
+
+    const QString filePath = QDir(dirPath).filePath(
+        QStringLiteral("clipboard-%1.png").arg(
+            QUuid::createUuid().toString(QUuid::WithoutBraces)));
+    if (!image.save(filePath, "PNG"))
+        return result;
+
+    QVariantMap entry;
+    entry[QStringLiteral("name")] = QFileInfo(filePath).fileName();
+    entry[QStringLiteral("path")] = filePath;
+    entry[QStringLiteral("fileUrl")] = filePath;
+    entry[QStringLiteral("folder")] = false;
+    result.append(entry);
+    return result;
 }
 
 QString MainViewController::resolveLocalFileLink(const QString &link,

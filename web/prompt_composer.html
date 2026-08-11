@@ -196,16 +196,37 @@
 
       function reportState() {
         var text = semanticText();
+        var files = collectFiles();
         emit({
           type: 'state',
           text: text,
-          height: Math.max(52, Math.ceil(editor.scrollHeight))
+          height: Math.max(52, Math.ceil(editor.scrollHeight)),
+          files: files
         });
         return text;
       }
 
+      function collectFiles() {
+        var files = [];
+        var chips = editor.querySelectorAll('.file-chip');
+        for (var i = 0; i < chips.length; i++) {
+          var path = chips[i].getAttribute('data-file-path') || '';
+          if (!path)
+            continue;
+          files.push({
+            name: chips[i].querySelector('.file-name')
+              ? chips[i].querySelector('.file-name').textContent : path,
+            path: path,
+            fileUrl: path,
+            folder: chips[i].classList.contains('folder')
+          });
+        }
+        return files;
+      }
+
       function submit() {
-        emit({ type: 'submit', text: reportState() });
+        var text = reportState();
+        emit({ type: 'submit', text: text, files: collectFiles() });
       }
 
       function createFileChip(name, path, isFolder) {
@@ -235,6 +256,11 @@
       function insertFile(name, path, isFolder) {
         if (!path)
           return;
+        var existing = editor.querySelectorAll('.file-chip');
+        for (var i = 0; i < existing.length; i++) {
+          if ((existing[i].getAttribute('data-file-path') || '') === String(path))
+            return;
+        }
         editor.focus();
         var range = restoreSelection();
         range.deleteContents();
@@ -270,7 +296,64 @@
         reportState();
       });
 
+      editor.addEventListener('paste', function (event) {
+        var data = event.clipboardData;
+        if (!data)
+          return;
+        var hasFile = false;
+        var items = data.items || [];
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].kind === 'file'
+              || String(items[i].type || '').indexOf('image/') === 0) {
+            hasFile = true;
+            break;
+          }
+        }
+        var types = data.types || [];
+        for (var t = 0; t < types.length; t++) {
+          if (types[t] === 'Files' || String(types[t]).indexOf('image/') === 0) {
+            hasFile = true;
+            break;
+          }
+        }
+        if (hasFile || (data.files && data.files.length > 0)) {
+          event.preventDefault();
+          emit({ type: 'pasteFiles' });
+        }
+      });
+
+      editor.addEventListener('dragover', function (event) {
+        if (event.dataTransfer && event.dataTransfer.files
+            && event.dataTransfer.files.length > 0)
+          event.preventDefault();
+      });
+
+      editor.addEventListener('drop', function (event) {
+        var data = event.dataTransfer;
+        if (!data || !data.files || data.files.length === 0)
+          return;
+        var files = [];
+        for (var i = 0; i < data.files.length; i++) {
+          var file = data.files[i];
+          // Chromium exposes the native path for local drops in Qt WebEngine.
+          if (!file.path)
+            return; // Let the QML DropArea handle platforms that hide it.
+          files.push({ name: file.name, path: file.path, folder: false });
+        }
+        event.preventDefault();
+        emit({ type: 'dropFiles', files: files });
+      });
+
       editor.addEventListener('keydown', function (event) {
+        if ((event.key === 'v' || event.keyCode === 86)
+            && (event.ctrlKey || event.metaKey)) {
+          // Qt WebEngine may omit Explorer's file payload from paste events;
+          // let the native clipboard bridge probe it without blocking text paste.
+          emit({ type: 'pasteShortcut' });
+        } else if ((event.key === 'Insert' || event.keyCode === 45)
+                   && event.shiftKey) {
+          emit({ type: 'pasteShortcut' });
+        }
         if ((event.key === 'Enter' || event.keyCode === 13)
             && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
             && !event.isComposing) {

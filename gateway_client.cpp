@@ -2967,7 +2967,6 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             m_pendingFirstChatMessage.clear();
             m_pendingFirstChatSessionCreateReqId.clear();
             m_pendingBootstrapChatMessage.clear();
-            m_pendingChatFiles.clear();
             clearPendingCronDedicatedAgent();
         }
         if (method == QLatin1String("cron.add")) {
@@ -2984,7 +2983,6 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 m_pendingFirstChatSessionCreateReqId.clear();
                 m_pendingAgentCreateForChat = false;
                 m_pendingFirstChatMessage.clear();
-                m_pendingChatFiles.clear();
             }
         }
 
@@ -3227,13 +3225,6 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         refreshSessions();
 
         if (doBootstrap) {
-            if (!m_pendingChatFiles.isEmpty()) {
-                const QString ws = m_pendingCreateWorkspace.isEmpty()
-                    ? resolveWorkspacePathForAgentId(agentId)
-                    : m_pendingCreateWorkspace;
-                resolveAndCopyFiles(m_pendingChatFiles, ws);
-                m_pendingChatFiles.clear();
-            }
             // 延迟到 config.set（deny 列表）发送后再发 chat.send，
             // 否则首条消息处理时 deny 列表尚未生效
             m_pendingBootstrapChatMessage = bootstrapMsg;
@@ -5115,10 +5106,6 @@ void GatewayClient::sendChatMessage(const QString &message,
         const QString businessWorkspace = prepareTaskWorkspace(workspaceForNewAgent);
         if (businessWorkspace.isEmpty())
             return;
-        if (!m_pendingChatFiles.isEmpty()) {
-            resolveAndCopyFiles(m_pendingChatFiles, businessWorkspace);
-            m_pendingChatFiles.clear();
-        }
         upsertTaskSessionLocal(controllerKey, businessWorkspace,
                                title, taskAgents, now, now);
         setTaskSessionRunning(controllerKey, true);
@@ -6251,91 +6238,6 @@ bool GatewayClient::saveTextToFile(const QString &localPath, const QString &cont
         return false;
     const QByteArray utf8 = content.toUtf8();
     return f.write(utf8) == utf8.size();
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  文件附件：暂存 & 复制到工作空间
-// ═══════════════════════════════════════════════════════════════════════
-
-void GatewayClient::setPendingChatFiles(const QVariantList &files)
-{
-    m_pendingChatFiles = files;
-}
-
-static void copySingleFile(const QString &srcPath, const QString &destDir)
-{
-    const QFileInfo srcInfo(srcPath);
-    if (!srcInfo.exists() || !srcInfo.isFile())
-        return;
-
-    QString destName = srcInfo.fileName();
-    QString destPath = destDir + QLatin1Char('/') + destName;
-
-    if (QFile::exists(destPath)) {
-        const QString base = srcInfo.completeBaseName();
-        const QString suffix = srcInfo.suffix();
-        int seq = 1;
-        do {
-            destName = suffix.isEmpty()
-                ? QStringLiteral("%1_%2").arg(base).arg(seq)
-                : QStringLiteral("%1_%2.%3").arg(base).arg(seq).arg(suffix);
-            destPath = destDir + QLatin1Char('/') + destName;
-            ++seq;
-        } while (QFile::exists(destPath));
-    }
-
-    if (QFile::copy(srcPath, destPath))
-        qDebug() << "[Gateway] file copied:" << srcPath << "->" << destPath;
-    else
-        qWarning() << "[Gateway] file copy failed:" << srcPath << "->" << destPath;
-}
-
-static void copyDirRecursive(const QString &srcDir, const QString &destDir)
-{
-    const QDir src(srcDir);
-    QDir().mkpath(destDir);
-
-    for (const QFileInfo &entry : src.entryInfoList(QDir::Files))
-        copySingleFile(entry.absoluteFilePath(), destDir);
-
-    for (const QFileInfo &entry : src.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
-        copyDirRecursive(entry.absoluteFilePath(),
-                         destDir + QLatin1Char('/') + entry.fileName());
-}
-
-void GatewayClient::resolveAndCopyFiles(const QVariantList &files,
-                                        const QString &workspace)
-{
-    if (files.isEmpty() || workspace.trimmed().isEmpty())
-        return;
-
-    QString ws = workspace;
-    if (ws.startsWith(QStringLiteral("~/")))
-        ws = QDir::homePath() + ws.mid(1);
-    ws = QDir::cleanPath(ws);
-
-    const QString uploadDir = ws;
-    QDir().mkpath(uploadDir);
-
-    for (const QVariant &v : files) {
-        const QVariantMap fm = v.toMap();
-        const QString rawUrl = fm.value(QStringLiteral("fileUrl")).toString();
-        QString srcPath = rawUrl;
-        if (srcPath.startsWith(QStringLiteral("file://")))
-            srcPath = QUrl(srcPath).toLocalFile();
-
-        const QFileInfo srcInfo(srcPath);
-        if (!srcInfo.exists())
-            continue;
-
-        if (srcInfo.isDir()) {
-            const QString destSubDir = uploadDir + QLatin1Char('/') + srcInfo.fileName();
-            copyDirRecursive(srcPath, destSubDir);
-            qDebug() << "[Gateway] folder copied:" << srcPath << "->" << destSubDir;
-        } else {
-            copySingleFile(srcPath, uploadDir);
-        }
-    }
 }
 
 QString GatewayClient::extractPayloadSessionKey(const QJsonObject &payload) const

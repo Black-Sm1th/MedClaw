@@ -19,6 +19,10 @@ Rectangle {
     property bool webReady: false
     property bool syncingFromWeb: false
     property var pendingFiles: []
+    // Files currently represented by chips in the editor. They remain local
+    // references; sending uses the paths embedded in the message text.
+    property var attachedFiles: []
+    property double lastClipboardImportAt: 0
     property bool fileTipVisible: false
     property string fileTipText: ""
     property real fileTipX: 0
@@ -26,7 +30,7 @@ Rectangle {
     property real fileTipWidth: 0
     property real fileTipHeight: 0
 
-    signal submitRequested(string message)
+    signal submitRequested(string message, var files)
     signal linkActivated(string link)
 
     color: backgroundColor
@@ -66,6 +70,35 @@ Rectangle {
 
     function submit() {
         callEditor("submit", [])
+    }
+
+    function importClipboardAttachments() {
+        var now = Date.now()
+        if (now - lastClipboardImportAt < 350)
+            return
+        lastClipboardImportAt = now
+        var pasted = $MainViewController.importClipboardFiles()
+        for (var p = 0; p < pasted.length; p++) {
+            var pastedFile = pasted[p]
+            root.insertFile(pastedFile.name || pastedFile.path,
+                            pastedFile.path || pastedFile.fileUrl,
+                            !!pastedFile.folder)
+        }
+    }
+
+    function localPathFromUrl(value) {
+        var path = String(value || "")
+        if (path.indexOf("file://") === 0)
+            path = decodeURIComponent(path.replace(/^file:\/\/{2,3}/, ""))
+        if (Qt.platform.os === "windows") {
+            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                path = path.substring(1)
+            path = path.replace(/\//g, "\\")
+        } else if (Qt.platform.os === "linux" || Qt.platform.os === "osx") {
+            if (path.charAt(0) !== "/")
+                path = "/" + path
+        }
+        return path
     }
 
     onActiveFocusChanged: {
@@ -115,8 +148,20 @@ Rectangle {
                 root.text = payload.text || ""
                 root.syncingFromWeb = false
                 root.textContentHeight = Math.max(52, Number(payload.height) || 52)
+                root.attachedFiles = payload.files || []
             } else if (payload.type === "submit") {
-                root.submitRequested(payload.text || "")
+                root.submitRequested(payload.text || "", payload.files || [])
+            } else if (payload.type === "pasteFiles"
+                       || payload.type === "pasteShortcut") {
+                root.importClipboardAttachments()
+            } else if (payload.type === "dropFiles") {
+                var dropped = payload.files || []
+                for (var d = 0; d < dropped.length; d++) {
+                    var droppedFile = dropped[d]
+                    root.insertFile(droppedFile.name || droppedFile.path,
+                                    droppedFile.path,
+                                    !!droppedFile.folder)
+                }
             } else if (payload.type === "fileHover") {
                 root.fileTipText = payload.path || ""
                 root.fileTipX = Number(payload.x) || 0
@@ -132,6 +177,32 @@ Rectangle {
                 if (path.length > 0)
                     root.linkActivated("medclaw-local:" + encodeURIComponent(path))
             }
+        }
+    }
+
+    // Native file drops expose local URLs through QML even when Chromium
+    // intentionally hides File.path from the page JavaScript.
+    DropArea {
+        anchors.fill: parent
+        z: 2
+        keys: []
+        onEntered: function(drag) {
+            if (drag.hasUrls)
+                drag.accepted = true
+        }
+        onDropped: function(drop) {
+            if (!drop.hasUrls)
+                return
+            var urls = drop.urls || []
+            for (var i = 0; i < urls.length; i++) {
+                var path = root.localPathFromUrl(urls[i])
+                if (!path)
+                    continue
+                var parts = path.split(/[\\\/]/)
+                var name = parts[parts.length - 1] || path
+                root.insertFile(name, path, false)
+            }
+            drop.acceptProposedAction()
         }
     }
 

@@ -272,9 +272,6 @@ public:
     /// 确保任务工作目录存在；空路径时使用安装目录下的按日期默认目录。
     Q_INVOKABLE QString prepareTaskWorkspace(const QString &workspace = QString());
 
-    void setPendingChatFiles(const QVariantList &files);
-    void resolveAndCopyFiles(const QVariantList &files, const QString &workspace);
-
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();
 
@@ -924,7 +921,6 @@ private:
     /// 当前无选中会话时，首条聊天触发的 sessions.create 完成后要发送的文本
     QString m_pendingFirstChatMessage;
     bool m_pendingAgentCreateForChat = false;
-    QVariantList m_pendingChatFiles;
     QString m_pendingFirstChatSessionCreateReqId;
 
     /// 新建 agent 并应用 config.set（deny 列表）后才发出的首条消息（兼容旧流程）

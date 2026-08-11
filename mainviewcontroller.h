@@ -41,6 +41,9 @@ public:
     Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl,
                                             const QString &workspace) const;
 
+    /// Import local files or an image from the native clipboard.
+    Q_INVOKABLE QVariantList importClipboardFiles() const;
+
     Q_INVOKABLE QString resolveLocalFileLink(const QString &link,
                                              const QString &workspace) const;
 
