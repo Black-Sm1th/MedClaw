@@ -19,7 +19,6 @@
         <file>images/sidebarMinimalistic.png</file>
         <file>fonts/AlimamaShuHeiTi-Bold.ttf</file>
         <file>components/MultiLineTextInput.qml</file>
-        <file>images/category.png</file>
         <file>images/paperclip.png</file>
         <file>images/send.png</file>
         <file>components/DropdownSelect.qml</file>
@@ -34,34 +33,25 @@
         <file>components/ExpertPage.qml</file>
         <file>components/CollaborationPicker.qml</file>
         <file>components/TaskSessionStatusIndicator.qml</file>
-        <file>images/chatNew.png</file>
         <file>images/folder.png</file>
         <file>images/puzzle.png</file>
         <file>images/search.png</file>
         <file>images/skillIcon.png</file>
-        <file>images/download.png</file>
         <file>images/link.png</file>
         <file>images/upload.png</file>
         <file>images/delete.png</file>
         <file>images/edit.png</file>
-        <file>images/chatLine.png</file>
         <file>images/ai.png</file>
-        <file>images/filePicture.png</file>
-        <file>images/alarm.png</file>
         <file>images/history.png</file>
         <file>images/play.png</file>
-        <file>images/tools.png</file>
-        <file>images/expertBackground.png</file>
         <file>images/expert.png</file>
         <file>images/knowledge/excel.png</file>
         <file>images/knowledge/folder.png</file>
         <file>images/knowledge/others.png</file>
         <file>images/knowledge/ppt.png</file>
         <file>images/knowledge/word.png</file>
-        <file>images/knowledge.png</file>
         <file>images/delete-white.png</file>
         <file>images/upload-white.png</file>
-        <file>images/Vector.png</file>
         <file>images/icon.ico</file>
         <file>images/logoImage.png</file>
         <file>images/mainTitle.png</file>
@@ -107,5 +97,9 @@
         <file>images/login/loginShortcut4.png</file>
         <file>images/login/loginTitle.png</file>
         <file>images/knowledgeSelected.png</file>
+        <file>images/alarm.png</file>
+        <file>images/category.png</file>
+        <file>images/chatNew.png</file>
+        <file>images/knowledge.png</file>
     </qresource>
 </RCC>

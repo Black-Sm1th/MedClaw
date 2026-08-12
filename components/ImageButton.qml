@@ -8,11 +8,12 @@ Item {
     property color pressedColor: "#14000000"
     property int radius: 4
     property int padding: 4
-
+    property int btnWidth: bgImage.implicitWidth
+    property int btnHeight: bgImage.implicitHeight
     signal clicked()
 
-    implicitWidth: bgImage.implicitWidth + padding * 2
-    implicitHeight: bgImage.implicitHeight + padding * 2
+    implicitWidth: btnWidth + padding * 2
+    implicitHeight: btnHeight + padding * 2
 
     Rectangle {
         id: bg
@@ -29,6 +30,8 @@ Item {
 
     Image {
         id: bgImage
+        width: btnWidth
+        height: btnHeight
         anchors.centerIn: parent
         fillMode: Image.PreserveAspectFit
     }

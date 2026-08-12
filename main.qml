@@ -1222,6 +1222,8 @@ ApplicationWindow {
                 color: "transparent"
                 Image{
                     id: logoImage
+                    width: 28
+                    height: 28
                     source: "qrc:/images/logoImage.png"
                     anchors.verticalCenter: parent.verticalCenter
                 }
@@ -1235,6 +1237,8 @@ ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 ImageButton{
+                    btnHeight: 20
+                    btnWidth: 20
                     source: "qrc:/images/sidebarMinimalistic.png"
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.right: parent.right
@@ -1258,6 +1262,8 @@ ApplicationWindow {
                     spacing: 12
                     width: parent.width
                     ImageButton{
+                        btnHeight: 20
+                        btnWidth: 20
                         source: "qrc:/images/sidebarMinimalistic.png"
                         visible: !window.sidebarExpanded
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -1939,6 +1945,8 @@ ApplicationWindow {
                 }
                 ImageButton{
                     id: settingBtn
+                    btnHeight: 20
+                    btnWidth: 20
                     visible: window.userSessionReady
                     source: "qrc:/images/setting.png"
                     onClicked: settingsDialog.open()
@@ -1964,6 +1972,8 @@ ApplicationWindow {
                 }
                 ImageButton{
                     id: minusBtn
+                    btnWidth: 20
+                    btnHeight: 20
                     source: "qrc:/images/minus.png"
                     onClicked: window.showMinimized()
                 }
@@ -1975,6 +1985,8 @@ ApplicationWindow {
                 ImageButton{
                     id: maxmizeBtn
                     source: "qrc:/images/add-square.png"
+                    btnWidth: 20
+                    btnHeight: 20
                     onClicked: {
                         if (window.visibility === Window.Maximized) {
                             window.showNormal()
@@ -1990,6 +2002,8 @@ ApplicationWindow {
                 }
                 ImageButton{
                     id: closeBtn
+                    btnWidth: 20
+                    btnHeight: 20
                     source: "qrc:/images/close.png"
                     onClicked: {
                         Qt.quit()
@@ -2990,7 +3004,6 @@ ApplicationWindow {
                                                         ? "qrc:/images/knowledgeSelected.png"
                                                         : "qrc:/images/knowledge.png"
                                                 fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(16, 16)
                                             }
 
                                             Label {
@@ -3096,7 +3109,6 @@ ApplicationWindow {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     source: "qrc:/images/knowledge.png"
                                                     fillMode: Image.PreserveAspectFit
-                                                    sourceSize: Qt.size(16, 16)
                                                 }
 
                                                 Label {
@@ -3198,8 +3210,8 @@ ApplicationWindow {
 
                                             Image {
                                                 id: expertTagCloseIcon
-                                                width: 14
-                                                height: 14
+                                                width: 20
+                                                height: 20
                                                 source: "qrc:/images/close.png"
                                                 fillMode: Image.PreserveAspectFit
                                                 opacity: expertTagCloseMouse.containsMouse ? 1 : 0.65
@@ -3233,756 +3245,756 @@ ApplicationWindow {
                                         wsClient.switchCollaborationViewSession(sessionKey)
                                     }
                                 }
-                                Item {
-                                    id: dropdownSelectionSkill
-                                    visible: false
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 0
-                                    height: 36
-
-                                    property var selectedSkills: []
-                                    property string searchText: ""
-
-                                    function syncFromWsClient() {
-                                        // 与工具开关一致：未在侧栏选中 agent 时默认全选；有暂存则显示暂存（待 agents.create 后写入）
-                                        var aid = leftMidPanel.activeAgentId || ""
-                                        if (aid === "") {
-                                            if (wsClient.pendingNewAgentSkillPolicySet) {
-                                                selectedSkills = wsClient.pendingNewAgentSkillNames()
-                                                return
-                                            }
-                                            var arr = []
-                                            var list = wsClient.skillList || []
-                                            for (var i = 0; i < list.length; i++) {
-                                                if (list[i].enabled === false)
-                                                    continue
-                                                var n = list[i].name || list[i].skillKey || ""
-                                                if (n) arr.push(n)
-                                            }
-                                            selectedSkills = arr
-                                            return
-                                        }
-                                        selectedSkills = wsClient.selectedSkillNamesForAgent(aid)
-                                    }
-
-                                    Connections {
-                                        target: wsClient
-                                        function onSkillListChanged() {
-                                            dropdownSelectionSkill.syncFromWsClient()
-                                        }
-                                    }
-                                    Connections {
-                                        target: wsClient
-                                        function onAgentIdentityChanged() {
-                                            dropdownSelectionSkill.syncFromWsClient()
-                                        }
-                                    }
-                                    Connections {
-                                        target: leftMidPanel
-                                        function onActiveAgentIdChanged() {
-                                            dropdownSelectionSkill.syncFromWsClient()
-                                        }
-                                    }
-                                    Connections {
-                                        target: wsClient
-                                        function onPendingNewAgentSkillPolicyChanged() {
-                                            dropdownSelectionSkill.syncFromWsClient()
-                                        }
-                                    }
-
-                                    function isSelected(name) {
-                                        for (var i = 0; i < selectedSkills.length; i++) {
-                                            if (selectedSkills[i] === name) return true
-                                        }
-                                        return false
-                                    }
-
-                                    function toggleSkill(name) {
-                                        var arr = selectedSkills.slice()
-                                        var idx = -1
-                                        for (var i = 0; i < arr.length; i++) {
-                                            if (arr[i] === name) { idx = i; break }
-                                        }
-                                        if (idx >= 0) arr.splice(idx, 1)
-                                        else arr.push(name)
-                                        selectedSkills = arr
-
-                                        if ((leftMidPanel.activeAgentId || "") === "") {
-                                            wsClient.setPendingNewAgentSkillSelection(arr)
-                                            return
-                                        }
-                                        var aid = leftMidPanel.activeAgentId
-                                        wsClient.setAgentSkillEnabled(aid, name, idx < 0)
-                                    }
-
-                                    function filteredSkills() {
-                                        var list = wsClient.skillList || []
-                                        var enabledOnly = []
-                                        for (var j = 0; j < list.length; j++) {
-                                            if (list[j].enabled === false)
-                                                continue
-                                            enabledOnly.push(list[j])
-                                        }
-                                        list = enabledOnly
-                                        if (!searchText) return list
-                                        var result = []
-                                        for (var i = 0; i < list.length; i++) {
-                                            var n = (list[i].name || list[i].skillKey || "").toLowerCase()
-                                            if (n.indexOf(searchText.toLowerCase()) >= 0)
-                                                result.push(list[i])
-                                        }
-                                        return result
-                                    }
-
-                                    Rectangle {
-                                        id: skillButton
-                                        anchors.fill: parent
-                                        radius: 8
-                                        color: skillMouseArea.pressed ? "#14000000"
-                                             : skillMouseArea.containsMouse ? "#0A000000"
-                                             : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                                        Row {
-                                            id: skillBtnRow
-                                            spacing: 6
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 12
-
-                                            Image {
-                                                source: "qrc:/images/category.png"
-                                                width: 16; height: 16
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(16, 16)
-                                            }
-                                            // Text {
-                                            //     text: "技能"
-                                            //     font.pixelSize: 14
-                                            //     font.family: "Alibaba PuHuiTi 3.0"
-                                            //     color: "#D9000000"
-                                            //     anchors.verticalCenter: parent.verticalCenter
-                                            // }
-
-                                            Text {
-                                                id: skillsText
-                                                text: "技能"
-                                                font.pixelSize: 14
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#D9000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                visible: skillPopup.visible
-                                            }
-                                            Rectangle {
-                                                visible: dropdownSelectionSkill.selectedSkills.length > 0
-                                                width: badgeText.width + 8
-                                                height: 20
-                                                radius: 10
-                                                color: "#14000000"
-                                                anchors.verticalCenter: parent.verticalCenter
-
-                                                Text {
-                                                    id: badgeText
-                                                    text: dropdownSelectionSkill.selectedSkills.length
-                                                    font.pixelSize: 12
-                                                    font.family: "Alibaba PuHuiTi 3.0"
-                                                    color: "#73000000"
-                                                    anchors.centerIn: parent
-                                                }
-                                            }
-                                        }
-
-                                        // Canvas {
-                                        //     id: skillChevron
-                                        //     width: 16; height: 16
-                                        //     anchors.right: parent.right
-                                        //     anchors.rightMargin: 12
-                                        //     anchors.verticalCenter: parent.verticalCenter
-                                        //     rotation: skillPopup.visible ? 180 : 0
-                                        //     Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                                        //     onPaint: {
-                                        //         var ctx = getContext("2d")
-                                        //         ctx.reset()
-                                        //         ctx.strokeStyle = "#80000000"
-                                        //         ctx.lineWidth = 1.5
-                                        //         ctx.lineCap = "round"
-                                        //         ctx.lineJoin = "round"
-                                        //         ctx.beginPath()
-                                        //         ctx.moveTo(4, 6)
-                                        //         ctx.lineTo(8, 10)
-                                        //         ctx.lineTo(12, 6)
-                                        //         ctx.stroke()
-                                        //     }
-                                        // }
-
-                                        MouseArea {
-                                            id: skillMouseArea
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: skillPopup.visible ? skillPopup.close() : skillPopup.open()
-                                        }
-                                    }
-
-                                    Popup {
-                                        id: skillPopup
-                                        x: 0
-                                        width: 220
-                                        padding: 8
-                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-
-                                        function calcY() {
-                                            var globalPos = dropdownSelectionSkill.mapToItem(null, 0, 0)
-                                            var windowH = window.height
-                                            var popupH = Math.min(contentItem.implicitHeight, 300 + 50) + padding * 2
-                                            if (popupH < 60)
-                                                popupH = 360
-                                            if (globalPos.y + dropdownSelectionSkill.height + 4 + popupH > windowH)
-                                                return -popupH - 4
-                                            return dropdownSelectionSkill.height + 4
-                                        }
-
-                                        y: calcY()
-
-                                        onAboutToShow: {
-                                            skillSearchInput.text = ""
-                                            y = calcY()
-                                        }
-                                        onOpened: Qt.callLater(function() { y = calcY() })
-
-                                        background: Rectangle {
-                                            radius: 8
-                                            color: "#FFFFFF"
-                                            border.color: "#14000000"
-                                            border.width: 1
-                                            layer.enabled: true
-                                            layer.effect: DropShadow {
-                                                transparentBorder: true
-                                                radius: 12
-                                                samples: 25
-                                                color: "#1A000000"
-                                            }
-                                        }
-
-                                        contentItem: Column {
-                                            spacing: 6
-
-                                            Row {
-                                                width: parent.width
-                                                spacing: 6
-
-                                                SingleLineTextInput {
-                                                    id: skillSearchInput
-                                                    inputWidth: parent.width - skillSettingPopBtn.width - 6
-                                                    inputHeight: 32
-                                                    inputRadius: 6
-                                                    icon: "qrc:/images/search.png"
-                                                    iconSize: 14
-                                                    fontSize: 13
-                                                    placeholderText: qsTr("搜索技能")
-                                                    onTextChanged: dropdownSelectionSkill.searchText = text
-                                                }
-
-                                                ImageButton {
-                                                    id: skillSettingPopBtn
-                                                    source: "qrc:/images/setting.png"
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    onClicked: {
-                                                        skillPopup.close()
-                                                        window.leftSelectedIndex = 3
-                                                    }
-                                                }
-                                            }
-
-                                            Flickable {
-                                                id: skillListFlick
-                                                width: parent.width
-                                                height: Math.min(skillListCol.height, 300)
-                                                contentHeight: skillListCol.height
-                                                clip: true
-                                                boundsBehavior: Flickable.StopAtBounds
-
-                                                Column {
-                                                    id: skillListCol
-                                                    width: parent.width
-                                                    spacing: 2
-
-                                                    Repeater {
-                                                        model: dropdownSelectionSkill.filteredSkills()
-
-                                                        delegate: Rectangle {
-                                                            width: skillPopup.width - 16
-                                                            height: 36
-                                                            radius: 6
-                                                            color: skillItemMouse.pressed ? "#14000000"
-                                                                 : skillItemMouse.containsMouse ? "#0A000000"
-                                                                 : "transparent"
-                                                            Behavior on color { ColorAnimation { duration: 100 } }
-
-                                                            Row {
-                                                                spacing: 8
-                                                                anchors.verticalCenter: parent.verticalCenter
-                                                                anchors.left: parent.left
-                                                                anchors.leftMargin: 8
-
-                                                                Image {
-                                                                    width: 20; height: 20
-                                                                    visible: !modelData.emoji
-                                                                    source: "qrc:/images/skillIcon.png"
-
-                                                                    fillMode: Image.PreserveAspectFit
-                                                                    anchors.verticalCenter: parent.verticalCenter
-                                                                }
-                                                                Label {
-                                                                    width: 20
-                                                                    height: 20
-                                                                    visible: modelData.emoji
-                                                                    font.pixelSize: 14
-                                                                    text: modelData.emoji
-                                                                    horizontalAlignment: Text.AlignHCenter
-                                                                    verticalAlignment: Text.AlignVCenter
-                                                                    anchors.verticalCenter: parent.verticalCenter
-                                                                    font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
-                                                                }
-                                                                Text {
-                                                                    id: skilPopNameLabel
-                                                                    width: skillPopup.width - 16 - 16 - 20 - 16 - 16
-                                                                    text: modelData.name || modelData.skillKey || ""
-                                                                    font.pixelSize: 14
-                                                                    font.family: "Alibaba PuHuiTi 3.0"
-                                                                    color: "#D9000000"
-                                                                    anchors.verticalCenter: parent.verticalCenter
-                                                                    elide: Text.ElideRight
-                                                                    ToolTip {
-                                                                        visible: skillItemMouse.containsMouse && skilPopNameLabel.truncated
-                                                                        text: skilPopNameLabel.text
-                                                                        delay: 500
-                                                                        x: 0
-                                                                        y: skilPopNameLabel.height + 4
-                                                                        width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
-                                                                        background: Rectangle {
-                                                                            color: "#A6000000"
-                                                                            radius: 4
-                                                                        }
-                                                                        contentItem: Text {
-                                                                            text: skilPopNameLabel.text
-                                                                            font.pixelSize: 14
-                                                                            color: "#FFFFFF"
-                                                                            font.family: "Alibaba PuHuiTi 3.0"
-                                                                            wrapMode: Text.Wrap
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            Canvas {
-                                                                visible: dropdownSelectionSkill.isSelected(modelData.name || modelData.skillKey)
-                                                                width: 16; height: 16
-                                                                anchors.right: parent.right
-                                                                anchors.rightMargin: 8
-                                                                anchors.verticalCenter: parent.verticalCenter
-                                                                onVisibleChanged: requestPaint()
-                                                                onPaint: {
-                                                                    var ctx = getContext("2d")
-                                                                    ctx.reset()
-                                                                    ctx.strokeStyle = "#006BFF"
-                                                                    ctx.lineWidth = 2
-                                                                    ctx.lineCap = "round"
-                                                                    ctx.lineJoin = "round"
-                                                                    ctx.beginPath()
-                                                                    ctx.moveTo(3, 8)
-                                                                    ctx.lineTo(6.5, 11.5)
-                                                                    ctx.lineTo(13, 4.5)
-                                                                    ctx.stroke()
-                                                                }
-                                                            }
-
-                                                            MouseArea {
-                                                                id: skillItemMouse
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: dropdownSelectionSkill.toggleSkill(modelData.name || modelData.skillKey)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                ScrollBar.vertical: ScrollBar {
-                                                    policy: skillListFlick.contentHeight > skillListFlick.height
-                                                            ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
-                                                    width: 4
-                                                    contentItem: Rectangle {
-                                                        implicitWidth: 4
-                                                        radius: 2
-                                                        color: "#40000000"
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        enter: Transition {
-                                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
-                                            NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
-                                        }
-                                        exit: Transition {
-                                            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
-                                        }
-                                    }
-                                }
-                                Item {
-                                    id: dropdownSelectionTool
-                                    visible: false
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 0
-                                    height: 36
-
-                                    property var selectedToolIds: []
-                                    property string toolSearchText: ""
-
-                                    function syncToolsFromWsClient() {
-                                        var arr = []
-                                        var list = wsClient.toolList
-                                        var isExisting = leftMidPanel.activeAgentId !== ""
-                                        if (isExisting) {
-                                            for (var i = 0; i < list.length; i++) {
-                                                if (list[i].enabled)
-                                                    arr.push(list[i].toolId)
-                                            }
-                                        } else {
-                                            for (var i = 0; i < list.length; i++)
-                                                arr.push(list[i].toolId)
-                                        }
-                                        selectedToolIds = arr
-                                    }
-
-                                    Connections {
-                                        target: wsClient
-                                        function onToolListChanged() {
-                                            dropdownSelectionTool.syncToolsFromWsClient()
-                                        }
-                                    }
-
-                                    function isToolSelected(toolId) {
-                                        for (var i = 0; i < selectedToolIds.length; i++) {
-                                            if (selectedToolIds[i] === toolId) return true
-                                        }
-                                        return false
-                                    }
-
-                                    function toggleToolLocal(toolId) {
-                                        var arr = selectedToolIds.slice()
-                                        var idx = -1
-                                        for (var i = 0; i < arr.length; i++) {
-                                            if (arr[i] === toolId) { idx = i; break }
-                                        }
-                                        if (idx >= 0) arr.splice(idx, 1)
-                                        else arr.push(toolId)
-                                        selectedToolIds = arr
-                                        applyToolSelectionImmediately()
-                                    }
-
-                                    /// 勾选/取消后立即同步到网关（或暂存到首个 agent 创建时写入）
-                                    function applyToolSelectionImmediately() {
-                                        var aid = leftMidPanel.activeAgentId
-                                        if (aid === "") {
-                                            wsClient.setPendingNewAgentToolSelection(selectedToolIds)
-                                            return
-                                        }
-                                        wsClient.batchSetAgentToolsEnabled(aid, selectedToolIds)
-                                    }
-
-                                    function filteredTools() {
-                                        var list = wsClient.toolList
-                                        if (!toolSearchText) return list
-                                        var result = []
-                                        var q = toolSearchText.toLowerCase()
-                                        for (var i = 0; i < list.length; i++) {
-                                            var label = (list[i].label || list[i].toolId || "").toLowerCase()
-                                            if (label.indexOf(q) >= 0)
-                                                result.push(list[i])
-                                        }
-                                        return result
-                                    }
-
-                                    Rectangle {
-                                        id: toolButton2
-                                        anchors.fill: parent
-                                        radius: 8
-                                        readonly property bool toolStripHover: toolIconMouse.containsMouse
-                                        color: toolIconMouse.pressed ? "#14000000"
-                                             : toolStripHover ? "#0A000000"
-                                             : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 100 } }
-                                        MouseArea {
-                                            id: toolIconMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: toolPopup2.visible ? toolPopup2.close() : toolPopup2.open()
-                                        }
-                                        Row {
-                                            id: toolBtnRow2
-                                            spacing: 6
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 12
-
-                                            Item {
-                                                id: toolOpenZone
-                                                height: 36
-                                                width: toolOpenInnerRow.width
-
-                                                Row {
-                                                    id: toolOpenInnerRow
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    spacing: 6
-
-                                                    Image {
-                                                        id: toolMainIcon
-                                                        source: "qrc:/images/tools.png"
-                                                        width: 16
-                                                        height: 16
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        fillMode: Image.PreserveAspectFit
-                                                        sourceSize: Qt.size(16, 16)
-                                                    }
-
-                                                    Text {
-                                                        id: toolText
-                                                        text: "tools"
-                                                        font.pixelSize: 14
-                                                        font.family: "Alibaba PuHuiTi 3.0"
-                                                        color: "#D9000000"
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        visible: toolPopup2.visible
-                                                    }
-
-                                                    Rectangle {
-                                                        id: toolCountBadge
-                                                        visible: dropdownSelectionTool.selectedToolIds.length > 0
-                                                        width: toolBadgeText.width + 8
-                                                        height: 20
-                                                        radius: 10
-                                                        color: "#14000000"
-                                                        anchors.verticalCenter: parent.verticalCenter
-
-                                                        Text {
-                                                            id: toolBadgeText
-                                                            text: dropdownSelectionTool.selectedToolIds.length
-                                                            font.pixelSize: 12
-                                                            font.family: "Alibaba PuHuiTi 3.0"
-                                                            color: "#73000000"
-                                                            anchors.centerIn: parent
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                        }
-                                    }
-
-                                    Popup {
-                                        id: toolPopup2
-                                        x: 0
-                                        width: 260
-                                        padding: 8
-                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-
-                                        function calcY() {
-                                            var globalPos = dropdownSelectionTool.mapToItem(null, 0, 0)
-                                            var windowH = window.height
-                                            var popupH = Math.min(contentItem.implicitHeight, 300 + 80) + padding * 2
-                                            if (popupH < 60)
-                                                popupH = 400
-                                            if (globalPos.y + dropdownSelectionTool.height + 4 + popupH > windowH)
-                                                return -popupH - 4
-                                            return dropdownSelectionTool.height + 4
-                                        }
-
-                                        y: calcY()
-
-                                        onAboutToShow: {
-                                            dropdownSelectionTool.syncToolsFromWsClient()
-                                            toolSearchInput2.text = ""
-                                            y = calcY()
-                                        }
-                                        onOpened: Qt.callLater(function() { y = calcY() })
-
-                                        background: Rectangle {
-                                            color: "#FFFFFF"
-                                            radius: 12
-                                            border.color: "#14000000"
-                                            border.width: 1
-                                            layer.enabled: true
-                                            layer.effect: DropShadow {
-                                                transparentBorder: true
-                                                radius: 12
-                                                samples: 25
-                                                color: "#1A000000"
-                                            }
-                                        }
-
-                                        contentItem: Column {
-                                            spacing: 6
-                                            width: toolPopup2.width - 16
-                                            Row {
-                                                width: parent.width
-                                                spacing: 6
-
-                                                SingleLineTextInput {
-                                                    id: toolSearchInput2
-                                                    inputWidth: parent.width - toolSettingBtn2.width - 6
-                                                    inputHeight: 32
-                                                    inputRadius: 6
-                                                    icon: "qrc:/images/search.png"
-                                                    iconSize: 14
-                                                    fontSize: 13
-                                                    placeholderText: qsTr("搜索工具")
-                                                    onTextChanged: dropdownSelectionTool.toolSearchText = text
-                                                }
-
-                                                ImageButton {
-                                                    id: toolSettingBtn2
-                                                    source: "qrc:/images/setting.png"
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    onClicked: {
-                                                        toolPopup2.close()
-                                                        window.leftSelectedIndex = 4
-                                                    }
-                                                }
-                                            }
-                                            Flickable {
-                                                id: toolListFlick2
-                                                width: parent.width
-                                                height: Math.min(toolListCol2.height, 300)
-                                                contentHeight: toolListCol2.height
-                                                clip: true
-                                                boundsBehavior: Flickable.StopAtBounds
-
-                                                Column {
-                                                    id: toolListCol2
-                                                    width: parent.width
-                                                    spacing: 2
-
-                                                    Repeater {
-                                                        model: dropdownSelectionTool.filteredTools()
-
-                                                        delegate: Rectangle {
-                                                            width: toolPopup2.width - 16
-                                                            height: 36
-                                                            radius: 6
-                                                            color: toolItemMouse2.pressed ? "#14000000"
-                                                                 : toolItemMouse2.containsMouse ? "#0A000000"
-                                                                 : "transparent"
-                                                            Behavior on color { ColorAnimation { duration: 100 } }
-
-                                                            Row {
-                                                                spacing: 8
-                                                                anchors.verticalCenter: parent.verticalCenter
-                                                                anchors.left: parent.left
-                                                                anchors.leftMargin: 8
-
-                                                                Text {
-                                                                    id: toolPopNameLabel
-                                                                    width: toolPopup2.width - 16 - 16 - 16 - 16
-                                                                    text: modelData.label || modelData.toolId || ""
-                                                                    font.pixelSize: 14
-                                                                    font.family: "Alibaba PuHuiTi 3.0"
-                                                                    color: "#D9000000"
-                                                                    anchors.verticalCenter: parent.verticalCenter
-                                                                    elide: Text.ElideRight
-                                                                    ToolTip {
-                                                                        visible: toolItemMouse2.containsMouse && toolPopNameLabel.truncated
-                                                                        text: toolPopNameLabel.text
-                                                                        delay: 500
-                                                                        x: 0
-                                                                        y: toolPopNameLabel.height + 4
-                                                                        background: Rectangle {
-                                                                            color: "#A6000000"
-                                                                            radius: 4
-                                                                        }
-                                                                        contentItem: Text {
-                                                                            text: toolPopNameLabel.text
-                                                                            font.pixelSize: 14
-                                                                            color: "#FFFFFF"
-                                                                            font.family: "Alibaba PuHuiTi 3.0"
-                                                                            wrapMode: Text.Wrap
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            Canvas {
-                                                                visible: dropdownSelectionTool.isToolSelected(modelData.toolId)
-                                                                width: 16; height: 16
-                                                                anchors.right: parent.right
-                                                                anchors.rightMargin: 8
-                                                                anchors.verticalCenter: parent.verticalCenter
-                                                                onVisibleChanged: requestPaint()
-                                                                onPaint: {
-                                                                    var ctx = getContext("2d")
-                                                                    ctx.reset()
-                                                                    ctx.strokeStyle = "#006BFF"
-                                                                    ctx.lineWidth = 2
-                                                                    ctx.lineCap = "round"
-                                                                    ctx.lineJoin = "round"
-                                                                    ctx.beginPath()
-                                                                    ctx.moveTo(3, 8)
-                                                                    ctx.lineTo(6.5, 11.5)
-                                                                    ctx.lineTo(13, 4.5)
-                                                                    ctx.stroke()
-                                                                }
-                                                            }
-
-                                                            MouseArea {
-                                                                id: toolItemMouse2
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: dropdownSelectionTool.toggleToolLocal(modelData.toolId)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                ScrollBar.vertical: ScrollBar {
-                                                    policy: toolListFlick2.contentHeight > toolListFlick2.height
-                                                            ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
-                                                    width: 4
-                                                    contentItem: Rectangle {
-                                                        implicitWidth: 4
-                                                        radius: 2
-                                                        color: "#40000000"
-                                                    }
-                                                }
-                                            }
-
-                                            Text {
-                                                visible: dropdownSelectionTool.filteredTools().length === 0
-                                                text: dropdownSelectionTool.toolSearchText
-                                                      ? qsTr("未找到匹配的工具")
-                                                      : qsTr("暂无可用工具")
-                                                font.pixelSize: 13
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#80000000"
-                                                width: parent.width
-                                                horizontalAlignment: Text.AlignHCenter
-                                                topPadding: 16
-                                                bottomPadding: 16
-                                            }
-                                        }
-
-                                        enter: Transition {
-                                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
-                                            NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
-                                        }
-                                        exit: Transition {
-                                            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
-                                        }
-                                    }
-                                }
+                                // Item {
+                                //     id: dropdownSelectionSkill
+                                //     visible: false
+                                //     anchors.verticalCenter: parent.verticalCenter
+                                //     width: 0
+                                //     height: 36
+
+                                //     property var selectedSkills: []
+                                //     property string searchText: ""
+
+                                //     function syncFromWsClient() {
+                                //         // 与工具开关一致：未在侧栏选中 agent 时默认全选；有暂存则显示暂存（待 agents.create 后写入）
+                                //         var aid = leftMidPanel.activeAgentId || ""
+                                //         if (aid === "") {
+                                //             if (wsClient.pendingNewAgentSkillPolicySet) {
+                                //                 selectedSkills = wsClient.pendingNewAgentSkillNames()
+                                //                 return
+                                //             }
+                                //             var arr = []
+                                //             var list = wsClient.skillList || []
+                                //             for (var i = 0; i < list.length; i++) {
+                                //                 if (list[i].enabled === false)
+                                //                     continue
+                                //                 var n = list[i].name || list[i].skillKey || ""
+                                //                 if (n) arr.push(n)
+                                //             }
+                                //             selectedSkills = arr
+                                //             return
+                                //         }
+                                //         selectedSkills = wsClient.selectedSkillNamesForAgent(aid)
+                                //     }
+
+                                //     Connections {
+                                //         target: wsClient
+                                //         function onSkillListChanged() {
+                                //             dropdownSelectionSkill.syncFromWsClient()
+                                //         }
+                                //     }
+                                //     Connections {
+                                //         target: wsClient
+                                //         function onAgentIdentityChanged() {
+                                //             dropdownSelectionSkill.syncFromWsClient()
+                                //         }
+                                //     }
+                                //     Connections {
+                                //         target: leftMidPanel
+                                //         function onActiveAgentIdChanged() {
+                                //             dropdownSelectionSkill.syncFromWsClient()
+                                //         }
+                                //     }
+                                //     Connections {
+                                //         target: wsClient
+                                //         function onPendingNewAgentSkillPolicyChanged() {
+                                //             dropdownSelectionSkill.syncFromWsClient()
+                                //         }
+                                //     }
+
+                                //     function isSelected(name) {
+                                //         for (var i = 0; i < selectedSkills.length; i++) {
+                                //             if (selectedSkills[i] === name) return true
+                                //         }
+                                //         return false
+                                //     }
+
+                                //     function toggleSkill(name) {
+                                //         var arr = selectedSkills.slice()
+                                //         var idx = -1
+                                //         for (var i = 0; i < arr.length; i++) {
+                                //             if (arr[i] === name) { idx = i; break }
+                                //         }
+                                //         if (idx >= 0) arr.splice(idx, 1)
+                                //         else arr.push(name)
+                                //         selectedSkills = arr
+
+                                //         if ((leftMidPanel.activeAgentId || "") === "") {
+                                //             wsClient.setPendingNewAgentSkillSelection(arr)
+                                //             return
+                                //         }
+                                //         var aid = leftMidPanel.activeAgentId
+                                //         wsClient.setAgentSkillEnabled(aid, name, idx < 0)
+                                //     }
+
+                                //     function filteredSkills() {
+                                //         var list = wsClient.skillList || []
+                                //         var enabledOnly = []
+                                //         for (var j = 0; j < list.length; j++) {
+                                //             if (list[j].enabled === false)
+                                //                 continue
+                                //             enabledOnly.push(list[j])
+                                //         }
+                                //         list = enabledOnly
+                                //         if (!searchText) return list
+                                //         var result = []
+                                //         for (var i = 0; i < list.length; i++) {
+                                //             var n = (list[i].name || list[i].skillKey || "").toLowerCase()
+                                //             if (n.indexOf(searchText.toLowerCase()) >= 0)
+                                //                 result.push(list[i])
+                                //         }
+                                //         return result
+                                //     }
+
+                                //     Rectangle {
+                                //         id: skillButton
+                                //         anchors.fill: parent
+                                //         radius: 8
+                                //         color: skillMouseArea.pressed ? "#14000000"
+                                //              : skillMouseArea.containsMouse ? "#0A000000"
+                                //              : "transparent"
+                                //         Behavior on color { ColorAnimation { duration: 100 } }
+
+                                //         Row {
+                                //             id: skillBtnRow
+                                //             spacing: 6
+                                //             anchors.verticalCenter: parent.verticalCenter
+                                //             anchors.left: parent.left
+                                //             anchors.leftMargin: 12
+
+                                //             Image {
+                                //                 source: "qrc:/images/category.png"
+                                //                 width: 16; height: 16
+                                //                 anchors.verticalCenter: parent.verticalCenter
+                                //                 fillMode: Image.PreserveAspectFit
+                                //                 sourceSize: Qt.size(16, 16)
+                                //             }
+                                //             // Text {
+                                //             //     text: "技能"
+                                //             //     font.pixelSize: 14
+                                //             //     font.family: "Alibaba PuHuiTi 3.0"
+                                //             //     color: "#D9000000"
+                                //             //     anchors.verticalCenter: parent.verticalCenter
+                                //             // }
+
+                                //             Text {
+                                //                 id: skillsText
+                                //                 text: "技能"
+                                //                 font.pixelSize: 14
+                                //                 font.family: "Alibaba PuHuiTi 3.0"
+                                //                 color: "#D9000000"
+                                //                 anchors.verticalCenter: parent.verticalCenter
+                                //                 visible: skillPopup.visible
+                                //             }
+                                //             Rectangle {
+                                //                 visible: dropdownSelectionSkill.selectedSkills.length > 0
+                                //                 width: badgeText.width + 8
+                                //                 height: 20
+                                //                 radius: 10
+                                //                 color: "#14000000"
+                                //                 anchors.verticalCenter: parent.verticalCenter
+
+                                //                 Text {
+                                //                     id: badgeText
+                                //                     text: dropdownSelectionSkill.selectedSkills.length
+                                //                     font.pixelSize: 12
+                                //                     font.family: "Alibaba PuHuiTi 3.0"
+                                //                     color: "#73000000"
+                                //                     anchors.centerIn: parent
+                                //                 }
+                                //             }
+                                //         }
+
+                                //         // Canvas {
+                                //         //     id: skillChevron
+                                //         //     width: 16; height: 16
+                                //         //     anchors.right: parent.right
+                                //         //     anchors.rightMargin: 12
+                                //         //     anchors.verticalCenter: parent.verticalCenter
+                                //         //     rotation: skillPopup.visible ? 180 : 0
+                                //         //     Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                //         //     onPaint: {
+                                //         //         var ctx = getContext("2d")
+                                //         //         ctx.reset()
+                                //         //         ctx.strokeStyle = "#80000000"
+                                //         //         ctx.lineWidth = 1.5
+                                //         //         ctx.lineCap = "round"
+                                //         //         ctx.lineJoin = "round"
+                                //         //         ctx.beginPath()
+                                //         //         ctx.moveTo(4, 6)
+                                //         //         ctx.lineTo(8, 10)
+                                //         //         ctx.lineTo(12, 6)
+                                //         //         ctx.stroke()
+                                //         //     }
+                                //         // }
+
+                                //         MouseArea {
+                                //             id: skillMouseArea
+                                //             anchors.fill: parent
+                                //             hoverEnabled: true
+                                //             cursorShape: Qt.PointingHandCursor
+                                //             onClicked: skillPopup.visible ? skillPopup.close() : skillPopup.open()
+                                //         }
+                                //     }
+
+                                //     Popup {
+                                //         id: skillPopup
+                                //         x: 0
+                                //         width: 220
+                                //         padding: 8
+                                //         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+
+                                //         function calcY() {
+                                //             var globalPos = dropdownSelectionSkill.mapToItem(null, 0, 0)
+                                //             var windowH = window.height
+                                //             var popupH = Math.min(contentItem.implicitHeight, 300 + 50) + padding * 2
+                                //             if (popupH < 60)
+                                //                 popupH = 360
+                                //             if (globalPos.y + dropdownSelectionSkill.height + 4 + popupH > windowH)
+                                //                 return -popupH - 4
+                                //             return dropdownSelectionSkill.height + 4
+                                //         }
+
+                                //         y: calcY()
+
+                                //         onAboutToShow: {
+                                //             skillSearchInput.text = ""
+                                //             y = calcY()
+                                //         }
+                                //         onOpened: Qt.callLater(function() { y = calcY() })
+
+                                //         background: Rectangle {
+                                //             radius: 8
+                                //             color: "#FFFFFF"
+                                //             border.color: "#14000000"
+                                //             border.width: 1
+                                //             layer.enabled: true
+                                //             layer.effect: DropShadow {
+                                //                 transparentBorder: true
+                                //                 radius: 12
+                                //                 samples: 25
+                                //                 color: "#1A000000"
+                                //             }
+                                //         }
+
+                                //         contentItem: Column {
+                                //             spacing: 6
+
+                                //             Row {
+                                //                 width: parent.width
+                                //                 spacing: 6
+
+                                //                 SingleLineTextInput {
+                                //                     id: skillSearchInput
+                                //                     inputWidth: parent.width - skillSettingPopBtn.width - 6
+                                //                     inputHeight: 32
+                                //                     inputRadius: 6
+                                //                     icon: "qrc:/images/search.png"
+                                //                     iconSize: 14
+                                //                     fontSize: 13
+                                //                     placeholderText: qsTr("搜索技能")
+                                //                     onTextChanged: dropdownSelectionSkill.searchText = text
+                                //                 }
+
+                                //                 ImageButton {
+                                //                     id: skillSettingPopBtn
+                                //                     source: "qrc:/images/setting.png"
+                                //                     anchors.verticalCenter: parent.verticalCenter
+                                //                     onClicked: {
+                                //                         skillPopup.close()
+                                //                         window.leftSelectedIndex = 3
+                                //                     }
+                                //                 }
+                                //             }
+
+                                //             Flickable {
+                                //                 id: skillListFlick
+                                //                 width: parent.width
+                                //                 height: Math.min(skillListCol.height, 300)
+                                //                 contentHeight: skillListCol.height
+                                //                 clip: true
+                                //                 boundsBehavior: Flickable.StopAtBounds
+
+                                //                 Column {
+                                //                     id: skillListCol
+                                //                     width: parent.width
+                                //                     spacing: 2
+
+                                //                     Repeater {
+                                //                         model: dropdownSelectionSkill.filteredSkills()
+
+                                //                         delegate: Rectangle {
+                                //                             width: skillPopup.width - 16
+                                //                             height: 36
+                                //                             radius: 6
+                                //                             color: skillItemMouse.pressed ? "#14000000"
+                                //                                  : skillItemMouse.containsMouse ? "#0A000000"
+                                //                                  : "transparent"
+                                //                             Behavior on color { ColorAnimation { duration: 100 } }
+
+                                //                             Row {
+                                //                                 spacing: 8
+                                //                                 anchors.verticalCenter: parent.verticalCenter
+                                //                                 anchors.left: parent.left
+                                //                                 anchors.leftMargin: 8
+
+                                //                                 Image {
+                                //                                     width: 20; height: 20
+                                //                                     visible: !modelData.emoji
+                                //                                     source: "qrc:/images/skillIcon.png"
+
+                                //                                     fillMode: Image.PreserveAspectFit
+                                //                                     anchors.verticalCenter: parent.verticalCenter
+                                //                                 }
+                                //                                 Label {
+                                //                                     width: 20
+                                //                                     height: 20
+                                //                                     visible: modelData.emoji
+                                //                                     font.pixelSize: 14
+                                //                                     text: modelData.emoji
+                                //                                     horizontalAlignment: Text.AlignHCenter
+                                //                                     verticalAlignment: Text.AlignVCenter
+                                //                                     anchors.verticalCenter: parent.verticalCenter
+                                //                                     font.family: "Alibaba PuHuiTi 3.0, Noto Color Emoji"
+                                //                                 }
+                                //                                 Text {
+                                //                                     id: skilPopNameLabel
+                                //                                     width: skillPopup.width - 16 - 16 - 20 - 16 - 16
+                                //                                     text: modelData.name || modelData.skillKey || ""
+                                //                                     font.pixelSize: 14
+                                //                                     font.family: "Alibaba PuHuiTi 3.0"
+                                //                                     color: "#D9000000"
+                                //                                     anchors.verticalCenter: parent.verticalCenter
+                                //                                     elide: Text.ElideRight
+                                //                                     ToolTip {
+                                //                                         visible: skillItemMouse.containsMouse && skilPopNameLabel.truncated
+                                //                                         text: skilPopNameLabel.text
+                                //                                         delay: 500
+                                //                                         x: 0
+                                //                                         y: skilPopNameLabel.height + 4
+                                //                                         width: Math.min(implicitContentWidth + 20, skillGrid.cellWidth - 40)
+                                //                                         background: Rectangle {
+                                //                                             color: "#A6000000"
+                                //                                             radius: 4
+                                //                                         }
+                                //                                         contentItem: Text {
+                                //                                             text: skilPopNameLabel.text
+                                //                                             font.pixelSize: 14
+                                //                                             color: "#FFFFFF"
+                                //                                             font.family: "Alibaba PuHuiTi 3.0"
+                                //                                             wrapMode: Text.Wrap
+                                //                                         }
+                                //                                     }
+                                //                                 }
+                                //                             }
+
+                                //                             Canvas {
+                                //                                 visible: dropdownSelectionSkill.isSelected(modelData.name || modelData.skillKey)
+                                //                                 width: 16; height: 16
+                                //                                 anchors.right: parent.right
+                                //                                 anchors.rightMargin: 8
+                                //                                 anchors.verticalCenter: parent.verticalCenter
+                                //                                 onVisibleChanged: requestPaint()
+                                //                                 onPaint: {
+                                //                                     var ctx = getContext("2d")
+                                //                                     ctx.reset()
+                                //                                     ctx.strokeStyle = "#006BFF"
+                                //                                     ctx.lineWidth = 2
+                                //                                     ctx.lineCap = "round"
+                                //                                     ctx.lineJoin = "round"
+                                //                                     ctx.beginPath()
+                                //                                     ctx.moveTo(3, 8)
+                                //                                     ctx.lineTo(6.5, 11.5)
+                                //                                     ctx.lineTo(13, 4.5)
+                                //                                     ctx.stroke()
+                                //                                 }
+                                //                             }
+
+                                //                             MouseArea {
+                                //                                 id: skillItemMouse
+                                //                                 anchors.fill: parent
+                                //                                 hoverEnabled: true
+                                //                                 cursorShape: Qt.PointingHandCursor
+                                //                                 onClicked: dropdownSelectionSkill.toggleSkill(modelData.name || modelData.skillKey)
+                                //                             }
+                                //                         }
+                                //                     }
+                                //                 }
+
+                                //                 ScrollBar.vertical: ScrollBar {
+                                //                     policy: skillListFlick.contentHeight > skillListFlick.height
+                                //                             ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                                //                     width: 4
+                                //                     contentItem: Rectangle {
+                                //                         implicitWidth: 4
+                                //                         radius: 2
+                                //                         color: "#40000000"
+                                //                     }
+                                //                 }
+                                //             }
+                                //         }
+
+                                //         enter: Transition {
+                                //             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                                //             NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                                //         }
+                                //         exit: Transition {
+                                //             NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                                //         }
+                                //     }
+                                // }
+                                // Item {
+                                //     id: dropdownSelectionTool
+                                //     visible: false
+                                //     anchors.verticalCenter: parent.verticalCenter
+                                //     width: 0
+                                //     height: 36
+
+                                //     property var selectedToolIds: []
+                                //     property string toolSearchText: ""
+
+                                //     function syncToolsFromWsClient() {
+                                //         var arr = []
+                                //         var list = wsClient.toolList
+                                //         var isExisting = leftMidPanel.activeAgentId !== ""
+                                //         if (isExisting) {
+                                //             for (var i = 0; i < list.length; i++) {
+                                //                 if (list[i].enabled)
+                                //                     arr.push(list[i].toolId)
+                                //             }
+                                //         } else {
+                                //             for (var i = 0; i < list.length; i++)
+                                //                 arr.push(list[i].toolId)
+                                //         }
+                                //         selectedToolIds = arr
+                                //     }
+
+                                //     Connections {
+                                //         target: wsClient
+                                //         function onToolListChanged() {
+                                //             dropdownSelectionTool.syncToolsFromWsClient()
+                                //         }
+                                //     }
+
+                                //     function isToolSelected(toolId) {
+                                //         for (var i = 0; i < selectedToolIds.length; i++) {
+                                //             if (selectedToolIds[i] === toolId) return true
+                                //         }
+                                //         return false
+                                //     }
+
+                                //     function toggleToolLocal(toolId) {
+                                //         var arr = selectedToolIds.slice()
+                                //         var idx = -1
+                                //         for (var i = 0; i < arr.length; i++) {
+                                //             if (arr[i] === toolId) { idx = i; break }
+                                //         }
+                                //         if (idx >= 0) arr.splice(idx, 1)
+                                //         else arr.push(toolId)
+                                //         selectedToolIds = arr
+                                //         applyToolSelectionImmediately()
+                                //     }
+
+                                //     /// 勾选/取消后立即同步到网关（或暂存到首个 agent 创建时写入）
+                                //     function applyToolSelectionImmediately() {
+                                //         var aid = leftMidPanel.activeAgentId
+                                //         if (aid === "") {
+                                //             wsClient.setPendingNewAgentToolSelection(selectedToolIds)
+                                //             return
+                                //         }
+                                //         wsClient.batchSetAgentToolsEnabled(aid, selectedToolIds)
+                                //     }
+
+                                //     function filteredTools() {
+                                //         var list = wsClient.toolList
+                                //         if (!toolSearchText) return list
+                                //         var result = []
+                                //         var q = toolSearchText.toLowerCase()
+                                //         for (var i = 0; i < list.length; i++) {
+                                //             var label = (list[i].label || list[i].toolId || "").toLowerCase()
+                                //             if (label.indexOf(q) >= 0)
+                                //                 result.push(list[i])
+                                //         }
+                                //         return result
+                                //     }
+
+                                //     Rectangle {
+                                //         id: toolButton2
+                                //         anchors.fill: parent
+                                //         radius: 8
+                                //         readonly property bool toolStripHover: toolIconMouse.containsMouse
+                                //         color: toolIconMouse.pressed ? "#14000000"
+                                //              : toolStripHover ? "#0A000000"
+                                //              : "transparent"
+                                //         Behavior on color { ColorAnimation { duration: 100 } }
+                                //         MouseArea {
+                                //             id: toolIconMouse
+                                //             anchors.fill: parent
+                                //             hoverEnabled: true
+                                //             cursorShape: Qt.PointingHandCursor
+                                //             onClicked: toolPopup2.visible ? toolPopup2.close() : toolPopup2.open()
+                                //         }
+                                //         Row {
+                                //             id: toolBtnRow2
+                                //             spacing: 6
+                                //             anchors.verticalCenter: parent.verticalCenter
+                                //             anchors.left: parent.left
+                                //             anchors.leftMargin: 12
+
+                                //             Item {
+                                //                 id: toolOpenZone
+                                //                 height: 36
+                                //                 width: toolOpenInnerRow.width
+
+                                //                 Row {
+                                //                     id: toolOpenInnerRow
+                                //                     anchors.verticalCenter: parent.verticalCenter
+                                //                     spacing: 6
+
+                                //                     Image {
+                                //                         id: toolMainIcon
+                                //                         source: "qrc:/images/tools.png"
+                                //                         width: 16
+                                //                         height: 16
+                                //                         anchors.verticalCenter: parent.verticalCenter
+                                //                         fillMode: Image.PreserveAspectFit
+                                //                         sourceSize: Qt.size(16, 16)
+                                //                     }
+
+                                //                     Text {
+                                //                         id: toolText
+                                //                         text: "tools"
+                                //                         font.pixelSize: 14
+                                //                         font.family: "Alibaba PuHuiTi 3.0"
+                                //                         color: "#D9000000"
+                                //                         anchors.verticalCenter: parent.verticalCenter
+                                //                         visible: toolPopup2.visible
+                                //                     }
+
+                                //                     Rectangle {
+                                //                         id: toolCountBadge
+                                //                         visible: dropdownSelectionTool.selectedToolIds.length > 0
+                                //                         width: toolBadgeText.width + 8
+                                //                         height: 20
+                                //                         radius: 10
+                                //                         color: "#14000000"
+                                //                         anchors.verticalCenter: parent.verticalCenter
+
+                                //                         Text {
+                                //                             id: toolBadgeText
+                                //                             text: dropdownSelectionTool.selectedToolIds.length
+                                //                             font.pixelSize: 12
+                                //                             font.family: "Alibaba PuHuiTi 3.0"
+                                //                             color: "#73000000"
+                                //                             anchors.centerIn: parent
+                                //                         }
+                                //                     }
+                                //                 }
+                                //             }
+
+                                //         }
+                                //     }
+
+                                //     Popup {
+                                //         id: toolPopup2
+                                //         x: 0
+                                //         width: 260
+                                //         padding: 8
+                                //         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+
+                                //         function calcY() {
+                                //             var globalPos = dropdownSelectionTool.mapToItem(null, 0, 0)
+                                //             var windowH = window.height
+                                //             var popupH = Math.min(contentItem.implicitHeight, 300 + 80) + padding * 2
+                                //             if (popupH < 60)
+                                //                 popupH = 400
+                                //             if (globalPos.y + dropdownSelectionTool.height + 4 + popupH > windowH)
+                                //                 return -popupH - 4
+                                //             return dropdownSelectionTool.height + 4
+                                //         }
+
+                                //         y: calcY()
+
+                                //         onAboutToShow: {
+                                //             dropdownSelectionTool.syncToolsFromWsClient()
+                                //             toolSearchInput2.text = ""
+                                //             y = calcY()
+                                //         }
+                                //         onOpened: Qt.callLater(function() { y = calcY() })
+
+                                //         background: Rectangle {
+                                //             color: "#FFFFFF"
+                                //             radius: 12
+                                //             border.color: "#14000000"
+                                //             border.width: 1
+                                //             layer.enabled: true
+                                //             layer.effect: DropShadow {
+                                //                 transparentBorder: true
+                                //                 radius: 12
+                                //                 samples: 25
+                                //                 color: "#1A000000"
+                                //             }
+                                //         }
+
+                                //         contentItem: Column {
+                                //             spacing: 6
+                                //             width: toolPopup2.width - 16
+                                //             Row {
+                                //                 width: parent.width
+                                //                 spacing: 6
+
+                                //                 SingleLineTextInput {
+                                //                     id: toolSearchInput2
+                                //                     inputWidth: parent.width - toolSettingBtn2.width - 6
+                                //                     inputHeight: 32
+                                //                     inputRadius: 6
+                                //                     icon: "qrc:/images/search.png"
+                                //                     iconSize: 14
+                                //                     fontSize: 13
+                                //                     placeholderText: qsTr("搜索工具")
+                                //                     onTextChanged: dropdownSelectionTool.toolSearchText = text
+                                //                 }
+
+                                //                 ImageButton {
+                                //                     id: toolSettingBtn2
+                                //                     source: "qrc:/images/setting.png"
+                                //                     anchors.verticalCenter: parent.verticalCenter
+                                //                     onClicked: {
+                                //                         toolPopup2.close()
+                                //                         window.leftSelectedIndex = 4
+                                //                     }
+                                //                 }
+                                //             }
+                                //             Flickable {
+                                //                 id: toolListFlick2
+                                //                 width: parent.width
+                                //                 height: Math.min(toolListCol2.height, 300)
+                                //                 contentHeight: toolListCol2.height
+                                //                 clip: true
+                                //                 boundsBehavior: Flickable.StopAtBounds
+
+                                //                 Column {
+                                //                     id: toolListCol2
+                                //                     width: parent.width
+                                //                     spacing: 2
+
+                                //                     Repeater {
+                                //                         model: dropdownSelectionTool.filteredTools()
+
+                                //                         delegate: Rectangle {
+                                //                             width: toolPopup2.width - 16
+                                //                             height: 36
+                                //                             radius: 6
+                                //                             color: toolItemMouse2.pressed ? "#14000000"
+                                //                                  : toolItemMouse2.containsMouse ? "#0A000000"
+                                //                                  : "transparent"
+                                //                             Behavior on color { ColorAnimation { duration: 100 } }
+
+                                //                             Row {
+                                //                                 spacing: 8
+                                //                                 anchors.verticalCenter: parent.verticalCenter
+                                //                                 anchors.left: parent.left
+                                //                                 anchors.leftMargin: 8
+
+                                //                                 Text {
+                                //                                     id: toolPopNameLabel
+                                //                                     width: toolPopup2.width - 16 - 16 - 16 - 16
+                                //                                     text: modelData.label || modelData.toolId || ""
+                                //                                     font.pixelSize: 14
+                                //                                     font.family: "Alibaba PuHuiTi 3.0"
+                                //                                     color: "#D9000000"
+                                //                                     anchors.verticalCenter: parent.verticalCenter
+                                //                                     elide: Text.ElideRight
+                                //                                     ToolTip {
+                                //                                         visible: toolItemMouse2.containsMouse && toolPopNameLabel.truncated
+                                //                                         text: toolPopNameLabel.text
+                                //                                         delay: 500
+                                //                                         x: 0
+                                //                                         y: toolPopNameLabel.height + 4
+                                //                                         background: Rectangle {
+                                //                                             color: "#A6000000"
+                                //                                             radius: 4
+                                //                                         }
+                                //                                         contentItem: Text {
+                                //                                             text: toolPopNameLabel.text
+                                //                                             font.pixelSize: 14
+                                //                                             color: "#FFFFFF"
+                                //                                             font.family: "Alibaba PuHuiTi 3.0"
+                                //                                             wrapMode: Text.Wrap
+                                //                                         }
+                                //                                     }
+                                //                                 }
+                                //                             }
+
+                                //                             Canvas {
+                                //                                 visible: dropdownSelectionTool.isToolSelected(modelData.toolId)
+                                //                                 width: 16; height: 16
+                                //                                 anchors.right: parent.right
+                                //                                 anchors.rightMargin: 8
+                                //                                 anchors.verticalCenter: parent.verticalCenter
+                                //                                 onVisibleChanged: requestPaint()
+                                //                                 onPaint: {
+                                //                                     var ctx = getContext("2d")
+                                //                                     ctx.reset()
+                                //                                     ctx.strokeStyle = "#006BFF"
+                                //                                     ctx.lineWidth = 2
+                                //                                     ctx.lineCap = "round"
+                                //                                     ctx.lineJoin = "round"
+                                //                                     ctx.beginPath()
+                                //                                     ctx.moveTo(3, 8)
+                                //                                     ctx.lineTo(6.5, 11.5)
+                                //                                     ctx.lineTo(13, 4.5)
+                                //                                     ctx.stroke()
+                                //                                 }
+                                //                             }
+
+                                //                             MouseArea {
+                                //                                 id: toolItemMouse2
+                                //                                 anchors.fill: parent
+                                //                                 hoverEnabled: true
+                                //                                 cursorShape: Qt.PointingHandCursor
+                                //                                 onClicked: dropdownSelectionTool.toggleToolLocal(modelData.toolId)
+                                //                             }
+                                //                         }
+                                //                     }
+                                //                 }
+
+                                //                 ScrollBar.vertical: ScrollBar {
+                                //                     policy: toolListFlick2.contentHeight > toolListFlick2.height
+                                //                             ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                                //                     width: 4
+                                //                     contentItem: Rectangle {
+                                //                         implicitWidth: 4
+                                //                         radius: 2
+                                //                         color: "#40000000"
+                                //                     }
+                                //                 }
+                                //             }
+
+                                //             Text {
+                                //                 visible: dropdownSelectionTool.filteredTools().length === 0
+                                //                 text: dropdownSelectionTool.toolSearchText
+                                //                       ? qsTr("未找到匹配的工具")
+                                //                       : qsTr("暂无可用工具")
+                                //                 font.pixelSize: 13
+                                //                 font.family: "Alibaba PuHuiTi 3.0"
+                                //                 color: "#80000000"
+                                //                 width: parent.width
+                                //                 horizontalAlignment: Text.AlignHCenter
+                                //                 topPadding: 16
+                                //                 bottomPadding: 16
+                                //             }
+                                //         }
+
+                                //         enter: Transition {
+                                //             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                                //             NumberAnimation { property: "scale"; from: 0.95; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                                //         }
+                                //         exit: Transition {
+                                //             NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 100 }
+                                //         }
+                                //     }
+                                // }
                                 Rectangle{
                                     width: Math.max(0, parent.width - workspaceDialogSlot.width
                                                     - dropdownSelectionModel.width
@@ -3998,6 +4010,8 @@ ApplicationWindow {
                                     spacing: 24
                                     ImageButton{
                                         id: uploadBtn
+                                        btnHeight: 20
+                                        btnWidth: 20
                                         source: "qrc:/images/paperclip.png"
                                         anchors.verticalCenter: parent.verticalCenter
                                         onClicked: uploadMenu.open()
@@ -4428,7 +4442,6 @@ ApplicationWindow {
                             width: 16; height: 16
                             anchors.verticalCenter: parent.verticalCenter
                             fillMode: Image.PreserveAspectFit
-                            sourceSize: Qt.size(16, 16)
                         }
                         Text {
                             text: dropdownSelectionWorkSpace.displayText
@@ -4862,7 +4875,8 @@ ApplicationWindow {
                                         ImageButton {
                                             id: cronMoreBtn
                                             source: "qrc:/images/more.png"
-                                            width: 20; height: 20
+                                            btnHeight: 20
+                                            btnWidth: 20
                                             anchors.verticalCenter: parent.verticalCenter
                                             onClicked: cronRowMoreMenu.open()
                                         }
@@ -5474,7 +5488,6 @@ ApplicationWindow {
                                                 width: 16
                                                 height: 16
                                                 source: modelData.icon
-                                                sourceSize: Qt.size(16, 16)
                                                 fillMode: Image.PreserveAspectFit
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
@@ -6807,7 +6820,7 @@ ApplicationWindow {
                                     height: parent.height
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     spacing: 6
-                                    Image { source: "qrc:/images/delete-white.png";anchors.verticalCenter: parent.verticalCenter}
+                                    Image { source: "qrc:/images/delete-white.png";anchors.verticalCenter: parent.verticalCenter;width:16;height:16}
                                     Label {
                                         text: qsTr("批量删除") + "(" + window.kbSelectedKeys.length + ")"
                                         color: "#FFFFFF"; font.pixelSize: 14; anchors.verticalCenter: parent.verticalCenter
@@ -6935,13 +6948,13 @@ ApplicationWindow {
                                                 x: parent.width * 0.64; width: 170
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 text: kbFileRow.pageController.formatAddedAt(modelData.addedAt)
-                                                font.pixelSize: 13; color: "#73000000"
+                                                font.pixelSize: 14; color: "#73000000"
                                             }
                                             Label {
                                                 x: parent.width * 0.83; width: 100
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 text: String(modelData.size || "--")
-                                                font.pixelSize: 13; color: "#73000000"
+                                                font.pixelSize: 14; color: "#73000000"
                                             }
                                             Rectangle {
                                                 id: kbDeleteButton
@@ -6953,7 +6966,7 @@ ApplicationWindow {
                                                 color: kbDeleteMouse.containsMouse ? "#0FFF3D40" : "transparent"
                                                 Image {
                                                     anchors.centerIn: parent
-                                                    width: 17; height: 17
+                                                    width: 16; height: 16
                                                     source: "qrc:/images/delete.png"
                                                 }
                                                 MouseArea {
@@ -7351,6 +7364,8 @@ ApplicationWindow {
                                             }
                                         }
                                         ImageButton {
+                                            btnHeight: 16
+                                            btnWidth: 16
                                             source: "qrc:/images/delete.png"
                                             anchors.verticalCenter: parent.verticalCenter
                                             visible: mcpCardHover.hovered
@@ -7445,6 +7460,8 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     ImageButton {
+                        btnHeight: 20
+                        btnWidth: 20
                         source: "qrc:/images/close.png"
                         anchors.right: parent.right
                         anchors.rightMargin: 24
@@ -7977,6 +7994,8 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     ImageButton {
+                        btnHeight: 20
+                        btnWidth: 20
                         source: "qrc:/images/close.png"
                         anchors.right: parent.right
                         anchors.rightMargin: 24
@@ -8259,6 +8278,8 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     ImageButton {
+                        btnHeight: 20
+                        btnWidth: 20
                         source: "qrc:/images/close.png"
                         anchors.right: parent.right
                         anchors.rightMargin: 24
@@ -8435,6 +8456,8 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     ImageButton {
+                        btnHeight: 20
+                        btnWidth: 20
                         source: "qrc:/images/close.png"
                         anchors.right: parent.right
                         anchors.rightMargin: 24
@@ -8937,6 +8960,8 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     ImageButton {
+                        btnHeight: 20
+                        btnWidth: 20
                         source: "qrc:/images/close.png"
                         anchors.right: parent.right
                         anchors.rightMargin: 24
@@ -8992,7 +9017,6 @@ ApplicationWindow {
                                         Image {
                                             width: 16; height: 16
                                             source: modelData.icon
-                                            sourceSize: Qt.size(16, 16)
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                         Label {
@@ -9075,7 +9099,6 @@ ApplicationWindow {
                                             Image {
                                                 width: 28; height: 28
                                                 source: "qrc:/images/ai.png"
-                                                sourceSize: Qt.size(28, 28)
                                                 fillMode: Image.PreserveAspectFit
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
@@ -9378,6 +9401,8 @@ ApplicationWindow {
                                             visible: memoryItemHover.hovered
 
                                             ImageButton {
+                                                btnHeight: 16
+                                                btnWidth: 16
                                                 source: "qrc:/images/edit.png"
                                                 onClicked: {
                                                     memoryEditPopup.editId = modelData.id || ""
@@ -9387,6 +9412,8 @@ ApplicationWindow {
                                                 }
                                             }
                                             ImageButton {
+                                                btnHeight: 16
+                                                btnWidth: 16
                                                 source: "qrc:/images/delete.png"
                                                 onClicked: {
                                                     wsClient.deleteMemoryEntry(modelData.id || "")
