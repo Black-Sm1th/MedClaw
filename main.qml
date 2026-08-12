@@ -15,10 +15,16 @@ ApplicationWindow {
     readonly property bool compactLayout: width < 1100
     readonly property bool sidebarExpanded: !sidebarCollapsed && !compactLayout
     readonly property int windowCornerRadius: 12
-    width: Math.min(1440, Math.max(640, availableScreenWidth - 48), availableScreenWidth)
-    height: Math.min(800, Math.max(480, availableScreenHeight - 80), availableScreenHeight)
     minimumWidth: Math.min(1024, Math.max(560, availableScreenWidth - 96), availableScreenWidth)
     minimumHeight: Math.min(640, Math.max(420, availableScreenHeight - 120), availableScreenHeight)
+    width: Math.min(availableScreenWidth,
+                    Math.max(minimumWidth,
+                             initialWindowWidth > 0 ? initialWindowWidth
+                                                    : Math.min(1440, Math.max(640, availableScreenWidth - 48))))
+    height: Math.min(availableScreenHeight,
+                     Math.max(minimumHeight,
+                              initialWindowHeight > 0 ? initialWindowHeight
+                                                     : Math.min(800, Math.max(480, availableScreenHeight - 80))))
     visible: true
     title: qsTr("Aether study")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
@@ -9803,5 +9809,85 @@ ApplicationWindow {
         visible: window.visibility !== Window.Maximized
                  && window.visibility !== Window.FullScreen
         z: 30000
+    }
+
+    // Frameless windows need explicit native resize handles.
+    Item {
+        anchors.fill: parent
+        visible: window.visibility === Window.Windowed
+        z: 30001
+
+        readonly property int edgeSize: 6
+        readonly property int cornerSize: 12
+
+        MouseArea {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: parent.edgeSize
+            cursorShape: Qt.SizeHorCursor
+            onPressed: window.startSystemResize(Qt.LeftEdge)
+        }
+        MouseArea {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: parent.edgeSize
+            cursorShape: Qt.SizeHorCursor
+            onPressed: window.startSystemResize(Qt.RightEdge)
+        }
+        MouseArea {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: parent.edgeSize
+            cursorShape: Qt.SizeVerCursor
+            onPressed: window.startSystemResize(Qt.TopEdge)
+        }
+        MouseArea {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: parent.edgeSize
+            cursorShape: Qt.SizeVerCursor
+            onPressed: window.startSystemResize(Qt.BottomEdge)
+        }
+
+        MouseArea {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            width: parent.cornerSize
+            height: parent.cornerSize
+            cursorShape: Qt.SizeFDiagCursor
+            z: 1
+            onPressed: window.startSystemResize(Qt.LeftEdge | Qt.TopEdge)
+        }
+        MouseArea {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            width: parent.cornerSize
+            height: parent.cornerSize
+            cursorShape: Qt.SizeBDiagCursor
+            z: 1
+            onPressed: window.startSystemResize(Qt.RightEdge | Qt.TopEdge)
+        }
+        MouseArea {
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            width: parent.cornerSize
+            height: parent.cornerSize
+            cursorShape: Qt.SizeBDiagCursor
+            z: 1
+            onPressed: window.startSystemResize(Qt.LeftEdge | Qt.BottomEdge)
+        }
+        MouseArea {
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            width: parent.cornerSize
+            height: parent.cornerSize
+            cursorShape: Qt.SizeFDiagCursor
+            z: 1
+            onPressed: window.startSystemResize(Qt.RightEdge | Qt.BottomEdge)
+        }
     }
 }

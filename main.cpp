@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QPainterPath>
 #include <QRegion>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QWindow>
@@ -186,6 +187,12 @@ int main(int argc, char *argv[])
     GET_SINGLETON(MainViewController)->init(&chatModel, &wsClient);
 
     QQmlApplicationEngine engine;
+    const QSize savedWindowSize = QSettings().value(
+        QStringLiteral("ui/windowSize")).toSize();
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("initialWindowWidth"), savedWindowSize.width());
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("initialWindowHeight"), savedWindowSize.height());
     engine.rootContext()->setContextProperty("$MainViewController", GET_SINGLETON(MainViewController));
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
@@ -205,13 +212,52 @@ int main(int argc, char *argv[])
         &engine,
         &QQmlApplicationEngine::objectCreated,
         &app,
-        [url](QObject *obj, const QUrl &objUrl) {
+        [url, testMode](QObject *obj, const QUrl &objUrl) {
             if (!obj && url == objUrl)
                 QCoreApplication::exit(-1);
 
             QWindow *window = qobject_cast<QWindow *>(obj);
             if (!window || url != objUrl)
                 return;
+
+            if (!testMode) {
+                auto *saveWindowSizeTimer = new QTimer(window);
+                saveWindowSizeTimer->setSingleShot(true);
+                saveWindowSizeTimer->setInterval(250);
+
+                const auto scheduleWindowSizeSave = [window, saveWindowSizeTimer]() {
+                    const Qt::WindowStates states = window->windowStates();
+                    if (states.testFlag(Qt::WindowMinimized)
+                        || states.testFlag(Qt::WindowMaximized)
+                        || states.testFlag(Qt::WindowFullScreen)) {
+                        return;
+                    }
+
+                    window->setProperty("normalWindowSize", window->size());
+                    saveWindowSizeTimer->start();
+                };
+                QObject::connect(window, &QWindow::widthChanged, window,
+                                 scheduleWindowSizeSave);
+                QObject::connect(window, &QWindow::heightChanged, window,
+                                 scheduleWindowSizeSave);
+                QObject::connect(saveWindowSizeTimer, &QTimer::timeout, window,
+                                 [window]() {
+                    const QSize size = window->property("normalWindowSize").toSize();
+                    if (size.isValid())
+                        QSettings().setValue(QStringLiteral("ui/windowSize"), size);
+                });
+                window->setProperty("normalWindowSize", window->size());
+
+                QObject::connect(qApp, &QCoreApplication::aboutToQuit, window,
+                                 [window]() {
+                    const QSize size = window->property("normalWindowSize").toSize();
+                    if (!size.isValid())
+                        return;
+                    QSettings settings;
+                    settings.setValue(QStringLiteral("ui/windowSize"), size);
+                    settings.sync();
+                });
+            }
 
             QObject::connect(window, &QWindow::widthChanged, window,
                              [window]() { updateRoundedWindowMask(window); });

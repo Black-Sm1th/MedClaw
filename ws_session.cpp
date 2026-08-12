@@ -205,6 +205,8 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
         const QString agentId = s.value(QStringLiteral("agentId")).toString();
         const QString status = s.value(QStringLiteral("status")).toString();
         const QString state = s.value(QStringLiteral("state")).toString();
+        const QString sessionOutputDir =
+            s.value(QStringLiteral("sessionOutputDir")).toString();
 
         QVariantMap entry;
         entry[QStringLiteral("sessionKey")]   = key;
@@ -233,6 +235,8 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
             entry[QStringLiteral("status")] = status;
         if (!state.isEmpty())
             entry[QStringLiteral("state")] = state;
+        if (!sessionOutputDir.isEmpty())
+            entry[QStringLiteral("sessionOutputDir")] = sessionOutputDir;
         for (const QString &field : {QStringLiteral("isRunning"),
                                      QStringLiteral("running"),
                                      QStringLiteral("active"),

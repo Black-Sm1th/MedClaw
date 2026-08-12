@@ -1876,20 +1876,13 @@ QString GatewayClient::prepareCronWorkspace(const QString &workspace)
 
 QString GatewayClient::buildCollaborationPrompt(
     const QString &userMessage,
-    const QStringList &participantAgentIds,
-    const QString &businessWorkspace) const
+    const QStringList &participantAgentIds) const
 {
     QStringList lines;
     if (!participantAgentIds.isEmpty()) {
         lines << QStringLiteral("\u4f60\u662f\u8fd9\u4e2a\u534f\u4f5c\u4efb\u52a1\u7684\u4e3b\u63a7 agent\u3002");
         lines << QStringLiteral("\u8bf7\u5148\u7406\u89e3\u7528\u6237\u4efb\u52a1\uff0c\u7136\u540e\u4f7f\u7528 sessions_spawn \u4e3a\u4e0b\u5217\u534f\u4f5c agent \u521b\u5efa\u5b50\u4efb\u52a1\u3002");
         lines << QStringLiteral("sessions_spawn \u53c2\u6570\u5efa\u8bae\uff1aruntime=\"subagent\", mode=\"session\", cleanup=\"keep\", agentId=\u76ee\u6807 agent id, task=\u5206\u914d\u7ed9\u8be5 agent \u7684\u5177\u4f53\u4efb\u52a1\u3002");
-    }
-    const QString normalizedBusinessWorkspace = normalizeWorkspacePath(businessWorkspace);
-    if (!normalizedBusinessWorkspace.isEmpty()) {
-        lines << QStringLiteral("本任务的工作目录（也是输出文件目录）：%1")
-                     .arg(normalizedBusinessWorkspace);
-        lines << QStringLiteral("如需创建、修改或保存文件，必须写入该目录或其子目录；不要写入 agent 身份 workspace、程序运行目录或其他目录。");
     }
     if (!participantAgentIds.isEmpty()) {
         lines << QStringLiteral("\u8bf7\u7b49\u5f85\u6240\u6709\u5b50 agent \u5b8c\u6210\u540e\uff0c\u7efc\u5408\u4ed6\u4eec\u7684\u7ed3\u679c\u7ed9\u51fa\u6700\u7ec8\u56de\u590d\u3002");
@@ -2082,15 +2075,15 @@ void GatewayClient::sendPendingCollaborationChatNow()
     const QString title = taskTitleFromFirstMessage(m_pendingCollabUserMessage);
     const QString businessWorkspace = m_pendingCollabBusinessWorkspace;
     const QString msg = buildCollaborationPrompt(
-        m_pendingCollabUserMessage, m_pendingCollabParticipantAgentIds,
-        businessWorkspace);
+        m_pendingCollabUserMessage, m_pendingCollabParticipantAgentIds);
     clearPendingCollaborationSend();
 
     if (m_localOnlyTaskSessionKeys.contains(controllerKey)) {
+        m_pendingCreatedSessionMessages.insert(controllerKey, msg);
         const QString reqId = sendRequest(
             QStringLiteral("sessions.create"),
             buildSessionsCreateParams(controllerKey, controllerId,
-                                      title, msg, m_pendingSessionModelId));
+                                      title, QString(), m_pendingSessionModelId));
         m_pendingSessionsCreateReqSession.insert(reqId, controllerKey);
         if (!m_pendingSessionModelId.isEmpty()) {
             m_pendingSessionModelId.clear();
@@ -2099,11 +2092,7 @@ void GatewayClient::sendPendingCollaborationChatNow()
         return;
     }
 
-    const QString reqId = sendRequest(
-        QStringLiteral("chat.send"),
-        m_session.buildChatSendParams(msg, controllerKey));
-    m_chatSendReqSession.insert(reqId, controllerKey);
-    m_chatSendReqMessage.insert(reqId, msg);
+    patchSessionOutputDirBeforeSend(controllerKey, businessWorkspace, msg);
 }
 
 QJsonObject GatewayClient::buildSessionsCreateParams(
@@ -2128,6 +2117,46 @@ QJsonObject GatewayClient::buildSessionsCreateParams(
     if (!modelRef.isEmpty())
         params[QStringLiteral("model")] = modelRef;
     return params;
+}
+
+void GatewayClient::patchSessionOutputDirBeforeSend(
+    const QString &sessionKey,
+    const QString &sessionOutputDir,
+    const QString &message)
+{
+    const QString key = sessionKey.trimmed();
+    const QString outputDir = normalizeWorkspacePath(sessionOutputDir);
+    if (key.isEmpty())
+        return;
+    if (outputDir.isEmpty()) {
+        sendChatMessageNow(key, message);
+        return;
+    }
+
+    QJsonObject params;
+    params[QStringLiteral("key")] = key;
+    params[QStringLiteral("sessionOutputDir")] = outputDir;
+    const QString reqId = sendRequest(QStringLiteral("sessions.patch"), params);
+
+    PendingSessionOutputPatch pending;
+    pending.sessionKey = key;
+    pending.message = message;
+    m_pendingSessionOutputPatches.insert(reqId, pending);
+    qDebug().noquote() << "[Gateway] sessions.patch sessionOutputDir:"
+                       << outputDir << "session:" << key;
+}
+
+void GatewayClient::sendChatMessageNow(const QString &sessionKey,
+                                       const QString &message)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || message.trimmed().isEmpty())
+        return;
+    const QString reqId = sendRequest(
+        QStringLiteral("chat.send"),
+        m_session.buildChatSendParams(message, key));
+    m_chatSendReqSession.insert(reqId, key);
+    m_chatSendReqMessage.insert(reqId, message);
 }
 
 QString GatewayClient::resolveChatSessionKeyForAgentId(const QString &agentId) const
@@ -2370,6 +2399,8 @@ void GatewayClient::connectToServer(const QString &url)
 
     m_challengeNonce.clear();
     m_pendingRequests.clear();
+    m_pendingCreatedSessionMessages.clear();
+    m_pendingSessionOutputPatches.clear();
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
     m_pendingBootstrapChatMessage.clear();
@@ -2469,6 +2500,8 @@ void GatewayClient::onDisconnected()
 
     m_session.setStreaming(false);
     m_pendingRequests.clear();
+    m_pendingCreatedSessionMessages.clear();
+    m_pendingSessionOutputPatches.clear();
     if (m_toolInstallBusy) {
         m_pendingToolInstallConfigGetReqId.clear();
         m_pendingToolInstallMutationReqId.clear();
@@ -2986,6 +3019,15 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             }
         }
 
+        const bool isSessionOutputDirPatch =
+            method == QLatin1String("sessions.patch")
+            && m_pendingSessionOutputPatches.contains(id);
+        if (isSessionOutputDirPatch) {
+            const PendingSessionOutputPatch pending =
+                m_pendingSessionOutputPatches.take(id);
+            setTaskSessionRunning(pending.sessionKey, false);
+        }
+
         m_sidebarTitleHistReqAgent.remove(id);
         m_sidebarTitleHistReqBatch.remove(id);
         m_sessionTitleHistReqSession.remove(id);
@@ -3023,6 +3065,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         // sessions.patch 失败 → 清空"用户意图"，让下拉框回退到 currentModel
         // 显示真实的服务端状态，避免用户误以为切换成功
         if (method == QLatin1String("sessions.patch")
+            && !isSessionOutputDirPatch
             && !m_pendingSessionModelId.isEmpty()) {
             m_pendingSessionModelId.clear();
             emit pendingSessionModelIdChanged();
@@ -3058,6 +3101,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (method == QLatin1String("sessions.create")) {
             const QString key = m_pendingSessionsCreateReqSession.take(id);
             if (!key.isEmpty()) {
+                m_pendingCreatedSessionMessages.remove(key);
                 setTaskSessionRunning(key, false);
                 m_localOnlyTaskSessionKeys.remove(key);
                 softDeleteTaskSessionLocal(key);
@@ -3140,6 +3184,13 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (!key.isEmpty()) {
             m_localOnlyTaskSessionKeys.remove(key);
             touchTaskSessionLocal(key);
+            const QString pendingMessage =
+                m_pendingCreatedSessionMessages.take(key);
+            if (!pendingMessage.isEmpty()) {
+                const QString outputDir = taskSessionInfoByKey(key)
+                    .value(QStringLiteral("workspace")).toString();
+                patchSessionOutputDirBeforeSend(key, outputDir, pendingMessage);
+            }
         }
         refreshSessions();
         emit collaborationParticipantsChanged();
@@ -3604,6 +3655,15 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
     // sessions.patch 响应 → 更新当前会话模型信息
     if (method == QLatin1String("sessions.patch")) {
+        const auto outputPatchIt = m_pendingSessionOutputPatches.constFind(id);
+        if (outputPatchIt != m_pendingSessionOutputPatches.cend()) {
+            const PendingSessionOutputPatch pending = outputPatchIt.value();
+            m_pendingSessionOutputPatches.remove(id);
+            qDebug().noquote() << "[Gateway] sessions.patch sessionOutputDir ok, session:"
+                               << pending.sessionKey;
+            sendChatMessageNow(pending.sessionKey, pending.message);
+            return;
+        }
         // 服务端可能返回 modelOverride/providerOverride（用户意图，下次发消息会用）
         // 以及 model/modelProvider（上一次实际运行时模型）。
         // 选择策略：优先用 override，没有则用 runtime，确保 UI 能立刻反映刚刚的切换。
@@ -5125,12 +5185,12 @@ void GatewayClient::sendChatMessage(const QString &message,
                                               businessWorkspace))
             return;
 
-        outboundMessage = buildCollaborationPrompt(trimmed, participantIds,
-                                                   businessWorkspace);
+        outboundMessage = buildCollaborationPrompt(trimmed, participantIds);
+        m_pendingCreatedSessionMessages.insert(controllerKey, outboundMessage);
         const QString reqId = sendRequest(
             QStringLiteral("sessions.create"),
             buildSessionsCreateParams(controllerKey, controllerAgentId,
-                                      title, outboundMessage,
+                                      title, QString(),
                                       m_pendingSessionModelId));
         m_pendingSessionsCreateReqSession.insert(reqId, controllerKey);
         if (!m_pendingSessionModelId.isEmpty()) {
@@ -5147,8 +5207,13 @@ void GatewayClient::sendChatMessage(const QString &message,
         if (controllerId.isEmpty())
             controllerId = agentIdFromSessionKey(controllerKey);
         const QVariantMap taskRow = taskSessionInfoByKey(controllerKey);
-        const QString businessWorkspace =
-            normalizeWorkspacePath(taskRow.value(QStringLiteral("workspace")).toString());
+        QString businessWorkspace = normalizeWorkspacePath(
+            taskRow.value(QStringLiteral("workspace")).toString());
+        if (businessWorkspace.isEmpty()) {
+            businessWorkspace = normalizeWorkspacePath(
+                sessionInfoByKey(controllerKey)
+                    .value(QStringLiteral("sessionOutputDir")).toString());
+        }
         m_pendingCollaborationAgentIds.clear();
         emit collaborationParticipantsChanged();
         if (!participantIds.isEmpty()
@@ -5156,15 +5221,11 @@ void GatewayClient::sendChatMessage(const QString &message,
                                                  participantIds, trimmed,
                                                  businessWorkspace))
             return;
-        outboundMessage = buildCollaborationPrompt(trimmed, participantIds,
-                                                   businessWorkspace);
+        outboundMessage = buildCollaborationPrompt(trimmed, participantIds);
+        patchSessionOutputDirBeforeSend(controllerKey, businessWorkspace,
+                                        outboundMessage);
+        return;
     }
-
-    const QString reqId = sendRequest(
-        QStringLiteral("chat.send"),
-        m_session.buildChatSendParams(outboundMessage, activeKey));
-    m_chatSendReqSession.insert(reqId, activeKey);
-    m_chatSendReqMessage.insert(reqId, trimmed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

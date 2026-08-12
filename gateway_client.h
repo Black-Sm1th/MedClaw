@@ -740,8 +740,7 @@ private:
     QString normalizeWorkspacePath(const QString &workspace) const;
     QString prepareCronWorkspace(const QString &workspace);
     QString buildCollaborationPrompt(const QString &userMessage,
-                                      const QStringList &participantAgentIds,
-                                      const QString &businessWorkspace = QString()) const;
+                                      const QStringList &participantAgentIds) const;
     QJsonObject buildConfigWithSubagentAllowAgents(const QJsonObject &fullConfig,
                                                    const QString &controllerAgentId,
                                                    const QStringList &participantAgentIds,
@@ -763,6 +762,11 @@ private:
                                            const QString &label,
                                            const QString &task = QString(),
                                            const QString &model = QString()) const;
+    void patchSessionOutputDirBeforeSend(const QString &sessionKey,
+                                         const QString &sessionOutputDir,
+                                         const QString &message);
+    void sendChatMessageNow(const QString &sessionKey,
+                            const QString &message);
 
     bool initTaskSessionDb();
     void loadTaskSessionListFromDb();
@@ -905,6 +909,12 @@ private:
     QSet<QString>    m_collabAllowConfigSetReqIds;
     QSet<QString>    m_localOnlyTaskSessionKeys; ///< 已入本地库但尚未 sessions.create 的任务
     QMap<QString, QString> m_pendingSessionsCreateReqSession; ///< reqId -> sessionKey
+    QMap<QString, QString> m_pendingCreatedSessionMessages; ///< sessionKey -> create 后待发送消息
+    struct PendingSessionOutputPatch {
+        QString sessionKey;
+        QString message;
+    };
+    QMap<QString, PendingSessionOutputPatch> m_pendingSessionOutputPatches; ///< patch reqId -> 后续发送
 
     QString m_pendingCreateName;       ///< agents.create 待确认名称
     QString m_pendingCreateWorkspace;  ///< agents.create 使用的 workspace 路径
