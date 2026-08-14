@@ -2169,96 +2169,109 @@ ApplicationWindow {
                                                              || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
 
                 property int selectedShortcutGroup: -1
+                property int selectedShortcutTab: 0
+                property int shortcutCardOffset: 0
+                readonly property int shortcutCardsPerPage: 4
                 readonly property var shortcutGroups: [
                     {
-                        title: "日常办公",
+                        title: "医疗科研",
                         icon: "qrc:/images/shortcut/1.png",
-                        color: "#0F006BFF",
-                        cards: [
+                        selectedIcon: "qrc:/images/shortcut/1-selected.png",
+                        tabs: [
                             {
-                                title: "文档处理",
-                                detail: "请帮我梳理这份文档的结构，提炼核心观点，并生成一份清晰的摘要。",
-                                icon: "qrc:/images/shortcut/1-1.png",
-                                image: "qrc:/images/shortcut/1-1-large.png",
-                                prompt: "请帮我梳理这份文档的结构，提炼核心观点，并生成一份清晰的摘要。"
+                                title: "医疗科研基础",
+                                cards: [
+                                    { title: "智能文献综述", detail: "快速构建研究方向的系统性文献综述", image: "qrc:/images/shortcut/1-1-1.png", prompt: "帮我在[HFpEF的SGLT2i治疗]领域做文献综述：检索近3年RCT和Meta分析，按PRISMA流程图筛选，输出主题聚类和综述初稿" },
+                                    { title: "多组学数据分析", detail: "单细胞/转录组/蛋白组等多组学整合分析", image: "qrc:/images/shortcut/1-1-2.png", prompt: "帮我分析这批scRNA-seq数据：质控→降维→聚类→差异分析→富集→多组学整合，输出UMAP图、火山图、通路富集气泡图" },
+                                    { title: "临床试验方案设计", detail: "辅助设计RCT方案的统计学和操作细节", image: "qrc:/images/shortcut/1-1-3.png", prompt: "帮我设计一个RCT方案：[研究问题]，计算样本量(α=0.05, power=0.8, 效应量=0.3)，生成随机分组表和SAP框架" },
+                                    { title: "系统评价与Meta分析", detail: "规范化执行Meta分析完整流程", image: "qrc:/images/shortcut/1-1-4.png", prompt: "帮我做[两种治疗方案]疗效对比的Meta分析：检索→筛选→森林图/漏斗图/亚组分析/敏感性分析，输出PRISMA流程图和GRADE证据等级" },
+                                    { title: "科研基金标书撰写", detail: "辅助撰写国自然/省自然基金申请书", image: "qrc:/images/shortcut/1-1-5.png", prompt: "帮我写国自然标书：[研究方向]，基于前期基础生成立项依据(含文献引用)、研究方案框架、技术路线图、可行性分析" },
+                                    { title: "文献检索", detail: "围绕我的研究主题检索高质量文献，归纳研究进展、争议与空白。", image: "qrc:/images/shortcut/1-1-6.png", prompt: "围绕我的研究主题检索高质量文献，归纳研究进展、争议与空白。" },
+                                    { title: "论文撰写", detail: "根据研究材料协助撰写论文，先生成符合学术规范的详细提纲。", image: "qrc:/images/shortcut/1-1-7.png", prompt: "根据研究材料协助撰写论文，先生成符合学术规范的详细提纲。" },
+                                    { title: "生信分析", detail: "请根据我的生物信息数据和研究目标，制定完整、可复现的分析方案。", image: "qrc:/images/shortcut/1-1-8.png", prompt: "请根据我的生物信息数据和研究目标，制定完整、可复现的分析方案。" }
+                                ]
                             },
                             {
-                                title: "数据分析和可视化",
-                                detail: "请分析我上传的数据，识别关键趋势，并选择合适的图表完成可视化。",
-                                icon: "qrc:/images/shortcut/1-2.png",
-                                image: "qrc:/images/shortcut/1-2-large.png",
-                                prompt: "请分析我上传的数据，识别关键趋势，并选择合适的图表完成可视化。"
+                                title: "公共卫生与流行病学",
+                                cards: [
+                                    { title: "传染病暴发调查", detail: "聚集性病例的流行病学调查全流程", image: "qrc:/images/shortcut/1-2-1.png", prompt: "某学校出现聚集性发热病例，请帮我：设计个案调查表、绘制流行曲线判断传播模式、计算罹患率和RR值、提出防控措施和溯源假设" },
+                                    { title: "疾病负担估算", detail: "利用DALY/YLD/YLL估算疾病负担", image: "qrc:/images/shortcut/1-2-2.png", prompt: "基于GBD方法和本地数据，估算[疾病名称]在本地DALY、YLL和YLD，对比省级和全国平均水平，识别主要风险因素贡献排序" },
+                                    { title: "疫苗犹豫分析", detail: "分析接种犹豫原因并制定干预策略", image: "qrc:/images/shortcut/1-2-3.png", prompt: "某疫苗接种率持续偏低，请按3C模型(Confidence/Complacency/Convenience)分析原因，检索近3年疫苗犹豫文献，设计针对性健康教育材料和动员策略" },
+                                    { title: "健康城市评估", detail: "多维度评价健康城市建设情况", image: "qrc:/images/shortcut/1-2-4.png", prompt: "按WHO健康城市指标体系和全国评价指标体系，从环境/社会/服务/人群健康4维度评估[城市名]健康城市建设，生成评估报告和改进优先级矩阵" },
+                                    { title: "突发公卫事件桌面推演", detail: "模拟突发事件应急响应推演", image: "qrc:/images/shortcut/1-2-5.png", prompt: "以[新型呼吸道传染病输入]为背景设计桌面推演：设定演练场景和时间线、设计指挥部各组职责和任务、生成情景注入节点和讨论问题、输出演练总结模板" }
+                                ]
+                            },
+                            {
+                                title: "医院药事管理与临床药学",
+                                cards: [
+                                    { title: "个体化给药方案设计", detail: "基于TDM结果和患者特征设计剂量", image: "qrc:/images/shortcut/1-3-1.png", prompt: "患者男性65岁，CrCl 35mL/min，万古霉素谷浓度8mg/L(目标15-20)，请结合PK/PD原理给出剂量调整方案，附带Bayesian估算和后续监测计划" },
+                                    { title: "药物综合评价", detail: "按《药品临床综合评价管理指南》评估", image: "qrc:/images/shortcut/1-3-2.png", prompt: "请对SGLT2i类药物进行综合评价：安全性/有效性/经济性/创新性/适宜性/可及性6维度，生成结构化评价报告和推荐意见" },
+                                    { title: "抗菌药物AMS方案", detail: "制定医院AMS体系建设和改进方案", image: "qrc:/images/shortcut/1-3-3.png", prompt: "我院碳青霉烯使用强度持续偏高，请做AMS现状诊断，设计干预措施包(处方权限+预授权+反馈+教育)，制定效果评价指标和PDCA循环计划" },
+                                    { title: "处方点评与合理用药分析", detail: "指定范围处方专项点评", image: "qrc:/images/shortcut/1-3-4.png", prompt: "帮我点评上月所有门诊PPI使用合理性：提取适应症/用法用量/疗程/联合用药信息，按指南标准判断合理性，生成处方点评报告和改进建议" },
+                                    { title: "医药政策影响量化分析", detail: "评估集采/国谈/DRG对药事管理影响", image: "qrc:/images/shortcut/1-3-5.png", prompt: "最新一批国采执行后，基于我院过去12个月用药数据，预测费用影响、用药结构变化、可替代品种推荐、对科室药占比影响和过渡期管理建议" }
+                                ]
                             }
                         ]
                     },
                     {
-                        title: "医疗科研",
+                        title: "日常办公",
                         icon: "qrc:/images/shortcut/2.png",
-                        color: "#0F56CA00",
+                        selectedIcon: "qrc:/images/shortcut/2-selected.png",
                         cards: [
-                            {
-                                title: "文献检索",
-                                detail: "围绕我的研究主题检索高质量文献，归纳研究进展、争议与空白。",
-                                icon: "qrc:/images/shortcut/2-1.png",
-                                image: "qrc:/images/shortcut/2-1-large.png",
-                                prompt: "围绕我的研究主题检索高质量文献，归纳研究进展、争议与空白。"
-                            },
-                            {
-                                title: "论文撰写",
-                                detail: "根据研究材料协助撰写论文，先生成符合学术规范的详细提纲。",
-                                icon: "qrc:/images/shortcut/2-2.png",
-                                image: "qrc:/images/shortcut/2-2-large.png",
-                                prompt: "根据研究材料协助撰写论文，先生成符合学术规范的详细提纲。"
-                            },
-                            {
-                                title: "生信分析",
-                                detail: "请根据我的生物信息数据和研究目标，制定完整、可复现的分析方案。",
-                                icon: "qrc:/images/shortcut/2-3.png",
-                                image: "qrc:/images/shortcut/2-3-large.png",
-                                prompt: "请根据我的生物信息数据和研究目标，制定完整、可复现的分析方案。"
-                            }
+                            { title: "文档处理", detail: "请帮我梳理这份文档的结构，提炼核心观点，并生成一份清晰的摘要。", image: "qrc:/images/shortcut/2-1.png", prompt: "请帮我梳理这份文档的结构，提炼核心观点，并生成一份清晰的摘要。" },
+                            { title: "数据分析和可视化", detail: "请分析我上传的数据，识别关键趋势，并选择合适的图表完成可视化。", image: "qrc:/images/shortcut/2-2.png", prompt: "请分析我上传的数据，识别关键趋势，并选择合适的图表完成可视化。" }
                         ]
                     },
                     {
                         title: "政务助手",
                         icon: "qrc:/images/shortcut/3.png",
-                        color: "#0FFF8D2F",
+                        selectedIcon: "qrc:/images/shortcut/3-selected.png",
                         cards: [
-                            {
-                                title: "政策匹配",
-                                detail: "请根据个人基本情况，匹配可能享受的相关政策与申报条件（如残疾）。",
-                                icon: "qrc:/images/shortcut/3-1.png",
-                                image: "qrc:/images/shortcut/3-1-large.png",
-                                prompt: "用户信息摘要：\n项目        内容\n家庭类型：非低保收入家庭\n子女情况：有子女\n户籍情况：本镇户籍（松江区）\n年龄：69周岁\n残疾情况：下肢残疾，二级残疾证\n交通工具：有电动残疾车\n疾病情况：患有尿毒症\n\n1、从知识库中检索：残疾人政策（含干扰项）政策\n2、根据用户信息，自动匹配可以享受的政策，并以EXCEL格式直接呈现，不需要EXCEL文件；\n3、用角标的形式标注引用政策来源，点击角标可以自动在右侧查看政策对应原文；\n4、结果输出：根据知识库的：“政策匹配模板”政策匹配模板输出结果"
-                            },
-                            {
-                                title: "12345分析月报",
-                                detail: "请根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件。",
-                                icon: "qrc:/images/shortcut/3-2.png",
-                                image: "qrc:/images/shortcut/3-2-large.png",
-                                prompt: "1、分析原始数据；\n2、根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件；\n3、检查报告格式：专报要保留模板的格式。包括红头文件格式，字体大小，行间距等全文本格式"
-                            }
+                            { title: "智能公文起草", detail: "起草通知/通报/报告/请示/批复/函/纪要", image: "qrc:/images/shortcut/3-1.png", prompt: "帮我起草一份关于[事项]的通知：按GB/T 9704-2012版式，包含发文机关/文号/标题/主送/正文(缘由+事项+要求)/落款，输出规范.docx" },
+                            { title: "舆情监测与研判", detail: "重大事件/政策发布后舆情分析", image: "qrc:/images/shortcut/3-2.png", prompt: "帮我看下[XXX事件]现在的舆情怎么样：多平台舆情趋势/热词/情感倾向/意见领袖观点，生成舆情分析报告和回应口径建议" },
+                            { title: "政策文件智能解读", detail: "对上级政策文件进行结构化解读", image: "qrc:/images/shortcut/3-3.png", prompt: "帮我解读国务院刚出的[文件名]：按出台背景/核心要点/适用范围/影响分析/执行口径五维度输出解读报告，对照本地现行政策标注需调整条款" },
+                            { title: "会议全流程管理", detail: "政府会议从筹备到纪要整理", image: "qrc:/images/shortcut/3-4.png", prompt: "帮我准备[常务会议]：收集各部门上会议题→材料完整性预审→生成议题汇总表→会后整理会议纪要(决议事项+责任部门+完成时限)→生成督查清单.docx" },
+                            { title: "综合研判决策辅助", detail: "复杂议题多角度研判支持领导决策", image: "qrc:/images/shortcut/3-5.png", prompt: "帮我就[XXX问题]做综合研判：陈述已确认事实、各方观点和立场、风险评估(政治/经济/社会/法律)、提供2-3套方案比选(含利弊+推荐意见)" },
+                            { title: "政策匹配", detail: "请根据个人基本情况，匹配可能享受的相关政策与申报条件（如残疾）。", image: "qrc:/images/shortcut/3-6.png", prompt: "用户信息摘要：\n项目        内容\n家庭类型：非低保收入家庭\n子女情况：有子女\n户籍情况：本镇户籍（松江区）\n年龄：69周岁\n残疾情况：下肢残疾，二级残疾证\n交通工具：有电动残疾车\n疾病情况：患有尿毒症\n\n1、从知识库中检索：残疾人政策（含干扰项）政策\n2、根据用户信息，自动匹配可以享受的政策，并以EXCEL格式直接呈现，不需要EXCEL文件；\n3、用角标的形式标注引用政策来源，点击角标可以自动在右侧查看政策对应原文；\n4、结果输出：根据知识库的：“政策匹配模板”政策匹配模板输出结果" },
+                            { title: "12345分析月报", detail: "请根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件。", image: "qrc:/images/shortcut/3-7.png", prompt: "1、分析原始数据；\n2、根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件；\n3、检查报告格式：专报要保留模板的格式。包括红头文件格式，字体大小、行间距等全文本格式" }
                         ]
                     },
                     {
-                        title: "行业研究",
+                        title: "情报研究",
                         icon: "qrc:/images/shortcut/4.png",
-                        color: "#0FFF3D40",
+                        selectedIcon: "qrc:/images/shortcut/4-selected.png",
                         cards: [
-                            {
-                                title: "行业研究报告生成",
-                                detail: "深度全景式研究，一次性覆盖行业全貌。生成多维度对比 HTML 行业研究报告。",
-                                icon: "qrc:/images/shortcut/4-1.png",
-                                image: "qrc:/images/shortcut/4-1-large.png",
-                                prompt: "【行业名称】：[如：新能源汽车 / 集成电路 / 生物医药]\n【时间范围】：[近3年 / 2022-2025年 / 最新]\n【地域范围】：[全国 / 某省 / 某市]\n\n1、检索：该行业相关的政策文件、市场数据、企业资料、研报资讯；\n2、按研究重点维度组织分析，生成结构化行业研究报告，报告产能布局、技术路线、销售数据、研发投入、新产品创新等多个维度；\n3、关键结论用角标标注引用来源，点击角标可查看对应原文；\n4、结果输出：输出结果为 html 格式。"
-                            },
-                            {
-                                title: "行业产业链拆解",
-                                detail: "拆解某行业的产业链上下游结构，分析各环节价值分布，输出为 HTML 可视化报告。",
-                                icon: "qrc:/images/shortcut/4-2.png",
-                                image: "qrc:/images/shortcut/4-2-large.png",
-                                prompt: "【行业名称】：[如：半导体 / 新能源汽车 / 生物医药]\n【关注重点】：[价值分布 / 利润率 / 关键玩家 / 卡脖子点 / 投资切入环节（可多选）]\n\n1、基于行业认知，拆解产业链上下游结构；\n2、分析各环节价值分布、利润率、关键玩家与卡脖子点；\n3、识别高价值环节与投资切入机会；\n4、结果输出：直接生成产业链拆解报告全文，结果为 html 格式。"
-                            }
+                            { title: "治疗领域全景扫描", detail: "对目标治疗领域进行系统性竞争格局分析", image: "qrc:/images/shortcut/4-1.png", prompt: "帮我做NSCLC领域全景分析：疾病负担/当前标准治疗/在研管线热力图(靶点×阶段)/近期关键临床数据/竞争强度评估/机会缺口分析" },
+                            { title: "竞品深度剖析", detail: "对重点竞品从科学到商业的全维度分析", image: "qrc:/images/shortcut/4-2.png", prompt: "帮我分析[竞品名]竞争力：靶点机制/疗效数据(mPFS/mOS/ORR)/安全性/AE谱/专利保护/商业化布局/SWOT分析" },
+                            { title: "临床开发策略设计", detail: "设计CDP：适应症顺序、试验设计、注册策略", image: "qrc:/images/shortcut/4-3.png", prompt: "帮我设计[品种]临床开发策略：适应症优先级排序(PTS/可行性/竞争)、推荐试验设计框架、注册路径(加速通道评估)、里程碑规划" },
+                            { title: "市场准入策略制定", detail: "制定新药上市定价、医保谈判、渠道策略", image: "qrc:/images/shortcut/4-4.png", prompt: "[品种]上市后怎么定价：参考品定价分析、国际参考定价对标、NRDL谈判策略建议、患者可及性方案、5年销售预测模型" },
+                            { title: "BD机会筛选与评估", detail: "系统化筛选license标的并做初步估值", image: "qrc:/images/shortcut/4-5.png", prompt: "帮我筛选[肿瘤免疫]领域licensing机会：标的长名单/短名单、多维评分卡、初步rNPV估值范围、优先接洽建议和交易结构参考" },
+                            { title: "行业研究报告生成", detail: "深度全景式研究，一次性覆盖行业全貌。生成多维度对比 HTML 行业研究报告。", image: "qrc:/images/shortcut/4-6.png", prompt: "【行业名称】：[如：新能源汽车 / 集成电路 / 生物医药]\n【时间范围】：[近3年 / 2022-2025年 / 最新]\n【地域范围】：[全国 / 某省 / 某市]\n\n1、检索：该行业相关的政策文件、市场数据、企业资料、研报资讯；\n2、按研究重点维度组织分析，生成结构化行业研究报告，报告产能布局、技术路线、销售数据、研发投入、新产品创新等多个维度；\n3、关键结论用角标标注引用来源，点击角标可查看对应原文；\n4、结果输出：输出结果为 html 格式。" },
+                            { title: "行业产业链拆解", detail: "拆解某行业的产业链上下游结构，分析各环节价值分布，输出为 HTML 可视化报告。", image: "qrc:/images/shortcut/4-7.png", prompt: "【行业名称】：[如：半导体 / 新能源汽车 / 生物医药]\n【关注重点】：[价值分布 / 利润率 / 关键玩家 / 卡脖子点 / 投资切入环节（可多选）]\n\n1、基于行业认知，拆解产业链上下游结构；\n2、分析各环节价值分布、利润率、关键玩家与卡脖子点；\n3、识别高价值环节与投资切入机会；\n4、结果输出：直接生成产业链拆解报告全文，结果为 html 格式。" }
+                        ]
+                    },
+                    {
+                        title: "设备管理",
+                        icon: "qrc:/images/shortcut/5.png",
+                        selectedIcon: "qrc:/images/shortcut/5-selected.png",
+                        cards: [
+                            { title: "设备全生命周期管理", detail: "需求论证→采购→安装→使用→维护→报废", image: "qrc:/images/shortcut/5-1.png", prompt: "帮我跟踪[XX设备]的全生命周期：生成资产全周期时间轴、TCO(总拥有成本)报告、各阶段关键文档索引、换新决策建议" },
+                            { title: "设备故障预测与预警", detail: "利用维修记录进行趋势分析预警", image: "qrc:/images/shortcut/5-2.png", prompt: "帮我分析近6个月全院设备故障维修记录：按设备类型/品牌/科室统计故障频次和趋势，用时间序列预测未来30天高风险设备清单和备件需求" },
+                            { title: "智能预防性维护系统", detail: "基于运行数据动态优化PM策略", image: "qrc:/images/shortcut/5-3.png", prompt: "帮我优化CT的PM计划：分析近3年故障维修记录，用FMEA方法识别高RPN项，输出RCM维护策略建议和PM周期优化方案" },
+                            { title: "设备采购决策支持", detail: "多源信息汇总辅助科学采购决策", image: "qrc:/images/shortcut/5-4.png", prompt: "帮我做DSA选型分析：[品牌A vs 品牌B]，多品牌技术参数对比、TCO对比(含5年维保)、投资回收期估算、用户口碑和科室适配度评分" },
+                            { title: "设备利用率与ROI分析", detail: "计算大型设备投资回报率", image: "qrc:/images/shortcut/5-5.png", prompt: "帮我们核算CT的投资回报：近12月收入-成本模型、盈亏平衡点分析、投资回收期估算、敏感性分析(检查量±20%)、设备更新时机建议" }
+                        ]
+                    },
+                    {
+                        title: "投行助手",
+                        icon: "qrc:/images/shortcut/6.png",
+                        selectedIcon: "qrc:/images/shortcut/6-selected.png",
+                        cards: [
+                            { title: "行业深度研究报告", detail: "目标行业投资级行研报告", image: "qrc:/images/shortcut/6-1.png", prompt: "帮我做一份[光伏行业]深度研究：市场规模与增速建模、竞争格局(CR5/HHI)、技术路线演进、政策环境、估值分析、投资建议和标的推荐" },
+                            { title: "公司尽职调查辅助", detail: "拟投公司商业/财务/法律尽调", image: "qrc:/images/shortcut/6-2.png", prompt: "帮我做[XX公司]的尽调：商业模式验证、近3年财务分析(收入/毛利/现金流真实性)、竞争优劣势评估、关联交易和股权结构分析、风险矩阵" },
+                            { title: "估值模型构建", detail: "DCF/PE/PB/PS等多方法估值", image: "qrc:/images/shortcut/6-3.png", prompt: "帮我给[XX公司]估个值：三表预测、WACC计算、DCF估值+可比公司+先例交易三种方法交叉验证、敏感性分析(收入增速±5%/WACC±1%)输出龙卷风图" },
+                            { title: "财务造假识别", detail: "Beneish M-Score等财务异常检测", image: "qrc:/images/shortcut/6-4.png", prompt: "帮我查[XX公司]财务有没有问题：计算Beneish M-Score/F-Score、应收账款vs收入偏离、存货周转异常、经营现金流/净利润背离、关联交易占比分析" },
+                            { title: "资产配置优化", detail: "基于风险收益目标的大类资产配置", image: "qrc:/images/shortcut/6-5.png", prompt: "帮我们优化资产配置方案：收集各资产类别历史收益/波动/相关性矩阵→均值方差优化(MVO)→绘制有效前沿→输出不同风险偏好下的最优权重方案" }
                         ]
                     }
                 ]
@@ -2266,9 +2279,64 @@ ApplicationWindow {
                 readonly property var selectedShortcut: selectedShortcutGroup >= 0
                                                         && selectedShortcutGroup < shortcutGroups.length
                                                         ? shortcutGroups[selectedShortcutGroup] : null
+                readonly property var selectedShortcutTabs: shortcutTabsFor(selectedShortcut)
+                readonly property bool selectedShortcutHasTabs: (selectedShortcutTabs || []).length > 0
+                readonly property var selectedShortcutCards: shortcutCardsFor(selectedShortcut,
+                                                                               selectedShortcutTab)
+                readonly property var visibleShortcutCards: (selectedShortcutCards || []).slice(
+                                                                shortcutCardOffset,
+                                                                shortcutCardOffset + shortcutCardsPerPage)
+                readonly property bool canMoveShortcutCardsLeft: shortcutCardOffset > 0
+                readonly property bool canMoveShortcutCardsRight: shortcutCardOffset
+                                                                   < Math.max(0, (selectedShortcutCards || []).length
+                                                                              - shortcutCardsPerPage)
+
+                function shortcutTabsFor(group) {
+                    var tabs = group ? group.tabs : null
+                    return tabs && typeof tabs.length === "number" ? tabs : []
+                }
+
+                function shortcutCardsFor(group, tabIndex) {
+                    if (!group)
+                        return []
+                    var tabs = shortcutTabsFor(group)
+                    if (tabs.length > 0) {
+                        var safeIndex = Math.max(0, Math.min(Number(tabIndex) || 0,
+                                                            tabs.length - 1))
+                        var tab = tabs[safeIndex]
+                        return tab && tab.cards && typeof tab.cards.length === "number"
+                                ? tab.cards : []
+                    }
+                    var cards = group.cards
+                    return cards && typeof cards.length === "number" ? cards : []
+                }
 
                 function resetShortcutSelection() {
                     selectedShortcutGroup = -1
+                    selectedShortcutTab = 0
+                    shortcutCardOffset = 0
+                }
+
+                function selectShortcutGroup(index) {
+                    if (selectedShortcutGroup === index) {
+                        resetShortcutSelection()
+                        return
+                    }
+                    selectedShortcutGroup = index
+                    selectedShortcutTab = 0
+                    shortcutCardOffset = 0
+                }
+
+                function selectShortcutTab(index) {
+                    selectedShortcutTab = index
+                    shortcutCardOffset = 0
+                }
+
+                function moveShortcutCards(delta) {
+                    var maxOffset = Math.max(0, (selectedShortcutCards || []).length
+                                               - shortcutCardsPerPage)
+                    shortcutCardOffset = Math.max(0, Math.min(maxOffset,
+                                                              shortcutCardOffset + delta))
                 }
 
                 function doSendMessage(requestedText) {
@@ -2956,7 +3024,7 @@ ApplicationWindow {
                     width: Math.min(840, Math.max(320, parent.width - 48))
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: newTaskRec.isNewTaskWelcome
-                       ? titleCol.y + titleCol.height + 40
+                       ? shortcutTopRow.y + shortcutTopRow.height + 20
                        : newTaskRec.height - height - 24
                     Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
@@ -4252,165 +4320,276 @@ ApplicationWindow {
                 }
 
                 Item {
-                    id: welcomeShortcutStrip
+                    id: welcomeShortcutLayer
                     visible: newTaskRec.isNewTaskWelcome
-                    width: Math.min(960, Math.max(320, parent.width - 32))
-                    height: visible ? shortcutTopRow.height
-                                      + (newTaskRec.selectedShortcut
-                                         ? 52 + shortcutCardRow.implicitHeight : 0) : 0
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    y: chatInputContainer.y + chatInputContainer.height + 18
+                    anchors.fill: parent
+                    z: 2
 
                     Row {
                         id: shortcutTopRow
                         height: 36
                         anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: 10
+                        y: titleCol.y + titleCol.height + 60
+                        spacing: 0
 
                         Repeater {
                             model: newTaskRec.shortcutGroups
 
-                            delegate: Rectangle {
-                                id: shortcutTab
+                            delegate: Item {
+                                id: shortcutTabItem
                                 readonly property var group: modelData
                                 readonly property bool selected: index === newTaskRec.selectedShortcutGroup
-                                width: tabContent.implicitWidth + 32
-                                height: 40
-                                radius: 20
-                                color: selected ? group.color
-                                      : tabMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
-                                border.width: 1
-                                border.color: selected ? group.color : "#E6E7EB"
+                                width: shortcutTab.width + (index < newTaskRec.shortcutGroups.length - 1 ? 25 : 0)
+                                height: shortcutTopRow.height
 
-                                Row {
-                                    id: tabContent
-                                    anchors.centerIn: parent
-                                    spacing: 6
+                                Rectangle {
+                                    id: shortcutTab
+                                    width: tabContent.implicitWidth + 24
+                                    height: 36
+                                    radius: 18
+                                    color: shortcutTabItem.selected ? "#006BFF"
+                                          : tabMouse.containsMouse ? "#F5F7FA" : "transparent"
 
-                                    Image {
-                                        width: 20
-                                        height: 20
-                                        source: group.icon
-                                        fillMode: Image.PreserveAspectFit
-                                        sourceSize: Qt.size(20, 20)
-                                        anchors.verticalCenter: parent.verticalCenter
+                                    Row {
+                                        id: tabContent
+                                        anchors.centerIn: parent
+                                        spacing: 6
+
+                                        Image {
+                                            width: 18
+                                            height: 18
+                                            source: shortcutTabItem.selected
+                                                    ? shortcutTabItem.group.selectedIcon
+                                                    : shortcutTabItem.group.icon
+                                            fillMode: Image.PreserveAspectFit
+                                            sourceSize: Qt.size(40, 40)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                        Label {
+                                            text: shortcutTabItem.group.title
+                                            font.pixelSize: 16
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            color: shortcutTabItem.selected ? "#FFFFFF" : "#D9000000"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
                                     }
 
-                                    Label {
-                                        text: group.title
-                                        font.pixelSize: 16
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        color: "#D9000000"
-                                        anchors.verticalCenter: parent.verticalCenter
+                                    MouseArea {
+                                        id: tabMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.selectShortcutGroup(index)
                                     }
                                 }
 
-                                MouseArea {
-                                    id: tabMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        if(newTaskRec.selectedShortcutGroup === index){
-                                            newTaskRec.selectedShortcutGroup = -1
-                                        }else{
-                                            newTaskRec.selectedShortcutGroup = index
-                                        }
-                                    }
+                                Rectangle {
+                                    visible: index < newTaskRec.shortcutGroups.length - 1
+                                    width: 1
+                                    height: 16
+                                    x: shortcutTab.width + 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: "#E6E7EB"
                                 }
                             }
                         }
                     }
 
-                    Row {
-                        id: shortcutCardRow
-                        anchors.top: shortcutTopRow.bottom
-                        anchors.topMargin: 52
+                    Item {
+                        id: shortcutCardHeader
+                        visible: !!newTaskRec.selectedShortcut
+                        width: chatInputContainer.width
+                        height: 30
                         anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: 18
+                        y: chatInputContainer.y + chatInputContainer.height + 60
 
-                        Repeater {
-                            model: newTaskRec.selectedShortcut ? newTaskRec.selectedShortcut.cards : []
+                        Row {
+                            id: medicalShortcutTabs
+                            visible: newTaskRec.selectedShortcutHasTabs
+                            height: parent.height
+                            spacing: 20
 
-                            delegate: Rectangle {
-                                id: shortcutLargeCard
-                                readonly property var card: modelData
-                                width: Math.max(160, Math.min(300,
-                                      (welcomeShortcutStrip.width
-                                       - 18 * Math.max(0, (newTaskRec.selectedShortcut.cards.length || 1) - 1))
-                                       / Math.max(1, newTaskRec.selectedShortcut.cards.length || 1)))
-                                height: cardContent.implicitHeight + 32
-                                radius: 8
-                                color: largeCardMouse.containsMouse ? "#FAFBFC" : "#FFFFFF"
-                                border.width: 1
-                                border.color: largeCardMouse.containsMouse ? "#B8CFFF" : "#E1E4E8"
-                                clip: true
+                            Repeater {
+                                model: newTaskRec.selectedShortcutTabs
 
-                                Column {
-                                    id: cardContent
-                                    anchors.left: parent.left
-                                    anchors.top: parent.top
-                                    anchors.margins: 16
-                                    width: parent.width - 32
-                                    spacing: 8
+                                delegate: Item {
+                                    id: medicalShortcutTab
+                                    readonly property bool selected: index === newTaskRec.selectedShortcutTab
+                                    width: medicalTabLabel.implicitWidth
+                                    height: medicalShortcutTabs.height
 
-                                    Column {
-                                        width: parent.width
-                                        spacing: 2
-
-                                        Row {
-                                            width: parent.width
-                                            spacing: 5
-
-                                            Image {
-                                                width: 20
-                                                height: 20
-                                                source: card.icon
-                                                fillMode: Image.PreserveAspectFit
-                                                sourceSize: Qt.size(20, 20)
-                                            }
-
-                                            Label {
-                                                width: parent.width - 25
-                                                text: card.title
-                                                font.pixelSize: 16
-                                                font.bold: true
-                                                font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#D9000000"
-                                                maximumLineCount: 1
-                                                elide: Text.ElideRight
-                                            }
-                                        }
-
-                                        Label {
-                                            width: parent.width
-                                            text: card.detail
-                                            font.pixelSize: 14
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            color: "#73000000"
-                                            wrapMode: Text.Wrap
-                                            lineHeight: 1.35
-                                        }
+                                    Label {
+                                        id: medicalTabLabel
+                                        text: modelData.title
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        color: medicalShortcutTab.selected ? "#006BFF" : "#73000000"
+                                        anchors.top: parent.top
                                     }
 
-                                    Image {
+                                    Rectangle {
+                                        visible: medicalShortcutTab.selected
                                         width: parent.width
-                                        height: 90
-                                        source: card.image
-                                        fillMode: Image.PreserveAspectFit
-                                        sourceSize: Qt.size(width, height)
+                                        height: 2
+                                        radius: 1
+                                        color: "#006BFF"
+                                        anchors.bottom: parent.bottom
                                     }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.selectShortcutTab(index)
+                                    }
+                                }
+                            }
+                        }
+
+                        Label {
+                            visible: !newTaskRec.selectedShortcutHasTabs
+                            text: "不知道做什么，试试最佳实践案例"
+                            font.pixelSize: 16
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            color: "#73000000"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
+
+                            Rectangle {
+                                width: 24
+                                height: 24
+                                radius: 12
+                                color: leftCardArrowMouse.containsMouse
+                                       && newTaskRec.canMoveShortcutCardsLeft ? "#F2F4F7" : "transparent"
+                                opacity: newTaskRec.canMoveShortcutCardsLeft ? 1 : 0.35
+
+                                Label {
+                                    text: "‹"
+                                    font.pixelSize: 20
+                                    color: "#73000000"
+                                    anchors.centerIn: parent
+                                    anchors.verticalCenterOffset: -1
                                 }
 
                                 MouseArea {
-                                    id: largeCardMouse
+                                    id: leftCardArrowMouse
                                     anchors.fill: parent
+                                    enabled: newTaskRec.canMoveShortcutCardsLeft
                                     hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        textInputArea.text = card.prompt
-                                        textInputArea.forceActiveFocus()
-                                        newTaskRec.selectedShortcutGroup = -1
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: newTaskRec.moveShortcutCards(-1)
+                                }
+                            }
+
+                            Rectangle {
+                                width: 24
+                                height: 24
+                                radius: 12
+                                color: rightCardArrowMouse.containsMouse
+                                       && newTaskRec.canMoveShortcutCardsRight ? "#F2F4F7" : "transparent"
+                                opacity: newTaskRec.canMoveShortcutCardsRight ? 1 : 0.35
+
+                                Label {
+                                    text: "›"
+                                    font.pixelSize: 20
+                                    color: "#73000000"
+                                    anchors.centerIn: parent
+                                    anchors.verticalCenterOffset: -1
+                                }
+
+                                MouseArea {
+                                    id: rightCardArrowMouse
+                                    anchors.fill: parent
+                                    enabled: newTaskRec.canMoveShortcutCardsRight
+                                    hoverEnabled: true
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: newTaskRec.moveShortcutCards(1)
+                                }
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: shortcutCardViewport
+                        visible: shortcutCardHeader.visible
+                        width: shortcutCardHeader.width
+                        height: 100
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: shortcutCardHeader.bottom
+                        anchors.topMargin: 10
+                        clip: true
+
+                        Row {
+                            id: shortcutCardRow
+                            spacing: 8
+
+                            Repeater {
+                                model: newTaskRec.visibleShortcutCards
+
+                                delegate: Rectangle {
+                                    id: shortcutLargeCard
+                                    readonly property var card: modelData
+                                    width: (shortcutCardViewport.width
+                                            - shortcutCardRow.spacing
+                                              * (newTaskRec.shortcutCardsPerPage - 1))
+                                           / newTaskRec.shortcutCardsPerPage
+                                    height: shortcutCardViewport.height
+                                    radius: 8
+                                    color: "#F7F9FC"
+                                    border.width: 1
+                                    border.color: largeCardMouse.containsMouse ? "#99B9FF" : "#E6E7EB"
+                                    clip: true
+
+                                    Image {
+                                        id: shortcutCardImage
+                                        anchors.fill: parent
+                                        source: shortcutLargeCard.card.image
+                                        fillMode: Image.Stretch
+                                        sourceSize: Qt.size(204, 100)
+                                    }
+
+                                    FastBlur {
+                                        anchors.fill: parent
+                                        source: shortcutCardImage
+                                        radius: 24
+                                        transparentBorder: false
+                                        visible: largeCardMouse.containsMouse
+                                    }
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "#CFFFFFFF"
+                                        visible: largeCardMouse.containsMouse
+                                    }
+
+                                    Label {
+                                        visible: largeCardMouse.containsMouse
+                                        text: shortcutLargeCard.card.detail
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        font.pixelSize: 13
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.weight: Font.Medium
+                                        color: "#D9000000"
+                                        wrapMode: Text.Wrap
+                                        verticalAlignment: Text.AlignVCenter
+                                        horizontalAlignment: Text.AlignLeft
+                                    }
+
+                                    MouseArea {
+                                        id: largeCardMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            textInputArea.text = shortcutLargeCard.card.prompt
+                                            textInputArea.forceActiveFocus()
+                                        }
                                     }
                                 }
                             }
