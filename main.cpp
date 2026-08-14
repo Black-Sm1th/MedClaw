@@ -5,6 +5,9 @@
 #include <QFontDatabase>
 #include <QDir>
 #include <QFileInfo>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPainterPath>
 #include <QRegion>
 #include <QSettings>
@@ -18,6 +21,7 @@
 #include "chatmodel.h"
 #include "session_reader.h"
 #include "auth_controller.h"
+#include "online-office-integration/client-qt/OnlineOfficeClient.h"
 
 static void configureQtWebEngineRuntime(const char *executablePath)
 {
@@ -59,6 +63,32 @@ static void updateRoundedWindowMask(QWindow *window)
     path.addRoundedRect(QRectF(0, 0, window->width(), window->height()),
                         cornerRadius, cornerRadius);
     window->setMask(QRegion(path.toFillPolygon().toPolygon()));
+}
+
+static QJsonObject loadOfficeConfig(const QString &dataRoot)
+{
+    const QDir applicationDir(QCoreApplication::applicationDirPath());
+    const QStringList candidates = {
+        QDir(dataRoot).filePath(QStringLiteral("AppData/config/office.json")),
+        applicationDir.filePath(QStringLiteral("config/office.json")),
+        QDir(applicationDir.filePath(QStringLiteral("..")))
+            .filePath(QStringLiteral("config/office.json"))
+    };
+    for (const QString &path : candidates) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+        if (error.error != QJsonParseError::NoError || !document.isObject()) {
+            qWarning() << "[OnlineOffice] invalid config:" << path
+                       << error.errorString();
+            continue;
+        }
+        qDebug().noquote() << "[OnlineOffice] loaded config:" << path;
+        return document.object();
+    }
+    return {};
 }
 
 int main(int argc, char *argv[])
@@ -120,6 +150,13 @@ int main(int argc, char *argv[])
     QObject::connect(&wsClient, &GatewayClient::streamingFinished,
                      [&chatModel]() { chatModel.endStreaming(); });
 
+    QObject::connect(&wsClient, &GatewayClient::artifactsDetected,
+                     [&chatModel, &wsClient](const QString &sessionKey,
+                                             const QVariantList &artifacts) {
+        chatModel.setArtifactsForLastAssistant(artifacts);
+        wsClient.persistSessionArtifacts(sessionKey, chatModel.messages());
+    });
+
     // 工具调用：在 ChatModel 中插入工具卡片
     QObject::connect(&wsClient, &GatewayClient::toolCallReceived,
                      [&chatModel](const QString &name, const QString &args,
@@ -171,8 +208,13 @@ int main(int argc, char *argv[])
 
     // 历史消息加载完成：清空当前显示并填充历史记录
     QObject::connect(&wsClient, &GatewayClient::historyLoaded,
-                     [&chatModel](const QVariantList &messages) {
-        chatModel.loadHistory(messages);
+                     [&chatModel, &wsClient](const QVariantList &messages) {
+        QString sessionKey = wsClient.currentViewSessionKey().trimmed();
+        if (sessionKey.isEmpty())
+            sessionKey = wsClient.currentTaskSessionKey().trimmed();
+        wsClient.rememberInputFilesFromHistory(messages);
+        chatModel.loadHistory(
+            wsClient.restoreSessionArtifacts(sessionKey, messages));
     });
 
     // ── 本地会话历史读取器 ──
@@ -187,6 +229,21 @@ int main(int argc, char *argv[])
     GET_SINGLETON(MainViewController)->init(&chatModel, &wsClient);
 
     QQmlApplicationEngine engine;
+    qmlRegisterType<OnlineOfficeClient>("MedClaw.Office", 1, 0,
+                                        "OnlineOfficeClient");
+    const QJsonObject officeConfig = loadOfficeConfig(dataRoot);
+    QString officeBridgeUrl = qEnvironmentVariable("MEDCLAW_OFFICE_BRIDGE_URL").trimmed();
+    QString officeApiKey = qEnvironmentVariable("MEDCLAW_OFFICE_API_KEY").trimmed();
+    if (officeBridgeUrl.isEmpty())
+        officeBridgeUrl = officeConfig.value(QStringLiteral("bridgeUrl")).toString().trimmed();
+    if (officeApiKey.isEmpty())
+        officeApiKey = officeConfig.value(QStringLiteral("apiKey")).toString().trimmed();
+    if (officeBridgeUrl.isEmpty())
+        officeBridgeUrl = QStringLiteral("http://111.6.178.34:24641/bridge");
+
+    OnlineOfficeClient onlineOffice;
+    onlineOffice.setBridgeBaseUrl(officeBridgeUrl);
+    onlineOffice.setApiKey(officeApiKey);
     const QSize savedWindowSize = QSettings().value(
         QStringLiteral("ui/windowSize")).toSize();
     engine.rootContext()->setContextProperty(
@@ -198,6 +255,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
     engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
     engine.rootContext()->setContextProperty(QStringLiteral("authController"), &authController);
+    engine.rootContext()->setContextProperty(QStringLiteral("onlineOffice"), &onlineOffice);
 
     int fontId1 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     int fontId2 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");

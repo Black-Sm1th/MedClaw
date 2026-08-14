@@ -1,5 +1,7 @@
 QT += quick quickcontrols2 websockets sql webengine network
 
+include(online-office-integration/client-qt/online-office-client.pri)
+
 TARGET = AetherStudy
 
 CONFIG += c++11
@@ -45,7 +47,12 @@ SOURCES += \
 RESOURCES += qml.qrc
 
 OTHER_FILES += \
-    components/ExpertPage.qml
+    components/ExpertPage.qml \
+    config/office.json
+
+office_config.files = config/office.json
+office_config.path = $$OUT_PWD/config
+COPIES += office_config
 
 RC_ICONS = images/icon.ico
 

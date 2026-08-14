@@ -33,6 +33,7 @@ struct ChatMessage {
     /// 工具调用之间的中间助手文本（区别于最终回答）：QML 用斜体渲染。
     /// 在新增 toolCall 时把紧邻之前的助手文本消息标记为中间态。
     bool    isIntermediate = false;
+    QVariantList artifacts; ///< Files created or modified during this turn.
 };
 
 class ChatModel : public QAbstractListModel
@@ -55,7 +56,8 @@ public:
         ToolResultTextRole,
         HasToolResultRole,
         IsStreamingRole,
-        IsIntermediateRole
+        IsIntermediateRole,
+        ArtifactsRole
     };
 
     explicit ChatModel(QObject *parent = nullptr);
@@ -76,6 +78,7 @@ public:
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
     Q_INVOKABLE QVariantList messages() const;
+    Q_INVOKABLE void setArtifactsForLastAssistant(const QVariantList &artifacts);
     void loadHistory(const QVariantList &messages);
 
     void beginStreaming();

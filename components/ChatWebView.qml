@@ -14,6 +14,8 @@ Item {
     property real fileTipHeight: 0
 
     signal linkActivated(string link)
+    signal artifactsRequested()
+    signal artifactRequested(string path)
 
     function js(value) {
         return JSON.stringify(value === undefined ? null : value)
@@ -124,6 +126,10 @@ Item {
                 root.fileTipVisible = root.fileTipText.length > 0
             } else if (payload.type === "fileHoverEnd") {
                 root.fileTipVisible = false
+            } else if (payload.type === "openArtifacts") {
+                root.artifactsRequested()
+            } else if (payload.type === "openArtifact") {
+                root.artifactRequested(payload.path || "")
             }
         }
     }

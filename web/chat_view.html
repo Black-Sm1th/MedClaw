@@ -276,6 +276,100 @@
     }
     hr { height: 1px; border: 0; margin: 16px 0; background: rgba(15, 23, 42, .12); }
 
+    .artifact-section {
+      box-sizing: border-box;
+      width: 100%;
+      margin-top: 8px;
+      padding-top: 16px;
+      border-top: 1px solid #E6E7EB;
+      font-family: "Alibaba PuHuiTi 3.0", "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+    .artifact-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .artifact-card,
+    .artifact-card:hover {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      height: 36px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: #F7F9FA;
+      color: rgba(0, 0, 0, .85);
+      text-decoration: none;
+    }
+    .artifact-card:hover { background: #EBEDF0; }
+    .artifact-icon {
+      display: block;
+      flex: 0 0 20px;
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+    }
+    .artifact-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 16px;
+      line-height: 24px;
+      color: rgba(0, 0, 0, .85);
+    }
+    .artifact-more {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      height: 40px;
+      margin-top: 8px;
+      padding: 8px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: rgba(0, 0, 0, .65);
+      font-family: inherit;
+      font-weight: 400;
+      font-size: 16px;
+      line-height: 24px;
+      letter-spacing: 0;
+      cursor: pointer;
+    }
+    .artifact-more:hover {
+      background: #F7F9FA;
+      color: rgba(0, 0, 0, .65);
+    }
+    .artifact-more-arrow {
+      position: relative;
+      display: inline-block;
+      flex: 0 0 16px;
+      width: 16px;
+      height: 16px;
+    }
+    .artifact-more-arrow:before {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 5px;
+      width: 5px;
+      height: 5px;
+      border-right: 1.2px solid currentColor;
+      border-bottom: 1.2px solid currentColor;
+      transform: rotate(-45deg);
+    }
+    @media (max-width: 720px) {
+      .artifact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 460px) {
+      .artifact-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+
     .compaction {
       position: relative;
       height: 20px;
@@ -656,6 +750,44 @@
         return html.join('');
       }
 
+      function artifactIconPath(file) {
+        if (file && (file.isDirectory === true || file.type === 'directory'
+                     || file.type === 'folder'))
+          return 'qrc:/images/doc/document-fold.svg';
+        var ext = String((file && file.extension) || '').toLowerCase();
+        if (ext === 'doc' || ext === 'docx')
+          return 'qrc:/images/doc/document-word.svg';
+        if (ext === 'xls' || ext === 'xlsx' || ext === 'xlsm' || ext === 'csv')
+          return 'qrc:/images/doc/document-excel.svg';
+        if (ext === 'ppt' || ext === 'pptx')
+          return 'qrc:/images/doc/document-ppt.svg';
+        return 'qrc:/images/doc/document-text.svg';
+      }
+
+      function renderArtifacts(artifacts, row) {
+        if (!Array.isArray(artifacts) || artifacts.length === 0)
+          return '';
+        var key = 'artifacts:' + row;
+        var visible = artifacts.slice(0, 6);
+        var html = ['<div class="artifact-section"><div class="artifact-grid">'];
+        for (var i = 0; i < visible.length; i++) {
+          var file = visible[i] || {};
+          var path = String(file.path || '');
+          var iconPath = artifactIconPath(file);
+          html.push('<a class="artifact-card" href="' + escapeAttr(localLinkHref(path))
+            + '" data-file-path="' + escapeAttr(path) + '">'
+            + '<img class="artifact-icon" src="' + escapeAttr(iconPath) + '" alt="">'
+            + '<span class="artifact-name">' + escapeHtml(file.name || fileNameFromPath(path)) + '</span>'
+            + '</a>');
+        }
+        html.push('</div>');
+        html.push('<button class="artifact-more" type="button" data-artifact-key="'
+          + escapeAttr(key) + '">查看所有产物'
+          + '<span class="artifact-more-arrow" aria-hidden="true"></span></button>');
+        html.push('</div>');
+        return html.join('');
+      }
+
       function isCompactionMarker(msg) {
         var c = String(msg.content || '').trim().toLowerCase();
         return msg.msgType !== 'toolCall'
@@ -728,6 +860,7 @@
           body = renderMarkdown(msg.content || '');
         return '<div class="message ' + (isUser ? 'user' : 'assistant') + '" data-row="' + index + '">'
           + '<div class="' + classes + '" data-content-row="' + index + '">' + body + '</div>'
+          + (!isUser ? renderArtifacts(msg.artifacts, index) : '')
           + '</div>';
       }
 
@@ -817,6 +950,16 @@
       };
 
       document.addEventListener('click', function (event) {
+        var artifactToggle = event.target;
+        while (artifactToggle && artifactToggle !== document
+               && !artifactToggle.getAttribute('data-artifact-key'))
+          artifactToggle = artifactToggle.parentNode;
+        if (artifactToggle && artifactToggle.getAttribute
+            && artifactToggle.getAttribute('data-artifact-key')) {
+          console.log('MEDCLAW_CHAT:' + JSON.stringify({ type: 'openArtifacts' }));
+          return;
+        }
+
         var toggle = event.target;
         while (toggle && toggle !== document && !toggle.getAttribute('data-tool-key'))
           toggle = toggle.parentNode;
@@ -831,12 +974,20 @@
         while (node && node.tagName !== 'A') node = node.parentNode;
         if (!node) return;
         event.preventDefault();
+        if (node.classList && node.classList.contains('artifact-card')) {
+          console.log('MEDCLAW_CHAT:' + JSON.stringify({
+            type: 'openArtifact',
+            path: node.getAttribute('data-file-path') || ''
+          }));
+          return;
+        }
         var href = node.getAttribute('href') || node.href;
         window.location.href = href.indexOf('medclaw-local:') === 0 ? href : node.href;
       });
 
       document.addEventListener('mouseover', function (event) {
-        var file = event.target.closest ? event.target.closest('.user-file-ref') : null;
+        var file = event.target.closest
+          ? event.target.closest('.user-file-ref, .artifact-card') : null;
         if (!file)
           return;
         var rect = file.getBoundingClientRect();

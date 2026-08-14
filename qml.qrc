@@ -101,5 +101,19 @@
         <file>images/category.png</file>
         <file>images/chatNew.png</file>
         <file>images/knowledge.png</file>
+        <file>images/doc/document-excel.svg</file>
+        <file>images/doc/document-fold.svg</file>
+        <file>images/doc/document-ppt.svg</file>
+        <file>images/doc/document-text.svg</file>
+        <file>images/doc/document-word.svg</file>
+        <file>images/office/sidebar-sort.svg</file>
+        <file>images/office/sidebar-maximize.svg</file>
+        <file>images/office/sidebar-restore.svg</file>
+        <file>images/office/sidebar-collapse.svg</file>
+        <file>images/office/sidebar-minimize.svg</file>
+        <file>images/office/download.svg</file>
+        <file>images/office/edit.svg</file>
+        <file>images/office/folder.svg</file>
+        <file>images/office/othersoftware.svg</file>
     </qresource>
 </RCC>

@@ -58,6 +58,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
     case HasToolResultRole:  return msg.hasToolResult;
     case IsStreamingRole:    return msg.isStreaming;
     case IsIntermediateRole: return msg.isIntermediate;
+    case ArtifactsRole:      return msg.artifacts;
     }
     return QVariant();
 }
@@ -76,7 +77,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const
         { ToolResultTextRole, "toolResultText" },
         { HasToolResultRole,  "hasToolResult"  },
         { IsStreamingRole,    "isStreaming"    },
-        { IsIntermediateRole, "isIntermediate" }
+        { IsIntermediateRole, "isIntermediate" },
+        { ArtifactsRole,      "artifacts"      }
     };
 }
 
@@ -258,9 +260,30 @@ QVariantList ChatModel::messages() const
         item.insert(QStringLiteral("hasToolResult"), msg.hasToolResult);
         item.insert(QStringLiteral("isStreaming"), msg.isStreaming);
         item.insert(QStringLiteral("isIntermediate"), msg.isIntermediate);
+        item.insert(QStringLiteral("artifacts"), msg.artifacts);
         out.append(item);
     }
     return out;
+}
+
+void ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
+{
+    if (artifacts.isEmpty())
+        return;
+
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        ChatMessage &msg = m_messages[i];
+        if (msg.role != QLatin1String("assistant")
+            || msg.msgType != QLatin1String("text")
+            || msg.isIntermediate || msg.isStreaming) {
+            continue;
+        }
+        msg.artifacts = artifacts;
+        const QModelIndex idx = index(i);
+        emit dataChanged(idx, idx, { ArtifactsRole });
+        emit messagePayloadChanged();
+        return;
+    }
 }
 
 void ChatModel::loadHistory(const QVariantList &messages)
@@ -344,6 +367,7 @@ void ChatModel::loadHistory(const QVariantList &messages)
         msg.timestamp = QDateTime::currentDateTime();
         msg.msgType = QStringLiteral("text");
         msg.isError = false;
+        msg.artifacts = m.value(QStringLiteral("artifacts")).toList();
         m_messages.append(msg);
     }
 

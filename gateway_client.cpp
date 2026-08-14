@@ -873,8 +873,234 @@ bool GatewayClient::initTaskSessionDb()
     q.exec(QStringLiteral(
         "CREATE INDEX IF NOT EXISTS idx_cron_jobs_user_visible "
         "ON cron_jobs(user_id, deleted_at, updated_at)"));
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS task_session_input_files ("
+            "user_id TEXT NOT NULL,"
+            "session_id TEXT NOT NULL,"
+            "files_json TEXT NOT NULL DEFAULT '[]',"
+            "updated_at INTEGER NOT NULL,"
+            "PRIMARY KEY (user_id, session_id)"
+            ")"))) {
+        qWarning().noquote() << "[TaskSessionDb] create input files table failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS task_session_artifacts ("
+            "user_id TEXT NOT NULL,"
+            "session_id TEXT NOT NULL,"
+            "artifacts_json TEXT NOT NULL DEFAULT '[]',"
+            "updated_at INTEGER NOT NULL,"
+            "PRIMARY KEY (user_id, session_id)"
+            ")"))) {
+        qWarning().noquote() << "[TaskSessionDb] create artifacts table failed:"
+                             << q.lastError().text();
+        return false;
+    }
     m_taskSessionDbReady = true;
     return true;
+}
+
+void GatewayClient::rememberCurrentSessionInputFiles(const QVariantList &files)
+{
+    QString sessionKey = m_currentTaskSessionKey.trimmed();
+    if (sessionKey.isEmpty())
+        sessionKey = m_currentViewSessionKey.trimmed();
+    if (sessionKey.isEmpty())
+        sessionKey = m_session.currentSessionKey().trimmed();
+    if (sessionKey.isEmpty() || m_taskSessionUserId.isEmpty()
+            || !initTaskSessionDb() || files.isEmpty()) {
+        return;
+    }
+
+    QVariantList merged = currentSessionInputFiles();
+    QSet<QString> seen;
+    for (const QVariant &value : merged) {
+        const QString path = QDir::cleanPath(
+            value.toMap().value(QStringLiteral("path")).toString());
+        if (!path.isEmpty())
+            seen.insert(path.toLower());
+    }
+    for (const QVariant &value : files) {
+        QVariantMap file = value.toMap();
+        QString path = file.value(QStringLiteral("path")).toString().trimmed();
+        if (path.isEmpty())
+            path = file.value(QStringLiteral("fileUrl")).toString().trimmed();
+        if (path.startsWith(QStringLiteral("file://")))
+            path = QUrl(path).toLocalFile();
+        path = QDir::cleanPath(path);
+        const QString key = path.toLower();
+        if (path.isEmpty() || seen.contains(key))
+            continue;
+        seen.insert(key);
+        file.insert(QStringLiteral("path"), path);
+        if (file.value(QStringLiteral("name")).toString().isEmpty())
+            file.insert(QStringLiteral("name"), QFileInfo(path).fileName());
+        if (!file.contains(QStringLiteral("extension")))
+            file.insert(QStringLiteral("extension"), QFileInfo(path).suffix().toLower());
+        merged.append(file);
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO task_session_input_files "
+        "(user_id, session_id, files_json, updated_at) VALUES (?, ?, ?, ?)"));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(sessionKey);
+    q.addBindValue(QString::fromUtf8(
+        QJsonDocument::fromVariant(merged).toJson(QJsonDocument::Compact)));
+    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!q.exec())
+        qWarning().noquote() << "[TaskSessionDb] save input files failed:"
+                             << q.lastError().text();
+}
+
+QVariantList GatewayClient::currentSessionInputFiles()
+{
+    QString sessionKey = m_currentViewSessionKey.trimmed();
+    if (sessionKey.isEmpty())
+        sessionKey = m_currentTaskSessionKey.trimmed();
+    if (sessionKey.isEmpty())
+        sessionKey = m_session.currentSessionKey().trimmed();
+    if (sessionKey.isEmpty() || m_taskSessionUserId.isEmpty()
+            || !initTaskSessionDb()) {
+        return QVariantList();
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "SELECT files_json FROM task_session_input_files "
+        "WHERE user_id=? AND session_id=?"));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(sessionKey);
+    if (!q.exec() || !q.next())
+        return QVariantList();
+    return QJsonDocument::fromJson(q.value(0).toByteArray()).toVariant().toList();
+}
+
+void GatewayClient::rememberInputFilesFromHistory(const QVariantList &history)
+{
+    static const QRegularExpression quotedLocalPath(QStringLiteral(
+        R"re("((?:[A-Za-z]:[\\/]|\\\\|/)[^"\r\n]+)")re"));
+    QVariantList files;
+    for (const QVariant &value : history) {
+        const QVariantMap message = value.toMap();
+        if (message.value(QStringLiteral("role")).toString() != QLatin1String("user"))
+            continue;
+        const QString content = message.value(QStringLiteral("content")).toString();
+        QRegularExpressionMatchIterator matches = quotedLocalPath.globalMatch(content);
+        while (matches.hasNext()) {
+            const QString path = QDir::cleanPath(matches.next().captured(1));
+            if (path.isEmpty())
+                continue;
+            const QFileInfo info(path);
+            QVariantMap file;
+            file.insert(QStringLiteral("name"), info.fileName().isEmpty() ? path : info.fileName());
+            file.insert(QStringLiteral("path"), path);
+            file.insert(QStringLiteral("folder"), info.isDir());
+            file.insert(QStringLiteral("extension"), info.suffix().toLower());
+            files.append(file);
+        }
+    }
+    rememberCurrentSessionInputFiles(files);
+}
+
+void GatewayClient::persistSessionArtifacts(const QString &sessionKey,
+                                            const QVariantList &messages)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return;
+
+    QVariantList records;
+    QHash<QByteArray, int> occurrences;
+    for (const QVariant &value : messages) {
+        const QVariantMap message = value.toMap();
+        const QString role = message.value(QStringLiteral("msgRole"),
+                                           message.value(QStringLiteral("role"))).toString();
+        const QString type = message.value(QStringLiteral("msgType"),
+                                           QStringLiteral("text")).toString();
+        if (role != QLatin1String("assistant") || type != QLatin1String("text"))
+            continue;
+        const QByteArray digest = QCryptographicHash::hash(
+            message.value(QStringLiteral("content")).toString().toUtf8(),
+            QCryptographicHash::Sha256).toHex();
+        const int occurrence = occurrences.value(digest) + 1;
+        occurrences.insert(digest, occurrence);
+        const QVariantList artifacts = message.value(QStringLiteral("artifacts")).toList();
+        if (artifacts.isEmpty())
+            continue;
+        QVariantMap record;
+        record.insert(QStringLiteral("contentHash"), QString::fromLatin1(digest));
+        record.insert(QStringLiteral("occurrence"), occurrence);
+        record.insert(QStringLiteral("artifacts"), artifacts);
+        records.append(record);
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO task_session_artifacts "
+        "(user_id, session_id, artifacts_json, updated_at) VALUES (?, ?, ?, ?)"));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(key);
+    q.addBindValue(QString::fromUtf8(
+        QJsonDocument::fromVariant(records).toJson(QJsonDocument::Compact)));
+    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!q.exec())
+        qWarning().noquote() << "[TaskSessionDb] save artifacts failed:"
+                             << q.lastError().text();
+}
+
+QVariantList GatewayClient::restoreSessionArtifacts(const QString &sessionKey,
+                                                     const QVariantList &history)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return history;
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "SELECT artifacts_json FROM task_session_artifacts "
+        "WHERE user_id=? AND session_id=?"));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(key);
+    if (!q.exec() || !q.next())
+        return history;
+
+    const QVariantList records =
+        QJsonDocument::fromJson(q.value(0).toByteArray()).toVariant().toList();
+    QHash<QString, QVariantList> artifactsByMessage;
+    for (const QVariant &value : records) {
+        const QVariantMap record = value.toMap();
+        const QString recordKey = record.value(QStringLiteral("contentHash")).toString()
+            + QLatin1Char('#') + QString::number(record.value(QStringLiteral("occurrence")).toInt());
+        artifactsByMessage.insert(recordKey,
+                                  record.value(QStringLiteral("artifacts")).toList());
+    }
+
+    QVariantList restored = history;
+    QHash<QByteArray, int> occurrences;
+    for (int i = 0; i < restored.size(); ++i) {
+        QVariantMap message = restored.at(i).toMap();
+        if (message.value(QStringLiteral("role")).toString() != QLatin1String("assistant")
+                || message.value(QStringLiteral("msgType"), QStringLiteral("text")).toString()
+                    != QLatin1String("text")) {
+            continue;
+        }
+        const QByteArray digest = QCryptographicHash::hash(
+            message.value(QStringLiteral("content")).toString().toUtf8(),
+            QCryptographicHash::Sha256).toHex();
+        const int occurrence = occurrences.value(digest) + 1;
+        occurrences.insert(digest, occurrence);
+        const QString recordKey = QString::fromLatin1(digest)
+            + QLatin1Char('#') + QString::number(occurrence);
+        const QVariantList artifacts = artifactsByMessage.value(recordKey);
+        if (!artifacts.isEmpty()) {
+            message.insert(QStringLiteral("artifacts"), artifacts);
+            restored[i] = message;
+        }
+    }
+    return restored;
 }
 
 void GatewayClient::loadTaskSessionListFromDb()
@@ -2125,25 +2351,13 @@ void GatewayClient::patchSessionOutputDirBeforeSend(
     const QString &message)
 {
     const QString key = sessionKey.trimmed();
-    const QString outputDir = normalizeWorkspacePath(sessionOutputDir);
+    Q_UNUSED(sessionOutputDir)
     if (key.isEmpty())
         return;
-    if (outputDir.isEmpty()) {
-        sendChatMessageNow(key, message);
-        return;
-    }
-
-    QJsonObject params;
-    params[QStringLiteral("key")] = key;
-    params[QStringLiteral("sessionOutputDir")] = outputDir;
-    const QString reqId = sendRequest(QStringLiteral("sessions.patch"), params);
-
-    PendingSessionOutputPatch pending;
-    pending.sessionKey = key;
-    pending.message = message;
-    m_pendingSessionOutputPatches.insert(reqId, pending);
-    qDebug().noquote() << "[Gateway] sessions.patch sessionOutputDir:"
-                       << outputDir << "session:" << key;
+    // Current Gateway schemas reject sessionOutputDir in sessions.patch.
+    // The task workspace is already stored locally and is only used for
+    // artifact tracking, so it must not gate chat.send.
+    sendChatMessageNow(key, message);
 }
 
 void GatewayClient::sendChatMessageNow(const QString &sessionKey,
@@ -2157,6 +2371,117 @@ void GatewayClient::sendChatMessageNow(const QString &sessionKey,
         m_session.buildChatSendParams(message, key));
     m_chatSendReqSession.insert(reqId, key);
     m_chatSendReqMessage.insert(reqId, message);
+    beginArtifactTracking(key);
+}
+
+bool GatewayClient::shouldIgnoreArtifactPath(const QString &relativePath)
+{
+    const QString path = QDir::fromNativeSeparators(relativePath);
+    const QString name = QFileInfo(path).fileName();
+    return path == QLatin1String(".git")
+        || path.startsWith(QLatin1String(".git/"))
+        || path == QLatin1String(".medclaw")
+        || path.startsWith(QLatin1String(".medclaw/"))
+        || path == QLatin1String("node_modules")
+        || path.startsWith(QLatin1String("node_modules/"))
+        || name.startsWith(QLatin1String("~$"))
+        || name.endsWith(QLatin1String(".tmp"), Qt::CaseInsensitive)
+        || name.endsWith(QLatin1String(".lock"), Qt::CaseInsensitive);
+}
+
+GatewayClient::WorkspaceSnapshot GatewayClient::snapshotWorkspace(
+    const QString &workspace) const
+{
+    WorkspaceSnapshot snapshot;
+    const QDir root(workspace);
+    if (!root.exists())
+        return snapshot;
+
+    QStringList pendingDirs{root.absolutePath()};
+    const int maxTrackedFiles = 10000;
+    while (!pendingDirs.isEmpty() && snapshot.size() < maxTrackedFiles) {
+        const QDir dir(pendingDirs.takeLast());
+        const QFileInfoList entries = dir.entryInfoList(
+            QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+            QDir::Name | QDir::DirsFirst);
+        for (const QFileInfo &info : entries) {
+            const QString relativePath = QDir::fromNativeSeparators(
+                root.relativeFilePath(info.absoluteFilePath()));
+            if (shouldIgnoreArtifactPath(relativePath))
+                continue;
+            if (info.isDir()) {
+                pendingDirs.append(info.absoluteFilePath());
+                continue;
+            }
+            WorkspaceFileState state;
+            state.size = info.size();
+            state.modifiedMs = info.lastModified().toMSecsSinceEpoch();
+            state.absolutePath = info.absoluteFilePath();
+            snapshot.insert(relativePath, state);
+            if (snapshot.size() >= maxTrackedFiles)
+                break;
+        }
+    }
+    return snapshot;
+}
+
+void GatewayClient::beginArtifactTracking(const QString &sessionKey)
+{
+    const QString key = sessionKey.trimmed();
+    const QString workspace = normalizeWorkspacePath(
+        taskSessionInfoByKey(key).value(QStringLiteral("workspace")).toString());
+    m_artifactTrackingSessionKey = key;
+    m_artifactTrackingWorkspace = workspace;
+    m_artifactBeforeSnapshot = snapshotWorkspace(workspace);
+    qDebug() << "[Gateway] artifact tracking started:" << key
+             << workspace << m_artifactBeforeSnapshot.size() << "files";
+}
+
+void GatewayClient::finishArtifactTracking(const QString &sessionKey)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || key != m_artifactTrackingSessionKey
+        || m_artifactTrackingWorkspace.isEmpty()) {
+        return;
+    }
+
+    const QString workspace = m_artifactTrackingWorkspace;
+    const WorkspaceSnapshot before = m_artifactBeforeSnapshot;
+    m_artifactTrackingSessionKey.clear();
+    m_artifactTrackingWorkspace.clear();
+    m_artifactBeforeSnapshot.clear();
+
+    QTimer::singleShot(500, this, [this, key, workspace, before]() {
+        const WorkspaceSnapshot after = snapshotWorkspace(workspace);
+        QVariantList artifacts;
+        QStringList paths = after.keys();
+        paths.sort(Qt::CaseInsensitive);
+        for (const QString &relativePath : paths) {
+            const WorkspaceFileState state = after.value(relativePath);
+            QString changeType = QStringLiteral("created");
+            const auto oldIt = before.constFind(relativePath);
+            if (oldIt != before.cend()) {
+                if (oldIt->size == state.size
+                    && oldIt->modifiedMs == state.modifiedMs) {
+                    continue;
+                }
+                changeType = QStringLiteral("modified");
+            }
+            QVariantMap item;
+            item.insert(QStringLiteral("name"), QFileInfo(relativePath).fileName());
+            item.insert(QStringLiteral("path"), state.absolutePath);
+            item.insert(QStringLiteral("relativePath"), relativePath);
+            item.insert(QStringLiteral("extension"),
+                        QFileInfo(relativePath).suffix().toLower());
+            item.insert(QStringLiteral("size"), state.size);
+            item.insert(QStringLiteral("changeType"), changeType);
+            artifacts.append(item);
+        }
+        if (!artifacts.isEmpty())
+            emit artifactsDetected(key, artifacts);
+        qDebug() << "[Gateway] artifact tracking finished:"
+                 << artifacts.size() << "changed files";
+    });
 }
 
 QString GatewayClient::resolveChatSessionKeyForAgentId(const QString &agentId) const
@@ -2905,6 +3230,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
+            finishArtifactTracking(m_currentTaskSessionKey.isEmpty()
+                ? m_session.currentSessionKey() : m_currentTaskSessionKey);
             return;
         }
         if (!r.content.isEmpty()) {
@@ -2938,6 +3265,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
+            finishArtifactTracking(m_currentTaskSessionKey.isEmpty()
+                ? m_session.currentSessionKey() : m_currentTaskSessionKey);
             return;
         }
         return;
@@ -3022,10 +3351,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         const bool isSessionOutputDirPatch =
             method == QLatin1String("sessions.patch")
             && m_pendingSessionOutputPatches.contains(id);
+        PendingSessionOutputPatch failedOutputPatch;
         if (isSessionOutputDirPatch) {
-            const PendingSessionOutputPatch pending =
-                m_pendingSessionOutputPatches.take(id);
-            setTaskSessionRunning(pending.sessionKey, false);
+            failedOutputPatch = m_pendingSessionOutputPatches.take(id);
         }
 
         m_sidebarTitleHistReqAgent.remove(id);
@@ -3106,6 +3434,13 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 m_localOnlyTaskSessionKeys.remove(key);
                 softDeleteTaskSessionLocal(key);
             }
+        }
+
+        if (isSessionOutputDirPatch) {
+            qWarning() << "[Gateway] sessionOutputDir unsupported; sending with local workspace tracking";
+            sendChatMessageNow(failedOutputPatch.sessionKey,
+                               failedOutputPatch.message);
+            return;
         }
 
         emit errorOccurred(errMsg);

@@ -5,6 +5,7 @@
 #include <QCryptographicHash>
 #include <QClipboard>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -277,6 +278,24 @@ QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
     }
     qDebug() << "[MainVC] copied" << srcPath << "->" << destPath;
     return destName;
+}
+
+bool MainViewController::openContainingFolder(const QString &fileUrl) const
+{
+    const QString path = normalizeLocalFileCandidate(fileUrl);
+    const QFileInfo info(path);
+    if (!info.exists())
+        return false;
+    const QString folder = info.isDir() ? info.absoluteFilePath() : info.absolutePath();
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+}
+
+bool MainViewController::openWithDefaultApplication(const QString &fileUrl) const
+{
+    const QString path = normalizeLocalFileCandidate(fileUrl);
+    if (!QFileInfo::exists(path))
+        return false;
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 QVariantList MainViewController::importClipboardFiles() const

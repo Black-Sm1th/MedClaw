@@ -272,6 +272,16 @@ public:
     /// 确保任务工作目录存在；空路径时使用安装目录下的按日期默认目录。
     Q_INVOKABLE QString prepareTaskWorkspace(const QString &workspace = QString());
 
+    /// Persist and restore files supplied by the user for the active task session.
+    Q_INVOKABLE void rememberCurrentSessionInputFiles(const QVariantList &files);
+    Q_INVOKABLE QVariantList currentSessionInputFiles();
+    void rememberInputFilesFromHistory(const QVariantList &history);
+
+    void persistSessionArtifacts(const QString &sessionKey,
+                                 const QVariantList &messages);
+    QVariantList restoreSessionArtifacts(const QString &sessionKey,
+                                         const QVariantList &history);
+
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();
 
@@ -572,6 +582,8 @@ signals:
     void streamingFinished();                    ///< 流式输出结束
 
     // ── 工具调用 ──
+    void artifactsDetected(const QString &sessionKey,
+                           const QVariantList &artifacts);
     void toolCallReceived(const QString &toolName,
                           const QString &toolArgs,
                           const QString &toolCallId);    ///< Agent 发起工具调用
@@ -767,6 +779,16 @@ private:
                                          const QString &message);
     void sendChatMessageNow(const QString &sessionKey,
                             const QString &message);
+    struct WorkspaceFileState {
+        qint64 size = 0;
+        qint64 modifiedMs = 0;
+        QString absolutePath;
+    };
+    typedef QHash<QString, WorkspaceFileState> WorkspaceSnapshot;
+    WorkspaceSnapshot snapshotWorkspace(const QString &workspace) const;
+    void beginArtifactTracking(const QString &sessionKey);
+    void finishArtifactTracking(const QString &sessionKey);
+    static bool shouldIgnoreArtifactPath(const QString &relativePath);
 
     bool initTaskSessionDb();
     void loadTaskSessionListFromDb();
@@ -967,6 +989,9 @@ private:
     QMap<QString, quint64> m_sessionTitleHistReqBatch;
     QMap<QString, QString> m_chatSendReqSession;
     QMap<QString, QString> m_chatSendReqMessage;
+    QString m_artifactTrackingSessionKey;
+    QString m_artifactTrackingWorkspace;
+    WorkspaceSnapshot m_artifactBeforeSnapshot;
     quint64 m_sidebarTitleBatchGen = 0;
     quint64 m_sessionTitleBatchGen = 0;
     QTimer m_agentFirstUserTitleDebounce;

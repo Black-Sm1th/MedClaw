@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Window 2.2
 import QtQuick.Dialogs 1.3
 import QtGraphicalEffects 1.0
+import MedClaw.Office 1.0
 import "./components"
 ApplicationWindow {
     id: window
@@ -2036,6 +2037,313 @@ ApplicationWindow {
                 }
                 readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
                                                              || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
+                property bool artifactSidebarVisible: false
+                property var sessionInputFiles: []
+                property var sessionArtifacts: []
+                property string artifactSidebarMode: "list"
+                property var selectedOfficeFile: ({})
+                property alias officeTabs: officeTabsModel
+                ListModel { id: officeTabsModel }
+                property int activeOfficeTabIndex: -1
+                property bool officePanelMaximized: false
+                property bool officePanelSizeManuallySet: false
+                property bool sidebarFilesAscending: true
+                property bool inputFilesExpanded: true
+                property bool artifactsExpanded: true
+                property bool resourcePopoverVisible: false
+                property bool officeMoreMenuVisible: false
+                property string officeDownloadSourcePath: ""
+                property bool sessionHistoryLoading: false
+                property string sidebarStateSessionKey: ""
+                property var sidebarVisibilityBySession: ({})
+                property bool officeSaveRequested: false
+                property bool officeEditPending: false
+                property bool officePreviewPending: false
+                readonly property bool officeDocumentVisible: artifactSidebarMode === "preview"
+                                                             || artifactSidebarMode === "edit"
+                readonly property int officePreviewWidth: Math.min(680, Math.max(420, width - 360))
+                readonly property int artifactSidebarWidth: artifactSidebarVisible
+                    ? (officePanelMaximized ? width
+                       : (officeDocumentVisible ? officePreviewWidth : 300))
+                    : 0
+
+                function sortedSidebarFiles(files) {
+                    var sorted = (files || []).slice(0)
+                    sorted.sort(function(left, right) {
+                        var a = String((left && left.name) || (left && left.path) || "")
+                        var b = String((right && right.name) || (right && right.path) || "")
+                        return a.localeCompare(b)
+                    })
+                    if (!sidebarFilesAscending)
+                        sorted.reverse()
+                    return sorted
+                }
+
+                function showResourcePopover() {
+                    resourcePopoverCloseTimer.stop()
+                    resourcePopoverVisible = true
+                }
+
+                function scheduleResourcePopoverClose() {
+                    resourcePopoverCloseTimer.restart()
+                }
+
+                function hideResourcePopover() {
+                    resourcePopoverCloseTimer.stop()
+                    resourcePopoverVisible = false
+                }
+
+                function currentSidebarSessionKey() {
+                    return String(wsClient.currentViewSessionKey
+                                  || wsClient.currentTaskSessionKey || "")
+                }
+
+                function beginSidebarSessionSwitch() {
+                    var nextKey = currentSidebarSessionKey()
+                    if (nextKey === sidebarStateSessionKey)
+                        return
+                    var states = ({})
+                    for (var key in sidebarVisibilityBySession)
+                        states[key] = sidebarVisibilityBySession[key]
+                    if (sidebarStateSessionKey)
+                        states[sidebarStateSessionKey] = { visible: artifactSidebarVisible }
+                    sidebarVisibilityBySession = states
+                    sidebarStateSessionKey = nextKey
+                    sessionHistoryLoading = nextKey.length > 0
+                    sessionInputFiles = []
+                    sessionArtifacts = []
+                    hideResourcePopover()
+                    officeMoreMenuVisible = false
+                    closeOfficeDocument()
+                    artifactSidebarVisible = false
+                }
+
+                function finishSidebarSessionLoad() {
+                    var key = currentSidebarSessionKey()
+                    sidebarStateSessionKey = key
+                    sessionInputFiles = wsClient.currentSessionInputFiles()
+                    rebuildSessionArtifacts()
+                    var saved = sidebarVisibilityBySession[key]
+                    artifactSidebarVisible = !!(saved && saved.visible)
+                    sessionHistoryLoading = false
+                }
+
+                Timer {
+                    id: resourcePopoverCloseTimer
+                    interval: 800
+                    repeat: false
+                    onTriggered: newTaskRec.resourcePopoverVisible = false
+                }
+
+                FileDialog {
+                    id: officeDownloadFolderDialog
+                    title: qsTr("选择下载位置")
+                    selectFolder: true
+                    onAccepted: {
+                        var destination = window.localFilePathFromUrl(fileUrl)
+                        var copiedName = $MainViewController.copyFileToWorkspace(
+                                    newTaskRec.officeDownloadSourcePath, destination)
+                        errorToast.text = copiedName
+                                ? qsTr("已下载：") + copiedName
+                                : qsTr("下载失败，请重试")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        newTaskRec.officeDownloadSourcePath = ""
+                    }
+                    onRejected: newTaskRec.officeDownloadSourcePath = ""
+                }
+
+                function fileExtension(path) {
+                    var name = String(path || "").replace(/\\/g, "/").split("/").pop()
+                    var dot = name.lastIndexOf(".")
+                    return dot > 0 ? name.substring(dot + 1).toLowerCase() : ""
+                }
+
+                function artifactIcon(file) {
+                    if (file && (file.isDirectory === true || file.folder === true
+                                 || file.type === "directory" || file.type === "folder"))
+                        return "qrc:/images/doc/document-fold.svg"
+                    var ext = String((file && file.extension) || fileExtension(file && file.path)).toLowerCase()
+                    if (ext === "doc" || ext === "docx")
+                        return "qrc:/images/doc/document-word.svg"
+                    if (ext === "xls" || ext === "xlsx" || ext === "xlsm" || ext === "csv")
+                        return "qrc:/images/doc/document-excel.svg"
+                    if (ext === "ppt" || ext === "pptx")
+                        return "qrc:/images/doc/document-ppt.svg"
+                    return "qrc:/images/doc/document-text.svg"
+                }
+
+                function supportsOnlineOffice(file) {
+                    if (!file || file.folder === true || file.isDirectory === true
+                            || file.type === "directory" || file.type === "folder")
+                        return false
+                    var ext = String(file.extension || fileExtension(file.path)).toLowerCase()
+                    return /^(doc|docx|odt|rtf|xls|xlsx|xlsm|ods|csv|ppt|pptx|odp|txt|md|pdf|html|htm)$/.test(ext)
+                }
+
+                function openOfficeFile(file) {
+                    var path = String((file && file.path) || "")
+                    if (!path)
+                        return
+                    if (!supportsOnlineOffice(file)) {
+                        window.openMarkdownLink("medclaw-local:" + encodeURIComponent(path))
+                        return
+                    }
+                    var tabIndex = findOfficeTab(path)
+                    if (tabIndex < 0) {
+                        officeTabs.append({
+                            "name": String(file.name || path.replace(/\\/g, "/").split("/").pop()),
+                            "path": path,
+                            "extension": String(file.extension || fileExtension(path))
+                        })
+                        tabIndex = officeTabs.count - 1
+                    }
+                    activateOfficeTab(tabIndex)
+                }
+
+                function officeTabKey(path) {
+                    return String(path || "").replace(/\\/g, "/").toLowerCase()
+                }
+
+                function findOfficeTab(path) {
+                    var key = officeTabKey(path)
+                    for (var i = 0; i < officeTabs.count; i++) {
+                        if (officeTabKey(officeTabs.get(i).path) === key)
+                            return i
+                    }
+                    return -1
+                }
+
+                function activateOfficeTab(index) {
+                    if (index < 0 || index >= officeTabs.count)
+                        return
+                    var source = officeTabs.get(index)
+                    var file = { name: source.name, path: source.path, extension: source.extension }
+                    var path = String(file.path || "")
+                    if (!path)
+                        return
+                    activeOfficeTabIndex = index
+                    selectedOfficeFile = file
+                    officeMoreMenuVisible = false
+                    officeEditPending = false
+                    officePreviewPending = false
+                    artifactSidebarVisible = true
+                    artifactSidebarMode = "preview"
+                    officeSaveRequested = false
+                    Qt.callLater(function() {
+                        var host = officeViewsRepeater.itemAt(index)
+                        if (!host || index !== activeOfficeTabIndex)
+                            return
+                        officeSaveRequested = host.officeClient.saving
+                        if (host.officeView && host.officeView.mode === "edit")
+                            artifactSidebarMode = "edit"
+                    })
+                }
+
+                function closeOfficeTab(index) {
+                    if (index < 0 || index >= officeTabs.count)
+                        return
+                    var host = officeViewsRepeater.itemAt(index)
+                    if (host && host.officeView && host.officeClient.busy) {
+                        host.closeWhenFinished = true
+                        host.officeView.closeEditor()
+                        return
+                    }
+                    closeOfficeTabNow(index)
+                }
+
+                function closeOfficeTabNow(index) {
+                    if (index < 0 || index >= officeTabs.count)
+                        return
+                    var wasActive = index === activeOfficeTabIndex
+                    officeTabs.remove(index)
+                    if (officeTabs.count === 0) {
+                        closeOfficeDocument()
+                        return
+                    }
+                    if (!wasActive) {
+                        if (index < activeOfficeTabIndex)
+                            activeOfficeTabIndex--
+                        return
+                    }
+                    activateOfficeTab(Math.min(index, officeTabs.count - 1))
+                }
+
+                function showArtifactList() {
+                    artifactSidebarVisible = true
+                    artifactSidebarMode = "list"
+                }
+
+                function openArtifactPath(path) {
+                    var raw = String(path || "")
+                    if (!raw)
+                        return
+                    var ws = dropdownSelectionWorkSpace.effectiveWorkspacePath || ""
+                    if (!ws)
+                        ws = wsClient.currentTaskWorkspace || ""
+                    var resolved = $MainViewController.resolveLocalFileLink(
+                                "medclaw-local:" + encodeURIComponent(raw), ws)
+                    if (!resolved) {
+                        console.warn("artifact file not found:", raw)
+                        return
+                    }
+                    var info = $MainViewController.localFileInfo(resolved)
+                    if (!info || !info.absolutePath) {
+                        Qt.openUrlExternally(resolved)
+                        return
+                    }
+                    var file = {
+                        name: info.fileName || raw.replace(/\\/g, "/").split("/").pop(),
+                        path: info.absolutePath,
+                        extension: info.ext || fileExtension(info.absolutePath)
+                    }
+                    openOfficeFile(file)
+                }
+
+                function closeOfficeDocument() {
+                    officeSaveRequested = false
+                    officeEditPending = false
+                    officePreviewPending = false
+                    officeMoreMenuVisible = false
+                    artifactSidebarMode = "list"
+                    for (var i = 0; i < officeViewsRepeater.count; i++) {
+                        var host = officeViewsRepeater.itemAt(i)
+                        if (host && host.officeClient.busy)
+                            host.officeClient.cancel()
+                    }
+                    selectedOfficeFile = ({})
+                    officeTabs.clear()
+                    activeOfficeTabIndex = -1
+                    officePanelMaximized = false
+                    officePanelSizeManuallySet = false
+                }
+
+                function toggleArtifactSidebar() {
+                    if (officeDocumentVisible) {
+                        showArtifactList()
+                        return
+                    }
+                    artifactSidebarVisible = !artifactSidebarVisible
+                    artifactSidebarMode = "list"
+                }
+
+                function rebuildSessionArtifacts() {
+                    var rows = chatModel.messages ? chatModel.messages() : []
+                    var files = []
+                    var seen = ({})
+                    for (var i = 0; i < rows.length; i++) {
+                        var artifacts = rows[i].artifacts || []
+                        for (var j = 0; j < artifacts.length; j++) {
+                            var file = artifacts[j] || {}
+                            var path = String(file.path || "")
+                            if (!path || seen[path])
+                                continue
+                            seen[path] = true
+                            files.push(file)
+                        }
+                    }
+                    sessionArtifacts = files
+                }
 
                 property int selectedShortcutGroup: -1
                 readonly property var shortcutGroups: [
@@ -2140,9 +2448,12 @@ ApplicationWindow {
                     selectedShortcutGroup = -1
                 }
 
-                function doSendMessage(requestedText) {
+                function doSendMessage(requestedText, files) {
                     var msg = (requestedText === undefined
                                ? textInputArea.text : String(requestedText)).trim()
+                    var submittedFiles = files || []
+                    if (submittedFiles.length === 0 && textInputArea.attachedFiles.length > 0)
+                        submittedFiles = textInputArea.attachedFiles.slice(0)
                     if (msg === "") return
                     if (wsClient.connectionState !== 3)
                         return
@@ -2168,6 +2479,9 @@ ApplicationWindow {
                     textInputArea.text = ""
                     $MainViewController.sendMessage(
                         msg, wsPath, window.chatKnowledgeCollection)
+                    sessionHistoryLoading = false
+                    wsClient.rememberCurrentSessionInputFiles(submittedFiles)
+                    sessionInputFiles = wsClient.currentSessionInputFiles()
                 }
 
                 Column{
@@ -2189,13 +2503,29 @@ ApplicationWindow {
                 Connections {
                     target: chatModel
                     function onMessagePayloadChanged() {
+                        newTaskRec.rebuildSessionArtifacts()
                         if (chatModel.count > 0)
                             chatWebView.scrollToBottom()
                     }
                 }
                 Connections {
+                    target: wsClient
+                    function onCurrentViewSessionChanged() {
+                        newTaskRec.beginSidebarSessionSwitch()
+                    }
+                    function onHistoryLoaded(messages) {
+                        newTaskRec.finishSidebarSessionLoad()
+                    }
+                }
+                Connections {
                     target: chatModel
                     function onCountChanged() {
+                        newTaskRec.rebuildSessionArtifacts()
+                        if (chatModel.count === 0 && !newTaskRec.sessionHistoryLoading) {
+                            newTaskRec.sessionInputFiles = []
+                            newTaskRec.closeOfficeDocument()
+                            newTaskRec.artifactSidebarVisible = false
+                        }
                         if (chatModel.count > 0)
                             newTaskRec.resetShortcutSelection()
                     }
@@ -2227,9 +2557,1002 @@ ApplicationWindow {
                     anchors.bottom: chatInputContainer.top
                     anchors.bottomMargin: 8
                     anchors.left: parent.left
-                    anchors.right: parent.right
+                    anchors.right: newTaskRec.artifactSidebarVisible ? artifactSidebar.left : parent.right
                     model: chatModel
                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
+                    onArtifactsRequested: newTaskRec.toggleArtifactSidebar()
+                    onArtifactRequested: function(path) { newTaskRec.openArtifactPath(path) }
+                }
+
+                Rectangle {
+                    id: artifactSidebar
+                    visible: newTaskRec.artifactSidebarVisible
+                    width: newTaskRec.artifactSidebarWidth
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.right: parent.right
+                    color: "#FFFFFF"
+                    border.width: 0
+                    z: 20
+
+                    Rectangle {
+                        width: 1
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        color: "#14000000"
+                    }
+
+                    Rectangle {
+                        id: artifactListToolbar
+                        visible: newTaskRec.artifactSidebarMode === "list"
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: 52
+                        color: "#FFFFFF"
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 1
+                            color: "#14000000"
+                        }
+
+                        Rectangle {
+                            id: artifactSortButton
+                            width: 36; height: 36; radius: 8
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: artifactSortMouse.pressed ? "#14000000"
+                                 : artifactSortMouse.containsMouse ? "#F7F9FA" : "transparent"
+                            Image {
+                                anchors.centerIn: parent
+                                width: 24; height: 24
+                                source: "qrc:/images/office/sidebar-sort.svg"
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            MouseArea {
+                                id: artifactSortMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onEntered: newTaskRec.showResourcePopover()
+                                onExited: newTaskRec.scheduleResourcePopoverClose()
+                            }
+                        }
+
+                        Rectangle {
+                            id: artifactSidebarToggleButton
+                            width: 36; height: 36; radius: 8
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: artifactSidebarToggleMouse.pressed ? "#14000000"
+                                 : artifactSidebarToggleMouse.containsMouse ? "#F7F9FA" : "transparent"
+                            Image {
+                                anchors.centerIn: parent
+                                width: 20; height: 20
+                                source: "qrc:/images/office/sidebar-collapse.svg"
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            MouseArea {
+                                id: artifactSidebarToggleMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    newTaskRec.hideResourcePopover()
+                                    newTaskRec.artifactSidebarVisible = false
+                                }
+                            }
+                            ToolTip.visible: artifactSidebarToggleMouse.containsMouse
+                            ToolTip.text: qsTr("收起文件面板")
+                        }
+
+                        Rectangle {
+                            id: artifactListMaximizeButton
+                            width: 36; height: 36; radius: 8
+                            anchors.right: artifactSidebarToggleButton.left
+                            anchors.rightMargin: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: artifactListMaximizeMouse.pressed ? "#14000000"
+                                 : artifactListMaximizeMouse.containsMouse ? "#F7F9FA" : "transparent"
+                            Image {
+                                anchors.centerIn: parent
+                                width: 16; height: 16
+                                source: newTaskRec.officePanelMaximized
+                                        ? "qrc:/images/office/sidebar-minimize.svg"
+                                        : "qrc:/images/office/sidebar-maximize.svg"
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            MouseArea {
+                                id: artifactListMaximizeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    newTaskRec.officePanelMaximized = !newTaskRec.officePanelMaximized
+                                    newTaskRec.officePanelSizeManuallySet = true
+                                }
+                            }
+                            ToolTip.visible: artifactListMaximizeMouse.containsMouse
+                            ToolTip.text: newTaskRec.officePanelMaximized ? qsTr("缩小文件面板") : qsTr("放大文件面板")
+                        }
+                    }
+
+                    Flickable {
+                        visible: newTaskRec.artifactSidebarMode === "list"
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: artifactListToolbar.bottom
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 1
+                        contentWidth: width
+                        contentHeight: artifactSidebarColumn.implicitHeight + 40
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        Column {
+                            id: artifactSidebarColumn
+                            x: 16
+                            y: 20
+                            width: parent.width - 32
+                            spacing: 24
+
+                            Column {
+                                width: parent.width
+                                spacing: 8
+                                visible: newTaskRec.sessionInputFiles.length > 0
+
+                                Item {
+                                    id: inputFilesHeader
+                                    width: parent.width
+                                    height: 24
+
+                                    Label {
+                                        id: inputFilesHeaderLabel
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 8
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("输入文件")
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 16
+                                        font.weight: Font.Normal
+                                        color: "#73000000"
+                                    }
+                                    Canvas {
+                                        anchors.left: inputFilesHeaderLabel.right
+                                        anchors.leftMargin: 4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 16; height: 16
+                                        rotation: newTaskRec.inputFilesExpanded ? 0 : -90
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.reset()
+                                            ctx.strokeStyle = "#73000000"
+                                            ctx.lineWidth = 1.2
+                                            ctx.lineCap = "round"
+                                            ctx.lineJoin = "round"
+                                            ctx.beginPath()
+                                            ctx.moveTo(5, 6.5)
+                                            ctx.lineTo(8, 9.5)
+                                            ctx.lineTo(11, 6.5)
+                                            ctx.stroke()
+                                        }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.inputFilesExpanded = !newTaskRec.inputFilesExpanded
+                                    }
+                                }
+
+                                Column {
+                                    width: parent.width
+                                    spacing: 4
+                                    visible: newTaskRec.inputFilesExpanded
+                                    Repeater {
+                                        model: newTaskRec.sortedSidebarFiles(newTaskRec.sessionInputFiles)
+                                        delegate: artifactSidebarFileDelegate
+                                    }
+                                }
+                            }
+
+                            Column {
+                                width: parent.width
+                                spacing: 8
+
+                                Item {
+                                    id: artifactsHeader
+                                    width: parent.width
+                                    height: 24
+
+                                    Label {
+                                        id: artifactsHeaderLabel
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 8
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("产物")
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 16
+                                        font.weight: Font.Normal
+                                        color: "#73000000"
+                                    }
+                                    Canvas {
+                                        anchors.left: artifactsHeaderLabel.right
+                                        anchors.leftMargin: 4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 16; height: 16
+                                        rotation: newTaskRec.artifactsExpanded ? 0 : -90
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.reset()
+                                            ctx.strokeStyle = "#73000000"
+                                            ctx.lineWidth = 1.2
+                                            ctx.lineCap = "round"
+                                            ctx.lineJoin = "round"
+                                            ctx.beginPath()
+                                            ctx.moveTo(5, 6.5)
+                                            ctx.lineTo(8, 9.5)
+                                            ctx.lineTo(11, 6.5)
+                                            ctx.stroke()
+                                        }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.artifactsExpanded = !newTaskRec.artifactsExpanded
+                                    }
+                                }
+
+                                Column {
+                                    width: parent.width
+                                    spacing: 4
+                                    visible: newTaskRec.artifactsExpanded
+                                    Repeater {
+                                        model: newTaskRec.sortedSidebarFiles(newTaskRec.sessionArtifacts)
+                                        delegate: artifactSidebarFileDelegate
+                                    }
+                                }
+                            }
+                        }
+
+                        ScrollBar.vertical: ScrollBar {
+                            policy: ScrollBar.AsNeeded
+                            width: 4
+                            contentItem: Rectangle {
+                                implicitWidth: 4
+                                radius: 2
+                                color: "#40000000"
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: officeDocumentPanel
+                        visible: newTaskRec.officeDocumentVisible
+                        anchors.fill: parent
+
+                        Rectangle {
+                            id: officeTabsBar
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            height: 52
+                            color: "#FFFFFF"
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: "#14000000"
+                            }
+
+                            Rectangle {
+                                id: officeBackButton
+                                width: 36; height: 36; radius: 8
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: officeBackMouse.pressed ? "#14000000"
+                                     : officeBackMouse.containsMouse ? "#F7F9FA" : "transparent"
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 24; height: 24
+                                    source: "qrc:/images/office/sidebar-sort.svg"
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                MouseArea {
+                                    id: officeBackMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onEntered: newTaskRec.showResourcePopover()
+                                    onExited: newTaskRec.scheduleResourcePopoverClose()
+                                }
+                            }
+
+                            Flickable {
+                                id: officeTabsViewport
+                                anchors.left: officeBackButton.right
+                                anchors.leftMargin: 4
+                                anchors.right: officePanelButton.left
+                                anchors.rightMargin: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: 36
+                                contentWidth: officeTabsRow.width
+                                contentHeight: height
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                flickableDirection: Flickable.HorizontalFlick
+
+                                Row {
+                                    id: officeTabsRow
+                                    height: parent.height
+                                    spacing: 4
+
+                                    Repeater {
+                                        model: newTaskRec.officeTabs
+
+                                        delegate: Rectangle {
+                                            id: officeTab
+                                            required property int index
+                                            required property string name
+                                            required property string path
+                                            required property string extension
+                                            readonly property bool active: index === newTaskRec.activeOfficeTabIndex
+                                            width: Math.max(150,
+                                                   (officeTabsViewport.width
+                                                    - Math.max(0, newTaskRec.officeTabs.count - 1)
+                                                      * officeTabsRow.spacing)
+                                                   / Math.max(1, newTaskRec.officeTabs.count))
+                                            height: 36
+                                            radius: 8
+                                            color: active ? "#EBEDF0"
+                                                  : officeTabMouse.containsMouse ? "#F7F9FA" : "transparent"
+
+                                            Image {
+                                                id: officeTabIcon
+                                                width: 20; height: 20
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 8
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                source: newTaskRec.artifactIcon({
+                                                    path: officeTab.path,
+                                                    extension: officeTab.extension
+                                                })
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+
+                                            Label {
+                                                anchors.left: officeTabIcon.right
+                                                anchors.leftMargin: 4
+                                                anchors.right: officeTabClose.left
+                                                anchors.rightMargin: 4
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: officeTab.name
+                                                      || String(officeTab.path || "")
+                                                         .replace(/\\/g, "/").split("/").pop()
+                                                elide: Text.ElideRight
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                font.pixelSize: 16
+                                                color: "#D9000000"
+                                            }
+
+                                            MouseArea {
+                                                id: officeTabMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: newTaskRec.activateOfficeTab(officeTab.index)
+                                            }
+
+                                            Rectangle {
+                                                id: officeTabClose
+                                                z: 2
+                                                width: 28; height: 28; radius: 6
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 4
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                color: officeTabCloseMouse.pressed ? "#1F000000"
+                                                     : officeTabCloseMouse.containsMouse ? "#14000000" : "transparent"
+                                                opacity: officeTab.active || officeTabMouse.containsMouse
+                                                         || officeTabCloseMouse.containsMouse ? 1 : 0
+
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: "\u00D7"
+                                                    font.pixelSize: 18
+                                                    color: "#73000000"
+                                                }
+                                                MouseArea {
+                                                    id: officeTabCloseMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: newTaskRec.closeOfficeTab(officeTab.index)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                id: officeSidebarToggleButton
+                                width: 36; height: 36; radius: 8
+                                anchors.right: parent.right
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: officeSidebarToggleMouse.pressed ? "#14000000"
+                                     : officeSidebarToggleMouse.containsMouse ? "#F7F9FA" : "transparent"
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 20; height: 20
+                                    source: "qrc:/images/office/sidebar-collapse.svg"
+                                    fillMode: Image.PreserveAspectFit
+                                }
+
+                                MouseArea {
+                                    id: officeSidebarToggleMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        newTaskRec.hideResourcePopover()
+                                        newTaskRec.artifactSidebarVisible = false
+                                    }
+                                }
+
+                                ToolTip.visible: officeSidebarToggleMouse.containsMouse
+                                ToolTip.text: qsTr("收起文件面板")
+                            }
+
+                            Rectangle {
+                                id: officePanelButton
+                                width: 36; height: 36; radius: 8
+                                anchors.right: officeSidebarToggleButton.left
+                                anchors.rightMargin: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: officePanelMouse.pressed ? "#14000000"
+                                     : officePanelMouse.containsMouse ? "#F7F9FA" : "transparent"
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 16; height: 16
+                                    source: newTaskRec.officePanelMaximized
+                                            ? "qrc:/images/office/sidebar-minimize.svg"
+                                            : "qrc:/images/office/sidebar-maximize.svg"
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                MouseArea {
+                                    id: officePanelMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        newTaskRec.officePanelMaximized = !newTaskRec.officePanelMaximized
+                                        newTaskRec.officePanelSizeManuallySet = true
+                                    }
+                                }
+
+                                ToolTip.visible: officePanelMouse.containsMouse
+                                ToolTip.text: newTaskRec.officePanelMaximized
+                                              ? qsTr("缩小文件面板") : qsTr("放大文件面板")
+                            }
+                        }
+
+                        Rectangle {
+                            id: officeTitleBar
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: officeTabsBar.bottom
+                            height: 52
+                            color: "#FFFFFF"
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: "#14000000"
+                            }
+
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
+                                anchors.right: officeActionButton.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: newTaskRec.selectedOfficeFile.name || ""
+                                elide: Text.ElideRight
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 20
+                                font.weight: Font.Medium
+                                color: "#D9000000"
+                            }
+
+                            Rectangle {
+                                id: officeMoreButton
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 36
+                                height: 36
+                                radius: 8
+                                color: newTaskRec.officeMoreMenuVisible ? "#EBEDF0"
+                                     : officeMoreMouse.pressed ? "#DDE0E5"
+                                     : officeMoreMouse.containsMouse ? "#EBEDF0" : "transparent"
+
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 3
+                                    Repeater {
+                                        model: 3
+                                        Rectangle {
+                                            width: 4; height: 4; radius: 2
+                                            color: "#A6000000"
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: officeMoreMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.officeMoreMenuVisible =
+                                                   !newTaskRec.officeMoreMenuVisible
+                                }
+                            }
+
+                            Rectangle {
+                                id: officeActionButton
+                                readonly property var activeHost:
+                                    officeViewsRepeater.count > newTaskRec.activeOfficeTabIndex
+                                    && newTaskRec.activeOfficeTabIndex >= 0
+                                    ? officeViewsRepeater.itemAt(newTaskRec.activeOfficeTabIndex) : null
+                                anchors.right: officeMoreButton.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: newTaskRec.officeSaveRequested ? 84
+                                      : (newTaskRec.artifactSidebarMode === "edit" ? 64 : 68)
+                                height: 36
+                                radius: 8
+                                color: newTaskRec.artifactSidebarMode === "edit"
+                                     ? (officeActionMouse.pressed ? "#005AD6" : "#006BFF")
+                                     : (officeActionMouse.pressed ? "#14000000"
+                                        : officeActionMouse.containsMouse ? "#F7F9FA" : "transparent")
+
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 8
+
+                                    Image {
+                                        width: 16; height: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: newTaskRec.artifactSidebarMode === "preview"
+                                                 && !newTaskRec.officeSaveRequested
+                                        source: "qrc:/images/office/edit.svg"
+                                        fillMode: Image.PreserveAspectFit
+                                    }
+
+                                    Label {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: newTaskRec.officeSaveRequested ? qsTr("保存中...")
+                                              : (newTaskRec.artifactSidebarMode === "edit" ? qsTr("保存") : qsTr("编辑"))
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 14
+                                        color: newTaskRec.artifactSidebarMode === "edit" ? "#FFFFFF" : "#A6000000"
+                                    }
+                                }
+                                MouseArea {
+                                    id: officeActionMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: officeActionButton.activeHost
+                                             && officeActionButton.activeHost.officeView
+                                             && !newTaskRec.officeEditPending
+                                             && !newTaskRec.officePreviewPending
+                                             && !newTaskRec.officeSaveRequested
+                                             && !officeActionButton.activeHost.officeClient.saving
+                                             && String(officeActionButton.activeHost.officeClient.editorUrl || "").length > 0
+                                    onClicked: {
+                                        var view = officeActionButton.activeHost
+                                                   ? officeActionButton.activeHost.officeView : null
+                                        if (!view)
+                                            return
+                                        if (newTaskRec.artifactSidebarMode === "preview") {
+                                            if (!newTaskRec.officePanelSizeManuallySet)
+                                                newTaskRec.officePanelMaximized = true
+                                            newTaskRec.officeEditPending = true
+                                            newTaskRec.officePreviewPending = false
+                                            view.switchMode("edit")
+                                        } else {
+                                            newTaskRec.officeSaveRequested = true
+                                            view.saveEditor()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            visible: newTaskRec.officeMoreMenuVisible
+                            z: 110
+                            onClicked: newTaskRec.officeMoreMenuVisible = false
+                        }
+
+                        Item {
+                            id: officeMoreMenu
+                            visible: newTaskRec.officeMoreMenuVisible
+                            width: 200
+                            height: 124
+                            x: Math.max(8, parent.width - width - 12)
+                            y: officeTitleBar.y + officeTitleBar.height + 4
+                            z: 120
+
+                            DropShadow {
+                                anchors.fill: officeMoreMenuCard
+                                source: officeMoreMenuCard
+                                horizontalOffset: 0
+                                verticalOffset: 10
+                                radius: 20
+                                samples: 41
+                                color: "#1F1A1A1A"
+                                transparentBorder: true
+                            }
+
+                            Rectangle {
+                                id: officeMoreMenuCard
+                                anchors.fill: parent
+                                radius: 8
+                                color: "#FFFFFF"
+                                border.width: 1
+                                border.color: "#14000000"
+
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+
+                                    Repeater {
+                                        model: [
+                                            { label: qsTr("下载"), icon: "qrc:/images/office/download.svg" },
+                                            { label: qsTr("打开文件夹"), icon: "qrc:/images/office/folder.svg" },
+                                            { label: qsTr("使用默认软件打开"), icon: "qrc:/images/office/othersoftware.svg" }
+                                        ]
+
+                                        delegate: Rectangle {
+                                            required property int index
+                                            required property var modelData
+                                            width: parent.width
+                                            height: 36
+                                            radius: 6
+                                            color: officeMenuRowMouse.pressed ? "#DDE0E5"
+                                                 : officeMenuRowMouse.containsMouse ? "#EBEDF0" : "transparent"
+
+                                            Row {
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 12
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 8
+
+                                                Image {
+                                                    width: 16; height: 16
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    source: modelData.icon
+                                                    fillMode: Image.PreserveAspectFit
+                                                }
+
+                                                Label {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: modelData.label
+                                                    font.family: "Alibaba PuHuiTi 3.0"
+                                                    font.pixelSize: 14
+                                                    font.weight: Font.Normal
+                                                    color: "#D9000000"
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: officeMenuRowMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    var path = String(newTaskRec.selectedOfficeFile.path || "")
+                                                    newTaskRec.officeMoreMenuVisible = false
+                                                    if (!path)
+                                                        return
+                                                    if (index === 0) {
+                                                        newTaskRec.officeDownloadSourcePath = path
+                                                        officeDownloadFolderDialog.open()
+                                                    } else if (index === 1) {
+                                                        if (!$MainViewController.openContainingFolder(path)) {
+                                                            errorToast.text = qsTr("无法打开文件夹")
+                                                            errorToast.visible = true
+                                                            errorToastTimer.restart()
+                                                        }
+                                                    } else if (!$MainViewController.openWithDefaultApplication(path)) {
+                                                        errorToast.text = qsTr("无法使用默认软件打开文件")
+                                                        errorToast.visible = true
+                                                        errorToastTimer.restart()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Repeater {
+                            id: officeViewsRepeater
+                            model: newTaskRec.officeTabs
+
+                            delegate: Item {
+                                id: officeViewHost
+                                required property int index
+                                required property string name
+                                required property string path
+                                property bool closeWhenFinished: false
+                                readonly property bool active:
+                                    index === newTaskRec.activeOfficeTabIndex
+                                property alias officeClient: tabOfficeClient
+                                property var officeView: tabOfficeLoader.item
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: officeTitleBar.bottom
+                                anchors.bottom: parent.bottom
+                                visible: active
+                                opacity: active && newTaskRec.officePreviewPending ? 0 : 1
+
+                                OnlineOfficeClient {
+                                    id: tabOfficeClient
+                                    bridgeBaseUrl: onlineOffice.bridgeBaseUrl
+                                    apiKey: onlineOffice.apiKey
+                                }
+
+                                Loader {
+                                    id: tabOfficeLoader
+                                    anchors.fill: parent
+                                    source: "qrc:/onlineoffice/OnlineOfficeView.qml"
+                                    onLoaded: {
+                                        item.client = tabOfficeClient
+                                        item.open(officeViewHost.path, "view")
+                                    }
+                                }
+
+                                Connections {
+                                    target: tabOfficeLoader.item
+                                    ignoreUnknownSignals: true
+                                    function onDocumentSaved(filePath) {
+                                        newTaskRec.rebuildSessionArtifacts()
+                                    }
+                                    function onSaveFinished(filePath, saved) {
+                                        if (officeViewHost.active)
+                                            newTaskRec.officeSaveRequested = false
+                                        if (saved) {
+                                            newTaskRec.rebuildSessionArtifacts()
+                                            errorToast.text = (officeViewHost.name || "文档") + " 已保存"
+                                        } else {
+                                            errorToast.text = tabOfficeClient.lastError
+                                                    || ((officeViewHost.name || "文档") + " 保存失败，请重试")
+                                        }
+                                        errorToast.visible = true
+                                        errorToastTimer.restart()
+                                    }
+                                    function onEditorLoaded(editorMode) {
+                                        if (!officeViewHost.active)
+                                            return
+                                        if (newTaskRec.officeEditPending && editorMode === "edit") {
+                                            newTaskRec.officeEditPending = false
+                                            newTaskRec.artifactSidebarMode = "edit"
+                                        } else if (newTaskRec.officePreviewPending && editorMode === "view") {
+                                            newTaskRec.artifactSidebarMode = "preview"
+                                            newTaskRec.officePreviewPending = false
+                                        }
+                                    }
+                                    function onSessionClosed(filePath, saved) {
+                                        if (officeViewHost.active && newTaskRec.officeSaveRequested)
+                                            newTaskRec.officeSaveRequested = false
+                                        if (officeViewHost.closeWhenFinished) {
+                                            officeViewHost.closeWhenFinished = false
+                                            Qt.callLater(function() {
+                                                newTaskRec.closeOfficeTabNow(officeViewHost.index)
+                                            })
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        BusyIndicator {
+                            anchors.centerIn: parent
+                            running: newTaskRec.officePreviewPending
+                            visible: running
+                            z: 30
+                        }
+
+                    }
+
+                    Item {
+                        id: resourcePopover
+                        visible: newTaskRec.resourcePopoverVisible
+                        x: 8
+                        y: 44
+                        width: Math.min(292, artifactSidebar.width - 16)
+                        height: Math.min(resourcePopoverContent.implicitHeight + 24,
+                                         artifactSidebar.height - y - 12)
+                        z: 100
+
+                        DropShadow {
+                            anchors.fill: resourcePopoverCard
+                            source: resourcePopoverCard
+                            horizontalOffset: 0
+                            verticalOffset: 10
+                            radius: 20
+                            samples: 41
+                            color: "#1F1A1A1A"
+                            transparentBorder: true
+                        }
+
+                        Rectangle {
+                            id: resourcePopoverCard
+                            anchors.fill: parent
+                            radius: 8
+                            color: "#FFFFFF"
+                            border.width: 1
+                            border.color: "#14000000"
+
+                            Flickable {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                contentWidth: width
+                                contentHeight: resourcePopoverContent.implicitHeight
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                Column {
+                                    id: resourcePopoverContent
+                                    width: parent.width
+                                    spacing: 12
+
+                                    Column {
+                                        width: parent.width
+                                        spacing: 8
+                                        visible: newTaskRec.sessionInputFiles.length > 0
+
+                                        Label {
+                                            width: parent.width
+                                            height: 24
+                                            leftPadding: 8
+                                            text: qsTr("输入文件")
+                                            verticalAlignment: Text.AlignVCenter
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 16
+                                            font.weight: Font.Normal
+                                            color: "#73000000"
+                                        }
+
+                                        Column {
+                                            width: parent.width
+                                            spacing: 4
+                                            Repeater {
+                                                model: newTaskRec.sessionInputFiles
+                                                delegate: artifactSidebarFileDelegate
+                                            }
+                                        }
+                                    }
+
+                                    Column {
+                                        width: parent.width
+                                        spacing: 8
+                                        visible: newTaskRec.sessionArtifacts.length > 0
+
+                                        Label {
+                                            width: parent.width
+                                            height: 24
+                                            leftPadding: 8
+                                            text: qsTr("产物")
+                                            verticalAlignment: Text.AlignVCenter
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 16
+                                            font.weight: Font.Normal
+                                            color: "#73000000"
+                                        }
+
+                                        Column {
+                                            width: parent.width
+                                            spacing: 4
+                                            Repeater {
+                                                model: newTaskRec.sessionArtifacts
+                                                delegate: artifactSidebarFileDelegate
+                                            }
+                                        }
+                                    }
+                                }
+
+                                ScrollBar.vertical: ScrollBar {
+                                    policy: ScrollBar.AsNeeded
+                                    width: 4
+                                    contentItem: Rectangle {
+                                        implicitWidth: 4
+                                        radius: 2
+                                        color: "#40000000"
+                                    }
+                                }
+                            }
+                        }
+
+                        HoverHandler {
+                            onHoveredChanged: {
+                                if (hovered)
+                                    newTaskRec.showResourcePopover()
+                                else
+                                    newTaskRec.scheduleResourcePopoverClose()
+                            }
+                        }
+                    }
+                }
+
+                Component {
+                    id: artifactSidebarFileDelegate
+                    Rectangle {
+                        id: sidebarFileRow
+                        required property var modelData
+                        width: parent ? parent.width : 268
+                        height: 36
+                        radius: 8
+                        color: sidebarFileMouse.pressed ? "#14000000"
+                             : sidebarFileMouse.containsMouse ? "#EBEDF0"
+                             : "transparent"
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 4
+
+                            Image {
+                                width: 20; height: 20
+                                anchors.verticalCenter: parent.verticalCenter
+                                source: newTaskRec.artifactIcon(sidebarFileRow.modelData)
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            Label {
+                                width: Math.max(0, parent.width - 24)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: sidebarFileRow.modelData.name
+                                      || String(sidebarFileRow.modelData.path || "").replace(/\\/g, "/").split("/").pop()
+                                elide: Text.ElideRight
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 16
+                                font.weight: Font.Normal
+                                color: "#D9000000"
+                            }
+                        }
+
+                        MouseArea {
+                            id: sidebarFileMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                newTaskRec.hideResourcePopover()
+                                newTaskRec.openOfficeFile(sidebarFileRow.modelData)
+                            }
+                        }
+                    }
                 }
 
                 Label {
@@ -2822,8 +4145,10 @@ ApplicationWindow {
                     border.width: 1
                     radius: 20
                     height: currentTextInputHeight + 76
-                    width: Math.min(840, Math.max(320, parent.width - 48))
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    readonly property real availableWidth: Math.max(320, parent.width
+                                                                    - newTaskRec.artifactSidebarWidth)
+                    width: Math.min(840, Math.max(320, availableWidth - 48))
+                    x: Math.max(0, (availableWidth - width) / 2)
                     y: newTaskRec.isNewTaskWelcome
                        ? titleCol.y + titleCol.height + 40
                        : newTaskRec.height - height - 24
@@ -2848,8 +4173,8 @@ ApplicationWindow {
                             width: parent.width - 24
                             height: chatInputContainer.currentTextInputHeight
                             readOnly: wsClient.connectionState !== 3 || !newTaskRec.viewingControllerSession
-                            onSubmitRequested: function(message) {
-                                newTaskRec.doSendMessage(message)
+                            onSubmitRequested: function(message, files) {
+                                newTaskRec.doSendMessage(message, files)
                             }
                             onLinkActivated: function(link) {
                                 window.openMarkdownLink(link)

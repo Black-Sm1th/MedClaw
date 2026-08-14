@@ -1,0 +1,59 @@
+services:
+  onlyoffice-documentserver:
+    image: docker.m.daocloud.io/onlyoffice/documentserver:latest
+    container_name: onlyoffice-documentserver
+    restart: unless-stopped
+    env_file:
+      - /opt/onlyoffice/.env
+    environment:
+      JWT_ENABLED: "true"
+    volumes:
+      - /opt/onlyoffice/data:/var/www/onlyoffice/Data
+      - /opt/onlyoffice/logs:/var/log/onlyoffice
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    networks:
+      - office-network
+
+  office-gateway:
+    image: docker.m.daocloud.io/library/nginx:1.28-alpine
+    container_name: office-gateway
+    restart: unless-stopped
+    ports:
+      - "${OFFICE_BIND_ADDRESS:-127.0.0.1}:${OFFICE_GATEWAY_PORT:-8090}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      onlyoffice-documentserver:
+        condition: service_healthy
+      office-bridge:
+        condition: service_healthy
+    networks:
+      - office-network
+
+  office-bridge:
+    build: .
+    container_name: office-bridge
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - office-bridge-storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - office-network
+
+volumes:
+  office-bridge-storage:
+
+networks:
+  office-network:
+    external: true
