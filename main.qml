@@ -212,16 +212,23 @@ ApplicationWindow {
 
     function stripKnowledgePolicyText(value) {
         var text = String(value || "")
-        var begin = "<knowledge-base-policy>"
-        var end = "</knowledge-base-policy>"
-        var beginPos = text.indexOf(begin)
-        if (beginPos < 0)
-            return text
-        var endPos = text.indexOf(end, beginPos + begin.length)
-        if (endPos < 0)
-            return text.substring(0, beginPos).trim()
-        return (text.substring(0, beginPos)
-                + text.substring(endPos + end.length)).trim()
+        var tags = ["knowledge-base-policy", "workspace-policy"]
+        for (var i = 0; i < tags.length; i++) {
+            var begin = "<" + tags[i] + ">"
+            var end = "</" + tags[i] + ">"
+            var beginPos = text.indexOf(begin)
+            while (beginPos >= 0) {
+                var endPos = text.indexOf(end, beginPos + begin.length)
+                if (endPos < 0) {
+                    text = text.substring(0, beginPos)
+                    break
+                }
+                text = text.substring(0, beginPos)
+                        + text.substring(endPos + end.length)
+                beginPos = text.indexOf(begin)
+            }
+        }
+        return text.trim()
     }
     property string pendingExpertPrompt: ""
 

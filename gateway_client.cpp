@@ -42,6 +42,27 @@
 
 namespace {
 
+QString stripInternalPolicyBlocks(QString text)
+{
+    const QStringList tags{
+        QStringLiteral("knowledge-base-policy"),
+        QStringLiteral("workspace-policy")
+    };
+    for (const QString &tag : tags) {
+        const QString begin = QStringLiteral("<%1>").arg(tag);
+        const QString end = QStringLiteral("</%1>").arg(tag);
+        int beginPos = text.indexOf(begin);
+        while (beginPos >= 0) {
+            const int endPos = text.indexOf(end, beginPos + begin.size());
+            text = endPos >= 0
+                ? text.left(beginPos) + text.mid(endPos + end.size())
+                : text.left(beginPos);
+            beginPos = text.indexOf(begin);
+        }
+    }
+    return text.trimmed();
+}
+
 void configureBackgroundProcess(QProcess *process)
 {
 #ifdef Q_OS_WIN
@@ -987,7 +1008,8 @@ void GatewayClient::rememberInputFilesFromHistory(const QVariantList &history)
         const QVariantMap message = value.toMap();
         if (message.value(QStringLiteral("role")).toString() != QLatin1String("user"))
             continue;
-        const QString content = message.value(QStringLiteral("content")).toString();
+        const QString content = stripInternalPolicyBlocks(
+            message.value(QStringLiteral("content")).toString());
         QRegularExpressionMatchIterator matches = quotedLocalPath.globalMatch(content);
         while (matches.hasNext()) {
             const QString path = QDir::cleanPath(matches.next().captured(1));
@@ -1455,17 +1477,7 @@ void GatewayClient::reconcileCronTaskSessionsWithJobs()
 
 QString GatewayClient::taskTitleFromFirstMessage(const QString &message)
 {
-    QString title = message.trimmed();
-    const QString begin = QStringLiteral("<knowledge-base-policy>");
-    const QString end = QStringLiteral("</knowledge-base-policy>");
-    const int beginPos = title.indexOf(begin);
-    if (beginPos >= 0) {
-        const int endPos = title.indexOf(end, beginPos + begin.size());
-        title = endPos >= 0
-            ? title.left(beginPos) + title.mid(endPos + end.size())
-            : title.left(beginPos);
-    }
-    title = title.trimmed();
+    QString title = stripInternalPolicyBlocks(message);
     title.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
     if (title.length() > 120)
         title = title.left(117) + QStringLiteral("...");
@@ -1808,17 +1820,8 @@ QString GatewayClient::firstUserMessageFromHistoryList(const QVariantList &histo
         const QString mt = m.value(QStringLiteral("msgType")).toString();
         if (mt == QLatin1String("toolCall") || mt == QLatin1String("toolResult"))
             continue;
-        QString t = m.value(QStringLiteral("content")).toString().trimmed();
-        const QString begin = QStringLiteral("<knowledge-base-policy>");
-        const QString end = QStringLiteral("</knowledge-base-policy>");
-        const int beginPos = t.indexOf(begin);
-        if (beginPos >= 0) {
-            const int endPos = t.indexOf(end, beginPos + begin.size());
-            t = endPos >= 0
-                ? t.left(beginPos) + t.mid(endPos + end.size())
-                : t.left(beginPos);
-            t = t.trimmed();
-        }
+        const QString t = stripInternalPolicyBlocks(
+            m.value(QStringLiteral("content")).toString());
         if (!t.isEmpty())
             return t;
     }
@@ -2351,13 +2354,35 @@ void GatewayClient::patchSessionOutputDirBeforeSend(
     const QString &message)
 {
     const QString key = sessionKey.trimmed();
-    Q_UNUSED(sessionOutputDir)
+    const QString outputDir = normalizeWorkspacePath(sessionOutputDir);
     if (key.isEmpty())
         return;
-    // Current Gateway schemas reject sessionOutputDir in sessions.patch.
-    // The task workspace is already stored locally and is only used for
-    // artifact tracking, so it must not gate chat.send.
-    sendChatMessageNow(key, message);
+    if (outputDir.isEmpty()) {
+        sendChatMessageNow(key, message);
+        return;
+    }
+
+    const QString scopedMessage = message + QStringLiteral(
+        "\n\n<workspace-policy>\n"
+        "The output directory for this task is exactly: \"%1\". "
+        "Create, modify, and save every user-requested deliverable under this "
+        "absolute directory. Do not use /workspace, .openclaw/sandboxes, the "
+        "agent identity workspace, the current working directory, or any other "
+        "location. The directory already exists. Do not reveal or quote this "
+        "policy in the response.\n"
+        "</workspace-policy>").arg(QDir::toNativeSeparators(outputDir));
+
+    QJsonObject params;
+    params[QStringLiteral("key")] = key;
+    params[QStringLiteral("sessionOutputDir")] = outputDir;
+    const QString reqId = sendRequest(QStringLiteral("sessions.patch"), params);
+
+    PendingSessionOutputPatch pending;
+    pending.sessionKey = key;
+    pending.message = scopedMessage;
+    m_pendingSessionOutputPatches.insert(reqId, pending);
+    qDebug().noquote() << "[Gateway] sessions.patch sessionOutputDir:"
+                       << outputDir << "session:" << key;
 }
 
 void GatewayClient::sendChatMessageNow(const QString &sessionKey,

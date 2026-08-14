@@ -2,15 +2,24 @@
 
 static QString chatDisplayContent(const QString &content)
 {
-    const QString begin = QStringLiteral("<knowledge-base-policy>");
-    const QString end = QStringLiteral("</knowledge-base-policy>");
-    const int beginPos = content.indexOf(begin);
-    if (beginPos < 0)
-        return content;
-    const int endPos = content.indexOf(end, beginPos + begin.size());
-    if (endPos < 0)
-        return content.left(beginPos).trimmed();
-    return (content.left(beginPos) + content.mid(endPos + end.size())).trimmed();
+    QString display = content;
+    const QStringList tags{
+        QStringLiteral("knowledge-base-policy"),
+        QStringLiteral("workspace-policy")
+    };
+    for (const QString &tag : tags) {
+        const QString begin = QStringLiteral("<%1>").arg(tag);
+        const QString end = QStringLiteral("</%1>").arg(tag);
+        int beginPos = display.indexOf(begin);
+        while (beginPos >= 0) {
+            const int endPos = display.indexOf(end, beginPos + begin.size());
+            display = endPos >= 0
+                ? display.left(beginPos) + display.mid(endPos + end.size())
+                : display.left(beginPos);
+            beginPos = display.indexOf(begin);
+        }
+    }
+    return display.trimmed();
 }
 
 ChatModel::ChatModel(QObject *parent)
