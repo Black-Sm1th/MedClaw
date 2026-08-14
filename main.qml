@@ -2192,6 +2192,15 @@ ApplicationWindow {
                 property bool officePreviewPending: false
                 readonly property bool officeDocumentVisible: artifactSidebarMode === "preview"
                                                              || artifactSidebarMode === "edit"
+                readonly property int currentSessionOfficeTabCount: {
+                    var key = currentSidebarSessionKey()
+                    var count = 0
+                    for (var i = 0; i < officeTabs.count; i++) {
+                        if (String(officeTabs.get(i).sessionKey || "") === key)
+                            count++
+                    }
+                    return count
+                }
                 readonly property int officePreviewWidth: Math.min(680, Math.max(420, width - 360))
                 readonly property int artifactSidebarWidth: artifactSidebarVisible
                     ? (officePanelMaximized ? width
@@ -2236,8 +2245,14 @@ ApplicationWindow {
                     var states = ({})
                     for (var key in sidebarVisibilityBySession)
                         states[key] = sidebarVisibilityBySession[key]
-                    if (sidebarStateSessionKey)
-                        states[sidebarStateSessionKey] = { visible: artifactSidebarVisible }
+                    if (sidebarStateSessionKey) {
+                        states[sidebarStateSessionKey] = {
+                            visible: artifactSidebarVisible,
+                            activePath: String(selectedOfficeFile.path || ""),
+                            maximized: officePanelMaximized,
+                            sizeManuallySet: officePanelSizeManuallySet
+                        }
+                    }
                     sidebarVisibilityBySession = states
                     sidebarStateSessionKey = nextKey
                     sessionHistoryLoading = nextKey.length > 0
@@ -2245,7 +2260,12 @@ ApplicationWindow {
                     sessionArtifacts = []
                     hideResourcePopover()
                     officeMoreMenuVisible = false
-                    closeOfficeDocument()
+                    officeSaveRequested = false
+                    officeEditPending = false
+                    officePreviewPending = false
+                    selectedOfficeFile = ({})
+                    activeOfficeTabIndex = -1
+                    artifactSidebarMode = "list"
                     artifactSidebarVisible = false
                 }
 
@@ -2255,7 +2275,19 @@ ApplicationWindow {
                     sessionInputFiles = wsClient.currentSessionInputFiles()
                     rebuildSessionArtifacts()
                     var saved = sidebarVisibilityBySession[key]
-                    artifactSidebarVisible = !!(saved && saved.visible)
+                    officePanelMaximized = !!(saved && saved.maximized)
+                    officePanelSizeManuallySet = !!(saved && saved.sizeManuallySet)
+                    var activePath = String((saved && saved.activePath) || "")
+                    var activeIndex = activePath ? findOfficeTab(activePath, key) : -1
+                    if (activeIndex >= 0) {
+                        activateOfficeTab(activeIndex)
+                        artifactSidebarVisible = !!saved.visible
+                    } else {
+                        activeOfficeTabIndex = -1
+                        selectedOfficeFile = ({})
+                        artifactSidebarMode = "list"
+                        artifactSidebarVisible = !!(saved && saved.visible)
+                    }
                     sessionHistoryLoading = false
                 }
 
@@ -2325,7 +2357,8 @@ ApplicationWindow {
                         officeTabs.append({
                             "name": String(file.name || path.replace(/\\/g, "/").split("/").pop()),
                             "path": path,
-                            "extension": String(file.extension || fileExtension(path))
+                            "extension": String(file.extension || fileExtension(path)),
+                            "sessionKey": currentSidebarSessionKey()
                         })
                         tabIndex = officeTabs.count - 1
                     }
@@ -2336,11 +2369,28 @@ ApplicationWindow {
                     return String(path || "").replace(/\\/g, "/").toLowerCase()
                 }
 
-                function findOfficeTab(path) {
+                function findOfficeTab(path, sessionKey) {
                     var key = officeTabKey(path)
+                    var owner = String(sessionKey === undefined
+                                       ? currentSidebarSessionKey() : sessionKey)
                     for (var i = 0; i < officeTabs.count; i++) {
-                        if (officeTabKey(officeTabs.get(i).path) === key)
+                        var tab = officeTabs.get(i)
+                        if (String(tab.sessionKey || "") === owner
+                                && officeTabKey(tab.path) === key)
                             return i
+                    }
+                    return -1
+                }
+
+                function nextOfficeTabIndex(sessionKey, preferredIndex) {
+                    var owner = String(sessionKey || "")
+                    for (var i = Math.max(0, preferredIndex); i < officeTabs.count; i++) {
+                        if (String(officeTabs.get(i).sessionKey || "") === owner)
+                            return i
+                    }
+                    for (var j = Math.min(preferredIndex - 1, officeTabs.count - 1); j >= 0; j--) {
+                        if (String(officeTabs.get(j).sessionKey || "") === owner)
+                            return j
                     }
                     return -1
                 }
@@ -2349,6 +2399,8 @@ ApplicationWindow {
                     if (index < 0 || index >= officeTabs.count)
                         return
                     var source = officeTabs.get(index)
+                    if (String(source.sessionKey || "") !== currentSidebarSessionKey())
+                        return
                     var file = { name: source.name, path: source.path, extension: source.extension }
                     var path = String(file.path || "")
                     if (!path)
@@ -2386,18 +2438,25 @@ ApplicationWindow {
                 function closeOfficeTabNow(index) {
                     if (index < 0 || index >= officeTabs.count)
                         return
+                    var owner = String(officeTabs.get(index).sessionKey || "")
                     var wasActive = index === activeOfficeTabIndex
                     officeTabs.remove(index)
-                    if (officeTabs.count === 0) {
-                        closeOfficeDocument()
-                        return
-                    }
                     if (!wasActive) {
                         if (index < activeOfficeTabIndex)
                             activeOfficeTabIndex--
                         return
                     }
-                    activateOfficeTab(Math.min(index, officeTabs.count - 1))
+                    var nextIndex = nextOfficeTabIndex(owner, index)
+                    if (nextIndex >= 0 && owner === currentSidebarSessionKey()) {
+                        activateOfficeTab(nextIndex)
+                    } else {
+                        activeOfficeTabIndex = -1
+                        selectedOfficeFile = ({})
+                        artifactSidebarMode = "list"
+                        officeSaveRequested = false
+                        officeEditPending = false
+                        officePreviewPending = false
+                    }
                 }
 
                 function showArtifactList() {
@@ -2432,18 +2491,22 @@ ApplicationWindow {
                 }
 
                 function closeOfficeDocument() {
+                    var owner = currentSidebarSessionKey()
                     officeSaveRequested = false
                     officeEditPending = false
                     officePreviewPending = false
                     officeMoreMenuVisible = false
                     artifactSidebarMode = "list"
-                    for (var i = 0; i < officeViewsRepeater.count; i++) {
+                    for (var i = officeTabs.count - 1; i >= 0; i--) {
+                        var tab = officeTabs.get(i)
+                        if (String(tab.sessionKey || "") !== owner)
+                            continue
                         var host = officeViewsRepeater.itemAt(i)
                         if (host && host.officeClient.busy)
                             host.officeClient.cancel()
+                        officeTabs.remove(i)
                     }
                     selectedOfficeFile = ({})
-                    officeTabs.clear()
                     activeOfficeTabIndex = -1
                     officePanelMaximized = false
                     officePanelSizeManuallySet = false
@@ -3106,12 +3169,14 @@ ApplicationWindow {
                                             required property string name
                                             required property string path
                                             required property string extension
+                                            required property string sessionKey
+                                            visible: sessionKey === newTaskRec.currentSidebarSessionKey()
                                             readonly property bool active: index === newTaskRec.activeOfficeTabIndex
                                             width: Math.max(150,
                                                    (officeTabsViewport.width
-                                                    - Math.max(0, newTaskRec.officeTabs.count - 1)
+                                                    - Math.max(0, newTaskRec.currentSessionOfficeTabCount - 1)
                                                       * officeTabsRow.spacing)
-                                                   / Math.max(1, newTaskRec.officeTabs.count))
+                                                   / Math.max(1, newTaskRec.currentSessionOfficeTabCount))
                                             height: 36
                                             radius: 8
                                             color: active ? "#EBEDF0"
@@ -3371,14 +3436,16 @@ ApplicationWindow {
                                         if (!view)
                                             return
                                         if (newTaskRec.artifactSidebarMode === "preview") {
-                                            if (!newTaskRec.officePanelSizeManuallySet)
-                                                newTaskRec.officePanelMaximized = true
                                             newTaskRec.officeEditPending = true
                                             newTaskRec.officePreviewPending = false
                                             view.switchMode("edit")
                                         } else {
+                                            officeActionButton.activeHost.returnToPreviewAfterSave = true
                                             newTaskRec.officeSaveRequested = true
-                                            view.saveEditor()
+                                            if (!view.saveAndSwitchMode("view")) {
+                                                officeActionButton.activeHost.returnToPreviewAfterSave = false
+                                                newTaskRec.officeSaveRequested = false
+                                            }
                                         }
                                     }
                                 }
@@ -3504,9 +3571,12 @@ ApplicationWindow {
                                 required property int index
                                 required property string name
                                 required property string path
+                                required property string sessionKey
                                 property bool closeWhenFinished: false
+                                property bool returnToPreviewAfterSave: false
                                 readonly property bool active:
                                     index === newTaskRec.activeOfficeTabIndex
+                                    && sessionKey === newTaskRec.currentSidebarSessionKey()
                                 property alias officeClient: tabOfficeClient
                                 property var officeView: tabOfficeLoader.item
                                 anchors.left: parent.left
@@ -3541,10 +3611,19 @@ ApplicationWindow {
                                     function onSaveFinished(filePath, saved) {
                                         if (officeViewHost.active)
                                             newTaskRec.officeSaveRequested = false
+                                        var returningToPreview = officeViewHost.returnToPreviewAfterSave
+                                        officeViewHost.returnToPreviewAfterSave = false
                                         if (saved) {
                                             newTaskRec.rebuildSessionArtifacts()
                                             errorToast.text = (officeViewHost.name || "文档") + " 已保存"
+                                            if (officeViewHost.active && returningToPreview)
+                                                newTaskRec.officePreviewPending = true
                                         } else {
+                                            if (officeViewHost.active) {
+                                                newTaskRec.officePreviewPending = false
+                                                newTaskRec.artifactSidebarMode = "edit"
+                                            }
+                                            officeViewHost.closeWhenFinished = false
                                             errorToast.text = tabOfficeClient.lastError
                                                     || ((officeViewHost.name || "文档") + " 保存失败，请重试")
                                         }
@@ -3557,6 +3636,8 @@ ApplicationWindow {
                                         if (newTaskRec.officeEditPending && editorMode === "edit") {
                                             newTaskRec.officeEditPending = false
                                             newTaskRec.artifactSidebarMode = "edit"
+                                            if (!newTaskRec.officePanelSizeManuallySet)
+                                                newTaskRec.officePanelMaximized = true
                                         } else if (newTaskRec.officePreviewPending && editorMode === "view") {
                                             newTaskRec.artifactSidebarMode = "preview"
                                             newTaskRec.officePreviewPending = false
@@ -3567,9 +3648,17 @@ ApplicationWindow {
                                             newTaskRec.officeSaveRequested = false
                                         if (officeViewHost.closeWhenFinished) {
                                             officeViewHost.closeWhenFinished = false
-                                            Qt.callLater(function() {
-                                                newTaskRec.closeOfficeTabNow(officeViewHost.index)
-                                            })
+                                            if (saved || (officeViewHost.officeView
+                                                          && officeViewHost.officeView.mode === "view")) {
+                                                Qt.callLater(function() {
+                                                    newTaskRec.closeOfficeTabNow(officeViewHost.index)
+                                                })
+                                            } else if (officeViewHost.officeView) {
+                                                Qt.callLater(function() {
+                                                    officeViewHost.officeView.open(
+                                                                officeViewHost.path, "edit")
+                                                })
+                                            }
                                         }
                                     }
                                 }

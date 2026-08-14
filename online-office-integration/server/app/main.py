@@ -137,7 +137,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
 <style>html,body,#editor{{height:100%;margin:0;overflow:hidden}}</style></head>
 <body><div id=\"editor\"></div><script src=\"{html.escape(api_url, quote=True)}\"></script>
-<script>new DocsAPI.DocEditor('editor',{json.dumps(editor_config, ensure_ascii=False, separators=(',', ':'))});</script>
+<script>
+const config={json.dumps(editor_config, ensure_ascii=False, separators=(',', ':'))};
+config.events={{onAppReady:function(){{document.title='MEDCLAW_OFFICE_APP_READY';}}}};
+new DocsAPI.DocEditor('editor',config);
+</script>
 </body></html>"""
 
     @app.get("/office/file/{session_id}")

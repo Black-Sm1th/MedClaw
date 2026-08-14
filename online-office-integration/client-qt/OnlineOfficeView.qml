@@ -12,6 +12,8 @@ Item {
     property string pendingPath: ""
     property string pendingMode: ""
     property string reportedLoadedUrl: ""
+    property bool appReady: false
+    readonly property string appReadyTitle: "MEDCLAW_OFFICE_APP_READY"
     readonly property bool loading: client ? client.busy && webView.url.toString() === "about:blank" : false
     readonly property string errorText: client ? client.lastError : ""
 
@@ -20,9 +22,11 @@ Item {
     signal sessionClosed(string filePath, bool saved)
     signal editorLoaded(string editorMode)
 
-    function reportEditorLoaded() {
+    function reportEditorLoaded(forceReady) {
         var currentUrl = webView.url.toString()
         if (currentUrl === "about:blank" || currentUrl === reportedLoadedUrl)
+            return
+        if (!appReady && forceReady !== true)
             return
         reportedLoadedUrl = currentUrl
         editorLoadSettleTimer.stop()
@@ -88,6 +92,17 @@ Item {
         client.saveDocument()
     }
 
+    function saveAndSwitchMode(requestedMode) {
+        if (!client || !client.busy || mode !== "edit"
+                || webView.url.toString() === "about:blank")
+            return false
+        var normalized = requestedMode === "edit" ? "edit" : "view"
+        pendingPath = filePath
+        pendingMode = normalized
+        client.saveDocument()
+        return true
+    }
+
     function switchMode(requestedMode) {
         var normalized = requestedMode === "edit" ? "edit" : "view"
         if (normalized === mode)
@@ -120,14 +135,14 @@ Item {
         id: editorLoadSettleTimer
         interval: 120
         repeat: false
-        onTriggered: root.reportEditorLoaded()
+        onTriggered: root.reportEditorLoaded(false)
     }
 
     Timer {
         id: editorLoadFallbackTimer
-        interval: 2000
+        interval: 5000
         repeat: false
-        onTriggered: root.reportEditorLoaded()
+        onTriggered: root.reportEditorLoaded(true)
     }
 
     Connections {
@@ -136,6 +151,7 @@ Item {
         function onEditorReady(url) {
             closeTimer.stop()
             root.reportedLoadedUrl = ""
+            root.appReady = false
             webView.url = url
             editorLoadFallbackTimer.restart()
         }
@@ -146,8 +162,16 @@ Item {
 
         function onSaveFinished(path, saved) {
             root.saveFinished(path, saved)
-            if (root.pendingPath.length > 0)
-                root.closeEditor()
+            if (root.pendingPath.length > 0) {
+                if (saved) {
+                    // The edited file is already downloaded locally; only dispose
+                    // the old edit session before opening the read-only session.
+                    root.client.cancel()
+                } else {
+                    root.pendingPath = ""
+                    root.pendingMode = ""
+                }
+            }
         }
 
         function onSessionFinished(path, saved) {
@@ -172,14 +196,11 @@ Item {
 
         onWidthChanged: viewportResizeTimer.restart()
         onHeightChanged: viewportResizeTimer.restart()
-        onLoadProgressChanged: {
-            if (loadProgress >= 100 && webView.url.toString() !== "about:blank")
+        onTitleChanged: {
+            if (title === root.appReadyTitle) {
+                root.appReady = true
                 editorLoadSettleTimer.restart()
-        }
-        onLoadingChanged: function(loadRequest) {
-            if (loadRequest.status === WebEngineView.LoadSucceededStatus
-                    && webView.url.toString() !== "about:blank")
-                editorLoadSettleTimer.restart()
+            }
         }
 
         settings.javascriptEnabled: true

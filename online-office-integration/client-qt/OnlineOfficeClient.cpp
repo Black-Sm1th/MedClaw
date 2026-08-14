@@ -174,7 +174,6 @@ void OnlineOfficeClient::finishDocument()
 {
     if (m_state != State::Editing)
         return;
-    setEditorUrl(QString());
 
     if (m_mode == QStringLiteral("view")) {
         const QString sessionId = m_sessionId;
@@ -217,7 +216,10 @@ void OnlineOfficeClient::finishDocument()
                                  ? QStringLiteral("OnlyOffice save request failed: %1 (HTTP %2)")
                                        .arg(errorText).arg(status)
                                  : QStringLiteral("%1 (HTTP %2)").arg(detail).arg(status));
-                finishLocally(false);
+                const QString path = m_filePath;
+                m_finishAfterSave = false;
+                setState(State::Editing);
+                emit saveFinished(path, false);
             }
         }
     });
@@ -292,8 +294,11 @@ void OnlineOfficeClient::pollResult(int attemptsLeft)
         }
         if (ok && response.value(QStringLiteral("status")).toString()
                       == QStringLiteral("closed")) {
+            const QString path = m_filePath;
+            setLastError(QStringLiteral("ONLYOFFICE session closed before the document was saved"));
             deleteSession(m_sessionId);
             finishLocally(false);
+            emit saveFinished(path, false);
             return;
         }
         if (attemptsLeft > 1) {
@@ -304,10 +309,8 @@ void OnlineOfficeClient::pollResult(int attemptsLeft)
         setLastError(ok ? QStringLiteral("等待编辑结果超时")
                         : QStringLiteral("查询保存状态失败：%1").arg(errorText));
         const QString path = m_filePath;
-        if (m_finishAfterSave)
-            finishLocally(false);
-        else
-            setState(State::Editing);
+        m_finishAfterSave = false;
+        setState(State::Editing);
         emit saveFinished(path, false);
     });
 }
@@ -340,9 +343,13 @@ void OnlineOfficeClient::downloadResult()
         reply->deleteLater();
         const QString path = m_filePath;
         if (m_finishAfterSave) {
-            if (saved)
+            if (saved) {
                 deleteSession(m_sessionId);
-            finishLocally(saved);
+                finishLocally(true);
+            } else {
+                m_finishAfterSave = false;
+                setState(State::Editing);
+            }
         } else {
             setState(State::Editing);
         }
