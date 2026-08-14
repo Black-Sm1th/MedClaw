@@ -48,6 +48,137 @@ ApplicationWindow {
     property string editingCronScheduleTz: ""
     property string pendingDeleteCronJobId: ""
     property string pendingDeleteCronJobName: ""
+    property int selectedCronTemplateCategory: 0
+    property string pendingCronTemplateExpr: ""
+    property string pendingCronTemplateTz: "Asia/Shanghai"
+    property string pendingCronTemplateTrigger: ""
+    property var cronTemplateCategories: [
+        { name: "医疗科研", tasks: [
+            { title: "每日文献追踪", expr: "0 8 * * *", prompt: "检索 PubMed上[研究方向]近3天新文献，按IF排序TOP10，标注与课题组方向关联度，摘要中译，附带DOI" },
+            { title: "临床试验入组日报", expr: "0 9 * * *", prompt: "汇总昨日各中心筛选、入组、随机、完成、脱落数据，对比入组计划曲线，落后 >20%标记[加速]，SAE单独列出" },
+            { title: "科研基金申报预警", expr: "0 9 * * 1", prompt: "搜索未来 90天截止的科研基金(国自然/省自然/科技部重点研发)，标注匹配度、金额、截止日，≤30天标记[赶]，≤7天标记[急]" },
+            { title: "伦理审查到期提醒", expr: "0 10 1 * *", prompt: "查询所有在研项目伦理批件状态：初始审查有效期、年度跟踪审查截止、方案修正案审批、SAE伦理报告，到期≤30天标记[续审]" },
+            { title: "学术会议与投稿日历", expr: "0 9 * * 1", prompt: "扫描未来 90天相关领域学术会议截稿日和特刊征稿：会议名称/地点/截稿日期/影响因子/注册截止、期刊特刊征稿主题/截止日、课题组适配度评分，≤14天标记[紧迫]" },
+            { title: "传染病监测日报", expr: "0 7 * * *", prompt: "检索中国 CDC、WHO、ECDC过去24h传染病报告更新：法定传染病发病数/发病率、聚集性疫情、新发传染病预警，标注超过基线2倍SD的异常信号" },
+            { title: "疫苗接种率周报", expr: "0 9 * * 1", prompt: "统计上周各疫苗接种率(国家免疫规划+重点非免疫规划)：分年龄组/分区域接种覆盖率、未种儿童清单、库存预警(<最低库存量)，覆盖率<90%标记[风险]" },
+            { title: "突发公卫事件扫描", expr: "0 */4 * * *", prompt: "扫描 WHO Disease Outbreak News、中国CDC突发公卫事件报告、ProMED-mail、社交媒体异常聚集信号，按PHEIC标准评估严重性，新发信号推送[关注等级]" },
+            { title: "慢病管理指标月报", expr: "0 9 3 * *", prompt: "统计上月慢病管理核心指标：规范管理率、血压/血糖控制率、随访完成率、并发症筛查率，对比国家基本公卫考核目标，低于目标指标标记[整改]" },
+            { title: "公卫应急物资核查", expr: "0 9 * * 1", prompt: "从物资管理系统核查应急物资库存：品目/数量/有效期/存储条件合规性(均基于数据库记录)，低于储备标准标记[需补充]，近效期≤3月标记[轮换提醒]" },
+            { title: "处方前置审核异常日报", expr: "0 9 * * *", prompt: "汇总昨日处方前置审核分类统计(禁忌症/超剂量/相互作用/重复用药/溶媒不当)、拦截率趋势、高频拦截品种TOP10、医生驳回后未修改处方清单[需人工跟进]" },
+            { title: "抗菌药物使用强度周报", expr: "0 9 * * 1", prompt: "统计上周全院及各科室抗菌药物使用强度(DDDs)、使用率(%)、微生物送检率(%)、特殊使用级审批情况、碳青霉烯专项监控，AUD超目标值20%标记[重点监控]" },
+            { title: "药品库存与效期管理", expr: "0 7 * * *", prompt: "扫描 HIS药品库存记录：近效期≤6月清单(药品/批号/数量/库位)、昨日消耗量异常(超日均2倍)品种、高危/麻精药品库存核对(账物是否相符)，均为数据库查询无需IoT" },
+            { title: "DDI高危处方筛查", expr: "0 10 * * *", prompt: "对昨日全量住院医嘱运行 DDI筛查：X级(禁止合用)和D级(考虑调整)的DDI清单、涉及药品/科室/潜在后果、替代方案建议，X级DDI标记[药师须立即介入]" },
+            { title: "集采药品达标监控", expr: "0 9 1 * *", prompt: "统计上月各批次集采中选品种约定采购量完成进度：品种/中选企业/约定量/完成量/完成率(%)，完成率<时间进度80%标记[预警]，分析原因并给处方引导建议" }
+        ] },
+        { name: "政务助手", tasks: [
+            { title: "每日舆情早报", expr: "0 7 * * *", prompt: "搜索过去 24h关于[地市/部门名称]新闻和社交媒体讨论：正/中/负面新闻各TOP5(标题/来源/转载量)、敏感舆情事件(热度+情感倾向)、负面事件附回应口径建议" },
+            { title: "公文流转超期预警", expr: "0 9 * * *", prompt: "检查 OA系统中在办公文状态：超期1-3天(提醒)/3-7天(催办)/>7天(通报)，按紧急程度和部门分组列出文号/标题/当前环节/停留天数/办理人" },
+            { title: "12345热线工单日报", expr: "0 8 * * *", prompt: "统计昨日 12345热线和市长信箱数据：受理总量/按时办结率/满意率/热点诉求TOP5/办结率最低部门TOP5/超期未办结工单清单" },
+            { title: "重点工作督办跟踪", expr: "0 10 * * 1", prompt: "对年度重点工作任务清单逐一核查：任务/牵头单位/年度目标/完成率(%)/时间进度对比(正常/滞后/严重滞后)，按完成率排序标注红黄绿灯" },
+            { title: "网站错敏词巡检", expr: "0 3 * * *", prompt: "对政府门户网站和各部门子站全站巡检：错别字、领导人姓名职务表述不规范、涉政敏感词、失效链接、隐私信息泄露，生成问题清单和修改建议" }
+        ] },
+        { name: "情报研究", tasks: [
+            { title: "全球管线动态日报", expr: "0 7 * * *", prompt: "搜索过去 24h全球药物研发重大新闻：III期数据读出/FDA审批/突破性疗法认定/NDA提交/License-in-out，按影响等级排序" },
+            { title: "竞品临床试验里程碑", expr: "0 8 * * 1", prompt: "更新竞品品种试验里程碑：品种/申办方/靶点/适应症/当前阶段/预期下一里程碑日期，≤30天标记[即将]，≤7天标记[临近]" },
+            { title: "PDUFA审批日期监控", expr: "0 8 * * *", prompt: "查询未来 90天主要监管机构审批决定日期：FDA PDUFA/AdCom、EMA CHMP opinion、NMPA CDE审批，附关键临床数据摘要和分析师预期" },
+            { title: "专利到期预警", expr: "0 10 1 * *", prompt: "更新重点品种全球专利到期日历：化合物专利/制剂/用途专利到期日(各国)、专利挑战、儿科/孤儿药exclusivity到期，≤24月标记[关注窗口]" },
+            { title: "药物安全信号检测", expr: "0 9 * * 1", prompt: "对目标品种进行安全性数据库信号检测：PRR/ROR/EBGM算法、新安全信号(IC025>0)、信号强度趋势、同类药物class effect对比" }
+        ] },
+        { name: "设备管理", tasks: [
+            { title: "每日设备巡检派单", expr: "0 7 * * *", prompt: "从设备管理系统中提取今日需巡检设备清单(按科室分组)，生成巡检工单：设备编码/名称/科室/巡检项目/上次巡检日期/指派工程师，急救类优先标注" },
+            { title: "预防性维护到期预警", expr: "0 8 * * *", prompt: "扫描所有设备 PM计划，筛选未来7天到期的PM任务：≤3天标记[紧急]，≤7天标记[预警]，列出设备名称/科室/PM内容/计划日期/负责工程师" },
+            { title: "设备维修工单闭环追踪", expr: "0 8,16 * * *", prompt: "查询设备管理系统的报修工单状态：待派单/维修中/待验收/已完成/超时未关闭，按工程师统计完成数和平均响应时间，超48h未关闭工单标记[升级]，生成周度故障类型分析" },
+            { title: "计量校准到期提醒", expr: "0 8 * * 1", prompt: "提取所有计量设备校准证书有效期，筛选未来30天到期设备：设备名称/型号/序列号/上次校准日期/到期日/是否强检，到期≤14天标记[紧急停用风险]" },
+            { title: "医疗器械不良事件", expr: "0 10 * * 1", prompt: "汇总上周所有科室上报的医疗器械不良事件：事件类型/设备型号/严重程度分级/根因分析完成情况/是否上报MDR系统，严重事件标记[立即关注]" }
+        ] },
+        { name: "投行助手", tasks: [
+            { title: "盘前市场简报", expr: "0 8 * * 1-5", prompt: "生成今日盘前简报：隔夜美股涨跌/A50期货/中概股表现、人民币汇率/美债收益率/原油黄金走势、今日重点财经事件、盘前异动个股和大宗交易提示" },
+            { title: "重点持仓异动监控", expr: "*/15 9-15 * * 1-5", prompt: "扫描持仓占比 >3%股票：涨跌幅超±3%/成交量超20日均量2倍/大单净流入流出/盘口异动/突发新闻，异动项推送即时警报" },
+            { title: "宏观数据日历提醒", expr: "0 8 * * 1", prompt: "生成本周宏观事件日历：中国(CPI/PPI/PMI/社融)、美国(非农/CPI/FOMC)、欧洲(ECB/PMI)，标注市场预期值/前值/对A股利率汇率潜在影响方向" },
+            { title: "公司公告智能解读", expr: "0 7,18 * * *", prompt: "扫描自选股公告(年报/季报/重大合同/资产重组/股权激励/增减持/分红/业绩预告)：提取关键数据变化、与一致预期偏差、业绩预告大幅偏离(>20%)标记[重点关注]" },
+            { title: "舆情/ESG风险扫描", expr: "0 7,13,19 * * *", prompt: "搜索持仓标的负面舆情：产品安全/环境处罚/劳动纠纷/监管调查/财务造假嫌疑/高管负面，按事件严重程度1-5分评级，4分及以上立即推送预警" }
+        ] }
+    ]
+
+    function openCronTemplate(template) {
+        window.editingCronJobId = ""
+        window.editingCronPayloadKind = "agentTurn"
+        window.editingCronScheduleKind = "cron"
+        window.editingCronScheduleExpr = template.expr || ""
+        window.editingCronScheduleTz = "Asia/Shanghai"
+        window.pendingCronTemplateExpr = template.expr || ""
+        window.pendingCronTemplateTz = "Asia/Shanghai"
+        window.pendingCronTemplateTrigger = window.cronTriggerDisplay(template.expr || "")
+        newTaskTitleInput.text = template.title || ""
+        newTaskPromptInput.text = template.prompt || ""
+        newTaskIntervalInput.text = ""
+        var parts = String(template.expr || "").split(" ")
+        var minute = parseInt(parts[0]); var hour = parseInt(parts[1])
+        var standardDaily = parts.length === 5 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])
+                            && parts[2] === "*" && parts[3] === "*" && parts[4] === "*"
+        var standardWeekly = parts.length === 5 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])
+                             && parts[2] === "*" && parts[3] === "*" && /^[0-6]$/.test(parts[4])
+        var standardMonthly = parts.length === 5 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])
+                              && /^\d+$/.test(parts[2]) && parts[3] === "*" && parts[4] === "*"
+        if (standardDaily || standardWeekly || standardMonthly) {
+            newTaskRepeatSelect.currentIndex = standardDaily ? 1 : (standardWeekly ? 2 : 4)
+            if (!isNaN(hour)) newTaskTimePicker.selectedHour = hour
+            if (!isNaN(minute)) newTaskTimePicker.selectedMinute = minute
+
+            var now = new Date()
+            var selectedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+            if (standardMonthly) {
+                var targetDay = parseInt(parts[2])
+                selectedDate = new Date(now.getFullYear(), now.getMonth(), targetDay,
+                                        hour, minute, 0, 0)
+                if (selectedDate.getTime() <= now.getTime())
+                    selectedDate = new Date(now.getFullYear(), now.getMonth() + 1, targetDay,
+                                            hour, minute, 0, 0)
+            } else if (standardWeekly) {
+                var targetDow = parseInt(parts[4])
+                selectedDate.setDate(selectedDate.getDate() + (targetDow - selectedDate.getDay() + 7) % 7)
+                var weeklyTrigger = new Date(selectedDate.getFullYear(), selectedDate.getMonth(),
+                                              selectedDate.getDate(), hour, minute, 0, 0)
+                if (weeklyTrigger.getTime() <= now.getTime())
+                    selectedDate.setDate(selectedDate.getDate() + 7)
+            } else {
+                var dailyTrigger = new Date(selectedDate.getFullYear(), selectedDate.getMonth(),
+                                             selectedDate.getDate(), hour, minute, 0, 0)
+                if (dailyTrigger.getTime() <= now.getTime())
+                    selectedDate.setDate(selectedDate.getDate() + 1)
+            }
+            newTaskDatePicker.selectedYear = selectedDate.getFullYear()
+            newTaskDatePicker.selectedMonth = selectedDate.getMonth() + 1
+            newTaskDatePicker.selectedDay = selectedDate.getDate()
+        } else if (template.expr === "0 * * * *") {
+            newTaskRepeatSelect.currentIndex = 3
+        } else {
+            newTaskRepeatSelect.currentIndex = 4
+        }
+        newTaskDialog.open()
+    }
+
+    function cronTriggerDisplay(expr) {
+        var value = String(expr || "")
+        if (value === "0 */4 * * *") return "每 4 小时"
+        if (value === "*/15 9-15 * * 1-5") return "交易时段 每 15 分钟"
+        if (value === "0 8 * * 1-5") return "工作日 08:00"
+        if (value === "0 8,16 * * *") return "每天 08:00、16:00"
+        if (value === "0 7,18 * * *") return "每天 07:00、18:00"
+        if (value === "0 7,13,19 * * *") return "每天 07:00、13:00、19:00"
+        var fields = value.split(" ")
+        if (fields.length !== 5) return value
+        var minute = fields[0], hour = fields[1], dom = fields[2], dow = fields[4]
+        if (/^\d+$/.test(minute) && /^\d+$/.test(hour)) {
+            var time = (parseInt(hour) < 10 ? "0" : "") + parseInt(hour) + ":"
+                     + (parseInt(minute) < 10 ? "0" : "") + parseInt(minute)
+            if (dom === "1" && fields[3] === "*") return "每月 1 号 " + time
+            if (dom === "3" && fields[3] === "*") return "每月 3 号 " + time
+            if (dow === "1") return "每周一 " + time
+            if (dow === "*") return "每天 " + time
+        }
+        return value
+    }
     property string pendingDeleteMcpName: ""
     /// 右键删除任务会话流程暂存（上下文菜单 → 确认弹窗）
     property string pendingDeleteTaskSessionId: ""
@@ -4708,9 +4839,10 @@ ApplicationWindow {
                     rightPadding: 60
                     spacing: 16
                     Rectangle{
-                        id: scheduledTaskTitleRec
-                        height: scheduledTaskTitle.height
+                    id: scheduledTaskTitleRec
+                        height: wsClient.cronJobs.length === 0 ? 0 : scheduledTaskTitle.height
                         width: parent.width - 120
+                        visible: wsClient.cronJobs.length > 0
                         Column{
                             id: scheduledTaskTitle
                             spacing: 8
@@ -4745,6 +4877,8 @@ ApplicationWindow {
                                     window.editingCronScheduleKind = ""
                                     window.editingCronScheduleExpr = ""
                                     window.editingCronScheduleTz   = ""
+                                    window.pendingCronTemplateExpr = ""
+                                    window.pendingCronTemplateTrigger = ""
                                     newTaskTitleInput.text = ""
                                     newTaskPromptInput.text = ""
                                     newTaskRepeatSelect.currentIndex = 0
@@ -4774,19 +4908,185 @@ ApplicationWindow {
                         Column{
                             spacing: 12
                             width: parent.width
-
-                            // 空状态
-                            Rectangle {
+                            // 空状态与自动化任务模板
+                            Column {
+                                id: cronEmptyState
                                 width: scheduledTaskScrollView.width - 120
-                                height: 120
+                                height: Math.max(scheduledTaskScrollView.height,
+                                                 emptyCronIntro.implicitHeight
+                                                 + cronTemplateSection.implicitHeight + 108)
                                 visible: wsClient.cronJobs.length === 0
-                                color: "transparent"
-                                Label {
-                                    anchors.centerIn: parent
-                                    text: qsTr("暂无定时任务，点击「+ 新建」创建第一个任务")
-                                    font.pixelSize: 14
-                                    color: "#A6000000"
+                                spacing: 0
+                                Column {
+                                    id: emptyCronIntro
+                                    width: parent.width
+                                    spacing: 10
+                                    Item {width: 1; height: 80}
+                                    Image {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        source: "qrc:/images/cron/mainImage.png"
+                                    }
+                                    Label {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: qsTr("开启你的第一个自动化任务吧")
+                                        font.pixelSize: 14
+                                        color: "#A6000000"
+                                    }
+                                    CustomButton {
+                                        width: 80; height: 36
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        backgroundColor: "#006BFF"
+                                        textColor: "#FFFFFF"
+                                        borderWidth: 0
+                                        text: qsTr("+ 新建")
+                                        fontSize: 14
+                                        onClicked: {
+                                            window.editingCronJobId = ""
+                                            window.editingCronPayloadKind = "agentTurn"
+                                            window.editingCronScheduleKind = ""
+                                            window.editingCronScheduleExpr = ""
+                                            window.editingCronScheduleTz = ""
+                                            window.pendingCronTemplateExpr = ""
+                                            window.pendingCronTemplateTrigger = ""
+                                            newTaskTitleInput.text = ""
+                                            newTaskPromptInput.text = ""
+                                            newTaskRepeatSelect.currentIndex = 0
+                                            newTaskIntervalInput.text = ""
+                                            newTaskDialog.open()
+                                        }
+                                    }
                                 }
+
+                                Item {
+                                    width: parent.width
+                                    height: Math.max(24, cronEmptyState.height
+                                                     - emptyCronIntro.implicitHeight
+                                                     - cronTemplateSection.implicitHeight - 84)
+                                }
+
+                                Column {
+                                    id: cronTemplateSection
+                                    width: parent.width
+                                    spacing: 12
+                                    Label {
+                                        text: qsTr("自动化任务灵感")
+                                        font.pixelSize: 16
+                                        font.weight: Font.DemiBold
+                                        color: "#D9000000"
+                                    }
+                                    Flow {
+                                        width: parent.width
+                                        height: childrenRect.height
+                                        spacing: 8
+                                        Repeater {
+                                            model: window.cronTemplateCategories
+                                            delegate: Rectangle {
+                                                width: categoryLabel.implicitWidth + 20
+                                                height: 30
+                                                radius: 6
+                                                color: index === window.selectedCronTemplateCategory
+                                                       ? "#0F006BFF" : (categoryMouse.containsMouse ? "#0A000000" : "#F7F9FA")
+                                                Label {
+                                                    id: categoryLabel
+                                                    anchors.centerIn: parent
+                                                    text: modelData.name
+                                                    font.pixelSize: 14
+                                                    color: index === window.selectedCronTemplateCategory ? "#006BFF" : "#A6000000"
+                                                }
+                                                MouseArea {
+                                                    id: categoryMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        window.selectedCronTemplateCategory = index
+                                                        cronTemplateCardsFlick.contentX = 0
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Flickable {
+                                        id: cronTemplateCardsFlick
+                                        width: parent.width
+                                        height: 184
+                                        clip: true
+                                        contentWidth: cronTemplateCardsRow.width
+                                        contentHeight: cronTemplateCardsRow.height
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        interactive: contentWidth > width
+                                        flickableDirection: Flickable.HorizontalFlick
+
+                                        ScrollBar.horizontal: ScrollBar {
+                                            policy: cronTemplateCardsFlick.contentWidth > cronTemplateCardsFlick.width
+                                                    ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                                        }
+
+                                        Row {
+                                            id: cronTemplateCardsRow
+                                            spacing: 16
+                                            height: 170
+
+                                            Repeater {
+                                                model: window.cronTemplateCategories[window.selectedCronTemplateCategory].tasks
+                                                delegate: Item {
+                                                    id: cronTemplateCard
+                                                    property var task: modelData
+                                                    width: 195
+                                                    height: 170
+
+                                                    DropShadow {
+                                                        anchors.fill: cardImage
+                                                        source: cardImage
+                                                        horizontalOffset: 0
+                                                        verticalOffset: 6
+                                                        radius: 14
+                                                        samples: 29
+                                                        color: "#26000000"
+                                                        visible: templateMouse.containsMouse
+                                                    }
+
+                                                    Image {
+                                                        id: cardImage
+                                                        anchors.fill: parent
+                                                        source: "qrc:/images/cron/"
+                                                                + (window.selectedCronTemplateCategory + 1)
+                                                                + "-" + (index + 1) + ".png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                        sourceSize: Qt.size(195, 170)
+                                                    }
+
+                                                    Rectangle {
+                                                        width: 58
+                                                        height: 38
+                                                        radius: 8
+                                                        anchors.centerIn: parent
+                                                        color: templateMouse.pressed ? "#005CE6" : "#006BFF"
+                                                        visible: templateMouse.containsMouse
+                                                        z: 2
+                                                        Label {
+                                                            anchors.centerIn: parent
+                                                            text: qsTr("使用")
+                                                            font.pixelSize: 14
+                                                            color: "#FFFFFF"
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: templateMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: window.openCronTemplate(cronTemplateCard.task)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Item { width: parent.width; height: 60 }
                             }
 
                             Repeater{
@@ -7399,6 +7699,8 @@ ApplicationWindow {
                 window.editingCronScheduleKind = ""
                 window.editingCronScheduleExpr = ""
                 window.editingCronScheduleTz   = ""
+                window.pendingCronTemplateExpr = ""
+                window.pendingCronTemplateTrigger = ""
                 newTaskWorkDirInput.text = ""
             }
         }
@@ -7539,17 +7841,41 @@ ApplicationWindow {
                                 borderColor: "#E6E7EB"
                                 borderWidth: 1
                                 alignment: Qt.AlignLeft
+                                onSelected: {
+                                    window.pendingCronTemplateExpr = ""
+                                    window.pendingCronTemplateTrigger = ""
+                                }
                             }
                             DatePicker {
                                 id: newTaskDatePicker
                                 width: (parent.width - 24) / 3
                                 height: 40
+                                onDateSelected: {
+                                    window.pendingCronTemplateExpr = ""
+                                    window.pendingCronTemplateTrigger = ""
+                                }
                             }
                             TimePicker {
                                 id: newTaskTimePicker
                                 width: (parent.width - 24) / 3
                                 height: 40
+                                onTimeSelected: {
+                                    window.pendingCronTemplateExpr = ""
+                                    window.pendingCronTemplateTrigger = ""
+                                }
                             }
+                        }
+                        Label {
+                            visible: window.pendingCronTemplateExpr !== ""
+                            text: qsTr("触发时间：") + window.pendingCronTemplateTrigger
+                            font.pixelSize: 12
+                            color: "#73000000"
+                        }
+                        Label {
+                            visible: window.pendingCronTemplateExpr !== ""
+                            text: qsTr("Cron：") + window.pendingCronTemplateExpr
+                            font.pixelSize: 12
+                            color: "#73000000"
                         }
                     }
 
@@ -7558,6 +7884,7 @@ ApplicationWindow {
                         width: parent.width
                         spacing: 8
                         visible: newTaskRepeatSelect.currentIndex === 4
+                                 && window.pendingCronTemplateExpr === ""
                         Label {
                             text: qsTr("执行间隔（秒）")
                             font.pixelSize: 14
@@ -7709,7 +8036,12 @@ ApplicationWindow {
 
                                 function pad(n) { return n < 10 ? "0" + n : "" + n }
 
-                                if (repeatIdx === 0) {
+                                if (window.pendingCronTemplateExpr) {
+                                    console.log("[CronAdd] template cron=" + window.pendingCronTemplateExpr)
+                                    wsClient.prepareCronJobWithDedicatedAgent(
+                                                1, title, prompt, window.pendingCronTemplateExpr,
+                                                window.pendingCronTemplateTz, 0, "", cronWorkspace)
+                                } else if (repeatIdx === 0) {
                                     var dt = y + "-" + pad(m) + "-" + pad(d) + "T" + pad(hh) + ":" + pad(mm) + ":00"
                                     console.log("[CronAdd] oneTime dateTime=" + dt)
                                     wsClient.prepareCronJobWithDedicatedAgent(3, title, prompt, "", "", 0, dt, cronWorkspace)
@@ -7752,6 +8084,8 @@ ApplicationWindow {
                             fontSize: 14
                             onClicked: {
                                 window.editingCronJobId = ""
+                                window.pendingCronTemplateExpr = ""
+                                window.pendingCronTemplateTrigger = ""
                                 newTaskDialog.close()
                             }
                         }
