@@ -963,6 +963,7 @@ ApplicationWindow {
                 || extension === "docx"
                 || extension === "txt"
                 || extension === "md"
+                || extension === "xlsx"
     }
 
     function kbStartUploadEntries(entries) {
@@ -1366,7 +1367,7 @@ ApplicationWindow {
 
             Label {
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("不支持该文件格式，请上传PDF，Word，TXT，MD格式")
+                text: qsTr("不支持该文件格式，请上传PDF，Word，TXT，MD，XLSX格式")
                 color: "#D9000000"
                 font.pixelSize: 14
             }
@@ -8874,7 +8875,7 @@ ApplicationWindow {
                                 ToolTip {
                                     id: kbUploadTip
                                     visible: kbUploadMouse.containsMouse
-                                    text: qsTr("仅支持PDF，Word，TXT，MD格式")
+                                    text: qsTr("仅支持PDF，Word，TXT，MD，XLSX格式")
                                     delay: 400
                                     background: Rectangle { color: "#A6000000"; radius: 4 }
                                     contentItem: Text {
@@ -10430,7 +10431,7 @@ ApplicationWindow {
     FileDialog {
         id: kbFileDialog
         title: qsTr("选择知识库文件")
-        nameFilters: [qsTr("支持的文件 (*.pdf *.doc *.docx *.txt *.md)")]
+        nameFilters: [qsTr("支持的文件 (*.pdf *.doc *.docx *.txt *.md *.xlsx)")]
         selectMultiple: true
         onAccepted: window.kbStartUpload(kbFileDialog.fileUrls)
     }
