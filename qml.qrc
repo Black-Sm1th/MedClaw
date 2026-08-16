@@ -186,5 +186,7 @@
         <file>images/shortcut/6-5.png</file>
         <file>images/shortcut/6-selected.png</file>
         <file>images/addIdea.png</file>
+        <file>images/login/loginShortcut5.png</file>
+        <file>images/login/loginShortcut6.png</file>
     </qresource>
 </RCC>

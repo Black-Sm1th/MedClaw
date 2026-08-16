@@ -36,19 +36,76 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
         }
         Item { width: 1; height: showPhoneForm ? 80 : 68 }
-        Row {
-            id: shortcutRow
-            readonly property real shortcutWidth: Math.min(202,
-                                                            Math.max(1, (width - spacing * 3) / 4))
+        Item {
+            id: shortcutCarousel
             width: parent.width
+            readonly property real shortcutSpacing: Math.min(32, Math.max(8, width * 0.055))
+            readonly property real shortcutWidth: Math.min(202,
+                                                            Math.max(1, (width - shortcutSpacing * 4) / 5))
+            readonly property real cycleWidth: 6 * (shortcutWidth + shortcutSpacing)
             height: shortcutWidth * 175 / 202
-            spacing: Math.min(32, Math.max(8, width * 0.055))
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !loginPage.showPhoneForm
-            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut1.png"; fillMode: Image.PreserveAspectFit }
-            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut2.png"; fillMode: Image.PreserveAspectFit }
-            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut3.png"; fillMode: Image.PreserveAspectFit }
-            Image { width: shortcutRow.shortcutWidth; height: shortcutRow.height; source: "qrc:/images/login/loginShortcut4.png"; fillMode: Image.PreserveAspectFit }
+
+            Flickable {
+                id: shortcutFlickable
+                anchors.fill: parent
+                clip: true
+                interactive: false
+                contentWidth: shortcutStrip.width
+                contentHeight: height
+
+                Row {
+                    id: shortcutStrip
+                    height: parent.height
+                    spacing: shortcutCarousel.shortcutSpacing
+
+                    Repeater {
+                        model: 12
+                        Image {
+                            width: shortcutCarousel.shortcutWidth
+                            height: shortcutCarousel.height
+                            source: "qrc:/images/login/loginShortcut" + (index % 6 + 1) + ".png"
+                            fillMode: Image.PreserveAspectFit
+                        }
+                    }
+                }
+
+                SequentialAnimation on contentX {
+                    running: loginPage.visible
+                             && !loginPage.showPhoneForm
+                             && !loginPage.initializing
+                    loops: Animation.Infinite
+                    PauseAnimation { duration: 1200 }
+                    NumberAnimation {
+                        from: 0
+                        to: shortcutCarousel.cycleWidth
+                        duration: 14000
+                        easing.type: Easing.Linear
+                    }
+                }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                width: Math.min(48, parent.width * 0.08)
+                height: parent.height
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#FFFFFF" }
+                    GradientStop { position: 1.0; color: "#00FFFFFF" }
+                }
+            }
+            Rectangle {
+                anchors.right: parent.right
+                width: Math.min(48, parent.width * 0.08)
+                height: parent.height
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#00FFFFFF" }
+                    GradientStop { position: 1.0; color: "#FFFFFF" }
+                }
+            }
         }
         Item { width: 1; height: 68; visible: !loginPage.showPhoneForm }
         Column {
