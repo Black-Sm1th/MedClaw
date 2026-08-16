@@ -1,6 +1,7 @@
 QT += quick quickcontrols2 websockets sql webengine network
 
 include(online-office-integration/client-qt/online-office-client.pri)
+include(viewer-host-qt/viewer-host-qt.pri)
 
 TARGET = AetherStudy
 
@@ -55,6 +56,17 @@ OTHER_FILES += \
 office_config.files = config/office.json
 office_config.path = $$OUT_PWD/config
 COPIES += office_config
+
+# Keep the local viewer assets beside the executable. A post-link directory
+# copy avoids expanding every frontend asset into qmake's source archive rule.
+viewer_web_source = $$shell_path($$PWD/viewer-web/dist)
+win32 {
+    CONFIG(debug, debug|release): viewer_web_target = $$shell_path($$OUT_PWD/debug/viewer-web)
+    else: viewer_web_target = $$shell_path($$OUT_PWD/release/viewer-web)
+} else {
+    viewer_web_target = $$shell_path($$OUT_PWD/viewer-web)
+}
+QMAKE_POST_LINK += $$QMAKE_COPY_DIR $$shell_quote($$viewer_web_source) $$shell_quote($$viewer_web_target)
 
 RC_ICONS = images/icon.ico
 

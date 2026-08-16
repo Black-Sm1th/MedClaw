@@ -1,4 +1,4 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QCoreApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -22,6 +22,7 @@
 #include "session_reader.h"
 #include "auth_controller.h"
 #include "online-office-integration/client-qt/OnlineOfficeClient.h"
+#include "viewer-host-qt/include/ViewerHost.h"
 
 static void configureQtWebEngineRuntime(const char *executablePath)
 {
@@ -108,7 +109,7 @@ int main(int argc, char *argv[])
     configureQtWebEngineRuntime(argv[0]);
     QtWebEngine::initialize();
 
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
     QCoreApplication::setApplicationName(QStringLiteral("Aether study"));
 
@@ -231,6 +232,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     qmlRegisterType<OnlineOfficeClient>("MedClaw.Office", 1, 0,
                                         "OnlineOfficeClient");
+    qmlRegisterType<ViewerHost>("MedClaw.Viewer", 1, 0, "ViewerHost");
     const QJsonObject officeConfig = loadOfficeConfig(dataRoot);
     QString officeBridgeUrl = qEnvironmentVariable("MEDCLAW_OFFICE_BRIDGE_URL").trimmed();
     QString officeApiKey = qEnvironmentVariable("MEDCLAW_OFFICE_API_KEY").trimmed();

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta id="office-configs" data-config="">
+  <base href="/">
+  <title>Office Viewer</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script>
+    if (typeof Object.hasOwn !== 'function') {
+      Object.hasOwn = function (object, property) {
+        return Object.prototype.hasOwnProperty.call(Object(object), property);
+      };
+    }
+  </script>
+  <script type="module" src="/src/react/main.tsx"></script>
+</body>
+
+</html>

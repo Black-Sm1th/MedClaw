@@ -3,7 +3,6 @@ import QtQuick.Controls 2.15
 import QtQuick.Window 2.2
 import QtQuick.Dialogs 1.3
 import QtGraphicalEffects 1.0
-import MedClaw.Office 1.0
 import "./components"
 import "data/TemplatePrompts.js" as TemplatePrompts
 ApplicationWindow {
@@ -2439,19 +2438,24 @@ ApplicationWindow {
                     return "qrc:/images/doc/document-text.svg"
                 }
 
-                function supportsOnlineOffice(file) {
+                function supportsLocalViewer(file) {
                     if (!file || file.folder === true || file.isDirectory === true
                             || file.type === "directory" || file.type === "folder")
                         return false
                     var ext = String(file.extension || fileExtension(file.path)).toLowerCase()
-                    return /^(doc|docx|odt|rtf|xls|xlsx|xlsm|ods|csv|ppt|pptx|odp|txt|md|pdf|html|htm)$/.test(ext)
+                    return /^(docx|dotx|xls|xlsx|xlsm|ods|csv|tsv|pptx|pptm|pdf|md|markdown|html|htm|jpg|jpeg|png|gif|bmp|webp|tif|tiff|heic|heif|svg|ttf|otf|woff|woff2|epub|icns|psd|xmind|parquet)$/.test(ext)
+                }
+
+                function supportsLocalViewerEdit(file) {
+                    var ext = String((file && file.extension) || fileExtension((file && file.path) || "")).toLowerCase()
+                    return /^(docx|dotx|xls|xlsx|xlsm|ods|csv|tsv|md|markdown|html|htm)$/.test(ext)
                 }
 
                 function openOfficeFile(file) {
                     var path = String((file && file.path) || "")
                     if (!path)
                         return
-                    if (!supportsOnlineOffice(file)) {
+                    if (!supportsLocalViewer(file)) {
                         window.openMarkdownLink("medclaw-local:" + encodeURIComponent(path))
                         return
                     }
@@ -2613,6 +2617,29 @@ ApplicationWindow {
                     activeOfficeTabIndex = -1
                     officePanelMaximized = false
                     officePanelSizeManuallySet = false
+                }
+
+                function downloadOfficeFile() {
+                    var path = String(selectedOfficeFile.path || "")
+                    officeMoreMenuVisible = false
+                    if (!path)
+                        return
+                    officeDownloadSourcePath = path
+                    var host = activeOfficeTabIndex >= 0
+                            ? officeViewsRepeater.itemAt(activeOfficeTabIndex) : null
+                    if (host && host.officeView && host.officeView.mode === "edit") {
+                        host.downloadWhenFinished = true
+                        if (!host.officeClient.saving) {
+                            officeSaveRequested = true
+                            if (!host.officeView.saveEditor()) {
+                                host.downloadWhenFinished = false
+                                officeSaveRequested = false
+                                officeDownloadSourcePath = ""
+                            }
+                        }
+                        return
+                    }
+                    officeDownloadFolderDialog.open()
                 }
 
                 function toggleArtifactSidebar() {
@@ -3550,14 +3577,13 @@ ApplicationWindow {
                                 anchors.right: officeMoreButton.left
                                 anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: newTaskRec.officeSaveRequested ? 84
-                                      : (newTaskRec.artifactSidebarMode === "edit" ? 64 : 68)
+                                visible: newTaskRec.supportsLocalViewerEdit(newTaskRec.selectedOfficeFile)
+                                         && newTaskRec.artifactSidebarMode === "preview"
+                                width: 68
                                 height: 36
                                 radius: 8
-                                color: newTaskRec.artifactSidebarMode === "edit"
-                                     ? (officeActionMouse.pressed ? "#005AD6" : "#006BFF")
-                                     : (officeActionMouse.pressed ? "#14000000"
-                                        : officeActionMouse.containsMouse ? "#F7F9FA" : "transparent")
+                                color: officeActionMouse.pressed ? "#14000000"
+                                      : officeActionMouse.containsMouse ? "#F7F9FA" : "transparent"
 
                                 Row {
                                     anchors.centerIn: parent
@@ -3566,19 +3592,17 @@ ApplicationWindow {
                                     Image {
                                         width: 16; height: 16
                                         anchors.verticalCenter: parent.verticalCenter
-                                        visible: newTaskRec.artifactSidebarMode === "preview"
-                                                 && !newTaskRec.officeSaveRequested
+                                        visible: true
                                         source: "qrc:/images/office/edit.svg"
                                         fillMode: Image.PreserveAspectFit
                                     }
 
                                     Label {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: newTaskRec.officeSaveRequested ? qsTr("保存中...")
-                                              : (newTaskRec.artifactSidebarMode === "edit" ? qsTr("保存") : qsTr("编辑"))
+                                        text: qsTr("编辑")
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 14
-                                        color: newTaskRec.artifactSidebarMode === "edit" ? "#FFFFFF" : "#A6000000"
+                                        color: "#A6000000"
                                     }
                                 }
                                 MouseArea {
@@ -3598,18 +3622,10 @@ ApplicationWindow {
                                                    ? officeActionButton.activeHost.officeView : null
                                         if (!view)
                                             return
-                                        if (newTaskRec.artifactSidebarMode === "preview") {
-                                            newTaskRec.officeEditPending = true
-                                            newTaskRec.officePreviewPending = false
-                                            view.switchMode("edit")
-                                        } else {
-                                            officeActionButton.activeHost.returnToPreviewAfterSave = true
-                                            newTaskRec.officeSaveRequested = true
-                                            if (!view.saveAndSwitchMode("view")) {
-                                                officeActionButton.activeHost.returnToPreviewAfterSave = false
-                                                newTaskRec.officeSaveRequested = false
-                                            }
-                                        }
+                                        newTaskRec.officeEditPending = true
+                                        newTaskRec.officePreviewPending = false
+                                        newTaskRec.officePanelMaximized = true
+                                        view.switchMode("edit")
                                     }
                                 }
                             }
@@ -3704,8 +3720,7 @@ ApplicationWindow {
                                                     if (!path)
                                                         return
                                                     if (index === 0) {
-                                                        newTaskRec.officeDownloadSourcePath = path
-                                                        officeDownloadFolderDialog.open()
+                                                        newTaskRec.downloadOfficeFile()
                                                     } else if (index === 1) {
                                                         if (!$MainViewController.openContainingFolder(path)) {
                                                             errorToast.text = qsTr("无法打开文件夹")
@@ -3737,10 +3752,11 @@ ApplicationWindow {
                                 required property string sessionKey
                                 property bool closeWhenFinished: false
                                 property bool returnToPreviewAfterSave: false
+                                property bool downloadWhenFinished: false
                                 readonly property bool active:
                                     index === newTaskRec.activeOfficeTabIndex
                                     && sessionKey === newTaskRec.currentSidebarSessionKey()
-                                property alias officeClient: tabOfficeClient
+                                readonly property var officeClient: tabOfficeLoader.item
                                 property var officeView: tabOfficeLoader.item
                                 anchors.left: parent.left
                                 anchors.right: parent.right
@@ -3749,18 +3765,11 @@ ApplicationWindow {
                                 visible: active
                                 opacity: active && newTaskRec.officePreviewPending ? 0 : 1
 
-                                OnlineOfficeClient {
-                                    id: tabOfficeClient
-                                    bridgeBaseUrl: onlineOffice.bridgeBaseUrl
-                                    apiKey: onlineOffice.apiKey
-                                }
-
                                 Loader {
                                     id: tabOfficeLoader
                                     anchors.fill: parent
-                                    source: "qrc:/onlineoffice/OnlineOfficeView.qml"
+                                    source: "qrc:/localviewer/LocalOfficeView.qml"
                                     onLoaded: {
-                                        item.client = tabOfficeClient
                                         item.open(officeViewHost.path, "view")
                                     }
                                 }
@@ -3774,6 +3783,8 @@ ApplicationWindow {
                                     function onSaveFinished(filePath, saved) {
                                         if (officeViewHost.active)
                                             newTaskRec.officeSaveRequested = false
+                                        var downloading = officeViewHost.downloadWhenFinished
+                                        officeViewHost.downloadWhenFinished = false
                                         var returningToPreview = officeViewHost.returnToPreviewAfterSave
                                         officeViewHost.returnToPreviewAfterSave = false
                                         if (saved) {
@@ -3781,13 +3792,17 @@ ApplicationWindow {
                                             errorToast.text = (officeViewHost.name || "文档") + " 已保存"
                                             if (officeViewHost.active && returningToPreview)
                                                 newTaskRec.officePreviewPending = true
+                                            if (downloading && officeViewHost.active)
+                                                Qt.callLater(function() { officeDownloadFolderDialog.open() })
                                         } else {
+                                            if (downloading)
+                                                newTaskRec.officeDownloadSourcePath = ""
                                             if (officeViewHost.active) {
                                                 newTaskRec.officePreviewPending = false
                                                 newTaskRec.artifactSidebarMode = "edit"
                                             }
                                             officeViewHost.closeWhenFinished = false
-                                            errorToast.text = tabOfficeClient.lastError
+                                            errorToast.text = officeViewHost.officeClient.lastError
                                                     || ((officeViewHost.name || "文档") + " 保存失败，请重试")
                                         }
                                         errorToast.visible = true
@@ -3799,8 +3814,7 @@ ApplicationWindow {
                                         if (newTaskRec.officeEditPending && editorMode === "edit") {
                                             newTaskRec.officeEditPending = false
                                             newTaskRec.artifactSidebarMode = "edit"
-                                            if (!newTaskRec.officePanelSizeManuallySet)
-                                                newTaskRec.officePanelMaximized = true
+                                            newTaskRec.officePanelMaximized = true
                                         } else if (newTaskRec.officePreviewPending && editorMode === "view") {
                                             newTaskRec.artifactSidebarMode = "preview"
                                             newTaskRec.officePreviewPending = false

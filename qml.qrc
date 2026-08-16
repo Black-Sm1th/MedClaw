@@ -1,4 +1,8 @@
 <RCC>
+    <qresource prefix="/localviewer">
+        <file alias="LocalOfficeView.qml">viewer-host-qt/qml/LocalOfficeView.qml</file>
+        <file alias="ViewerWebView.qml">viewer-host-qt/qml/ViewerWebView.qml</file>
+    </qresource>
     <qresource prefix="/">
         <file>main.qml</file>
         <file>TestChatClient.qml</file>
