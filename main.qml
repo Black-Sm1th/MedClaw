@@ -446,6 +446,11 @@ ApplicationWindow {
         errorToastTimer.restart()
     }
 
+    function kbShowUnsupportedFileMessage() {
+        kbUploadFormatMessage.visible = true
+        kbUploadFormatMessageTimer.restart()
+    }
+
     function kbDefaultCollectionId() {
         if (!authController.loggedIn || !authController.userId)
             return ""
@@ -951,8 +956,23 @@ ApplicationWindow {
         kbStartUploadEntries(entries)
     }
 
+    function kbIsSupportedUploadFile(entry) {
+        var extension = String(entry && entry.ext || "").toLowerCase()
+        return extension === "pdf"
+                || extension === "doc"
+                || extension === "docx"
+                || extension === "txt"
+                || extension === "md"
+    }
+
     function kbStartUploadEntries(entries) {
         var collection = kbUserCollection()
+        for (var entryIndex = 0; entries && entryIndex < entries.length; entryIndex++) {
+            if (!kbIsSupportedUploadFile(entries[entryIndex])) {
+                kbShowUnsupportedFileMessage()
+                return
+            }
+        }
         if (!wsClient.knowledgeBaseDataDirReady) {
             kbShowError(wsClient.knowledgeBaseDataDirMessage
                         || qsTr("当前用户的知识库目录尚未就绪"))
@@ -1301,6 +1321,63 @@ ApplicationWindow {
         }
     }
     ListModel { id: cronRunsModel }
+
+    Rectangle {
+        id: kbUploadFormatMessage
+        visible: false
+        z: 10000
+        width: Math.min(kbUploadFormatMessageContent.implicitWidth + 32, window.width - 80)
+        height: 44
+        radius: 6
+        color: "#FFFFFF"
+        border.width: 1
+        border.color: "#12000000"
+        anchors.top: parent.top
+        anchors.topMargin: 32
+        anchors.horizontalCenter: parent.horizontalCenter
+        layer.enabled: true
+        layer.effect: DropShadow {
+            radius: 10
+            samples: 21
+            color: "#26000000"
+            verticalOffset: 4
+        }
+
+        Row {
+            id: kbUploadFormatMessageContent
+            anchors.centerIn: parent
+            spacing: 10
+
+            Rectangle {
+                width: 18
+                height: 18
+                radius: 9
+                color: "#FF8A34"
+                anchors.verticalCenter: parent.verticalCenter
+
+                Label {
+                    anchors.centerIn: parent
+                    text: "!"
+                    color: "#FFFFFF"
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+            }
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("不支持该文件格式，请上传PDF，Word，TXT，MD格式")
+                color: "#D9000000"
+                font.pixelSize: 14
+            }
+        }
+
+        Timer {
+            id: kbUploadFormatMessageTimer
+            interval: 5000
+            onTriggered: kbUploadFormatMessage.visible = false
+        }
+    }
 
     // 错误提示 Toast
     Rectangle {
@@ -2546,7 +2623,7 @@ ApplicationWindow {
                     sessionArtifacts = files
                 }
 
-                property int selectedShortcutGroup: -1
+                property int selectedShortcutGroup: 0
                 property int selectedShortcutTab: 0
                 property int shortcutCardOffset: 0
                 readonly property int shortcutCardsPerPage: 4
@@ -8794,6 +8871,20 @@ ApplicationWindow {
                                              && window.kbSelectedCollection.length > 0
                                     onClicked: kbFileDialog.open()
                                 }
+                                ToolTip {
+                                    id: kbUploadTip
+                                    visible: kbUploadMouse.containsMouse
+                                    text: qsTr("仅支持PDF，Word，TXT，MD格式")
+                                    delay: 400
+                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    contentItem: Text {
+                                        text: kbUploadTip.text
+                                        font.pixelSize: 14
+                                        color: "#FFFFFF"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        wrapMode: Text.NoWrap
+                                    }
+                                }
                             }
                         }
                     }
@@ -10339,7 +10430,7 @@ ApplicationWindow {
     FileDialog {
         id: kbFileDialog
         title: qsTr("选择知识库文件")
-        nameFilters: ["Documents (*.pdf *.docx *.xlsx *.xls *.pptx *.md *.txt *.text)", "All files (*)"]
+        nameFilters: [qsTr("支持的文件 (*.pdf *.doc *.docx *.txt *.md)")]
         selectMultiple: true
         onAccepted: window.kbStartUpload(kbFileDialog.fileUrls)
     }
