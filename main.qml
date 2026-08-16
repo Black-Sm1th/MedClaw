@@ -1546,7 +1546,7 @@ ApplicationWindow {
                                 ToolTip {
                                     id: scheduledTaskMenuTipCollapsed
                                     visible: modelData === "定时任务" && selItemMouseCollapse.containsMouse
-                                    text: qsTr("可设置task开机联网后定时启动")
+                                    text: qsTr("创建定时任务，让 AI 按计划自动执行")
                                     delay: 400
                                     background: Rectangle { color: "#A6000000"; radius: 4 }
                                     contentItem: Text {
@@ -2711,10 +2711,14 @@ ApplicationWindow {
                 }
 
                 function moveShortcutCards(delta) {
-                    var maxOffset = Math.max(0, (selectedShortcutCards || []).length
-                                               - shortcutCardsPerPage)
+                    var cardCount = (selectedShortcutCards || []).length
+                    var maxOffset = cardCount > 0
+                            ? Math.floor((cardCount - 1) / shortcutCardsPerPage)
+                              * shortcutCardsPerPage
+                            : 0
                     shortcutCardOffset = Math.max(0, Math.min(maxOffset,
-                                                              shortcutCardOffset + delta))
+                                                              shortcutCardOffset
+                                                              + delta * shortcutCardsPerPage))
                 }
 
                 function doSendMessage(requestedText, files) {
@@ -5843,7 +5847,7 @@ ApplicationWindow {
                                     Label {
                                         id: medicalTabLabel
                                         text: modelData.title
-                                        font.pixelSize: 14
+                                        font.pixelSize: 16
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         color: medicalShortcutTab.selected ? "#006BFF" : "#73000000"
                                         anchors.top: parent.top
@@ -6454,7 +6458,7 @@ ApplicationWindow {
                                 color: "#D9000000"
                             }
                             Label{
-                                text: qsTr("可设置task开机联网后定时启动")
+                                text: qsTr("创建定时任务，让 AI 按计划自动执行")
                                 font.pixelSize: 12
                                 color: "#A6000000"
                             }
@@ -6463,6 +6467,24 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 8
+                            CustomButton {
+                                width: 112
+                                height: 36
+                                backgroundColor: "#FFFFFF"
+                                hoverBackgroundColor: "#F7F9FA"
+                                pressedBackgroundColor: "#F0F2F5"
+                                textColor: "#73000000"
+                                borderColor: "#E6E7EB"
+                                borderWidth: 1
+                                iconSource: "qrc:/images/addIdea.png"
+                                iconSize: 16
+                                text: qsTr("从灵感添加")
+                                fontSize: 14
+                                onClicked: {
+                                    window.selectedCronTemplateCategory = 0
+                                    cronIdeaLibraryPopup.open()
+                                }
+                            }
                             CustomButton{
                                 width: 80
                                 height: 36
@@ -9281,6 +9303,212 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+    }
+
+    Popup {
+        id: cronIdeaLibraryPopup
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        Overlay.modal: Rectangle { color: "#59000000" }
+        background: Rectangle { color: "transparent" }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: cronIdeaLibraryPopup.close()
+            }
+
+            Rectangle {
+                id: cronIdeaDialogCard
+                width: Math.min(980, parent.width - 64)
+                height: Math.min(640, parent.height - 80)
+                anchors.centerIn: parent
+                radius: 16
+                color: "#FFFFFF"
+                clip: true
+
+                MouseArea { anchors.fill: parent; onClicked: {} }
+
+                Item {
+                    id: cronIdeaDialogHeader
+                    width: parent.width
+                    height: 56
+
+                    Label {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 22
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("灵感库")
+                        font.pixelSize: 20
+                        font.weight: Font.DemiBold
+                        color: "#D9000000"
+                    }
+
+                    ImageButton {
+                        btnWidth: 20
+                        btnHeight: 20
+                        source: "qrc:/images/close.png"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 22
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: cronIdeaLibraryPopup.close()
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        anchors.bottom: parent.bottom
+                        color: "#14000000"
+                    }
+                }
+
+                Item {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: cronIdeaDialogHeader.bottom
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 20
+
+                    Flow {
+                        id: cronIdeaCategoryFlow
+                        width: parent.width
+                        height: childrenRect.height
+                        spacing: 8
+
+                        Repeater {
+                            model: window.cronTemplateCategories
+                            delegate: Rectangle {
+                                width: ideaCategoryLabel.implicitWidth + 20
+                                height: 30
+                                radius: 6
+                                color: index === window.selectedCronTemplateCategory
+                                       ? "#0F006BFF"
+                                       : (ideaCategoryMouse.containsMouse ? "#0A000000" : "#F7F9FA")
+
+                                Label {
+                                    id: ideaCategoryLabel
+                                    anchors.centerIn: parent
+                                    text: modelData.name
+                                    font.pixelSize: 14
+                                    color: index === window.selectedCronTemplateCategory
+                                           ? "#006BFF" : "#A6000000"
+                                }
+
+                                MouseArea {
+                                    id: ideaCategoryMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        window.selectedCronTemplateCategory = index
+                                        cronIdeaCardsScroll.contentItem.contentY = 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ScrollView {
+                        id: cronIdeaCardsScroll
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: cronIdeaCategoryFlow.bottom
+                        anchors.topMargin: 14
+                        anchors.bottom: parent.bottom
+                        clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                        Grid {
+                            id: cronIdeaCardsGrid
+                            width: cronIdeaCardsScroll.width
+                            property int cardColumns: Math.max(1, Math.min(5,
+                                Math.floor((width + spacing) / 170)))
+                            property real cardWidth: (width - (cardColumns - 1) * spacing) / cardColumns
+                            property real cardHeight: cardWidth * 170 / 196
+                            columns: cardColumns
+                            spacing: 14
+                            height: Math.ceil(window.cronTemplateCategories[window.selectedCronTemplateCategory].tasks.length
+                                              / cardColumns) * cardHeight
+                                    + Math.max(0, Math.ceil(window.cronTemplateCategories[window.selectedCronTemplateCategory].tasks.length
+                                                          / cardColumns) - 1) * spacing
+
+                            Repeater {
+                                model: window.cronTemplateCategories[window.selectedCronTemplateCategory].tasks
+                                delegate: Item {
+                                    id: cronIdeaCard
+                                    property var task: modelData
+                                    width: cronIdeaCardsGrid.cardWidth
+                                    height: cronIdeaCardsGrid.cardHeight
+
+                                    DropShadow {
+                                        anchors.fill: ideaCardImage
+                                        source: ideaCardImage
+                                        horizontalOffset: 0
+                                        verticalOffset: 6
+                                        radius: 14
+                                        samples: 29
+                                        color: "#26000000"
+                                        visible: ideaCardMouse.containsMouse
+                                    }
+
+                                    Image {
+                                        id: ideaCardImage
+                                        anchors.fill: parent
+                                        source: "qrc:/images/cron/"
+                                                + (window.selectedCronTemplateCategory + 1)
+                                                + "-" + (index + 1) + ".png"
+                                        fillMode: Image.PreserveAspectFit
+                                        sourceSize: Qt.size(196, 170)
+                                    }
+
+                                    Rectangle {
+                                        width: 58
+                                        height: 38
+                                        radius: 8
+                                        anchors.centerIn: parent
+                                        color: ideaCardMouse.pressed ? "#005CE6" : "#006BFF"
+                                        visible: ideaCardMouse.containsMouse
+                                        z: 2
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: qsTr("使用")
+                                            font.pixelSize: 14
+                                            color: "#FFFFFF"
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: ideaCardMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            cronIdeaLibraryPopup.close()
+                                            window.openCronTemplate(cronIdeaCard.task)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 130 }
         }
     }
 

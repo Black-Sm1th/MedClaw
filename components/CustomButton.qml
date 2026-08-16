@@ -14,6 +14,7 @@ Rectangle {
     property int fontSize: 16
     property string text: qsTr("按钮")
     property string iconSource: ""  // 图标路径，为空则不显示图标
+    property int iconSize: 0
     property int borderWidth: 0
     property int buttonRadius: 8
     property bool containsMouse: mouseArea.containsMouse
@@ -131,6 +132,9 @@ Rectangle {
             id: buttonIcon
             source: iconSource
             visible: iconSource !== ""
+            width: customButton.iconSize > 0 ? customButton.iconSize : implicitWidth
+            height: customButton.iconSize > 0 ? customButton.iconSize : implicitHeight
+            fillMode: Image.PreserveAspectFit
             anchors.verticalCenter: parent.verticalCenter
         }
         
