@@ -48,6 +48,8 @@ RESOURCES += qml.qrc
 
 OTHER_FILES += \
     components/ExpertPage.qml \
+    components/TemplateLibraryPage.qml \
+    data/TemplatePrompts.js \
     config/office.json
 
 office_config.files = config/office.json

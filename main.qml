@@ -5,6 +5,7 @@ import QtQuick.Dialogs 1.3
 import QtGraphicalEffects 1.0
 import MedClaw.Office 1.0
 import "./components"
+import "data/TemplatePrompts.js" as TemplatePrompts
 ApplicationWindow {
     id: window
     // Use logical (DIP) screen dimensions so the initial window fits on
@@ -390,6 +391,7 @@ ApplicationWindow {
         leftMidPanel.activeAgentId = ""
         leftMidPanel.activeSessionKey = ""
         wsClient.clearActiveAgentContext()
+        newTaskRec.clearDocxTemplateSelection(true)
         newTaskRec.selectedCollaborationAgentIds = ids
         window.leftSelectedIndex = 0
     }
@@ -398,6 +400,9 @@ ApplicationWindow {
         var id = String(agentId || "").trim()
         if (!id)
             return
+        newTaskRec.clearDocxTemplateSelection(true)
+        chatKnowledgeCollection = ""
+        knowledgePopup.close()
         pendingExpertPrompt = String(promptText || "")
         wsClient.summonAgent(id)
     }
@@ -554,8 +559,11 @@ ApplicationWindow {
 
     function kbToggleChatCollection(collection) {
         var collectionId = String(collection || "")
-        chatKnowledgeCollection = chatKnowledgeCollection === collectionId
+        var nextCollection = chatKnowledgeCollection === collectionId
                 ? "" : collectionId
+        if (nextCollection)
+            newTaskRec.clearDocxTemplateSelection(true)
+        chatKnowledgeCollection = nextCollection
         var metadata = kbMetadata || kbDefaultMetadata()
         metadata.chatSelectedCollection = chatKnowledgeCollection
         kbSaveMetadata(metadata)
@@ -1200,6 +1208,7 @@ ApplicationWindow {
                 leftMidPanel.activeSessionKey = ""
                 textInputArea.text = ""
                 newTaskRec.resetShortcutSelection()
+                newTaskRec.selectedDocxTemplate = ({})
                 newTaskRec.selectedCollaborationAgentIds = []
                 dropdownSelectionWorkSpace.currentText = qsTr("workspace")
                 dropdownSelectionWorkSpace.absolutePath = ""
@@ -1492,9 +1501,9 @@ ApplicationWindow {
                         visible: window.sidebarExpanded
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库"/*, "MCP"*/]
+                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库", "模板库"/*, "MCP"*/]
                             delegate: Rectangle{
-                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 7)
+                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8))
                                 property bool isSelected: index === 2
                                                           ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
                                                           : targetIndex === window.leftSelectedIndex
@@ -1523,6 +1532,8 @@ ApplicationWindow {
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "知识库"){
                                                 return "qrc:/images/knowledge.png"
+                                            }else if(modelData === "模板库"){
+                                                return "qrc:/images/template.png"
                                             }else if(modelData === "MCP"){
                                                 return "qrc:/images/puzzle.png"
                                             }
@@ -1574,9 +1585,9 @@ ApplicationWindow {
                         visible: !window.sidebarExpanded
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库" /*, "MCP"*/ ]
+                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库", "模板库" /*, "MCP"*/ ]
                             delegate: Rectangle{
-                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : 7)
+                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8))
                                 property bool isSelected: index === 2
                                                           ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
                                                           : targetIndex === window.leftSelectedIndex
@@ -1599,6 +1610,8 @@ ApplicationWindow {
                                             return "qrc:/images/category.png"
                                         }else if(modelData === "知识库"){
                                             return "qrc:/images/knowledge.png"
+                                        }else if(modelData === "模板库"){
+                                            return "qrc:/images/template.png"
                                         }else if(modelData === "MCP"){
                                             return "qrc:/images/puzzle.png"
                                         }
@@ -2244,11 +2257,16 @@ ApplicationWindow {
                 property bool isNewTaskWelcome: window.leftSelectedIndex === 0
                                                 && !hasActiveTask && !hasMessages
                 property var selectedCollaborationAgentIds: []
+                property var selectedDocxTemplate: ({})
+                readonly property bool hasSelectedDocxTemplate:
+                    String((selectedDocxTemplate && selectedDocxTemplate.id) || "").length > 0
                 onSelectedCollaborationAgentIdsChanged: {
-                    if (newTaskRec.isNewTaskWelcome
-                            && (selectedCollaborationAgentIds || []).length > 0) {
-                        window.chatKnowledgeCollection = ""
-                        knowledgePopup.close()
+                    if ((selectedCollaborationAgentIds || []).length > 0) {
+                        newTaskRec.clearDocxTemplateSelection(true)
+                        if (newTaskRec.isNewTaskWelcome) {
+                            window.chatKnowledgeCollection = ""
+                            knowledgePopup.close()
+                        }
                     }
                 }
                 readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
@@ -2773,6 +2791,16 @@ ApplicationWindow {
                     shortcutCardOffset = 0
                 }
 
+                function clearDocxTemplateSelection(clearMatchingPrompt) {
+                    if (!hasSelectedDocxTemplate)
+                        return
+                    var prompt = String(selectedDocxTemplate.prompt || "")
+                    selectedDocxTemplate = ({})
+                    if (clearMatchingPrompt && prompt
+                            && String(textInputArea.text || "") === prompt)
+                        textInputArea.text = ""
+                }
+
                 function selectShortcutGroup(index) {
                     if (selectedShortcutGroup === index) {
                         resetShortcutSelection()
@@ -2827,12 +2855,58 @@ ApplicationWindow {
                         wsClient.clearActiveAgentContext()
                     wsClient.setPendingCollaborationAgents(
                         newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
+                    if (newTaskRec.hasSelectedDocxTemplate) {
+                        var selectedTemplate = newTaskRec.selectedDocxTemplate || ({})
+                        var selectedTemplateId = String(selectedTemplate.id || "").trim()
+                        msg += "\n\n" + JSON.stringify({
+                            "templatePackId": selectedTemplateId
+                        }, null, 2)
+                    }
                     textInputArea.text = ""
+                    newTaskRec.selectedDocxTemplate = ({})
                     $MainViewController.sendMessage(
                         msg, wsPath, window.chatKnowledgeCollection)
                     sessionHistoryLoading = false
                     wsClient.rememberCurrentSessionInputFiles(submittedFiles)
                     sessionInputFiles = wsClient.currentSessionInputFiles()
+                }
+
+                function startDocxTemplate(template) {
+                    var templateId = String((template && template.id) || "").trim()
+                    if (templateId.length === 1)
+                        templateId = "0" + templateId
+                    if (!templateId) {
+                        errorToast.text = qsTr("模板编号无效")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    var templateName = String(template.name || template.title || qsTr("预设模板"))
+                    var detail = String(template.detail || template.description || "")
+                    var prompt = TemplatePrompts.promptForId(templateId)
+                    if (!prompt) {
+                        errorToast.text = qsTr("该模板暂未配置提示词")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    leftMidPanel.activeAgentId = ""
+                    leftMidPanel.activeSessionKey = ""
+                    chatModel.clear()
+                    wsClient.clearActiveAgentContext()
+                    selectedCollaborationAgentIds = []
+                    window.chatKnowledgeCollection = ""
+                    knowledgePopup.close()
+                    resetShortcutSelection()
+                    selectedDocxTemplate = {
+                        "id": templateId,
+                        "name": templateName,
+                        "detail": detail,
+                        "prompt": prompt
+                    }
+                    textInputArea.text = prompt
+                    window.leftSelectedIndex = 0
+                    Qt.callLater(function() { textInputArea.forceActiveFocus() })
                 }
 
                 Column{
@@ -4671,14 +4745,75 @@ ApplicationWindow {
                                     }
                                 }
                                 Item {
+                                    id: templateSelectionTag
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: newTaskRec.isNewTaskWelcome
+                                             && newTaskRec.hasSelectedDocxTemplate
+                                    width: visible
+                                           ? Math.min(chatInputContainer.width < 700 ? 180 : 240,
+                                                      templateTagRow.implicitWidth + 24)
+                                           : 0
+                                    height: 36
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: "#F0F2F5"
+
+                                        Row {
+                                            id: templateTagRow
+                                            anchors.centerIn: parent
+                                            spacing: 8
+
+                                            Image {
+                                                width: 16
+                                                height: 16
+                                                source: "qrc:/images/chosenTemplate.png"
+                                                fillMode: Image.PreserveAspectFit
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Label {
+                                                width: Math.min(chatInputContainer.width < 700 ? 116 : 176,
+                                                                implicitWidth)
+                                                text: String(newTaskRec.selectedDocxTemplate.name || "")
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                                elide: Text.ElideRight
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Image {
+                                                width: 16
+                                                height: 16
+                                                source: "qrc:/images/close.png"
+                                                fillMode: Image.PreserveAspectFit
+                                                opacity: templateTagCloseMouse.containsMouse ? 1 : 0.65
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                MouseArea {
+                                                    id: templateTagCloseMouse
+                                                    anchors.fill: parent
+                                                    anchors.margins: -6
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: newTaskRec.clearDocxTemplateSelection(true)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Item {
                                     id: knowledgePickerWrap
                                     anchors.verticalCenter: parent.verticalCenter
                                     readonly property bool expertSelected:
                                             window.chatHasSelectedExpert()
+                                    readonly property bool templateSelected:
+                                            newTaskRec.hasSelectedDocxTemplate
                                     readonly property string selectedName: window.chatKnowledgeCollection
                                             ? window.kbCollectionName(window.chatKnowledgeCollection)
                                             : qsTr("知识库")
-                                    visible: !expertSelected
+                                    visible: !expertSelected && !templateSelected
                                     width: visible
                                            ? Math.min(220, Math.max(104, knowledgeTriggerTextMetrics.advanceWidth + 58))
                                            : 0
@@ -5700,10 +5835,11 @@ ApplicationWindow {
                                 Rectangle{
                                     width: Math.max(0, parent.width - workspaceDialogSlot.width
                                                     - dropdownSelectionModel.width
+                                                    - templateSelectionTag.width
                                                     - knowledgePickerWrap.width
                                                     - expertSelectionTag.width
                                                     - collaborationPicker.width
-                                                    - inputLeftRow.width - 6 * 4)
+                                                    - inputLeftRow.width - 7 * 4)
                                     height: 1
                                 }
                                 Row{
@@ -7564,217 +7700,6 @@ ApplicationWindow {
                     return out
                 }
 
-                ScrollView {
-                    id: expertCardScroll
-                    visible: false
-                    anchors.fill: parent
-                    anchors.leftMargin: 60
-                    anchors.rightMargin: 60
-                    anchors.bottomMargin: 24
-                    clip: true
-                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-                    Grid {
-                        id: expertCardGrid
-                        width: expertCardScroll.availableWidth
-                        columns: width >= 760 ? 2 : 1
-                        spacing: 12
-                        property real cardWidth: columns === 2 ? (width - spacing) / 2 : width
-
-                        Repeater {
-                            model: agentManageRec.filteredAgents()
-                            delegate: Rectangle {
-                                id: expertCard
-                                property var cardData: modelData
-                                readonly property bool installing: wsClient.agentInstallBusy
-                                                                    && wsClient.agentInstallingId
-                                                                       === (cardData.id || "")
-                                readonly property bool hovered: expertCardMouse.containsMouse
-                                                                || expertDetailHover.hovered
-                                width: expertCardGrid.cardWidth
-                                height: 222
-                                radius: 8
-                                clip: true
-                                color: "#F7F8FC"
-                                border.width: 0
-
-                                Image {
-                                    id: expertCardBackground
-                                    anchors.fill: parent
-                                    source: "qrc:/images/expertBackground.png"
-                                    sourceClipRect: Qt.rect(1, 1, 898, 415)
-                                    fillMode: Image.PreserveAspectCrop
-                                    cache: true
-                                    visible: false
-                                }
-
-                                Rectangle {
-                                    id: expertCardBackgroundMask
-                                    anchors.fill: expertCardBackground
-                                    radius: Math.max(0, expertCard.radius - 1)
-                                    visible: false
-                                }
-
-                                OpacityMask {
-                                    anchors.fill: expertCardBackground
-                                    source: expertCardBackground
-                                    maskSource: expertCardBackgroundMask
-                                    cached: true
-                                }
-
-                                Rectangle {
-                                    z: 1
-                                    anchors.fill: parent
-                                    radius: expertCard.radius
-                                    color: expertCard.hovered ? "#0A006BFF" : "transparent"
-                                    border.width: expertCard.hovered ? 1 : 0
-                                    border.color: "#66006BFF"
-
-                                    Behavior on color { ColorAnimation { duration: 120 } }
-                                    Behavior on border.width { NumberAnimation { duration: 120 } }
-                                }
-
-                                Column {
-                                    z: 2
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 26
-                                    anchors.top: parent.top
-                                    anchors.topMargin: 26
-                                    width: parent.width - 52
-                                    spacing: 12
-
-                                    Label {
-                                        width: parent.width
-                                        text: expertCard.cardData.name || expertCard.cardData.id || ""
-                                        font.pixelSize: 16
-                                        font.weight: Font.Bold
-                                        color: "#D9000000"
-                                        elide: Text.ElideRight
-                                    }
-                                    Label {
-                                        id: expertDetailLabel
-                                        width: parent.width
-                                        height: expertCard.installing ? 92 : 136
-                                        text: String(expertCard.cardData.description || "").trim()
-                                              || qsTr("暂无专家介绍")
-                                        font.pixelSize: 13
-                                        lineHeight: 1.35
-                                        color: "#99000000"
-                                        wrapMode: Text.Wrap
-                                        maximumLineCount: 7
-                                        elide: Text.ElideRight
-
-                                        HoverHandler {
-                                            id: expertDetailHover
-                                            cursorShape: Qt.PointingHandCursor
-                                        }
-
-                                        // ToolTip {
-                                        //     id: expertDetailTooltip
-                                        //     visible: expertDetailHover.hovered
-                                        //              && expertDetailTooltipText.text.length > 0
-                                        //     delay: 1000
-                                        //     timeout: -1
-                                        //     width: Math.min(540, window.width - 48)
-                                        //     x: Math.min(0, expertDetailLabel.width - width)
-                                        //     y: expertDetailLabel.height + 4
-                                        //     padding: 10
-
-                                        //     background: Rectangle {
-                                        //         color: "#A6000000"
-                                        //         radius: 4
-                                        //     }
-
-                                        //     contentItem: Text {
-                                        //         id: expertDetailTooltipText
-                                        //         width: expertDetailTooltip.availableWidth
-                                        //         text: String(expertCard.cardData.description || "").trim()
-                                        //         textFormat: Text.PlainText
-                                        //         wrapMode: Text.Wrap
-                                        //         maximumLineCount: 20
-                                        //         elide: Text.ElideRight
-                                        //         font.pixelSize: 14
-                                        //         font.family: "Alibaba PuHuiTi 3.0"
-                                        //         color: "#FFFFFF"
-                                        //     }
-
-                                        //     HoverHandler {
-                                        //         cursorShape: Qt.PointingHandCursor
-                                        //     }
-                                        // }
-                                    }
-                                }
-
-                                Column {
-                                    z: 3
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    anchors.leftMargin: 26
-                                    anchors.rightMargin: 26
-                                    anchors.bottomMargin: 20
-                                    spacing: 6
-                                    visible: expertCard.installing
-
-                                    Rectangle {
-                                        width: parent.width
-                                        height: 6
-                                        radius: 3
-                                        color: "#E6E7EB"
-
-                                        Rectangle {
-                                            width: parent.width * Math.max(0, Math.min(100,
-                                                wsClient.agentInstallProgress)) / 100
-                                            height: parent.height
-                                            radius: 3
-                                            color: "#006BFF"
-                                            Behavior on width {
-                                                enabled: expertCard.installing
-                                                         && wsClient.agentInstallProgress > 0
-                                                NumberAnimation { duration: 180 }
-                                            }
-                                        }
-                                    }
-
-                                    Label {
-                                        width: parent.width
-                                        text: qsTr("专家召唤中...") + "  "
-                                              + wsClient.agentInstallProgress + "%"
-                                        font.pixelSize: 12
-                                        color: "#73000000"
-                                        elide: Text.ElideRight
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: expertCardMouse
-                                    z: 1
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    enabled: !wsClient.agentInstallBusy
-                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: {
-                                        var id = expertCard.cardData.id || ""
-                                        if (id.length > 0)
-                                            wsClient.summonAgent(id)
-                                    }
-                                }
-                            }
-                        }
-
-                        Label {
-                            visible: agentManageRec.filteredAgents().length === 0
-                            width: expertCardGrid.width
-                            height: 120
-                            text: qsTr("未找到匹配的专家")
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: 14
-                            color: "#73000000"
-                        }
-                    }
-                }
                 ExpertPage {
                     anchors.fill: parent
                     agentList: wsClient.agentList || []
@@ -8432,6 +8357,30 @@ ApplicationWindow {
                     }
                 }
             }
+            TemplateLibraryPage {
+                id: templateLibraryPage
+                anchors.fill: parent
+                visible: window.leftSelectedIndex === 8
+                templates: wsClient.docxTemplates
+                loading: wsClient.docxTemplatesLoading
+                gatewayHttpBaseUrl: wsClient.gatewayHttpBaseUrl
+
+                onRefreshRequested: wsClient.refreshDocxTemplates()
+                onAddTemplateRequested: {
+                    errorToast.text = qsTr("新增模板接口待接入")
+                    errorToast.visible = true
+                    errorToastTimer.restart()
+                }
+                onUseTemplateRequested: function(template) {
+                    newTaskRec.startDocxTemplate(template)
+                }
+                onMessageRequested: function(message) {
+                    errorToast.text = message
+                    errorToast.visible = true
+                    errorToastTimer.restart()
+                }
+            }
+
             Rectangle {
                 id: knowledgeBaseRec
                 anchors.fill: parent
