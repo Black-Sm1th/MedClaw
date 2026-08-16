@@ -1,0 +1,1 @@
+var e=null;function t(){if(e)return e;let t=document.getElementById(`office-configs`),n=t==null?void 0:t.getAttribute(`data-config`);if(n&&n!==`{{configs}}`)return e=JSON.parse(n),e;let r=new URLSearchParams(window.location.search);return e={route:r.get(`route`)||`word`,language:r.get(`language`)||navigator.language||`en`,config:{},standalone:!0},e}export{t};

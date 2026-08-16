@@ -1,0 +1,83 @@
+html,
+body,
+#root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+}
+
+.html-editor-view {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    color: #1f2937;
+    background: #f3f4f6;
+}
+
+.html-readonly-banner {
+    flex: none;
+    padding: 7px 16px;
+    text-align: center;
+    color: #664d03;
+    background: #fffbe6;
+    border-bottom: 1px solid #ffe58f;
+    font-size: 12px;
+}
+
+.html-editor-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    overflow: hidden;
+    background: #fff;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.html-editor-toolbar {
+    flex: none;
+    border-bottom: 1px solid #e5e7eb;
+    z-index: 2;
+}
+
+.html-editor-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.html-editor-content .w-e-text-container {
+    min-height: 100%;
+}
+
+.html-editor-content .w-e-scroll {
+    min-height: 100%;
+    padding: 20px 28px;
+}
+
+.html-source-editor {
+    flex: 1;
+    min-height: 0;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 18px 22px;
+    resize: none;
+    border: 0;
+    outline: none;
+    color: #d4d4d4;
+    background: #1e1e1e;
+    font: 13px/1.65 Consolas, "Courier New", monospace;
+    tab-size: 4;
+}
+
+.html-editor-error {
+    margin: 24px;
+    padding: 16px;
+    color: #b91c1c;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+}
