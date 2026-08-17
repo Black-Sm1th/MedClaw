@@ -46,7 +46,8 @@ QString stripInternalPolicyBlocks(QString text)
 {
     const QStringList tags{
         QStringLiteral("knowledge-base-policy"),
-        QStringLiteral("workspace-policy")
+        QStringLiteral("workspace-policy"),
+        QStringLiteral("template-parameters")
     };
     for (const QString &tag : tags) {
         const QString begin = QStringLiteral("<%1>").arg(tag);

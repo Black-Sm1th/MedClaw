@@ -212,7 +212,7 @@ ApplicationWindow {
 
     function stripKnowledgePolicyText(value) {
         var text = String(value || "")
-        var tags = ["knowledge-base-policy", "workspace-policy"]
+        var tags = ["knowledge-base-policy", "workspace-policy", "template-parameters"]
         for (var i = 0; i < tags.length; i++) {
             var begin = "<" + tags[i] + ">"
             var end = "</" + tags[i] + ">"
@@ -2885,9 +2885,10 @@ ApplicationWindow {
                     if (newTaskRec.hasSelectedDocxTemplate) {
                         var selectedTemplate = newTaskRec.selectedDocxTemplate || ({})
                         var selectedTemplateId = String(selectedTemplate.id || "").trim()
-                        msg += "\n\n" + JSON.stringify({
-                            "templatePackId": selectedTemplateId
-                        }, null, 2)
+                        msg += "\n\n<template-parameters>\n"
+                                + "使用模板，template_pack_id=" + selectedTemplateId
+                                + "\n使用SKILLS：report-from-template"
+                                + "\n</template-parameters>"
                     }
                     textInputArea.text = ""
                     newTaskRec.selectedDocxTemplate = ({})

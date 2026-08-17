@@ -5,7 +5,8 @@ static QString chatDisplayContent(const QString &content)
     QString display = content;
     const QStringList tags{
         QStringLiteral("knowledge-base-policy"),
-        QStringLiteral("workspace-policy")
+        QStringLiteral("workspace-policy"),
+        QStringLiteral("template-parameters")
     };
     for (const QString &tag : tags) {
         const QString begin = QStringLiteral("<%1>").arg(tag);
