@@ -1073,6 +1073,46 @@ void GatewayClient::persistSessionArtifacts(const QString &sessionKey,
                              << q.lastError().text();
 }
 
+void GatewayClient::persistDetectedArtifacts(const QString &sessionKey,
+                                             const QVariantList &artifacts)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || artifacts.isEmpty() || m_taskSessionUserId.isEmpty()
+        || !initTaskSessionDb()) {
+        return;
+    }
+
+    QVariantList records;
+    QSqlQuery read(m_taskSessionDb);
+    read.prepare(QStringLiteral(
+        "SELECT artifacts_json FROM task_session_artifacts "
+        "WHERE user_id=? AND session_id=?"));
+    read.addBindValue(m_taskSessionUserId);
+    read.addBindValue(key);
+    if (read.exec() && read.next()) {
+        records = QJsonDocument::fromJson(read.value(0).toByteArray())
+                      .toVariant().toList();
+    }
+
+    QVariantMap pending;
+    pending.insert(QStringLiteral("pendingLatest"), true);
+    pending.insert(QStringLiteral("artifacts"), artifacts);
+    records.append(pending);
+
+    QSqlQuery write(m_taskSessionDb);
+    write.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO task_session_artifacts "
+        "(user_id, session_id, artifacts_json, updated_at) VALUES (?, ?, ?, ?)"));
+    write.addBindValue(m_taskSessionUserId);
+    write.addBindValue(key);
+    write.addBindValue(QString::fromUtf8(
+        QJsonDocument::fromVariant(records).toJson(QJsonDocument::Compact)));
+    write.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!write.exec())
+        qWarning().noquote() << "[TaskSessionDb] save detected artifacts failed:"
+                             << write.lastError().text();
+}
+
 QVariantList GatewayClient::restoreSessionArtifacts(const QString &sessionKey,
                                                      const QVariantList &history)
 {
@@ -1092,8 +1132,14 @@ QVariantList GatewayClient::restoreSessionArtifacts(const QString &sessionKey,
     const QVariantList records =
         QJsonDocument::fromJson(q.value(0).toByteArray()).toVariant().toList();
     QHash<QString, QVariantList> artifactsByMessage;
+    QList<QVariantList> pendingLatestArtifacts;
     for (const QVariant &value : records) {
         const QVariantMap record = value.toMap();
+        if (record.value(QStringLiteral("pendingLatest")).toBool()) {
+            pendingLatestArtifacts.append(
+                record.value(QStringLiteral("artifacts")).toList());
+            continue;
+        }
         const QString recordKey = record.value(QStringLiteral("contentHash")).toString()
             + QLatin1Char('#') + QString::number(record.value(QStringLiteral("occurrence")).toInt());
         artifactsByMessage.insert(recordKey,
@@ -1119,6 +1165,22 @@ QVariantList GatewayClient::restoreSessionArtifacts(const QString &sessionKey,
         const QVariantList artifacts = artifactsByMessage.value(recordKey);
         if (!artifacts.isEmpty()) {
             message.insert(QStringLiteral("artifacts"), artifacts);
+            restored[i] = message;
+        }
+    }
+    if (!pendingLatestArtifacts.isEmpty()) {
+        int pendingIndex = pendingLatestArtifacts.size() - 1;
+        for (int i = restored.size() - 1; i >= 0 && pendingIndex >= 0; --i) {
+            QVariantMap message = restored.at(i).toMap();
+            if (message.value(QStringLiteral("role")).toString() != QLatin1String("assistant")
+                || message.value(QStringLiteral("msgType"), QStringLiteral("text")).toString()
+                    != QLatin1String("text")) {
+                continue;
+            }
+            if (!message.value(QStringLiteral("artifacts")).toList().isEmpty())
+                continue;
+            message.insert(QStringLiteral("artifacts"),
+                           pendingLatestArtifacts.at(pendingIndex--));
             restored[i] = message;
         }
     }
@@ -1407,8 +1469,13 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
         }
     }
 
-    if (!taskKey.isEmpty())
+    if (!taskKey.isEmpty()) {
         setTaskSessionRunning(taskKey, marksRunning);
+        if (marksRunning)
+            beginArtifactTracking(taskKey);
+        else
+            finishArtifactTracking(taskKey);
+    }
 }
 
 bool GatewayClient::isLocalOnlyCronTaskSession(const QString &sessionKey) const
@@ -2455,26 +2522,30 @@ void GatewayClient::beginArtifactTracking(const QString &sessionKey)
     const QString key = sessionKey.trimmed();
     const QString workspace = normalizeWorkspacePath(
         taskSessionInfoByKey(key).value(QStringLiteral("workspace")).toString());
-    m_artifactTrackingSessionKey = key;
-    m_artifactTrackingWorkspace = workspace;
-    m_artifactBeforeSnapshot = snapshotWorkspace(workspace);
+    if (key.isEmpty() || workspace.isEmpty()
+        || m_artifactTrackingBySession.contains(key)) {
+        return;
+    }
+    ArtifactTrackingState state;
+    state.workspace = workspace;
+    state.before = snapshotWorkspace(workspace);
+    m_artifactTrackingBySession.insert(key, state);
     qDebug() << "[Gateway] artifact tracking started:" << key
-             << workspace << m_artifactBeforeSnapshot.size() << "files";
+             << workspace << state.before.size() << "files";
 }
 
 void GatewayClient::finishArtifactTracking(const QString &sessionKey)
 {
     const QString key = sessionKey.trimmed();
-    if (key.isEmpty() || key != m_artifactTrackingSessionKey
-        || m_artifactTrackingWorkspace.isEmpty()) {
+    auto trackingIt = m_artifactTrackingBySession.find(key);
+    if (key.isEmpty() || trackingIt == m_artifactTrackingBySession.end()) {
         return;
     }
 
-    const QString workspace = m_artifactTrackingWorkspace;
-    const WorkspaceSnapshot before = m_artifactBeforeSnapshot;
-    m_artifactTrackingSessionKey.clear();
-    m_artifactTrackingWorkspace.clear();
-    m_artifactBeforeSnapshot.clear();
+    const ArtifactTrackingState tracking = trackingIt.value();
+    m_artifactTrackingBySession.erase(trackingIt);
+    const QString workspace = tracking.workspace;
+    const WorkspaceSnapshot before = tracking.before;
 
     QTimer::singleShot(500, this, [this, key, workspace, before]() {
         const WorkspaceSnapshot after = snapshotWorkspace(workspace);
@@ -3255,8 +3326,6 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
-            finishArtifactTracking(m_currentTaskSessionKey.isEmpty()
-                ? m_session.currentSessionKey() : m_currentTaskSessionKey);
             return;
         }
         if (!r.content.isEmpty()) {
@@ -3290,8 +3359,6 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
-            finishArtifactTracking(m_currentTaskSessionKey.isEmpty()
-                ? m_session.currentSessionKey() : m_currentTaskSessionKey);
             return;
         }
         return;

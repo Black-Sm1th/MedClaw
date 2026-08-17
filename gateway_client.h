@@ -279,8 +279,10 @@ public:
 
     void persistSessionArtifacts(const QString &sessionKey,
                                  const QVariantList &messages);
+    void persistDetectedArtifacts(const QString &sessionKey,
+                                  const QVariantList &artifacts);
     QVariantList restoreSessionArtifacts(const QString &sessionKey,
-                                         const QVariantList &history);
+                                          const QVariantList &history);
 
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();
@@ -785,6 +787,10 @@ private:
         QString absolutePath;
     };
     typedef QHash<QString, WorkspaceFileState> WorkspaceSnapshot;
+    struct ArtifactTrackingState {
+        QString workspace;
+        WorkspaceSnapshot before;
+    };
     WorkspaceSnapshot snapshotWorkspace(const QString &workspace) const;
     void beginArtifactTracking(const QString &sessionKey);
     void finishArtifactTracking(const QString &sessionKey);
@@ -989,9 +995,7 @@ private:
     QMap<QString, quint64> m_sessionTitleHistReqBatch;
     QMap<QString, QString> m_chatSendReqSession;
     QMap<QString, QString> m_chatSendReqMessage;
-    QString m_artifactTrackingSessionKey;
-    QString m_artifactTrackingWorkspace;
-    WorkspaceSnapshot m_artifactBeforeSnapshot;
+    QHash<QString, ArtifactTrackingState> m_artifactTrackingBySession;
     quint64 m_sidebarTitleBatchGen = 0;
     quint64 m_sessionTitleBatchGen = 0;
     QTimer m_agentFirstUserTitleDebounce;

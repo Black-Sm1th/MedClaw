@@ -96,7 +96,7 @@ const getVscodeEvent = () => {
             postMessage({ type: event, content: data })
         },
         async emitAsync(event: string, data?: any) {
-            await postMessageAsync({ type: event, content: data })
+            return await postMessageAsync({ type: event, content: data })
         }
     }
 }

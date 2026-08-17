@@ -2285,6 +2285,14 @@ ApplicationWindow {
                     }
                     return count
                 }
+                onCurrentSessionOfficeTabCountChanged: {
+                    // A maximized document panel must not leak into a session
+                    // which has no file tabs to display.
+                    if (currentSessionOfficeTabCount === 0 && officePanelMaximized) {
+                        officePanelMaximized = false
+                        officePanelSizeManuallySet = false
+                    }
+                }
                 readonly property int officePreviewWidth: Math.min(680, Math.max(420, width - 360))
                 readonly property int artifactSidebarWidth: artifactSidebarVisible
                     ? (officePanelMaximized ? width
@@ -2370,6 +2378,8 @@ ApplicationWindow {
                         activeOfficeTabIndex = -1
                         selectedOfficeFile = ({})
                         artifactSidebarMode = "list"
+                        officePanelMaximized = false
+                        officePanelSizeManuallySet = false
                         artifactSidebarVisible = !!(saved && saved.visible)
                     }
                     sessionHistoryLoading = false

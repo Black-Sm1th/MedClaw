@@ -154,8 +154,15 @@ int main(int argc, char *argv[])
     QObject::connect(&wsClient, &GatewayClient::artifactsDetected,
                      [&chatModel, &wsClient](const QString &sessionKey,
                                              const QVariantList &artifacts) {
-        chatModel.setArtifactsForLastAssistant(artifacts);
-        wsClient.persistSessionArtifacts(sessionKey, chatModel.messages());
+        QString visibleSession = wsClient.currentViewSessionKey().trimmed();
+        if (visibleSession.isEmpty())
+            visibleSession = wsClient.currentTaskSessionKey().trimmed();
+        if (sessionKey.trimmed() == visibleSession) {
+            chatModel.setArtifactsForLastAssistant(artifacts);
+            wsClient.persistSessionArtifacts(sessionKey, chatModel.messages());
+        } else {
+            wsClient.persistDetectedArtifacts(sessionKey, artifacts);
+        }
     });
 
     // 工具调用：在 ChatModel 中插入工具卡片
