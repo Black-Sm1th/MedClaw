@@ -232,5 +232,7 @@
         <file>images/template.png</file>
         <file>images/chosenTemplate.png</file>
         <file>data/TemplatePrompts.js</file>
+        <file>images/uploadTemplate.png</file>
+        <file>images/templateEmpty.png</file>
     </qresource>
 </RCC>

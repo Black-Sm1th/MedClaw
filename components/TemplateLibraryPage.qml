@@ -166,23 +166,17 @@ Item {
                             onTextChanged: root.searchText = text
                         }
                     }
-
-                    // Rectangle {
-                    //     width: 78; height: 38; radius: 8
-                    //     color: newTemplateMouse.pressed ? "#DCE9FF"
-                    //           : newTemplateMouse.containsMouse ? "#E5EFFF" : "#EEF4FF"
-                    //     Row {
-                    //         anchors.centerIn: parent
-                    //         spacing: 5
-                    //         Label { text: "+"; font.pixelSize: 18; color: "#006BFF" }
-                    //         Label { text: qsTr("新建"); font.pixelSize: 14; color: "#006BFF" }
-                    //     }
-                    //     MouseArea {
-                    //         id: newTemplateMouse
-                    //         anchors.fill: parent
-                    //         hoverEnabled: true
-                    //         cursorShape: Qt.PointingHandCursor
-                    //         onClicked: root.addTemplateRequested()
+                    // CustomButton{
+                    //     backgroundColor: "#0F006BFF"
+                    //     iconSource: "qrc:/images/uploadTemplate.png"
+                    //     iconSize: 16
+                    //     text: "上传"
+                    //     fontSize: 14
+                    //     textColor: "#006BFF"
+                    //     width: 72
+                    //     height: 36
+                    //     onClicked: {
+                    //         root.addTemplateRequested()
                     //     }
                     // }
                 }
