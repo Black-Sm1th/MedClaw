@@ -38,6 +38,14 @@ public:
     Q_INVOKABLE void saveKnowledgeBaseMetadata(const QString &userId,
                                                const QVariantMap &metadata) const;
 
+    Q_INVOKABLE QVariantList loadUserTemplates(const QString &userId) const;
+
+    Q_INVOKABLE QVariantMap uploadUserTemplate(const QString &userId,
+                                               const QString &name,
+                                               const QString &description,
+                                               const QString &templateFileUrl,
+                                               const QString &coverFileUrl) const;
+
     Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl,
                                             const QString &workspace) const;
 

@@ -35,6 +35,7 @@
         <file>components/TimePicker.qml</file>
         <file>components/LoginPage.qml</file>
         <file>components/ExpertPage.qml</file>
+        <file>components/TemplateLibraryPage.qml</file>
         <file>components/CollaborationPicker.qml</file>
         <file>components/TaskSessionStatusIndicator.qml</file>
         <file>images/folder.png</file>
@@ -192,5 +193,46 @@
         <file>images/addIdea.png</file>
         <file>images/login/loginShortcut5.png</file>
         <file>images/login/loginShortcut6.png</file>
+        <file>images/template/1.png</file>
+        <file>images/template/2.png</file>
+        <file>images/template/3.png</file>
+        <file>images/template/4.png</file>
+        <file>images/template/5.png</file>
+        <file>images/template/6.png</file>
+        <file>images/template/7.png</file>
+        <file>images/template/8.png</file>
+        <file>images/template/9.png</file>
+        <file>images/template/10.png</file>
+        <file>images/template/11.png</file>
+        <file>images/template/12.png</file>
+        <file>images/template/13.png</file>
+        <file>images/template/14.png</file>
+        <file>images/template/15.png</file>
+        <file>images/template/16.png</file>
+        <file>images/template/18.png</file>
+        <file>images/template/19.png</file>
+        <file>images/template/20.png</file>
+        <file>images/template/21.png</file>
+        <file>images/template/22.png</file>
+        <file>images/template/23.png</file>
+        <file>images/template/24.png</file>
+        <file>images/template/25.png</file>
+        <file>images/template/26.png</file>
+        <file>images/template/27.png</file>
+        <file>images/template/28.png</file>
+        <file>images/template/29.png</file>
+        <file>images/template/30.png</file>
+        <file>images/template/31.png</file>
+        <file>images/template/32.png</file>
+        <file>images/template/33.png</file>
+        <file>images/template/34.png</file>
+        <file>images/template/35.png</file>
+        <file>images/template/36.png</file>
+        <file>images/template/37.png</file>
+        <file>images/template.png</file>
+        <file>images/chosenTemplate.png</file>
+        <file>data/TemplatePrompts.js</file>
+        <file>images/uploadTemplate.png</file>
+        <file>images/templateEmpty.png</file>
     </qresource>
 </RCC>

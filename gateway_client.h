@@ -108,6 +108,10 @@ class GatewayClient : public QObject
     /// tools.catalog 展平后的工具列表（含 enabled，与 config 中 deny 对齐）
     Q_PROPERTY(QVariantList toolList READ toolList
                NOTIFY toolListChanged)
+    Q_PROPERTY(QVariantList docxTemplates READ docxTemplates
+               NOTIFY docxTemplatesChanged)
+    Q_PROPERTY(bool docxTemplatesLoading READ docxTemplatesLoading
+               NOTIFY docxTemplatesLoadStateChanged)
     Q_PROPERTY(bool toolInstallBusy READ toolInstallBusy
                NOTIFY toolInstallStateChanged)
     Q_PROPERTY(int toolInstallProgress READ toolInstallProgress
@@ -227,6 +231,8 @@ public:
     QVariantList mcpList() const;
     /// 运行时工具目录（tools.catalog + deny 状态）
     QVariantList toolList() const;
+    QVariantList docxTemplates() const;
+    bool docxTemplatesLoading() const;
     bool toolInstallBusy() const;
     int toolInstallProgress() const;
     QString toolInstallMessage() const;
@@ -522,6 +528,9 @@ public:
     /// 拉取 tools.catalog（agentId 空则用 defaultAgentId）
     Q_INVOKABLE void refreshToolsCatalog(const QString &agentId = QString());
 
+    /// 拉取 docx-generator 内置模板目录。
+    Q_INVOKABLE void refreshDocxTemplates();
+
     /**
      * @brief 通过 agents.list[].tools.deny 启用/禁用工具（config.set，不重启 Gateway）
      */
@@ -649,6 +658,8 @@ signals:
     void skillInstallBusyChanged();       ///< 技能安装进行中状态变更
     void mcpListChanged();                ///< MCP 服务器列表更新
     void toolListChanged();               ///< 工具目录列表更新
+    void docxTemplatesChanged();          ///< DOCX 预设模板目录更新
+    void docxTemplatesLoadStateChanged(); ///< DOCX 模板目录加载状态更新
     void toolInstallStateChanged();       ///< 工具安装进度或状态更新
     void pendingNewAgentSkillPolicyChanged(); ///< 新建 agent 前技能暂存变更
 
@@ -1009,6 +1020,8 @@ private:
     QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）
     QVariantMap  m_currentModel;       ///< 当前会话模型信息（sessions.patch 响应）
     QString m_pendingSessionModelId;   ///< 尚无 session 时用户选择的模型，有 session 后 patch
+    QVariantList m_docxTemplates;      ///< docxTemplates.list 响应
+    bool m_docxTemplatesLoading = false;
 
     QString m_lastConnectedWsUrl;      ///< 最近一次 connectToServer 的 URL（自动重连用）
     /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费

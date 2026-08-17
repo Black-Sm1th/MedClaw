@@ -241,6 +241,129 @@ void MainViewController::saveKnowledgeBaseMetadata(const QString &userId,
         QJsonDocument::fromVariant(metadata).toJson(QJsonDocument::Compact));
 }
 
+QVariantList MainViewController::loadUserTemplates(const QString &userId) const
+{
+    const QString owner = userId.trimmed();
+    if (owner.isEmpty())
+        return QVariantList();
+
+    const QByteArray userHash = QCryptographicHash::hash(
+        owner.toUtf8(), QCryptographicHash::Sha256).toHex();
+    QSettings settings;
+    const QByteArray json = settings.value(
+        QStringLiteral("templateLibrary/%1/uploadedTemplates")
+            .arg(QString::fromLatin1(userHash))).toByteArray();
+    const QJsonDocument document = QJsonDocument::fromJson(json);
+    if (!document.isArray())
+        return QVariantList();
+
+    QVariantList templates;
+    const QVariantList stored = document.toVariant().toList();
+    for (const QVariant &value : stored) {
+        QVariantMap entry = value.toMap();
+        const QString templatePath = entry.value(QStringLiteral("templatePath")).toString();
+        if (templatePath.isEmpty() || !QFileInfo::exists(templatePath))
+            continue;
+        entry[QStringLiteral("isUserTemplate")] = true;
+        entry[QStringLiteral("category")] = QStringLiteral("用户上传模板");
+        templates.append(entry);
+    }
+    return templates;
+}
+
+QVariantMap MainViewController::uploadUserTemplate(const QString &userId,
+                                                    const QString &name,
+                                                    const QString &description,
+                                                    const QString &templateFileUrl,
+                                                    const QString &coverFileUrl) const
+{
+    QVariantMap result;
+    auto fail = [&result](const QString &message) {
+        result[QStringLiteral("success")] = false;
+        result[QStringLiteral("error")] = message;
+        return result;
+    };
+
+    const QString owner = userId.trimmed();
+    const QString displayName = name.trimmed();
+    if (owner.isEmpty())
+        return fail(QStringLiteral("当前用户未登录"));
+    if (displayName.isEmpty())
+        return fail(QStringLiteral("请输入模板名称"));
+
+    const QString templatePath = normalizeLocalFileCandidate(templateFileUrl);
+    const QString coverPath = normalizeLocalFileCandidate(coverFileUrl);
+    const QFileInfo templateInfo(templatePath);
+    const QFileInfo coverInfo(coverPath);
+    if (!templateInfo.exists() || !templateInfo.isFile())
+        return fail(QStringLiteral("请选择有效的模板附件"));
+    if (!coverInfo.exists() || !coverInfo.isFile())
+        return fail(QStringLiteral("请选择有效的模板封面"));
+
+    const QStringList templateExtensions{
+        QStringLiteral("doc"), QStringLiteral("docx"), QStringLiteral("md"),
+        QStringLiteral("html"), QStringLiteral("htm")
+    };
+    const QStringList coverExtensions{
+        QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("png")
+    };
+    const QString templateExtension = templateInfo.suffix().toLower();
+    const QString coverExtension = coverInfo.suffix().toLower();
+    if (!templateExtensions.contains(templateExtension))
+        return fail(QStringLiteral("模板附件仅支持 Word、MD、HTML 格式"));
+    if (!coverExtensions.contains(coverExtension))
+        return fail(QStringLiteral("模板封面仅支持 JPG、PNG 格式"));
+
+    const QByteArray userHash = QCryptographicHash::hash(
+        owner.toUtf8(), QCryptographicHash::Sha256).toHex();
+    const QString templateId = QStringLiteral("user-%1").arg(
+        QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QString storageRoot = QStandardPaths::writableLocation(
+        QStandardPaths::AppDataLocation)
+        + QStringLiteral("/template-library/%1/%2")
+              .arg(QString::fromLatin1(userHash), templateId);
+    if (!QDir().mkpath(storageRoot))
+        return fail(QStringLiteral("无法创建模板存储目录"));
+
+    const QString storedTemplatePath = QDir(storageRoot).filePath(
+        QStringLiteral("template.%1").arg(templateExtension));
+    const QString storedCoverPath = QDir(storageRoot).filePath(
+        QStringLiteral("cover.%1").arg(coverExtension));
+    if (!QFile::copy(templateInfo.absoluteFilePath(), storedTemplatePath)) {
+        QDir(storageRoot).removeRecursively();
+        return fail(QStringLiteral("模板附件保存失败"));
+    }
+    if (!QFile::copy(coverInfo.absoluteFilePath(), storedCoverPath)) {
+        QDir(storageRoot).removeRecursively();
+        return fail(QStringLiteral("模板封面保存失败"));
+    }
+
+    QVariantMap entry;
+    entry[QStringLiteral("id")] = templateId;
+    entry[QStringLiteral("name")] = displayName;
+    entry[QStringLiteral("description")] = description.trimmed();
+    entry[QStringLiteral("detail")] = description.trimmed();
+    entry[QStringLiteral("category")] = QStringLiteral("用户上传模板");
+    entry[QStringLiteral("isUserTemplate")] = true;
+    entry[QStringLiteral("templatePath")] = QFileInfo(storedTemplatePath).absoluteFilePath();
+    entry[QStringLiteral("templateFileName")] = templateInfo.fileName();
+    entry[QStringLiteral("coverUrl")] = QUrl::fromLocalFile(storedCoverPath).toString();
+    entry[QStringLiteral("previewUrl")] = entry.value(QStringLiteral("coverUrl"));
+    entry[QStringLiteral("createdAt")] = QDateTime::currentMSecsSinceEpoch();
+
+    QVariantList templates = loadUserTemplates(owner);
+    templates.prepend(entry);
+    QSettings settings;
+    settings.setValue(
+        QStringLiteral("templateLibrary/%1/uploadedTemplates")
+            .arg(QString::fromLatin1(userHash)),
+        QJsonDocument::fromVariant(templates).toJson(QJsonDocument::Compact));
+
+    result = entry;
+    result[QStringLiteral("success")] = true;
+    return result;
+}
+
 QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
                                                 const QString &workspace) const
 {
