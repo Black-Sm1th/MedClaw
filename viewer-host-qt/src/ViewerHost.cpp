@@ -475,10 +475,22 @@ QString ViewerHost::viewerRoot() const
 {
     if (!m_viewerRootOverride.isEmpty())
         return m_viewerRootOverride;
-    const QString installed = QCoreApplication::applicationDirPath() + QStringLiteral("/viewer-web");
-    if (QFileInfo(installed + QStringLiteral("/index.html")).exists())
-        return installed;
-    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(QStringLiteral("../../viewer-web/dist"));
+
+    const QDir appDir(QCoreApplication::applicationDirPath());
+    // Accept both supported release layouts. Some installers copy dist itself,
+    // while others copy its contents into viewer-web.
+    const QStringList candidates{
+        appDir.absoluteFilePath(QStringLiteral("viewer-web")),
+        appDir.absoluteFilePath(QStringLiteral("viewer-web/dist")),
+        appDir.absoluteFilePath(QStringLiteral("../viewer-web/dist")),
+        appDir.absoluteFilePath(QStringLiteral("../../viewer-web/dist")),
+    };
+    for (const QString &candidate : candidates) {
+        if (QFileInfo(candidate + QStringLiteral("/index.html")).exists())
+            return candidate;
+    }
+    // Preserve a useful path in the error message even when no candidate exists.
+    return candidates.constFirst();
 }
 
 QJsonObject ViewerHost::openPayload() const
