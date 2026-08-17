@@ -36,11 +36,14 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     property string knowledgeBaseReadyUserId: ""
+    property bool userSessionInitializing: authController.loggedIn
     readonly property bool userSessionReady: authController.loggedIn
                                              && String(authController.userId || "").length > 0
                                              && knowledgeBaseReadyUserId === String(authController.userId || "")
-                                             && wsClient.connectionState === 3
-                                             && wsClient.knowledgeBaseDataDirReady
+                                             && !userSessionInitializing
+    readonly property bool configurationUpdateActive: userSessionReady
+                                                       && (wsClient.connectionState !== 3
+                                                           || !wsClient.knowledgeBaseDataDirReady)
     /// 非空表示「编辑」已有定时任务；空为新建
     property string editingCronJobId: ""
     property string editingCronPayloadKind: "agentTurn"
@@ -1190,6 +1193,7 @@ ApplicationWindow {
         function onUserChanged() {
             if (!authController.loggedIn)
                 return
+            window.userSessionInitializing = true
             window.reloadUploadedDocxTemplates()
             if (window.kbMetadataUser === String(authController.userId || ""))
                 return
@@ -1206,11 +1210,13 @@ ApplicationWindow {
         }
         function onLoggedInChanged() {
             if (authController.loggedIn) {
+                window.userSessionInitializing = true
                 window.knowledgeBaseReadyUserId = ""
                 window.reloadUploadedDocxTemplates()
                 kbLoadMetadata()
                 wsClient.connectToServer(wsClient.serverUrl)
             } else {
+                window.userSessionInitializing = false
                 window.knowledgeBaseReadyUserId = ""
                 window.kbListRequestGeneration++
                 knowledgePopup.close()
@@ -1265,14 +1271,17 @@ ApplicationWindow {
         function onKnowledgeBaseDataDirStateChanged() {
             if (wsClient.knowledgeBaseDataDirReady) {
                 window.knowledgeBaseReadyUserId = String(authController.userId || "")
+                window.userSessionInitializing = false
                 window.kbLoading = false
                 window.kbBusyText = ""
                 if (window.leftSelectedIndex === 7)
                     window.kbRefreshFiles()
             } else if (authController.loggedIn) {
-                window.knowledgeBaseReadyUserId = ""
-                window.kbListRequestGeneration++
-                window.kbSources = []
+                if (window.userSessionInitializing) {
+                    window.knowledgeBaseReadyUserId = ""
+                    window.kbListRequestGeneration++
+                    window.kbSources = []
+                }
                 var message = wsClient.knowledgeBaseDataDirMessage
                         || qsTr("正在切换当前用户的知识库目录...")
                 if (message.indexOf(qsTr("知识库目录切换失败")) === 0) {
@@ -12100,13 +12109,64 @@ ApplicationWindow {
         }
     }
 
+    Item {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: rightTopPanel.height
+        anchors.bottom: parent.bottom
+        visible: window.configurationUpdateActive
+        enabled: visible
+        z: 19000
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#26000000"
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onWheel: wheel.accepted = true
+        }
+
+        Rectangle {
+            width: 220
+            height: 64
+            radius: 8
+            color: "#FFFFFF"
+            border.width: 1
+            border.color: "#14000000"
+            anchors.centerIn: parent
+
+            Row {
+                spacing: 12
+                anchors.centerIn: parent
+
+                BusyIndicator {
+                    width: 28
+                    height: 28
+                    running: window.configurationUpdateActive
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Label {
+                    text: qsTr("正在修改配置")
+                    color: "#A6000000"
+                    font.pixelSize: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+    }
+
     LoginPage {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.topMargin: rightTopPanel.height
         anchors.bottom: parent.bottom
-        initializing: authController.loggedIn && !window.userSessionReady
+        initializing: authController.loggedIn && window.userSessionInitializing
         initializingText: wsClient.knowledgeBaseDataDirMessage
         visible: !window.userSessionReady
         enabled: visible
