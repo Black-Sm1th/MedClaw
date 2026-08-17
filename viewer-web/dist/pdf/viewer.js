@@ -651,7 +651,7 @@ var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "acce
           kind: OptionKind.API
         },
         cMapUrl: {
-          value: "../web/cmaps/",
+          value: "cmaps/",
           kind: OptionKind.API
         },
         disableAutoFetch: {
@@ -695,7 +695,7 @@ var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "acce
           kind: OptionKind.API
         },
         standardFontDataUrl: {
-          value: "../web/standard_fonts/",
+          value: "standard_fonts/",
           kind: OptionKind.API
         },
         verbosity: {

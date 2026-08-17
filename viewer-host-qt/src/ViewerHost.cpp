@@ -359,6 +359,21 @@ void ViewerHost::handleEvent(QTcpSocket *socket, const QByteArray &body)
     if (type == QStringLiteral("init")) {
         events.append(QJsonObject{{QStringLiteral("type"), QStringLiteral("open")},
                                   {QStringLiteral("content"), openPayload()}});
+    } else if (type == QStringLiteral("images")) {
+        const QFileInfo fileInfo(m_currentPath);
+        const QString suffix = fileInfo.suffix().toLower();
+        const QJsonObject image{
+            {QStringLiteral("src"), QStringLiteral("/api/document?session=")
+                + m_sessionId + QStringLiteral("&nonce=")
+                + QString::number(m_nonce)},
+            {QStringLiteral("title"), fileInfo.fileName()},
+            {QStringLiteral("ext"), QStringLiteral(".") + suffix},
+        };
+        events.append(QJsonObject{{QStringLiteral("type"), QStringLiteral("images")},
+                                  {QStringLiteral("content"), QJsonObject{
+                                      {QStringLiteral("images"), QJsonArray{image}},
+                                      {QStringLiteral("current"), 0},
+                                  }}});
     } else if (type == QStringLiteral("change")) {
         emit documentChanged();
     } else if (type == QStringLiteral("save") || type == QStringLiteral("doSave")) {

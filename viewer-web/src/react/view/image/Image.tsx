@@ -50,6 +50,17 @@ export default function Image() {
         applyZoom(zoom);
     }, [zoom, applyZoom, resolvedImages]);
 
+    // react-image-gallery measures its slide wrapper during mount. In the Qt
+    // WebEngine host the web view can receive its final size one or two frames
+    // later, so ask the gallery to recalculate after the image source is ready.
+    useEffect(() => {
+        if (!resolvedImages.length) return;
+        const timers = [0, 100, 300].map(delay => window.setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+        }, delay));
+        return () => timers.forEach(timer => window.clearTimeout(timer));
+    }, [resolvedImages]);
+
     useEffect(() => {
         handler.on('images', info => {
             setInfo(info);
@@ -154,8 +165,18 @@ export default function Image() {
                     <span className="image-wheel-toolbar__label">Browse</span>
                 </button>
             </div>
-            <ImageGallery ref={gallery} items={images} startIndex={info.current} lazyLoad={true}
+            <ImageGallery key={images.map(image => image.original).join('|')}
+                ref={gallery} items={images} startIndex={info.current} lazyLoad={false}
                 slideDuration={0} showIndex={true} showFullscreenButton={false} showPlayButton={false}
+                onImageLoad={() => {
+                    // The WebEngine may finish loading the bitmap after the
+                    // gallery's initial measurement. Re-selecting the current
+                    // slide makes the center class/layout deterministic.
+                    window.dispatchEvent(new Event('resize'));
+                    window.requestAnimationFrame(() => {
+                        gallery.current?.slideToIndex(info.current);
+                    });
+                }}
                 onSlide={(index) => {
                     setZoom(1);
                     const title = info.images[index]?.title;
