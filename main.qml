@@ -207,8 +207,21 @@ ApplicationWindow {
     property var kbDeleteQueue: []
     property var kbDeleteKeys: []
     property int kbListRequestGeneration: 0
+    property var uploadedDocxTemplates: []
+    property string uploadedDocxTemplatesUserId: ""
     /// 编辑 MCP 弹窗预填（由列表 delegate 写入）
     property var mcpEditEntry: null
+
+    function reloadUploadedDocxTemplates() {
+        var userId = String(authController.userId || "")
+        if (!authController.loggedIn || !userId) {
+            uploadedDocxTemplates = []
+            uploadedDocxTemplatesUserId = ""
+            return
+        }
+        uploadedDocxTemplates = $MainViewController.loadUserTemplates(userId) || []
+        uploadedDocxTemplatesUserId = userId
+    }
 
     function stripKnowledgePolicyText(value) {
         var text = String(value || "")
@@ -1167,6 +1180,7 @@ ApplicationWindow {
     // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
         if (authController.loggedIn) {
+            reloadUploadedDocxTemplates()
             kbLoadMetadata()
             wsClient.connectToServer(wsClient.serverUrl)
         }
@@ -1174,8 +1188,10 @@ ApplicationWindow {
     Connections {
         target: authController
         function onUserChanged() {
-            if (!authController.loggedIn
-                    || window.kbMetadataUser === String(authController.userId || ""))
+            if (!authController.loggedIn)
+                return
+            window.reloadUploadedDocxTemplates()
+            if (window.kbMetadataUser === String(authController.userId || ""))
                 return
             window.knowledgeBaseReadyUserId = ""
             window.kbListRequestGeneration++
@@ -1191,6 +1207,7 @@ ApplicationWindow {
         function onLoggedInChanged() {
             if (authController.loggedIn) {
                 window.knowledgeBaseReadyUserId = ""
+                window.reloadUploadedDocxTemplates()
                 kbLoadMetadata()
                 wsClient.connectToServer(wsClient.serverUrl)
             } else {
@@ -1226,6 +1243,8 @@ ApplicationWindow {
                 kbSelectedCollection = ""
                 chatKnowledgeCollection = ""
                 kbSelectedKeys = []
+                uploadedDocxTemplates = []
+                uploadedDocxTemplatesUserId = ""
             }
         }
     }
@@ -2885,8 +2904,24 @@ ApplicationWindow {
                     if (newTaskRec.hasSelectedDocxTemplate) {
                         var selectedTemplate = newTaskRec.selectedDocxTemplate || ({})
                         var selectedTemplateId = String(selectedTemplate.id || "").trim()
+                        var templateInstruction = ""
+                        if (selectedTemplate.isUserTemplate) {
+                            var selectedTemplatePath = String(
+                                        selectedTemplate.templatePath || "").trim()
+                            if (!selectedTemplatePath) {
+                                errorToast.text = qsTr("用户模板文件路径无效")
+                                errorToast.visible = true
+                                errorToastTimer.restart()
+                                return
+                            }
+                            templateInstruction = "使用模板，template_path="
+                                    + selectedTemplatePath
+                        } else {
+                            templateInstruction = "使用模板，template_pack_id="
+                                    + selectedTemplateId
+                        }
                         msg += "\n\n<template-parameters>\n"
-                                + "使用模板，template_pack_id=" + selectedTemplateId
+                                + templateInstruction
                                 + "\n使用SKILLS：report-from-template"
                                 + "\n</template-parameters>"
                     }
@@ -2900,8 +2935,9 @@ ApplicationWindow {
                 }
 
                 function startDocxTemplate(template) {
+                    var isUserTemplate = !!(template && template.isUserTemplate)
                     var templateId = String((template && template.id) || "").trim()
-                    if (templateId.length === 1)
+                    if (!isUserTemplate && templateId.length === 1)
                         templateId = "0" + templateId
                     if (!templateId) {
                         errorToast.text = qsTr("模板编号无效")
@@ -2911,8 +2947,15 @@ ApplicationWindow {
                     }
                     var templateName = String(template.name || template.title || qsTr("预设模板"))
                     var detail = String(template.detail || template.description || "")
-                    var prompt = TemplatePrompts.promptForId(templateId)
-                    if (!prompt) {
+                    var prompt = isUserTemplate ? "" : TemplatePrompts.promptForId(templateId)
+                    var templatePath = String(template.templatePath || "")
+                    if (isUserTemplate && !templatePath) {
+                        errorToast.text = qsTr("用户模板文件路径无效")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    if (!isUserTemplate && !prompt) {
                         errorToast.text = qsTr("该模板暂未配置提示词")
                         errorToast.visible = true
                         errorToastTimer.restart()
@@ -2930,7 +2973,9 @@ ApplicationWindow {
                         "id": templateId,
                         "name": templateName,
                         "detail": detail,
-                        "prompt": prompt
+                        "prompt": prompt,
+                        "isUserTemplate": isUserTemplate,
+                        "templatePath": templatePath
                     }
                     textInputArea.text = prompt
                     window.leftSelectedIndex = 0
@@ -8377,14 +8422,27 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 8
                 templates: wsClient.docxTemplates
+                userTemplates: window.uploadedDocxTemplates
                 loading: wsClient.docxTemplatesLoading
                 gatewayHttpBaseUrl: wsClient.gatewayHttpBaseUrl
 
                 onRefreshRequested: wsClient.refreshDocxTemplates()
-                onAddTemplateRequested: {
-                    errorToast.text = qsTr("新增模板接口待接入")
-                    errorToast.visible = true
-                    errorToastTimer.restart()
+                onUploadTemplateRequested: function(name, description,
+                                                     templateFileUrl, coverFileUrl) {
+                    if (!authController.loggedIn || !authController.userId) {
+                        templateLibraryPage.finishUpload(qsTr("当前用户未登录"))
+                        return
+                    }
+                    var result = $MainViewController.uploadUserTemplate(
+                                String(authController.userId), name, description,
+                                templateFileUrl, coverFileUrl) || ({})
+                    if (!result.success) {
+                        templateLibraryPage.finishUpload(
+                                    String(result.error || qsTr("模板上传失败")))
+                        return
+                    }
+                    window.reloadUploadedDocxTemplates()
+                    templateLibraryPage.finishUpload("")
                 }
                 onUseTemplateRequested: function(template) {
                     newTaskRec.startDocxTemplate(template)
