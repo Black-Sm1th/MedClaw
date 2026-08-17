@@ -1445,8 +1445,7 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
         || subEvent.contains(QLatin1String("complete"))
         || subEvent.contains(QLatin1String("done"))
         || subEvent.contains(QLatin1String("finish"))
-        || subEvent.contains(QLatin1String("end"))
-        || dataType == QLatin1String("message_end");
+        || subEvent.contains(QLatin1String("end"));
     const bool marksRunning = !marksComplete
         && (phase == QLatin1String("start")
             || data.contains(QStringLiteral("delta"))
@@ -2546,7 +2545,9 @@ void GatewayClient::finishArtifactTracking(const QString &sessionKey)
     const QString workspace = tracking.workspace;
     const WorkspaceSnapshot before = tracking.before;
 
-    QTimer::singleShot(500, this, [this, key, workspace, before]() {
+    // External tools such as Chrome and Office can return before the final
+    // output file is fully flushed to disk.
+    QTimer::singleShot(2000, this, [this, key, workspace, before]() {
         const WorkspaceSnapshot after = snapshotWorkspace(workspace);
         QVariantList artifacts;
         QStringList paths = after.keys();
