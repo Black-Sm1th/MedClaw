@@ -23,10 +23,10 @@ Rectangle {
     onSelectedInstallingChanged: {
         if (selectedInstalling) {
             expertDetailPopup.close()
-            expertInstallPopup.open()
-        } else {
-            expertInstallPopup.close()
         }
+        // Installation progress is rendered in the active card so the rest of
+        // the capability hub remains available while the process runs.
+        expertInstallPopup.close()
     }
 
     signal summonRequested(string agentId, string promptText)
@@ -221,10 +221,12 @@ Rectangle {
                     id: expertCard
                     property var agent: modelData
                     property var profile: root.profileForAgent(agent)
+                    readonly property bool installingThisCard: root.installBusy
+                                                               && root.installingId
+                                                                  === String(agent.id || "")
                     readonly property bool activeHover: cardHover.hovered
                                                         && !root.detailPopupActive
                                                         && !expertInstallPopup.visible
-                                                        && !root.installBusy
                     width: cardGrid.cardWidth
                     height: 206
                     radius: 8
@@ -275,16 +277,70 @@ Rectangle {
                     CustomButton {
                         anchors.right: parent.right; anchors.rightMargin: 16
                         anchors.top: parent.top; anchors.topMargin: 16
-                        width: 72; height: 38; visible: expertCard.activeHover
+                        width: 72; height: 38
+                        visible: expertCard.activeHover && !expertCard.installingThisCard
                         text: "召唤"; fontSize: 14; buttonRadius: 6
                         backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
                         onClicked: root.openExpert(expertCard.agent)
+                    }
+
+                    Rectangle {
+                        id: expertCardInstallOverlay
+                        visible: expertCard.installingThisCard
+                        anchors.fill: parent
+                        color: "#DFFFFFFF"
+                        z: 2
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 24
+                            anchors.right: parent.right
+                            anchors.rightMargin: 24
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
+
+                            Row {
+                                width: parent.width
+                                height: 20
+                                Label {
+                                    width: parent.width - expertCardInstallPercent.width - 12
+                                    text: root.installMessage || qsTr("专家安装中...")
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    color: "#A6000000"
+                                    elide: Text.ElideRight
+                                }
+                                Label {
+                                    id: expertCardInstallPercent
+                                    text: root.installProgress + "%"
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    color: "#006BFF"
+                                }
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 8
+                                radius: 4
+                                color: "#E6E7EB"
+                                Rectangle {
+                                    width: parent.width * Math.max(0, Math.min(100,
+                                        root.installProgress)) / 100
+                                    height: parent.height
+                                    radius: 4
+                                    color: "#006BFF"
+                                    Behavior on width {
+                                        NumberAnimation { duration: 180 }
+                                    }
+                                }
+                            }
+                        }
                     }
                     HoverHandler {
                         id: cardHover
                         enabled: !root.detailPopupActive
                                  && !expertInstallPopup.visible
-                                 && !root.installBusy
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     }
                 }
@@ -425,7 +481,7 @@ Rectangle {
     Popup {
         id: expertInstallPopup
         parent: Overlay.overlay
-        modal: true
+        modal: false
         focus: true
         closePolicy: Popup.NoAutoClose
         width: Math.min(560, root.hostWidth - 48)
@@ -433,7 +489,7 @@ Rectangle {
         x: Math.round((root.hostWidth - width) / 2)
         y: Math.round((root.hostHeight - height) / 2)
         padding: 0
-        Overlay.modal: Rectangle { color: "#66000000" }
+        Overlay.modal: Rectangle { color: "transparent" }
         background: Rectangle {
             radius: 8
             color: "#FFFFFF"

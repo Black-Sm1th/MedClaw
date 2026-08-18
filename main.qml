@@ -247,6 +247,7 @@ ApplicationWindow {
         return text.trim()
     }
     property string pendingExpertPrompt: ""
+    property double pendingExpertInstallStartedAt: 0
 
     /// 若整段里出现第二对「()」，只保留到第一对括号结束（含前面文字与第一对括号）
     function trimToFirstParenPairOnly(s) {
@@ -419,6 +420,7 @@ ApplicationWindow {
         chatKnowledgeCollection = ""
         knowledgePopup.close()
         pendingExpertPrompt = String(promptText || "")
+        pendingExpertInstallStartedAt = Date.now()
         wsClient.summonAgent(id)
     }
 
@@ -1236,6 +1238,7 @@ ApplicationWindow {
                 dropdownSelectionWorkSpace.absolutePath = ""
                 dropdownSelectionModel.currentIndex = 0
                 window.pendingExpertPrompt = ""
+                window.pendingExpertInstallStartedAt = 0
                 kbSources = []
                 kbSearchText = ""
                 kbLoading = false
@@ -1331,7 +1334,10 @@ ApplicationWindow {
             }
         }
         function onAgentInstallFinished(agentId, success, message) {
-            if (String(agentId || "").length > 0) {
+            var elapsed = window.pendingExpertInstallStartedAt > 0
+                    ? Date.now() - window.pendingExpertInstallStartedAt : 0
+            var autoOpen = success && elapsed <= 5000
+            if (autoOpen && String(agentId || "").length > 0) {
                 var selected = newTaskRec.selectedCollaborationAgentIds || []
                 if (window.leftSelectedIndex !== 0 || selected.length !== 1
                         || String(selected[0] || "") !== String(agentId || ""))
@@ -1340,8 +1346,13 @@ ApplicationWindow {
                     textInputArea.text = window.pendingExpertPrompt
                     textInputArea.forceActiveFocus()
                 }
+            } else if (success) {
+                errorToast.text = qsTr("专家安装成功")
+                errorToast.visible = true
+                errorToastTimer.restart()
             }
             window.pendingExpertPrompt = ""
+            window.pendingExpertInstallStartedAt = 0
         }
         function onCurrentSessionChanged() {
             var sk = wsClient.currentSessionKey || ""
