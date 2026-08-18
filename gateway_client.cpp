@@ -748,7 +748,7 @@ void GatewayClient::setCurrentSessionKey(const QString &key)
     emit currentSessionChanged();
 }
 
-void GatewayClient::clearActiveAgentContext()
+void GatewayClient::clearActiveAgentContext(bool clearModelSelection)
 {
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
@@ -756,7 +756,7 @@ void GatewayClient::clearActiveAgentContext()
     m_pendingCollaborationAgentIds.clear();
     m_collaborationChildSessionHints.clear();
     emit collaborationParticipantsChanged();
-    if (!m_pendingSessionModelId.isEmpty()) {
+    if (clearModelSelection && !m_pendingSessionModelId.isEmpty()) {
         m_pendingSessionModelId.clear();
         emit pendingSessionModelIdChanged();
     }
@@ -2432,14 +2432,19 @@ void GatewayClient::patchSessionOutputDirBeforeSend(
     const QString outputDir = normalizeWorkspacePath(sessionOutputDir);
     if (key.isEmpty())
         return;
-    if (outputDir.isEmpty()) {
+    if (outputDir.isEmpty() && m_pendingSessionModelId.isEmpty()) {
         sendChatMessageNow(key, message);
         return;
     }
 
     QJsonObject params;
     params[QStringLiteral("key")] = key;
-    params[QStringLiteral("sessionOutputDir")] = outputDir;
+    if (!outputDir.isEmpty())
+        params[QStringLiteral("sessionOutputDir")] = outputDir;
+    // Gate chat.send on the model override too, avoiding a race when the
+    // user selects a model immediately before sending a message.
+    if (!m_pendingSessionModelId.isEmpty())
+        params[QStringLiteral("model")] = qualifyModelRef(m_pendingSessionModelId);
     const QString reqId = sendRequest(QStringLiteral("sessions.patch"), params);
 
     PendingSessionOutputPatch pending;
@@ -3590,6 +3595,21 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // sessions.list 响应 → 委托 WsSession 解析
     if (method == QLatin1String("sessions.list")) {
         m_session.parseSessionsResponse(payload);
+        // The list carries the effective model for each session. Use it when
+        // the active session changes; explicit pending selections still win.
+        if (m_pendingSessionModelId.isEmpty()) {
+            const QVariantMap current = sessionInfoByKey(m_session.currentSessionKey());
+            if (!current.isEmpty()
+                && (current.contains(QStringLiteral("model"))
+                    || current.contains(QStringLiteral("modelProvider")))) {
+                m_currentModel.clear();
+                m_currentModel[QStringLiteral("model")] =
+                    current.value(QStringLiteral("model"));
+                m_currentModel[QStringLiteral("modelProvider")] =
+                    current.value(QStringLiteral("modelProvider"));
+                emit currentModelChanged();
+            }
+        }
         emit sessionsChanged();
         if (!m_currentTaskSessionKey.trimmed().isEmpty())
             emit collaborationParticipantsChanged();
@@ -4126,17 +4146,23 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             sendChatMessageNow(pending.sessionKey, pending.message);
             return;
         }
-        // 服务端可能返回 modelOverride/providerOverride（用户意图，下次发消息会用）
-        // 以及 model/modelProvider（上一次实际运行时模型）。
-        // 选择策略：优先用 override，没有则用 runtime，确保 UI 能立刻反映刚刚的切换。
+        // The gateway returns session overrides in entry and the effective
+        // choice in resolved (not as top-level model/modelProvider fields).
+        // Keep top-level parsing for compatibility with older gateways.
+        const QJsonObject entry = payload.value(QStringLiteral("entry")).toObject();
+        const QJsonObject resolved = payload.value(QStringLiteral("resolved")).toObject();
         const QString modelOverride =
-            payload.value(QStringLiteral("modelOverride")).toString();
+            entry.value(QStringLiteral("modelOverride")).toString(
+                payload.value(QStringLiteral("modelOverride")).toString());
         const QString providerOverride =
-            payload.value(QStringLiteral("providerOverride")).toString();
+            entry.value(QStringLiteral("providerOverride")).toString(
+                payload.value(QStringLiteral("providerOverride")).toString());
         const QString runtimeModel =
-            payload.value(QStringLiteral("model")).toString();
+            resolved.value(QStringLiteral("model")).toString(
+                payload.value(QStringLiteral("model")).toString());
         const QString runtimeProvider =
-            payload.value(QStringLiteral("modelProvider")).toString();
+            resolved.value(QStringLiteral("modelProvider")).toString(
+                payload.value(QStringLiteral("modelProvider")).toString());
 
         QString effectiveModel    = modelOverride.isEmpty() ? runtimeModel : modelOverride;
         QString effectiveProvider = providerOverride.isEmpty() ? runtimeProvider : providerOverride;

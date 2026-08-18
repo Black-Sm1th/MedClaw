@@ -2928,7 +2928,9 @@ ApplicationWindow {
                             return
                     }
                     if (newTaskRec.isNewTaskWelcome)
-                        wsClient.clearActiveAgentContext()
+                        // Reset the session key while preserving the model
+                        // selected for this new conversation.
+                        wsClient.clearActiveAgentContext(false)
                     wsClient.setPendingCollaborationAgents(
                         newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
                     if (newTaskRec.hasSelectedDocxTemplate) {

@@ -126,7 +126,7 @@ private:
     QString m_clientId;         ///< 客户端标识符（如 clawdbot-control-ui）
     QString m_clientVersion;    ///< 客户端版本号（如 dev）
     QString m_clientPlatform;   ///< 运行平台标识（如 Win32）
-    QString m_clientMode;       ///< 客户端模式（如 webchat）
+    QString m_clientMode;       ///< 客户端模式（桌面控制端为 ui）
 
     // ── 协议参数 ──
     int     m_minProtocol;      ///< 最低支持协议版本

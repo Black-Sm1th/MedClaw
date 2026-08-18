@@ -498,7 +498,8 @@ public:
      *
      * 用于「新建任务」入口：回到主聊天区但尚未绑定具体 agent。
      */
-    Q_INVOKABLE void clearActiveAgentContext();
+    /// 清除当前会话上下文；新建任务发送前可保留待应用的模型选择。
+    Q_INVOKABLE void clearActiveAgentContext(bool clearModelSelection = true);
 
     /// 获取指定会话的 agent 身份信息（发送 agent.identity.get RPC）
     Q_INVOKABLE void getAgentIdentity(const QString &sessionKey = QString());

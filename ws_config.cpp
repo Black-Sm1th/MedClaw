@@ -37,7 +37,10 @@ WsConfig::WsConfig()
 #else
     , m_clientPlatform(QStringLiteral("Unknown"))
 #endif
-    , m_clientMode(QStringLiteral("webchat"))
+    // This is the desktop control client, not the browser WebChat client.
+    // Session mutations such as model overrides are restricted for webchat
+    // connections, so the handshake must declare the desktop UI mode.
+    , m_clientMode(QStringLiteral("ui"))
     // ── 协议版本 & 角色 ──
     , m_minProtocol(3)
     , m_maxProtocol(3)
