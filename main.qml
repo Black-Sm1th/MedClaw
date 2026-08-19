@@ -760,16 +760,10 @@ ApplicationWindow {
         if (!isCurrentSchema && loaded.files)
             metadata.filesByCollection[defaultId] = loaded.files
 
-        var selected = String(loaded.selectedCollection || "")
-        var selectedExists = false
-        for (var k = 0; k < metadata.collections.length; k++) {
-            if (metadata.collections[k].id === selected) {
-                selectedExists = true
-                break
-            }
-        }
-        if (!selectedExists)
-            selected = metadata.collections.length > 0 ? metadata.collections[0].id : ""
+        // Start each authenticated session from the leftmost knowledge-base tab.
+        // Manual tab changes continue to be saved and used until the next reload.
+        var selected = metadata.collections.length > 0
+                ? String(metadata.collections[0].id || "") : ""
         var chatSelected = String(loaded.chatSelectedCollection || "")
         var chatSelectedExists = false
         for (var m = 0; m < metadata.collections.length; m++) {
@@ -8522,283 +8516,234 @@ ApplicationWindow {
                     spacing: 16
 
                     Item {
+                        id: kbTopBar
                         width: parent.width
                         height: 40
 
-                        Rectangle {
-                            id: kbCollectionSelector
+                        Item {
+                            id: kbTabsCluster
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 240
                             height: 40
-                            radius: 6
-                            color: kbCollectionSelectorMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
-                            border.width: 1
-                            border.color: "#E1E3E8"
+                            readonly property real availableWidth: Math.max(
+                                44, kbSearchInput.x - x - 24)
+                            width: Math.min(availableWidth,
+                                            Math.max(44, kbCollectionTabs.contentWidth + 48))
 
-                            Label {
+                            ListView {
+                                id: kbCollectionTabs
                                 anchors.left: parent.left
-                                anchors.leftMargin: 14
-                                anchors.right: kbCollectionChevron.left
+                                anchors.right: kbAddCollectionButton.left
                                 anchors.rightMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: window.kbSelectedCollection
-                                      ? window.kbCollectionName(window.kbSelectedCollection)
-                                      : qsTr("请选择知识库")
-                                elide: Text.ElideRight
-                                font.pixelSize: 16
-                                font.weight: Font.Medium
-                                color: "#D9000000"
-                            }
-                            Canvas {
-                                id: kbCollectionChevron
-                                width: 16; height: 16
-                                anchors.right: parent.right
-                                anchors.rightMargin: 12
-                                anchors.verticalCenter: parent.verticalCenter
-                                rotation: kbCollectionPopup.visible ? 180 : 0
-                                onPaint: {
-                                    var ctx = getContext("2d")
-                                    ctx.reset()
-                                    ctx.strokeStyle = "#73000000"
-                                    ctx.lineWidth = 1.5
-                                    ctx.lineCap = "round"
-                                    ctx.beginPath()
-                                    ctx.moveTo(4, 6)
-                                    ctx.lineTo(8, 10)
-                                    ctx.lineTo(12, 6)
-                                    ctx.stroke()
-                                }
-                            }
-                            MouseArea {
-                                id: kbCollectionSelectorMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                enabled: !window.kbLoading
-                                onClicked: kbCollectionPopup.open()
-                            }
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                orientation: ListView.Horizontal
+                                spacing: 4
+                                clip: true
+                                interactive: contentWidth > width
+                                boundsBehavior: Flickable.StopAtBounds
+                                flickableDirection: Flickable.HorizontalFlick
+                                model: window.kbCollections
+                                onMovementStarted: kbCollectionActionPopup.close()
 
-                            Popup {
-                                id: kbCollectionPopup
-                                readonly property real collectionListHeight: Math.min(
-                                    280, Math.max(44, window.kbCollections.length * 44))
-                                readonly property point popupPosition: kbCollectionSelector.mapToItem(
-                                    Overlay.overlay, 0, kbCollectionSelector.height + 6)
-                                x: popupPosition.x
-                                y: popupPosition.y
-                                width: kbCollectionSelector.width
-                                height: collectionListHeight + 55
-                                padding: 4
-                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                                background: Rectangle {
-                                    color: "#FFFFFF"; radius: 6
-                                    border.width: 1; border.color: "#E1E3E8"
-                                }
-                                contentItem: Column {
-                                    spacing: 0
-                                    ScrollView {
-                                        width: parent.width
-                                        height: kbCollectionPopup.collectionListHeight
-                                        clip: true
-                                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-                                        Column {
-                                            width: parent.width
-                                            Repeater {
-                                                model: window.kbCollections
-                                                delegate: Rectangle {
-                                                    id: kbCollectionRow
-                                                    readonly property string collectionId: String(modelData.id || "")
-                                                    readonly property bool hovered: kbCollectionRowMouse.containsMouse
-                                                                                      || kbCollectionMoreMouse.containsMouse
-                                                    readonly property bool actionMenuOpen: kbCollectionActionPopup.visible
-                                                                                             && knowledgeBaseRec.pendingDeleteCollectionId === collectionId
-                                                    width: parent.width
-                                                    height: 44
-                                                    radius: 4
-                                                    color: hovered || actionMenuOpen ? "#F7F8FA" : "transparent"
-                                                    Image {
-                                                        anchors.left: parent.left
-                                                        anchors.leftMargin: 12
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        width: 16
-                                                        height: 16
-                                                        fillMode: Image.PreserveAspectFit
-                                                        source: "qrc:/images/knowledge.png"
-                                                    }
-                                                    Label {
-                                                        anchors.left: parent.left
-                                                        anchors.leftMargin: 40
-                                                        anchors.right: kbCollectionTrailing.left
-                                                        anchors.rightMargin: 8
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        text: String(modelData.name || "")
-                                                        elide: Text.ElideRight
-                                                        font.pixelSize: 14
-                                                        color: "#D9000000"
-                                                    }
-                                                    MouseArea {
-                                                        id: kbCollectionRowMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            window.kbSelectCollection(modelData.id)
-                                                            kbCollectionPopup.close()
-                                                        }
-                                                    }
-                                                    Item {
-                                                        id: kbCollectionTrailing
-                                                        width: 36
-                                                        height: parent.height
-                                                        anchors.right: parent.right
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        z: 2
+                                delegate: Rectangle {
+                                    id: kbCollectionTab
+                                    readonly property string collectionId: String(modelData.id || "")
+                                    readonly property bool selected: collectionId === window.kbSelectedCollection
+                                    readonly property bool hovered: kbCollectionTabMouse.containsMouse
+                                                                             || kbCollectionTabMoreMouse.containsMouse
+                                    readonly property bool actionMenuOpen: kbCollectionActionPopup.visible
+                                                                                 && knowledgeBaseRec.pendingDeleteCollectionId === collectionId
+                                    width: Math.min(180, Math.max(94, kbCollectionTabTextMetrics.advanceWidth + 52))
+                                    height: 40
+                                    radius: 4
+                                    color: selected ? "#F2F3F5"
+                                                    : hovered || actionMenuOpen ? "#F7F8FA" : "transparent"
 
-                                                        Label {
-                                                            anchors.centerIn: parent
-                                                            visible: kbCollectionRow.collectionId === window.kbSelectedCollection
-                                                                     && !kbCollectionRow.hovered
-                                                                     && !kbCollectionRow.actionMenuOpen
-                                                            text: "✓"
-                                                            font.pixelSize: 14
-                                                            color: "#D9000000"
-                                                        }
+                                    TextMetrics {
+                                        id: kbCollectionTabTextMetrics
+                                        text: String(modelData.name || "")
+                                        font.pixelSize: 20
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                    }
 
-                                                        Rectangle {
-                                                            id: kbCollectionMore
-                                                            width: 28
-                                                            height: 28
-                                                            radius: 5
-                                                            anchors.centerIn: parent
-                                                            visible: kbCollectionRow.hovered || kbCollectionRow.actionMenuOpen
-                                                            color: kbCollectionMoreMouse.containsMouse
-                                                                   ? "#14000000" : "#0A000000"
-                                                            Image {
-                                                                anchors.centerIn: parent
-                                                                width: 20
-                                                                height: 20
-                                                                source: "qrc:/images/more.png"
-                                                            }
-                                                            MouseArea {
-                                                                id: kbCollectionMoreMouse
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: {
-                                                                    knowledgeBaseRec.pendingDeleteCollectionId = kbCollectionRow.collectionId
-                                                                    knowledgeBaseRec.pendingDeleteCollectionName = String(modelData.name || "")
-                                                                    var point = kbCollectionMore.mapToItem(
-                                                                        kbCollectionSelector,
-                                                                        kbCollectionMore.width + 6,
-                                                                        (kbCollectionMore.height - kbCollectionActionPopup.height) / 2)
-                                                                    kbCollectionActionPopup.popupX = point.x
-                                                                    kbCollectionActionPopup.popupY = point.y
-                                                                    kbCollectionActionPopup.open()
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            Label {
-                                                width: parent.width
-                                                height: window.kbCollections.length === 0 ? 44 : 0
-                                                visible: window.kbCollections.length === 0
-                                                verticalAlignment: Text.AlignVCenter
-                                                horizontalAlignment: Text.AlignHCenter
-                                                text: qsTr("暂无知识库")
-                                                font.pixelSize: 14
-                                                color: "#D9000000"
-                                            }
-                                        }
+                                    Label {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 14
+                                        anchors.right: kbCollectionTabMore.left
+                                        anchors.rightMargin: 4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: String(modelData.name || "")
+                                        elide: Text.ElideRight
+                                        font.pixelSize: 20
+                                        font.weight: kbCollectionTab.selected ? Font.Bold : Font.Medium
+                                        color: kbCollectionTab.selected ? "#D9000000" : "#A6000000"
                                     }
-                                    Rectangle {
-                                        width: parent.width - 16
-                                        height: 1
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        color: "#1A000000"
-                                    }
-                                    Rectangle {
-                                        width: parent.width; height: 46; radius: 5
-                                        color: kbCreateCollectionMouse.containsMouse ? "#F7F8FA" : "transparent"
-                                        Label {
-                                            id: addKnowledgeIcon
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 16
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: "+"
-                                            font.pixelSize: 20
-                                            color: "#D9000000"
-                                        }
-                                        Label {
-                                            anchors.left: addKnowledgeIcon.right; anchors.leftMargin: 8
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: qsTr("新建知识库")
-                                            font.pixelSize: 14; color: "#D9000000"
-                                        }
-                                        MouseArea {
-                                            id: kbCreateCollectionMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                kbCollectionPopup.close()
-                                                kbCollectionNameInput.text = ""
-                                                kbCreateCollectionPopup.open()
-                                                kbCollectionNameInput.forceActiveFocus()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
 
-                            Popup {
-                                id: kbCollectionActionPopup
-                                property real popupX: 0
-                                property real popupY: 0
-                                x: popupX
-                                y: popupY
-                                width: 76
-                                height: 40
-                                padding: 0
-                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                                background: Rectangle {
-                                    color: "#FFFFFF"
-                                    radius: 6
-                                    border.width: 1
-                                    border.color: "#E1E3E8"
-                                }
-                                contentItem: Rectangle {
-                                    color: kbCollectionActionDeleteMouse.containsMouse ? "#FFF2F2" : "transparent"
-                                    radius: 6
-                                    Row {
-                                        anchors.centerIn: parent
-                                        spacing: 6
-                                        Image {
-                                            width: 16
-                                            height: 16
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            source: "qrc:/images/delete.png"
-                                        }
-                                        Label {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: qsTr("删除")
-                                            font.pixelSize: 14
-                                            color: "#FF3D40"
-                                        }
-                                    }
                                     MouseArea {
-                                        id: kbCollectionActionDeleteMouse
+                                        id: kbCollectionTabMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
+                                        enabled: !window.kbLoading
                                         onClicked: {
                                             kbCollectionActionPopup.close()
-                                            kbCollectionPopup.close()
-                                            kbDeleteCollectionConfirm.open()
+                                            window.kbSelectCollection(kbCollectionTab.collectionId)
                                         }
+                                        onWheel: {
+                                            var delta = wheel.angleDelta.y !== 0
+                                                    ? wheel.angleDelta.y : wheel.angleDelta.x
+                                            var maxContentX = Math.max(0,
+                                                kbCollectionTabs.contentWidth - kbCollectionTabs.width)
+                                            kbCollectionTabs.contentX = Math.max(0, Math.min(maxContentX,
+                                                kbCollectionTabs.contentX - delta * 0.5))
+                                            wheel.accepted = true
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: kbCollectionTabMore
+                                        width: 28
+                                        height: 28
+                                        radius: 4
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        z: 2
+                                        visible: kbCollectionTab.hovered || kbCollectionTab.actionMenuOpen
+                                        color: kbCollectionTabMoreMouse.containsMouse ? "#14000000" : "#0A000000"
+
+                                        Image {
+                                            anchors.centerIn: parent
+                                            width: 20
+                                            height: 20
+                                            source: "qrc:/images/more.png"
+                                        }
+
+                                        MouseArea {
+                                            id: kbCollectionTabMoreMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            enabled: !window.kbLoading
+                                            onClicked: {
+                                                knowledgeBaseRec.pendingDeleteCollectionId = kbCollectionTab.collectionId
+                                                knowledgeBaseRec.pendingDeleteCollectionName = String(modelData.name || "")
+                                                var point = kbCollectionTabMore.mapToItem(
+                                                    kbTopBar,
+                                                    kbCollectionTabMore.width - kbCollectionActionPopup.width,
+                                                    kbCollectionTabMore.height + 6)
+                                                kbCollectionActionPopup.popupX = Math.max(0, Math.min(
+                                                    kbTopBar.width - kbCollectionActionPopup.width, point.x))
+                                                kbCollectionActionPopup.popupY = point.y
+                                                kbCollectionActionPopup.open()
+                                            }
+                                            onWheel: {
+                                                var delta = wheel.angleDelta.y !== 0
+                                                        ? wheel.angleDelta.y : wheel.angleDelta.x
+                                                var maxContentX = Math.max(0,
+                                                    kbCollectionTabs.contentWidth - kbCollectionTabs.width)
+                                                kbCollectionTabs.contentX = Math.max(0, Math.min(maxContentX,
+                                                    kbCollectionTabs.contentX - delta * 0.5))
+                                                wheel.accepted = true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                id: kbAddCollectionButton
+                                width: 32
+                                height: 32
+                                radius: 4
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: kbAddCollectionMouse.pressed ? "#F0F1F4"
+                                       : kbAddCollectionMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
+                                border.width: 1
+                                border.color: "#D7D9DE"
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: "+"
+                                    font.pixelSize: 20
+                                    color: "#73000000"
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+
+                                MouseArea {
+                                    id: kbAddCollectionMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: !window.kbLoading
+                                    onClicked: {
+                                        kbCollectionActionPopup.close()
+                                        kbCollectionNameInput.text = ""
+                                        kbCreateCollectionPopup.open()
+                                    }
+                                }
+
+                                ToolTip {
+                                    id: kbAddCollectionTip
+                                    visible: kbAddCollectionMouse.containsMouse
+                                    text: qsTr("新建知识库")
+                                    delay: 400
+                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    contentItem: Text {
+                                        text: kbAddCollectionTip.text
+                                        font.pixelSize: 13
+                                        color: "#FFFFFF"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                    }
+                                }
+                            }
+                        }
+
+                        Popup {
+                            id: kbCollectionActionPopup
+                            property real popupX: 0
+                            property real popupY: 0
+                            x: popupX
+                            y: popupY
+                            width: 76
+                            height: 40
+                            padding: 0
+                            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                            background: Rectangle {
+                                color: "#FFFFFF"
+                                radius: 6
+                                border.width: 1
+                                border.color: "#E1E3E8"
+                            }
+                            contentItem: Rectangle {
+                                color: kbCollectionActionDeleteMouse.containsMouse ? "#FFF2F2" : "transparent"
+                                radius: 6
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Image {
+                                        width: 16
+                                        height: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        source: "qrc:/images/delete.png"
+                                    }
+                                    Label {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("删除")
+                                        font.pixelSize: 14
+                                        color: "#FF3D40"
+                                    }
+                                }
+                                MouseArea {
+                                    id: kbCollectionActionDeleteMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        kbCollectionActionPopup.close()
+                                        kbDeleteCollectionConfirm.open()
                                     }
                                 }
                             }
@@ -9092,37 +9037,130 @@ ApplicationWindow {
                 Popup {
                     id: kbCreateCollectionPopup
                     anchors.centerIn: parent
-                    width: 380; height: 190
+                    width: Math.min(484, parent.width - 32)
+                    height: 202
                     modal: true
                     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    padding: 0
+                    onOpened: kbCollectionNameInput.forceActiveFocus()
                     background: Rectangle {
-                        color: "#FFFFFF"; radius: 8
+                        color: "#FFFFFF"; radius: 14
                         border.width: 1; border.color: "#E1E3E8"
                     }
-                    contentItem: Column {
-                        anchors.fill: parent; anchors.margins: 24; spacing: 16
+                    contentItem: Item {
+                        anchors.fill: parent
+
                         Label {
-                            text: qsTr("新建知识库"); font.pixelSize: 17
-                            font.weight: Font.Bold; color: "#D9000000"
+                            anchors.left: parent.left
+                            anchors.leftMargin: 20
+                            anchors.top: parent.top
+                            anchors.topMargin: 16
+                            text: qsTr("新建知识库")
+                            font.pixelSize: 16
+                            font.weight: Font.Medium
+                            color: "#D9000000"
                         }
-                        TextField {
-                            id: kbCollectionNameInput
-                            width: parent.width; height: 38
-                            placeholderText: qsTr("请输入知识库名称")
-                            selectByMouse: true
-                            onAccepted: {
-                                if (window.kbCreateCollection(text)) kbCreateCollectionPopup.close()
+
+                        Rectangle {
+                            id: kbCreateCloseButton
+                            width: 28
+                            height: 28
+                            radius: 4
+                            anchors.right: parent.right
+                            anchors.rightMargin: 14
+                            anchors.top: parent.top
+                            anchors.topMargin: 10
+                            color: kbCreateCloseMouse.containsMouse ? "#F2F3F5" : "transparent"
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: "×"
+                                font.pixelSize: 20
+                                color: "#A6000000"
+                            }
+                            MouseArea {
+                                id: kbCreateCloseMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: kbCreateCollectionPopup.close()
                             }
                         }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.topMargin: 49
+                            height: 1
+                            color: "#E8E9ED"
+                        }
+
+                        Rectangle {
+                            id: kbCollectionNameFrame
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 20
+                            anchors.rightMargin: 20
+                            anchors.top: parent.top
+                            anchors.topMargin: 75
+                            height: 32
+                            radius: 6
+                            color: "#FFFFFF"
+                            border.width: 1
+                            border.color: kbCollectionNameInput.activeFocus ? "#006BFF" : "#D7D9DE"
+
+                            TextField {
+                                id: kbCollectionNameInput
+                                anchors.left: parent.left
+                                anchors.right: kbCollectionNameCounter.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                leftPadding: 10
+                                rightPadding: 6
+                                topPadding: 0
+                                bottomPadding: 0
+                                maximumLength: 40
+                                placeholderText: qsTr("请输入新建知识库名称")
+                                placeholderTextColor: "#40000000"
+                                selectByMouse: true
+                                verticalAlignment: TextInput.AlignVCenter
+                                font.pixelSize: 13
+                                color: "#D9000000"
+                                background: Item {}
+                                onAccepted: {
+                                    if (window.kbCreateCollection(text))
+                                        kbCreateCollectionPopup.close()
+                                }
+                            }
+
+                            Label {
+                                id: kbCollectionNameCounter
+                                anchors.right: parent.right
+                                anchors.rightMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: kbCollectionNameInput.text.length + "/40"
+                                font.pixelSize: 13
+                                color: "#40000000"
+                            }
+                        }
+
                         Row {
-                            anchors.right: parent.right; spacing: 8
+                            anchors.right: parent.right
+                            anchors.rightMargin: 20
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 18
+                            spacing: 10
                             CustomButton {
-                                width: 72; height: 34; text: qsTr("取消"); fontSize: 13
-                                backgroundColor: "#F0F1F4"; textColor: "#D9000000"; borderWidth: 0
+                                width: 77; height: 33; text: qsTr("取消"); fontSize: 13
+                                buttonRadius: 4
+                                backgroundColor: "#F7F8FA"; textColor: "#73000000"
+                                borderWidth: 1; borderColor: "#E1E3E8"
                                 onClicked: kbCreateCollectionPopup.close()
                             }
                             CustomButton {
-                                width: 72; height: 34; text: qsTr("创建"); fontSize: 13
+                                width: 77; height: 33; text: qsTr("导入"); fontSize: 13
+                                buttonRadius: 4
                                 backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
                                 onClicked: {
                                     if (window.kbCreateCollection(kbCollectionNameInput.text))
