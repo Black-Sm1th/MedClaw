@@ -1,28 +1,28 @@
-import { WarningOutlined } from '@ant-design/icons';
-import { getConfigs } from '../util/vscodeConfig';
-import { $t } from '../i18n/i18nConfig';
+import { handler } from '../util/vscode';
 import './WebUnsupported.css';
 
 export default function WebUnsupported() {
-	const configs = getConfigs();
-	const fileName = configs?.fileName ?? '';
-
 	return (
-		<div className="web-unsupported office-viewer-themed">
-			<div className="web-unsupported-panel">
-				<WarningOutlined className="web-unsupported-icon" aria-hidden />
-				<h1 className="web-unsupported-title">
-					{$t('webUnsupported.title')}
-				</h1>
-				<p className="web-unsupported-desc">
-					{$t('webUnsupported.desc')}
-				</p>
-				{fileName ? (
-					<span className="web-unsupported-file" title={fileName}>
-						{fileName}
-					</span>
-				) : null}
+		<main className="web-unsupported">
+			<div className="web-unsupported-content">
+				<div className="web-unsupported-message">
+					<img
+						className="web-unsupported-image"
+						src="./unsupported/file_notlook.png"
+						alt=""
+						aria-hidden="true"
+					/>
+					<h1 className="web-unsupported-title">文件格式不支持预览</h1>
+					<p className="web-unsupported-desc">可使用本地默认软件打开</p>
+				</div>
+				<button
+					type="button"
+					className="web-unsupported-button"
+					onClick={() => handler.emit('openDefault')}
+				>
+					本地查看
+				</button>
 			</div>
-		</div>
+		</main>
 	);
 }

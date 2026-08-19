@@ -102,7 +102,7 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
     QUrl url;
     if (suffix == QStringLiteral("pdf")) {
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/pdf/viewer.html").arg(port()));
-    } else if (suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown")) {
+    } else if (QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix)) {
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/markdown/index.html").arg(port()));
     } else if ((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && m_readOnly) {
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/api/html/%2/%3")
@@ -117,7 +117,7 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
                            QStringLiteral("/api/document?session=") + m_sessionId);
     }
     if (suffix != QStringLiteral("pdf")
-        && suffix != QStringLiteral("md") && suffix != QStringLiteral("markdown")
+        && suffix != QStringLiteral("md") && suffix != QStringLiteral("markdown") && suffix != QStringLiteral("txt")
         && !((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && m_readOnly)) {
         query.addQueryItem(QStringLiteral("route"),
                            (suffix == QStringLiteral("html") || suffix == QStringLiteral("htm"))
@@ -379,7 +379,7 @@ void ViewerHost::handleEvent(QTcpSocket *socket, const QByteArray &body)
         emit documentChanged();
     } else if (type == QStringLiteral("save") || type == QStringLiteral("doSave")) {
         const QString suffix = QFileInfo(m_currentPath).suffix().toLower();
-        const bool plainText = suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown");
+        const bool plainText = QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix);
         const QByteArray bytes = eventContentToByteArray(content, plainText);
         if (m_currentPath.isEmpty() || m_readOnly || (!plainText && bytes.isEmpty())) {
             respondJson(socket, 403, {{QStringLiteral("error"), QStringLiteral("Document is read-only or empty")}});
@@ -411,6 +411,12 @@ void ViewerHost::handleEvent(QTcpSocket *socket, const QByteArray &body)
             return;
         } else {
             events.append(QJsonObject{{QStringLiteral("type"), QStringLiteral("saveDone")}});
+        }
+    } else if (type == QStringLiteral("openDefault")) {
+        if (m_currentPath.isEmpty()
+            || !QDesktopServices::openUrl(QUrl::fromLocalFile(m_currentPath))) {
+            respondJson(socket, 500, {{QStringLiteral("error"), QStringLiteral("无法使用本地默认软件打开文件")}});
+            return;
         }
     } else if (type == QStringLiteral("openExternal")) {
         QDesktopServices::openUrl(QUrl(content.toString()));
@@ -513,7 +519,7 @@ QJsonObject ViewerHost::openPayload() const
 {
     const QFileInfo fileInfo(m_currentPath);
     const QString suffix = fileInfo.suffix().toLower();
-    if (suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown")) {
+    if (QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix)) {
         QFile file(m_currentPath);
         QString content;
         if (file.open(QIODevice::ReadOnly))

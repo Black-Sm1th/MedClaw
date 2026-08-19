@@ -1,0 +1,1 @@
+import{o as e}from"./rolldown-runtime-C0FnF6B9.js";import{t}from"./react-C21x__mS.js";var n=e(t());function r(){let[e,t]=(0,n.useState)([0,0]);return(0,n.useLayoutEffect)(()=>{function e(){t([window.innerWidth,window.innerHeight])}return window.addEventListener(`resize`,e),e(),()=>window.removeEventListener(`resize`,e)},[]),e}export{r as t};

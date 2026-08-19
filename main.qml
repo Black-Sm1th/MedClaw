@@ -2485,23 +2485,18 @@ ApplicationWindow {
                     if (!file || file.folder === true || file.isDirectory === true
                             || file.type === "directory" || file.type === "folder")
                         return false
-                    var ext = String(file.extension || fileExtension(file.path)).toLowerCase()
-                    return /^(docx|dotx|xls|xlsx|xlsm|ods|csv|tsv|pptx|pptm|pdf|md|markdown|html|htm|jpg|jpeg|png|gif|bmp|webp|tif|tiff|heic|heif|svg|ttf|otf|woff|woff2|epub|icns|psd|xmind|parquet)$/.test(ext)
+                    return true
                 }
 
                 function supportsLocalViewerEdit(file) {
                     var ext = String((file && file.extension) || fileExtension((file && file.path) || "")).toLowerCase()
-                    return /^(docx|dotx|xls|xlsx|xlsm|ods|csv|tsv|pptx|pptm|md|markdown|html|htm)$/.test(ext)
+                    return /^(docx|dotx|xls|xlsx|xlsm|ods|csv|tsv|pptx|pptm|md|markdown|txt|html|htm)$/.test(ext)
                 }
 
                 function openOfficeFile(file) {
                     var path = String((file && file.path) || "")
                     if (!path)
                         return
-                    if (!supportsLocalViewer(file)) {
-                        window.openMarkdownLink("medclaw-local:" + encodeURIComponent(path))
-                        return
-                    }
                     var tabIndex = findOfficeTab(path)
                     if (tabIndex < 0) {
                         officeTabs.append({
