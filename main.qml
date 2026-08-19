@@ -7928,16 +7928,15 @@ ApplicationWindow {
 
                 function filteredSkillList() {
                     var list = wsClient.skillList || []
-                    var kw = skillSearchText.toLowerCase()
+                    var kw = skillSearchText.trim().toLowerCase()
                     var result = []
                     for (var i = 0; i < list.length; i++) {
-                        var name = (list[i].name || list[i].skillKey || "").toLowerCase()
-                        var desc = (list[i].description || "").toLowerCase()
+                        var name = String(list[i].name || list[i].skillKey || "").toLowerCase()
                         var id = String(list[i].skillKey || list[i].name || "").toLowerCase()
                         var category = skillCategoryById[id] || ""
                         if (selectedSkillCategory !== "全部" && category !== selectedSkillCategory)
                             continue
-                        if (kw && name.indexOf(kw) < 0 && desc.indexOf(kw) < 0)
+                        if (kw && name.indexOf(kw) < 0)
                             continue
                         result.push(list[i])
                     }
