@@ -99,6 +99,9 @@ export default function PowerPoint() {
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [dragging, setDragging] = useState(false);
     const [dark, setDark] = useState(loadDarkMode);
+    const [editing, setEditing] = useState(false);
+    const editFrameRef = useRef<HTMLIFrameElement>(null);
+    const openPayloadRef = useRef<{ buffer: number[] } | null>(null);
 
     useEffect(() => {
         document.body.classList.toggle('office-dark', dark);
@@ -187,7 +190,7 @@ export default function PowerPoint() {
         resetView();
     }, [syncCanvasSize, resetView]);
 
-    const loadPresentation = useCallback(async (payload: { path?: string; buffer?: number[]; error?: string }) => {
+    const loadPresentation = useCallback(async (payload: { path?: string; buffer?: number[]; error?: string; readOnly?: boolean }) => {
         setLoading(true);
         setThumbsLoading(false);
         setError(null);
@@ -200,6 +203,8 @@ export default function PowerPoint() {
 
         try {
             const buffer = await loadOfficeBuffer(payload);
+            openPayloadRef.current = { buffer: Array.from(new Uint8Array(buffer)) };
+            setEditing(payload.readOnly === false);
             const canvas = canvasRef.current;
             const wrap = canvasWrapRef.current;
             if (!canvas || !wrap) {
@@ -254,7 +259,34 @@ export default function PowerPoint() {
     }, [currentIndex, thumbnails]);
 
     useEffect(() => {
+        const onSaveKey = (event: KeyboardEvent) => {
+            if (!editing || !(event.ctrlKey || event.metaKey) || event.code !== 'KeyS') return;
+            event.preventDefault();
+            editFrameRef.current?.contentWindow?.postMessage({ type: 'pptx-save' }, '*');
+        };
+        window.addEventListener('keydown', onSaveKey, true);
+        return () => window.removeEventListener('keydown', onSaveKey, true);
+    }, [editing]);
+
+    useEffect(() => {
+        const onEditorMessage = (event: MessageEvent) => {
+            const data = event.data || {};
+            if (data.type === 'pptx-editor-ready' && openPayloadRef.current) {
+                const buffer = openPayloadRef.current.buffer.slice();
+                editFrameRef.current?.contentWindow?.postMessage({ type: 'pptx-open', buffer }, '*');
+            } else if (data.type === 'pptx-exported' && typeof data.base64 === 'string') {
+                handler.emit('save', data.base64);
+            } else if (data.type === 'pptx-error') {
+                setError(String(data.message || 'PPTX 导入失败'));
+            }
+        };
+        window.addEventListener('message', onEditorMessage);
+        return () => window.removeEventListener('message', onEditorMessage);
+    }, []);
+
+    useEffect(() => {
         const onKeyDown = async (e: KeyboardEvent) => {
+            if (editing) return;
             const viewer = viewerRef.current;
             if (!viewer || loading) {
                 return;
@@ -271,7 +303,7 @@ export default function PowerPoint() {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [loading, selectSlide]);
+    }, [editing, loading, selectSlide]);
 
     useEffect(() => {
         if (loading || slideCount === 0) {
@@ -512,9 +544,14 @@ export default function PowerPoint() {
 
     return (
         <>
+            {editing && (
+                <div className="ppt-editor-shell">
+                    <iframe ref={editFrameRef} title="PPT 编辑器" src="./pptist/index.html" />
+                </div>
+            )}
             <Spin spinning={loading} fullscreen />
             {error && <Alert type="error" message={error} showIcon style={{ margin: 16 }} />}
-            <Layout className="ppt-viewer office-viewer-themed">
+            <Layout className={`ppt-viewer office-viewer-themed${editing ? ' ppt-viewer-hidden' : ''}`}>
                 <Layout className="ppt-body">
                     <Sider width={SIDER_WIDTH} className="ppt-thumbnails">
                         <div className="ppt-thumbnails-inner">

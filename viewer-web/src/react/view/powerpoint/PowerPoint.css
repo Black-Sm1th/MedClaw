@@ -29,6 +29,26 @@ body {
     --viewer-scrollbar-thumb: #c9d1d9;
 }
 
+.ppt-viewer-hidden {
+    display: none !important;
+}
+
+.ppt-editor-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+}
+
+.ppt-editor-shell iframe {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+}
+
 
 body.office-dark {
     background-color: var(--vscode-editor-background, #1e1e1e) !important;

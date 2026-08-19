@@ -2491,7 +2491,7 @@ ApplicationWindow {
 
                 function supportsLocalViewerEdit(file) {
                     var ext = String((file && file.extension) || fileExtension((file && file.path) || "")).toLowerCase()
-                    return /^(docx|dotx|xls|xlsx|xlsm|ods|csv|tsv|md|markdown|html|htm)$/.test(ext)
+                    return /^(docx|dotx|xls|xlsx|xlsm|ods|csv|tsv|pptx|pptm|md|markdown|html|htm)$/.test(ext)
                 }
 
                 function openOfficeFile(file) {
