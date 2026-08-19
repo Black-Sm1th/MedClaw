@@ -337,6 +337,7 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
       const bool isMutableViewerResource = relative == QStringLiteral("index.html")
           || relative.startsWith(QStringLiteral("markdown/"))
           || relative.startsWith(QStringLiteral("pdf/"))
+          || relative.startsWith(QStringLiteral("pptist/"))
           || relative == QStringLiteral("html/index.html");
       respond(socket, 200, contentTypeForPath(path).toLatin1(), responseBody, {
         {"Cache-Control", isMutableViewerResource ? "no-store" : "public, max-age=3600"}
