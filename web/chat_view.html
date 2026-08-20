@@ -507,6 +507,32 @@
       var messages = [];
       var collapsed = {};
       var renderToken = 0;
+      var hoveredFile = null;
+
+      function fileNodeFromTarget(target) {
+        return target && target.closest
+          ? target.closest('.user-file-ref, .artifact-card') : null;
+      }
+
+      function clearFileHover() {
+        if (!hoveredFile) return;
+        hoveredFile = null;
+        console.log('MEDCLAW_CHAT:' + JSON.stringify({ type: 'fileHoverEnd' }));
+      }
+
+      function updateFileHover(file) {
+        if (!file || file === hoveredFile) return;
+        hoveredFile = file;
+        var rect = file.getBoundingClientRect();
+        console.log('MEDCLAW_CHAT:' + JSON.stringify({
+          type: 'fileHover',
+          path: file.getAttribute('data-file-path') || '',
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height
+        }));
+      }
 
       function escapeHtml(value) {
         return String(value || '')
@@ -816,7 +842,7 @@
         var key = toolKey(msg, index);
         var expanded = collapsed[key] !== true;
         var hasArgs = String(msg.toolArgs || '').length > 0;
-        var hasResult = msg.hasToolResult && String(msg.toolResultText || '').length > 0;
+        var hasResult = String(msg.toolResultText || '').length > 0;
         var html = [];
         html.push('<div class="tool" data-row="' + index + '">');
         html.push('<div class="tool-header">');
@@ -830,7 +856,7 @@
           if (hasArgs)
             html.push('<div class="tool-box args">' + escapeHtml(msg.toolArgs || '') + '</div>');
           if (hasResult)
-            html.push('<div class="tool-box result' + (hasArgs ? ' after-args' : '') + (msg.isError ? ' error' : '') + '">' + plainTextHtml(msg.toolResultText || '') + '</div>');
+            html.push('<div class="tool-box result' + (hasArgs ? ' after-args' : '') + (msg.isError ? ' error' : '') + '" data-tool-result-row="' + index + '">' + plainTextHtml(msg.toolResultText || '') + '</div>');
           html.push('</div></div>');
           if (!msg.hasToolResult) {
             html.push('<div class="tool-status"><span class="status-slot"><span class="dot"></span></span><span>执行中...</span></div>');
@@ -938,8 +964,38 @@
       function replaceMessageRow(row) {
         var node = app.querySelector('.message[data-row="' + row + '"]');
         if (!node) return false;
+        if (hoveredFile && node.contains(hoveredFile))
+          clearFileHover();
         node.outerHTML = renderMessage(messages[row], row);
         return true;
+      }
+
+      function revealToolResult(row, text) {
+        var node = app.querySelector('[data-tool-result-row="' + row + '"]');
+        if (!node) return;
+        var value = String(text || '');
+        var parts = value.match(/[^\n]*\n|[^\n]+$/g) || [];
+        if (parts.length === 1 && value.length > 120) {
+          parts = [];
+          for (var offset = 0; offset < value.length; offset += 120)
+            parts.push(value.slice(offset, offset + 120));
+        }
+        if (parts.length <= 1) return;
+
+        var batchSize = Math.max(1, Math.ceil(parts.length / 30));
+        var shown = '';
+        var cursor = 0;
+        node.innerHTML = '';
+        function appendBatch() {
+          if (!node.isConnected) return;
+          for (var count = 0; count < batchSize && cursor < parts.length; count++)
+            shown += parts[cursor++];
+          node.innerHTML = plainTextHtml(shown);
+          if (isNearBottom()) scrollToBottom();
+          if (cursor < parts.length)
+            setTimeout(appendBatch, 45);
+        }
+        appendBatch();
       }
 
       function patchMessages(nextMessages) {
@@ -958,10 +1014,19 @@
         if (changed.length > 8 || nextMessages.length - messages.length > 8)
           return false;
 
+        var previousMessages = messages;
         messages = nextMessages;
         for (var j = 0; j < changed.length; j++) {
-          if (!replaceMessageRow(changed[j]))
+          var changedRow = changed[j];
+          if (!replaceMessageRow(changedRow))
             return false;
+          var before = previousMessages[changedRow] || {};
+          var after = messages[changedRow] || {};
+          if (after.msgType === 'toolCall'
+              && !before.hasToolResult && after.hasToolResult
+              && String(before.toolResultText || '').length === 0
+              && String(after.toolResultText || '').length > 0)
+            revealToolResult(changedRow, after.toolResultText);
         }
         for (var row = sharedCount; row < messages.length; row++)
           app.insertAdjacentHTML('beforeend', renderMessage(messages[row], row));
@@ -980,6 +1045,7 @@
       }
 
       function renderAll(shouldScrollToBottom, viewport) {
+        clearFileHover();
         var token = ++renderToken;
         var index = 0;
         var htmlParts = [];
@@ -1094,33 +1160,31 @@
       });
 
       document.addEventListener('mouseover', function (event) {
-        var file = event.target.closest
-          ? event.target.closest('.user-file-ref, .artifact-card') : null;
-        if (!file)
-          return;
-        var rect = file.getBoundingClientRect();
-        console.log('MEDCLAW_CHAT:' + JSON.stringify({
-          type: 'fileHover',
-          path: file.getAttribute('data-file-path') || '',
-          x: rect.left,
-          y: rect.top,
-          width: rect.width,
-          height: rect.height
-        }));
+        updateFileHover(fileNodeFromTarget(event.target));
       });
 
       document.addEventListener('mouseout', function (event) {
-        var file = event.target.closest ? event.target.closest('.user-file-ref') : null;
-        if (!file || (event.relatedTarget && file.contains(event.relatedTarget)))
+        var file = fileNodeFromTarget(event.target);
+        if (!file || file !== hoveredFile
+            || (event.relatedTarget && file.contains(event.relatedTarget)))
           return;
-        console.log('MEDCLAW_CHAT:' + JSON.stringify({ type: 'fileHoverEnd' }));
+        clearFileHover();
       });
 
-      window.addEventListener('blur', function () {
-        console.log('MEDCLAW_CHAT:' + JSON.stringify({ type: 'fileHoverEnd' }));
+      document.addEventListener('mousemove', function (event) {
+        var file = fileNodeFromTarget(event.target);
+        if (file) updateFileHover(file);
+        else clearFileHover();
+      });
+
+      document.addEventListener('mouseleave', clearFileHover);
+      window.addEventListener('blur', clearFileHover);
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) clearFileHover();
       });
 
       document.addEventListener('scroll', function (event) {
+        clearFileHover();
         markScrolling(event.target);
       }, true);
     })();

@@ -41,6 +41,7 @@ struct WsEventResult
     bool ignore;          ///< 是否应忽略此事件（如空的 chat 状态更新）
     // ── 工具调用相关 ──
     bool isToolCall;      ///< 事件中包含工具调用
+    bool isToolUpdate;    ///< 工具执行中的增量输出
     bool isToolResult;    ///< 事件中包含工具结果
     QString toolName;     ///< 工具名称
     QString toolArgs;     ///< 工具参数（JSON 字符串）

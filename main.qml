@@ -2498,6 +2498,7 @@ ApplicationWindow {
                     if (!path)
                         return
                     var tabIndex = findOfficeTab(path)
+                    var reloadExistingPreview = tabIndex >= 0
                     if (tabIndex < 0) {
                         officeTabs.append({
                             "name": String(file.name || path.replace(/\\/g, "/").split("/").pop()),
@@ -2508,6 +2509,18 @@ ApplicationWindow {
                         tabIndex = officeTabs.count - 1
                     }
                     activateOfficeTab(tabIndex)
+                    if (reloadExistingPreview) {
+                        Qt.callLater(function() {
+                            var host = officeViewsRepeater.itemAt(tabIndex)
+                            if (!host || !host.officeView
+                                    || tabIndex !== activeOfficeTabIndex
+                                    || host.officeView.mode !== "view")
+                                return
+                            officePreviewPending = true
+                            if (!host.officeView.open(path, "view"))
+                                officePreviewPending = false
+                        })
+                    }
                 }
 
                 function officeTabKey(path) {

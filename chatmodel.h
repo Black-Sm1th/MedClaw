@@ -70,6 +70,9 @@ public:
     Q_INVOKABLE void addToolCall(const QString &toolName,
                                   const QString &toolArgs,
                                   const QString &toolCallId);
+    Q_INVOKABLE void appendToolResult(const QString &toolName,
+                                      const QString &content,
+                                      const QString &toolCallId);
     Q_INVOKABLE void addToolResult(const QString &toolName,
                                     const QString &content,
                                     const QString &toolCallId,

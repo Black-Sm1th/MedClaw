@@ -599,6 +599,9 @@ signals:
     void toolCallReceived(const QString &toolName,
                           const QString &toolArgs,
                           const QString &toolCallId);    ///< Agent 发起工具调用
+    void toolUpdateReceived(const QString &toolName,
+                            const QString &content,
+                            const QString &toolCallId);  ///< 工具执行中的增量输出
     void toolResultReceived(const QString &toolName,
                             const QString &content,
                             const QString &toolCallId,

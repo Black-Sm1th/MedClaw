@@ -59,6 +59,10 @@ QString extractToolOutputFromDataObject(const QJsonObject &data)
     if (!text.isEmpty())
         return text;
 
+    const QString delta = data.value(QStringLiteral("delta")).toString();
+    if (!delta.isEmpty())
+        return delta;
+
     const QJsonValue outputVal = data.value(QStringLiteral("output"));
     if (!outputVal.isNull()) {
         if (outputVal.isString() && !outputVal.toString().isEmpty())
@@ -530,6 +534,7 @@ WsEventResult WsSession::parseEvent(const QString &event,
     result.isComplete   = false;
     result.ignore       = false;
     result.isToolCall   = false;
+    result.isToolUpdate = false;
     result.isToolResult = false;
     result.toolIsError  = false;
 
@@ -559,6 +564,19 @@ WsEventResult WsSession::parseEvent(const QString &event,
             args = data.value(QStringLiteral("arguments")).toObject();
         result.toolArgs = QString::fromUtf8(
             QJsonDocument(args).toJson(QJsonDocument::Compact));
+        return result;
+    }
+
+    if (isToolStream
+        && (phase == QLatin1String("update")
+            || phase == QLatin1String("progress")
+            || phase == QLatin1String("delta"))) {
+        result.isToolUpdate = true;
+        result.toolName     = data.value(QStringLiteral("name")).toString(
+            data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
+            data.value(QStringLiteral("id")).toString());
+        result.content      = extractToolOutputFromDataObject(data);
         return result;
     }
 

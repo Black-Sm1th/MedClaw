@@ -154,6 +154,45 @@ void ChatModel::addToolCall(const QString &toolName,
 
 // ── 工具结果 ─────────────────────────────────────────────────────────
 
+void ChatModel::appendToolResult(const QString &toolName,
+                                  const QString &content,
+                                  const QString &toolCallId)
+{
+    if (content.isEmpty()) return;
+
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        ChatMessage &msg = m_messages[i];
+        const bool idMatches = !toolCallId.isEmpty()
+            && msg.toolCallId == toolCallId;
+        const bool fallbackMatches = toolCallId.isEmpty()
+            && !toolName.isEmpty()
+            && msg.toolName == toolName
+            && !msg.hasToolResult;
+        if (msg.msgType != QStringLiteral("toolCall")
+            || (!idMatches && !fallbackMatches)) {
+            continue;
+        }
+
+        // 网关可能发送 delta，也可能发送不断增长的完整快照。
+        if (content.startsWith(msg.toolResultText))
+            msg.toolResultText = content;
+        else if (!msg.toolResultText.endsWith(content))
+            msg.toolResultText += content;
+
+        const QModelIndex idx = index(i);
+        emit dataChanged(idx, idx, { ToolResultTextRole });
+        emit messagePayloadChanged();
+        return;
+    }
+
+    if (toolCallId.isEmpty() && toolName.isEmpty())
+        return;
+
+    // 少数网关不发 start，首个 update 也应立即创建执行中卡片。
+    addToolCall(toolName, QString(), toolCallId);
+    appendToolResult(toolName, content, toolCallId);
+}
+
 void ChatModel::addToolResult(const QString &toolName,
                                const QString &content,
                                const QString &toolCallId,
@@ -163,7 +202,8 @@ void ChatModel::addToolResult(const QString &toolName,
         if (m_messages[i].msgType == QStringLiteral("toolCall")
             && !toolCallId.isEmpty()
             && m_messages[i].toolCallId == toolCallId) {
-            m_messages[i].toolResultText = content;
+            if (!content.isEmpty())
+                m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
             m_messages[i].isError = isError;
             const QModelIndex idx = index(i);
@@ -185,7 +225,8 @@ void ChatModel::addToolResult(const QString &toolName,
                 || m_messages[i].toolName != toolName) {
                 continue;
             }
-            m_messages[i].toolResultText = content;
+            if (!content.isEmpty())
+                m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
             m_messages[i].isError = isError;
             const QModelIndex idx = index(i);

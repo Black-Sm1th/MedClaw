@@ -3253,6 +3253,10 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             emit toolCallReceived(tr.toolName, tr.toolArgs, tr.toolCallId);
             return;
         }
+        if (tr.isToolUpdate) {
+            emit toolUpdateReceived(tr.toolName, tr.content, tr.toolCallId);
+            return;
+        }
         if (tr.isToolResult) {
             qDebug().noquote() << "[Gateway] session.tool → result:" << tr.toolName
                                << "error:" << tr.toolIsError
@@ -3291,6 +3295,10 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         qDebug().noquote() << "[Gateway] tool call:" << r.toolName
                            << "id:" << r.toolCallId;
         emit toolCallReceived(r.toolName, r.toolArgs, r.toolCallId);
+        return;
+    }
+    if (r.isToolUpdate) {
+        emit toolUpdateReceived(r.toolName, r.content, r.toolCallId);
         return;
     }
     if (r.isToolResult) {

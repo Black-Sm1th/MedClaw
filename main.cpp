@@ -172,6 +172,13 @@ int main(int argc, char *argv[])
         chatModel.addToolCall(name, args, id);
     });
 
+    // 工具增量：在执行中的卡片内持续追加输出
+    QObject::connect(&wsClient, &GatewayClient::toolUpdateReceived,
+                     [&chatModel](const QString &name, const QString &content,
+                                  const QString &id) {
+        chatModel.appendToolResult(name, content, id);
+    });
+
     // 工具结果：在 ChatModel 中插入工具结果块
     QObject::connect(&wsClient, &GatewayClient::toolResultReceived,
                      [&chatModel](const QString &name, const QString &content,
