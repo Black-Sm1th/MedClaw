@@ -915,7 +915,7 @@
 
       function captureViewport() {
         var appTop = app.getBoundingClientRect().top;
-        var nodes = app.querySelectorAll('.message[data-row]');
+        var nodes = app.querySelectorAll(':scope > [data-row]');
         for (var i = 0; i < nodes.length; i++) {
           var rect = nodes[i].getBoundingClientRect();
           if (rect.bottom > appTop) {
@@ -935,7 +935,7 @@
           return;
         }
         if (viewport && viewport.row !== null) {
-          var anchor = app.querySelector('.message[data-row="' + viewport.row + '"]');
+          var anchor = app.querySelector(':scope > [data-row="' + viewport.row + '"]');
           if (anchor) {
             var appTop = app.getBoundingClientRect().top;
             app.scrollTop += anchor.getBoundingClientRect().top - appTop - viewport.offset;
@@ -962,7 +962,7 @@
       }
 
       function replaceMessageRow(row) {
-        var node = app.querySelector('.message[data-row="' + row + '"]');
+        var node = app.querySelector(':scope > [data-row="' + row + '"]');
         if (!node) return false;
         if (hoveredFile && node.contains(hoveredFile))
           clearFileHover();
@@ -970,7 +970,17 @@
         return true;
       }
 
-      function revealToolResult(row, text) {
+      function scrollToolResultToBottom(row) {
+        var node = app.querySelector('[data-tool-result-row="' + row + '"]');
+        if (!node) return;
+        node.scrollTop = node.scrollHeight;
+        requestAnimationFrame(function () {
+          if (node.isConnected)
+            node.scrollTop = node.scrollHeight;
+        });
+      }
+
+      function revealToolResult(row, text, followBottom) {
         var node = app.querySelector('[data-tool-result-row="' + row + '"]');
         if (!node) return;
         var value = String(text || '');
@@ -991,14 +1001,15 @@
           for (var count = 0; count < batchSize && cursor < parts.length; count++)
             shown += parts[cursor++];
           node.innerHTML = plainTextHtml(shown);
-          if (isNearBottom()) scrollToBottom();
+          node.scrollTop = node.scrollHeight;
+          if (followBottom) scrollToBottom();
           if (cursor < parts.length)
             setTimeout(appendBatch, 45);
         }
         appendBatch();
       }
 
-      function patchMessages(nextMessages) {
+      function patchMessages(nextMessages, followBottom) {
         if (nextMessages.length < messages.length)
           return false;
 
@@ -1023,10 +1034,17 @@
           var before = previousMessages[changedRow] || {};
           var after = messages[changedRow] || {};
           if (after.msgType === 'toolCall'
+              && !after.hasToolResult
+              && String(after.toolResultText || '').length > 0)
+            scrollToolResultToBottom(changedRow);
+          if (after.msgType === 'toolCall'
               && !before.hasToolResult && after.hasToolResult
               && String(before.toolResultText || '').length === 0
               && String(after.toolResultText || '').length > 0)
-            revealToolResult(changedRow, after.toolResultText);
+            revealToolResult(changedRow, after.toolResultText, followBottom);
+          else if (after.msgType === 'toolCall'
+                   && String(after.toolResultText || '').length > 0)
+            scrollToolResultToBottom(changedRow);
         }
         for (var row = sharedCount; row < messages.length; row++)
           app.insertAdjacentHTML('beforeend', renderMessage(messages[row], row));
@@ -1091,7 +1109,7 @@
           var nextMessages = Array.isArray(items) ? items : [];
           var followBottom = messages.length === 0 || isNearBottom();
           var viewport = followBottom ? null : captureViewport();
-          if (forceFullRender || !patchMessages(nextMessages)) {
+          if (forceFullRender || !patchMessages(nextMessages, followBottom)) {
             messages = nextMessages;
             renderAll(followBottom, viewport);
             return;
@@ -1118,6 +1136,35 @@
           } else {
             streamNode.appendChild(document.createTextNode(String(delta || '')));
           }
+          restoreViewport(viewport, followBottom);
+        },
+        appendToolDelta: function (row, delta) {
+          row = Number(row);
+          if (!messages[row] || messages[row].msgType !== 'toolCall') return;
+          var value = String(delta || '');
+          if (!value) return;
+          var followBottom = isNearBottom();
+          var viewport = followBottom ? null : captureViewport();
+          messages[row].toolResultText = String(messages[row].toolResultText || '') + value;
+          var node = app.querySelector('[data-tool-result-row="' + row + '"]');
+          if (!node) {
+            var card = app.querySelector(':scope > [data-row="' + row + '"]');
+            if (card) card.outerHTML = renderMessage(messages[row], row);
+            node = app.querySelector('[data-tool-result-row="' + row + '"]');
+            if (node) scrollToolResultToBottom(row);
+            restoreViewport(viewport, followBottom);
+            return;
+          }
+          if (node.lastChild && node.lastChild.nodeType === 3)
+            node.lastChild.appendData(value);
+          else
+            node.appendChild(document.createTextNode(value));
+          node.scrollTop = node.scrollHeight;
+          requestAnimationFrame(function () {
+            if (!node.isConnected) return;
+            node.scrollTop = node.scrollHeight;
+            restoreViewport(viewport, followBottom);
+          });
           restoreViewport(viewport, followBottom);
         },
         scrollToBottom: scrollToBottom

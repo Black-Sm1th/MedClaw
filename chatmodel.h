@@ -99,6 +99,7 @@ signals:
     /// 避免每次 flush 都全量 setText / setMarkdown 重排整段消息。
     /// row 是目标 delegate 在 model 中的行号，QML 用 index 比对决定是否处理。
     void streamFlushed(int row, const QString &delta);
+    void toolResultFlushed(int row, const QString &delta);
 
 private:
     /// 节流刷新：把累积的 delta 通过 streamFlushed(row, delta) 推给 QML，

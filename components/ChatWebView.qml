@@ -49,6 +49,13 @@ Item {
                               + js(delta) + ");")
     }
 
+    function appendToolDelta(row, delta) {
+        if (!webReady || !delta || delta.length === 0)
+            return
+        webView.runJavaScript("window.MedClawChat.appendToolDelta("
+                              + Number(row) + "," + js(delta) + ");")
+    }
+
     function scrollToBottom() {
         if (!webReady)
             return
@@ -86,6 +93,10 @@ Item {
 
         function onStreamFlushed(row, delta) {
             root.appendStreamDelta(row, delta)
+        }
+
+        function onToolResultFlushed(row, delta) {
+            root.appendToolDelta(row, delta)
         }
 
     }

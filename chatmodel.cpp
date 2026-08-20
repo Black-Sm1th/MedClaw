@@ -174,13 +174,17 @@ void ChatModel::appendToolResult(const QString &toolName,
         }
 
         // 网关可能发送 delta，也可能发送不断增长的完整快照。
-        if (content.startsWith(msg.toolResultText))
+        QString delta;
+        if (content.startsWith(msg.toolResultText)) {
+            delta = content.mid(msg.toolResultText.length());
             msg.toolResultText = content;
-        else if (!msg.toolResultText.endsWith(content))
+        } else if (!msg.toolResultText.endsWith(content)) {
+            delta = content;
             msg.toolResultText += content;
+        }
 
-        const QModelIndex idx = index(i);
-        emit dataChanged(idx, idx, { ToolResultTextRole });
+        if (!delta.isEmpty())
+            emit toolResultFlushed(i, delta);
         emit messagePayloadChanged();
         return;
     }
