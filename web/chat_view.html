@@ -724,6 +724,10 @@
         return protectNumericRuns(escapeHtml(normalizeNumericSpacing(text)));
       }
 
+      function streamingTextHtml(text) {
+        return '<span data-stream-text="true">' + escapeHtml(text) + '</span>';
+      }
+
       function fileNameFromPath(path) {
         var normalized = String(path || '').replace(/[\\/]+$/, '');
         var parts = normalized.split(/[\\/]/);
@@ -855,7 +859,7 @@
         if (isUser)
           body = renderUserContent(msg.content || '');
         else if (msg.isStreaming)
-          body = plainTextHtml(msg.content || '');
+          body = streamingTextHtml(msg.content || '');
         else
           body = renderMarkdown(msg.content || '');
         return '<div class="message ' + (isUser ? 'user' : 'assistant') + '" data-row="' + index + '">'
@@ -879,6 +883,91 @@
         app.scrollTop = app.scrollHeight;
       }
 
+      function isNearBottom() {
+        return app.scrollHeight - app.clientHeight - app.scrollTop <= 80;
+      }
+
+      function captureViewport() {
+        var appTop = app.getBoundingClientRect().top;
+        var nodes = app.querySelectorAll('.message[data-row]');
+        for (var i = 0; i < nodes.length; i++) {
+          var rect = nodes[i].getBoundingClientRect();
+          if (rect.bottom > appTop) {
+            return {
+              row: nodes[i].getAttribute('data-row'),
+              offset: rect.top - appTop,
+              scrollTop: app.scrollTop
+            };
+          }
+        }
+        return { row: null, offset: 0, scrollTop: app.scrollTop };
+      }
+
+      function restoreViewport(viewport, followBottom) {
+        if (followBottom) {
+          scrollToBottom();
+          return;
+        }
+        if (viewport && viewport.row !== null) {
+          var anchor = app.querySelector('.message[data-row="' + viewport.row + '"]');
+          if (anchor) {
+            var appTop = app.getBoundingClientRect().top;
+            app.scrollTop += anchor.getBoundingClientRect().top - appTop - viewport.offset;
+            return;
+          }
+        }
+        app.scrollTop = viewport ? viewport.scrollTop : app.scrollTop;
+      }
+
+      function messageEquals(a, b) {
+        if (!a || !b) return a === b;
+        return a.msgRole === b.msgRole
+          && a.msgType === b.msgType
+          && a.content === b.content
+          && a.toolName === b.toolName
+          && a.toolArgs === b.toolArgs
+          && a.toolCallId === b.toolCallId
+          && a.isError === b.isError
+          && a.toolResultText === b.toolResultText
+          && a.hasToolResult === b.hasToolResult
+          && a.isStreaming === b.isStreaming
+          && a.isIntermediate === b.isIntermediate
+          && JSON.stringify(a.artifacts || []) === JSON.stringify(b.artifacts || []);
+      }
+
+      function replaceMessageRow(row) {
+        var node = app.querySelector('.message[data-row="' + row + '"]');
+        if (!node) return false;
+        node.outerHTML = renderMessage(messages[row], row);
+        return true;
+      }
+
+      function patchMessages(nextMessages) {
+        if (nextMessages.length < messages.length)
+          return false;
+
+        var changed = [];
+        var sharedCount = Math.min(messages.length, nextMessages.length);
+        for (var i = 0; i < sharedCount; i++) {
+          if (!messageEquals(messages[i], nextMessages[i]))
+            changed.push(i);
+        }
+
+        // A large change is normally a history/session reload. Full rendering is
+        // cheaper and less error-prone than replacing many detached DOM rows.
+        if (changed.length > 8 || nextMessages.length - messages.length > 8)
+          return false;
+
+        messages = nextMessages;
+        for (var j = 0; j < changed.length; j++) {
+          if (!replaceMessageRow(changed[j]))
+            return false;
+        }
+        for (var row = sharedCount; row < messages.length; row++)
+          app.insertAdjacentHTML('beforeend', renderMessage(messages[row], row));
+        return true;
+      }
+
       function markScrolling(node) {
         if (!node || !node.classList) return;
         node.classList.add('scrolling');
@@ -890,11 +979,10 @@
         }, 850);
       }
 
-      function renderAll(shouldScrollToBottom) {
+      function renderAll(shouldScrollToBottom, viewport) {
         var token = ++renderToken;
-        var oldTop = app.scrollTop;
         var index = 0;
-        app.innerHTML = '';
+        var htmlParts = [];
 
         function renderBatch() {
           if (token !== renderToken)
@@ -912,39 +1000,59 @@
           }
 
           if (html.length)
-            app.insertAdjacentHTML('beforeend', html.join(''));
+            htmlParts.push(html.join(''));
 
           if (index < messages.length) {
             setTimeout(renderBatch, 0);
             return;
           }
 
-          if (shouldScrollToBottom)
-            setTimeout(scrollToBottom, 0);
-          else
-            app.scrollTop = oldTop;
+          // Build large histories off-screen first. The prior implementation
+          // inserted every batch into #app, changing scrollHeight repeatedly
+          // before the final scroll-to-bottom and making the thumb jump.
+          app.innerHTML = htmlParts.join('');
+          requestAnimationFrame(function () {
+            if (token === renderToken)
+              restoreViewport(viewport, shouldScrollToBottom);
+          });
         }
 
         renderBatch();
       }
 
       window.MedClawChat = {
-        setMessages: function (items) {
-          messages = Array.isArray(items) ? items : [];
-          renderAll(true);
+        setMessages: function (items, forceFullRender) {
+          var nextMessages = Array.isArray(items) ? items : [];
+          var followBottom = messages.length === 0 || isNearBottom();
+          var viewport = followBottom ? null : captureViewport();
+          if (forceFullRender || !patchMessages(nextMessages)) {
+            messages = nextMessages;
+            renderAll(followBottom, viewport);
+            return;
+          }
+          restoreViewport(viewport, followBottom);
         },
         appendStreamDelta: function (row, delta) {
           row = Number(row);
           if (!messages[row]) return;
+          var followBottom = isNearBottom();
+          var viewport = followBottom ? null : captureViewport();
           messages[row].content = String(messages[row].content || '') + String(delta || '');
           messages[row].isStreaming = true;
           var node = app.querySelector('[data-content-row="' + row + '"]');
           if (!node) {
-            renderAll(true);
+            renderAll(followBottom, viewport);
             return;
           }
-          node.innerHTML = plainTextHtml(messages[row].content || '');
-          scrollToBottom();
+          var streamNode = node.querySelector('[data-stream-text]');
+          if (!streamNode) {
+            node.innerHTML = streamingTextHtml(messages[row].content || '');
+          } else if (streamNode.firstChild && streamNode.firstChild.nodeType === 3) {
+            streamNode.firstChild.appendData(String(delta || ''));
+          } else {
+            streamNode.appendChild(document.createTextNode(String(delta || '')));
+          }
+          restoreViewport(viewport, followBottom);
         },
         scrollToBottom: scrollToBottom
       };
@@ -966,7 +1074,7 @@
         if (toggle && toggle.getAttribute && toggle.getAttribute('data-tool-key')) {
           var key = toggle.getAttribute('data-tool-key');
           collapsed[key] = collapsed[key] !== true;
-          renderAll(false);
+          renderAll(false, captureViewport());
           return;
         }
 

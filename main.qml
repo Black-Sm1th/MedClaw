@@ -3023,8 +3023,6 @@ ApplicationWindow {
                     target: chatModel
                     function onMessagePayloadChanged() {
                         newTaskRec.rebuildSessionArtifacts()
-                        if (chatModel.count > 0)
-                            chatWebView.scrollToBottom()
                     }
                 }
                 Connections {

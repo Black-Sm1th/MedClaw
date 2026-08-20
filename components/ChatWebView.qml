@@ -6,6 +6,7 @@ Item {
 
     property var model: null
     property bool webReady: false
+    property bool forceFullSyncPending: false
     property bool fileTipVisible: false
     property string fileTipText: ""
     property real fileTipX: 0
@@ -25,13 +26,18 @@ Item {
         syncTimer.stop()
         if (!webReady || !model || !model.messages)
             return
+        var forceFullSync = forceFullSyncPending
+        forceFullSyncPending = false
         webView.runJavaScript("window.MedClawChat.setMessages("
-                              + JSON.stringify(model.messages()) + ");")
+                              + JSON.stringify(model.messages()) + ","
+                              + (forceFullSync ? "true" : "false") + ");")
     }
 
-    function scheduleSyncMessages() {
+    function scheduleSyncMessages(forceFullSync) {
         if (!webReady || !model || !model.messages)
             return
+        if (forceFullSync === true)
+            forceFullSyncPending = true
         syncTimer.restart()
     }
 
@@ -49,8 +55,8 @@ Item {
         webView.runJavaScript("window.MedClawChat.scrollToBottom();")
     }
 
-    Component.onCompleted: scheduleSyncMessages()
-    onModelChanged: scheduleSyncMessages()
+    Component.onCompleted: scheduleSyncMessages(true)
+    onModelChanged: scheduleSyncMessages(true)
 
     Timer {
         id: syncTimer
@@ -71,7 +77,7 @@ Item {
         }
 
         function onModelReset() {
-            root.scheduleSyncMessages()
+            root.scheduleSyncMessages(true)
         }
 
         function onIsStreamingChanged() {
@@ -82,9 +88,6 @@ Item {
             root.appendStreamDelta(row, delta)
         }
 
-        function onMessagePayloadChanged() {
-            root.scrollToBottom()
-        }
     }
 
     WebEngineView {
@@ -96,7 +99,7 @@ Item {
         onLoadingChanged: function(loadRequest) {
             if (loadRequest.status === WebEngineLoadRequest.LoadSucceededStatus) {
                 root.webReady = true
-                root.scheduleSyncMessages()
+                root.scheduleSyncMessages(true)
             }
         }
 
