@@ -38,17 +38,65 @@ export default function Image() {
     const [loading, setLoading] = useState(false);
     const [wheelMode, setWheelMode] = useState<WheelMode>('zoom');
     const [zoom, setZoom] = useState(1);
+    const [pan, setPan] = useState({ x: 0, y: 0 });
     const objectUrlsRef = useRef<string[]>([]);
+    const panRef = useRef(pan);
+    const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
-    const applyZoom = useCallback((scale: number) => {
+    const applyTransform = useCallback((scale: number, offset: { x: number; y: number }) => {
         const img = document.querySelector('.image-gallery-slide.image-gallery-center .image-gallery-image') as HTMLElement | null;
         if (!img) return;
-        img.style.transform = scale === 1 ? '' : `scale(${scale})`;
+        img.style.transform = scale === 1 && offset.x === 0 && offset.y === 0
+            ? '' : `translate(${offset.x}px, ${offset.y}px) scale(${scale})`;
     }, []);
 
     useEffect(() => {
-        applyZoom(zoom);
-    }, [zoom, applyZoom, resolvedImages]);
+        panRef.current = pan;
+        applyTransform(zoom, pan);
+    }, [zoom, pan, applyTransform, resolvedImages]);
+
+    useEffect(() => {
+        const getImage = (target: EventTarget | null) => {
+            const element = target instanceof Element ? target : null;
+            return element?.closest('.image-gallery-slide.image-gallery-center .image-gallery-image') as HTMLElement | null;
+        };
+        const onMouseDown = (event: MouseEvent) => {
+            const image = getImage(event.target);
+            if (!image || wheelMode !== 'navigate' || event.button !== 0) return;
+            dragRef.current = {
+                x: event.clientX,
+                y: event.clientY,
+                panX: panRef.current.x,
+                panY: panRef.current.y,
+            };
+            image.setAttribute('draggable', 'false');
+            image.classList.add('is-panning');
+            event.preventDefault();
+        };
+        const onMouseMove = (event: MouseEvent) => {
+            const drag = dragRef.current;
+            if (!drag) return;
+            setPan({
+                x: drag.panX + event.clientX - drag.x,
+                y: drag.panY + event.clientY - drag.y,
+            });
+            event.preventDefault();
+        };
+        const endPan = () => {
+            const image = document.querySelector('.image-gallery-slide.image-gallery-center .image-gallery-image') as HTMLElement | null;
+            dragRef.current = null;
+            image?.classList.remove('is-panning');
+        };
+
+        document.addEventListener('mousedown', onMouseDown, true);
+        document.addEventListener('mousemove', onMouseMove, true);
+        document.addEventListener('mouseup', endPan, true);
+        return () => {
+            document.removeEventListener('mousedown', onMouseDown, true);
+            document.removeEventListener('mousemove', onMouseMove, true);
+            document.removeEventListener('mouseup', endPan, true);
+        };
+    }, [wheelMode, zoom, resolvedImages]);
 
     // react-image-gallery measures its slide wrapper during mount. In the Qt
     // WebEngine host the web view can receive its final size one or two frames
@@ -65,6 +113,7 @@ export default function Image() {
         handler.on('images', info => {
             setInfo(info);
             setZoom(1);
+            setPan({ x: 0, y: 0 });
             const hasResolvable = info.images.some((image: ImageSource) =>
                 needsConversion(image) || !!image.buffer?.length
             );
@@ -177,8 +226,9 @@ export default function Image() {
                         gallery.current?.slideToIndex(info.current);
                     });
                 }}
-                onSlide={(index) => {
-                    setZoom(1);
+            onSlide={(index) => {
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
                     const title = info.images[index]?.title;
                     if (title) handler.emit('slideTitle', title);
                 }}

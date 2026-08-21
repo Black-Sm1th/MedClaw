@@ -3426,6 +3426,58 @@ ApplicationWindow {
                                 color: "#14000000"
                             }
 
+                            // Keep the loading indicator inside the tab bar so it
+                            // does not affect the dimensions or hover area of tabs.
+                            Rectangle {
+                                id: officeTabsProgress
+                                width: 36
+                                height: 6
+                                radius: 3
+                                property real progressRange: Math.max(0, officeTabsViewport.width - width)
+                                x: officeTabsViewport.width > 0 && officeTabsRow.width > officeTabsViewport.width
+                                   ? officeTabsViewport.x
+                                     + progressRange
+                                       * (officeTabsViewport.contentX
+                                          / Math.max(1, officeTabsRow.width - officeTabsViewport.width))
+                                   : (parent.width - width) / 2
+                                anchors.bottom: parent.bottom
+                                color: "#E6E7EB"
+                                visible: newTaskRec.officeDocumentVisible
+                                         && newTaskRec.currentSessionOfficeTabCount > 0
+                                z: 3
+
+                                MouseArea {
+                                    id: officeTabsProgressMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.SizeHorCursor
+                                    property real dragStartX: 0
+                                    property real dragStartContentX: 0
+                                    onPressed: {
+                                        dragStartX = mouse.x
+                                        dragStartContentX = officeTabsViewport.contentX
+                                    }
+                                    onPositionChanged: {
+                                        if (!pressed)
+                                            return
+                                        var maxContent = Math.max(0, officeTabsRow.width - officeTabsViewport.width)
+                                        var maxThumb = Math.max(0, officeTabsProgress.progressRange)
+                                        if (maxThumb > 0)
+                                            officeTabsViewport.contentX = Math.max(0, Math.min(maxContent,
+                                                dragStartContentX + (mouse.x - dragStartX)
+                                                * maxContent / maxThumb))
+                                    }
+                                    onClicked: {
+                                        var maxContent = Math.max(0, officeTabsRow.width - officeTabsViewport.width)
+                                        if (maxContent <= 0)
+                                            return
+                                        var target = officeTabsProgress.x + mouse.x - officeTabsViewport.x
+                                        officeTabsViewport.contentX = Math.max(0, Math.min(maxContent,
+                                            target * maxContent / Math.max(1, officeTabsProgress.progressRange)))
+                                    }
+                                }
+                            }
+
                             Rectangle {
                                 id: officeBackButton
                                 width: 36; height: 36; radius: 8
@@ -3464,6 +3516,24 @@ ApplicationWindow {
                                 clip: true
                                 boundsBehavior: Flickable.StopAtBounds
                                 flickableDirection: Flickable.HorizontalFlick
+
+                                MouseArea {
+                                    id: officeTabsWheelArea
+                                    anchors.fill: parent
+                                    acceptedButtons: Qt.NoButton
+                                    hoverEnabled: true
+                                    z: 2
+                                    onWheel: {
+                                        var delta = wheel.angleDelta.y !== 0
+                                                ? wheel.angleDelta.y : wheel.angleDelta.x
+                                        var maxContent = Math.max(0, officeTabsRow.width - officeTabsViewport.width)
+                                        if (maxContent > 0) {
+                                            officeTabsViewport.contentX = Math.max(0, Math.min(maxContent,
+                                                officeTabsViewport.contentX - delta / 3))
+                                            wheel.accepted = true
+                                        }
+                                    }
+                                }
 
                                 Row {
                                     id: officeTabsRow
