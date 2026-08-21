@@ -2317,6 +2317,7 @@ ApplicationWindow {
                 property bool inputFilesExpanded: true
                 property bool artifactsExpanded: true
                 property bool resourcePopoverVisible: false
+                property bool resourcePopoverMayKeepOpen: false
                 property bool officeMoreMenuVisible: false
                 property string officeDownloadSourcePath: ""
                 property bool sessionHistoryLoading: false
@@ -2364,6 +2365,7 @@ ApplicationWindow {
 
                 function showResourcePopover() {
                     resourcePopoverCloseTimer.stop()
+                    resourcePopoverMayKeepOpen = true
                     resourcePopoverVisible = true
                 }
 
@@ -2371,8 +2373,20 @@ ApplicationWindow {
                     resourcePopoverCloseTimer.restart()
                 }
 
+                function keepResourcePopoverOpen() {
+                    if (resourcePopoverMayKeepOpen)
+                        resourcePopoverCloseTimer.stop()
+                }
+
+                function leaveResourcePopover() {
+                    resourcePopoverMayKeepOpen = false
+                    if (resourcePopoverVisible)
+                        scheduleResourcePopoverClose()
+                }
+
                 function hideResourcePopover() {
                     resourcePopoverCloseTimer.stop()
+                    resourcePopoverMayKeepOpen = false
                     resourcePopoverVisible = false
                 }
 
@@ -2440,7 +2454,10 @@ ApplicationWindow {
                     id: resourcePopoverCloseTimer
                     interval: 800
                     repeat: false
-                    onTriggered: newTaskRec.resourcePopoverVisible = false
+                    onTriggered: {
+                        if (!resourcePopoverHover.hovered)
+                            newTaskRec.hideResourcePopover()
+                    }
                 }
 
                 FileDialog {
@@ -2485,7 +2502,17 @@ ApplicationWindow {
                     if (!file || file.folder === true || file.isDirectory === true
                             || file.type === "directory" || file.type === "folder")
                         return false
+                    if (isNeverOpenFile(file))
+                        return false
                     return true
+                }
+
+                function isNeverOpenFile(file) {
+                    var path = String((file && file.path) || "")
+                    var ext = String((file && file.extension) || fileExtension(path)).toLowerCase()
+                    // These formats are intentionally outside MedClaw's supported
+                    // document scope, even when viewer-web contains a generic viewer.
+                    return /^(zip|7z|rar|tar|tar\.gz|tgz|ttf|otf|woff|woff2|parquet|psd|mp4|avi|dcm)$/.test(ext)
                 }
 
                 function supportsLocalViewerEdit(file) {
@@ -2497,6 +2524,19 @@ ApplicationWindow {
                     var path = String((file && file.path) || "")
                     if (!path)
                         return
+                    if (!supportsLocalViewer(file)) {
+                        errorToast.text = qsTr("该文件类型不支持打开")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    var localInfo = $MainViewController.localFileInfo(path)
+                    if (!localInfo || !localInfo.absolutePath) {
+                        errorToast.text = qsTr("文件不存在或已被删除")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
                     var tabIndex = findOfficeTab(path)
                     var reloadExistingPreview = tabIndex >= 0
                     if (tabIndex < 0) {
@@ -2637,7 +2677,9 @@ ApplicationWindow {
                     }
                     var info = $MainViewController.localFileInfo(resolved)
                     if (!info || !info.absolutePath) {
-                        Qt.openUrlExternally(resolved)
+                        errorToast.text = qsTr("文件不存在或已被删除")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
                         return
                     }
                     var file = {
@@ -4039,11 +4081,13 @@ ApplicationWindow {
                         }
 
                         HoverHandler {
+                            id: resourcePopoverHover
+                            target: resourcePopoverCard
                             onHoveredChanged: {
                                 if (hovered)
-                                    newTaskRec.showResourcePopover()
+                                    newTaskRec.keepResourcePopoverOpen()
                                 else
-                                    newTaskRec.scheduleResourcePopoverClose()
+                                    newTaskRec.leaveResourcePopover()
                             }
                         }
                     }

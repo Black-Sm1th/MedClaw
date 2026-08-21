@@ -798,7 +798,7 @@
         if (!Array.isArray(artifacts) || artifacts.length === 0)
           return '';
         var key = 'artifacts:' + row;
-        var visible = artifacts.slice(0, 6);
+        var visible = artifacts;
         var html = ['<div class="artifact-section"><div class="artifact-grid">'];
         for (var i = 0; i < visible.length; i++) {
           var file = visible[i] || {};

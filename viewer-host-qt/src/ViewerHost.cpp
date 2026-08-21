@@ -473,6 +473,10 @@ QString ViewerHost::routeForPath(const QString &path) const
     if (suffix == QStringLiteral("psd")) return QStringLiteral("psd");
     if (suffix == QStringLiteral("xmind")) return QStringLiteral("xmind");
     if (suffix == QStringLiteral("parquet")) return QStringLiteral("parquet");
+    if (QStringList{QStringLiteral("log"), QStringLiteral("json"), QStringLiteral("dat"),
+                    QStringLiteral("xml"), QStringLiteral("hl7"), QStringLiteral("fasta"),
+                    QStringLiteral("fastq"), QStringLiteral("vcf"), QStringLiteral("sam")}.contains(suffix))
+        return QStringLiteral("textData");
     return QStringLiteral("webUnsupported");
 }
 

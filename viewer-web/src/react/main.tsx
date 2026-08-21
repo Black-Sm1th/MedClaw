@@ -23,6 +23,7 @@ const XmindViewer = lazy(() => import('./view/xmind/XmindViewer.tsx'))
 const Parquet = lazy(() => import('./view/parquet/Parquet.tsx'))
 const WebUnsupported = lazy(() => import('./view/WebUnsupported.tsx'))
 const HtmlEditor = lazy(() => import('./view/html/HtmlEditor.tsx'))
+const TextDataViewer = lazy(() => import('./view/textData/TextDataViewer.tsx'))
 
 document.getElementById('_defaultStyles')?.parentNode?.removeChild(document.getElementById('_defaultStyles'))
 const configs = getConfigs();
@@ -61,6 +62,8 @@ export default function App() {
       return <WebUnsupported />
     case 'htmlEditor':
       return <HtmlEditor />
+    case 'textData':
+      return <TextDataViewer />
     default:
       return <>{$t('common.officeViewer')}</>
   }
