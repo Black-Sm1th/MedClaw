@@ -132,7 +132,9 @@ function SvgViewerInner() {
     const [width] = useWindowSize();
     const effectiveWidth = width || window.innerWidth;
     const isNarrowWidth = effectiveWidth <= NARROW_WIDTH_BREAKPOINT;
-    const previewOnly = isGitScheme || isNarrowWidth;
+    // SVG files are visual, read-only artifacts in the desktop viewer. Keep
+    // the preview canvas full-width instead of exposing the source editor.
+    const previewOnly = true;
     const previewUrl = useMemo(() => {
         const trimmed = content.trim();
         if (!trimmed) {
@@ -355,7 +357,7 @@ function SvgViewerInner() {
                     </div>}
 
                     <div className="svg-viewer__panel svg-viewer__panel--preview">
-                        <div className="svg-viewer__header">
+                        {!previewOnly && <div className="svg-viewer__header">
                             <span className="svg-viewer__title">Preview</span>
                             <div className="svg-viewer__bg-swatches" role="group" aria-label={previewBackgroundText}>
                                 {SVG_PREVIEW_BACKGROUNDS.map((bg) => {
@@ -373,7 +375,7 @@ function SvgViewerInner() {
                                     );
                                 })}
                             </div>
-                        </div>
+                        </div>}
                         {!previewOnly && <div className="svg-viewer__controls">
                             <div className="svg-viewer__control-row">
                                 <span className="svg-viewer__label">FILL</span>
@@ -425,7 +427,7 @@ function SvgViewerInner() {
                                 />
                             ) : null}
                         </div>
-                        <div className="svg-viewer__panel-footer">
+                        {!previewOnly && <div className="svg-viewer__panel-footer">
                             <button type="button" className="svg-viewer__btn svg-viewer__btn--primary" onClick={onCopy}>
                                 <CopyIcon />
                                 Copy
@@ -443,7 +445,7 @@ function SvgViewerInner() {
                                 <PngIcon />
                                 Export PNG
                             </button>
-                        </div>
+                        </div>}
                     </div>
                 </div>
             )}

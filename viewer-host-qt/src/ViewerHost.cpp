@@ -379,7 +379,8 @@ void ViewerHost::handleEvent(QTcpSocket *socket, const QByteArray &body)
         emit documentChanged();
     } else if (type == QStringLiteral("save") || type == QStringLiteral("doSave")) {
         const QString suffix = QFileInfo(m_currentPath).suffix().toLower();
-        const bool plainText = QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix);
+        const bool plainText = QStringList{QStringLiteral("md"), QStringLiteral("markdown"),
+                                           QStringLiteral("txt"), QStringLiteral("svg")}.contains(suffix);
         const QByteArray bytes = eventContentToByteArray(content, plainText);
         if (m_currentPath.isEmpty() || m_readOnly || (!plainText && bytes.isEmpty())) {
             respondJson(socket, 403, {{QStringLiteral("error"), QStringLiteral("Document is read-only or empty")}});
@@ -523,6 +524,22 @@ QJsonObject ViewerHost::openPayload() const
 {
     const QFileInfo fileInfo(m_currentPath);
     const QString suffix = fileInfo.suffix().toLower();
+    if (suffix == QStringLiteral("svg")) {
+        QFile file(m_currentPath);
+        QString content;
+        QString error;
+        if (file.open(QIODevice::ReadOnly))
+            content = QString::fromUtf8(file.readAll());
+        else
+            error = file.errorString();
+        return {
+            {QStringLiteral("path"), m_currentPath},
+            {QStringLiteral("content"), content},
+            {QStringLiteral("scheme"), QStringLiteral("file")},
+            {QStringLiteral("error"), error},
+            {QStringLiteral("readOnly"), m_readOnly},
+        };
+    }
     if (QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix)) {
         QFile file(m_currentPath);
         QString content;
