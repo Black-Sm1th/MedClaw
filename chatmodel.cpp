@@ -96,6 +96,18 @@ QHash<int, QByteArray> ChatModel::roleNames() const
 
 void ChatModel::addMessage(const QString &role, const QString &content)
 {
+    // A stop can be followed by the gateway's final full snapshot. If that
+    // snapshot is already the last assistant row, it must not create a
+    // second visually identical message.
+    if (role == QLatin1String("assistant") && !content.isEmpty()
+        && !m_messages.isEmpty()) {
+        const ChatMessage &last = m_messages.constLast();
+        if (last.msgType == QLatin1String("text")
+            && last.role == QLatin1String("assistant")
+            && !last.isStreaming && last.content == content)
+            return;
+    }
+
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
@@ -419,6 +431,18 @@ void ChatModel::loadHistory(const QVariantList &messages)
         msg.content = msg.role == QLatin1String("user")
             ? chatDisplayContent(m.value(QStringLiteral("content")).toString())
             : m.value(QStringLiteral("content")).toString();
+
+        // An aborted run can be represented once by the live stream and once
+        // by its persisted final assistant record. Keep one visible copy when
+        // history contains the same adjacent assistant message twice.
+        if (msg.role == QLatin1String("assistant")
+            && !msg.content.isEmpty() && !m_messages.isEmpty()) {
+            const ChatMessage &previous = m_messages.constLast();
+            if (previous.msgType == QLatin1String("text")
+                && previous.role == QLatin1String("assistant")
+                && previous.content == msg.content)
+                continue;
+        }
         msg.timestamp = QDateTime::currentDateTime();
         msg.msgType = QStringLiteral("text");
         msg.isError = false;
@@ -534,6 +558,22 @@ void ChatModel::appendStreamChunk(const QString &chunk)
     }
 
     const int last = m_messages.count() - 1;
+
+    // Some gateway versions label a cumulative assistant snapshot as a
+    // delta. Normalize it against what has already reached the UI so a
+    // stop/final event cannot duplicate the complete response.
+    QString accumulated;
+    if (m_streamFlushRow == last)
+        accumulated = m_messages[last].content + m_streamPending;
+    QString normalizedChunk = chunk;
+    if (!accumulated.isEmpty()) {
+        if (chunk == accumulated || accumulated.startsWith(chunk))
+            return;
+        if (chunk.startsWith(accumulated))
+            normalizedChunk = chunk.mid(accumulated.length());
+    }
+    if (normalizedChunk.isEmpty())
+        return;
     if (m_streamFlushRow >= 0
         && m_streamFlushRow != last
         && m_streamFlushRow < m_messages.count()
@@ -550,7 +590,7 @@ void ChatModel::appendStreamChunk(const QString &chunk)
     }
     // 注意：content 不在这里追加，只在 flushStream / endStreaming 把 pending
     // 合并进去时才推进，确保 content == 「已 emit 给 QML 的累积」不变量。
-    m_streamPending += chunk;
+    m_streamPending += normalizedChunk;
     m_streamFlushRow = last;
     m_streamDirty = true;
 

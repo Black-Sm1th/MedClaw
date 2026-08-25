@@ -326,6 +326,14 @@ GatewayClient::~GatewayClient()
 
 int GatewayClient::connectionState() const { return m_state; }
 
+void GatewayClient::setChatRunning(bool running)
+{
+    if (m_chatRunning == running)
+        return;
+    m_chatRunning = running;
+    emit chatRunningChanged();
+}
+
 QString GatewayClient::serverUrl() const { return m_config.serverUrl(); }
 
 QString GatewayClient::gatewayHttpBaseUrl() const
@@ -1439,13 +1447,25 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
                                  .toString().trimmed().toLower();
     const QString dataType = data.value(QStringLiteral("type"))
                                  .toString().trimmed().toLower();
-    const bool marksComplete = phase == QLatin1String("complete")
+    const QString state = payload.value(QStringLiteral("state"))
+                              .toString().trimmed().toLower();
+    const QString dataState = data.value(QStringLiteral("state"))
+                                  .toString().trimmed().toLower();
+    const bool marksComplete = state == QLatin1String("aborted")
+        || state == QLatin1String("cancelled")
+        || dataState == QLatin1String("aborted")
+        || dataState == QLatin1String("cancelled")
+        || phase == QLatin1String("aborted")
+        || phase == QLatin1String("cancelled")
+        || phase == QLatin1String("complete")
         || phase == QLatin1String("done")
         || phase == QLatin1String("end")
         || subEvent.contains(QLatin1String("complete"))
         || subEvent.contains(QLatin1String("done"))
         || subEvent.contains(QLatin1String("finish"))
-        || subEvent.contains(QLatin1String("end"));
+        || subEvent.contains(QLatin1String("end"))
+        || subEvent.contains(QLatin1String("abort"))
+        || subEvent.contains(QLatin1String("cancel"));
     const bool marksRunning = !marksComplete
         && (phase == QLatin1String("start")
             || data.contains(QStringLiteral("delta"))
@@ -2461,11 +2481,15 @@ void GatewayClient::sendChatMessageNow(const QString &sessionKey,
     const QString key = sessionKey.trimmed();
     if (key.isEmpty() || message.trimmed().isEmpty())
         return;
-    const QString reqId = sendRequest(
-        QStringLiteral("chat.send"),
-        m_session.buildChatSendParams(message, key));
+    const QJsonObject params = m_session.buildChatSendParams(message, key);
+    const QString runId = params.value(QStringLiteral("idempotencyKey")).toString().trimmed();
+    const QString reqId = sendRequest(QStringLiteral("chat.send"), params);
     m_chatSendReqSession.insert(reqId, key);
     m_chatSendReqMessage.insert(reqId, message);
+    m_activeChatRunId = runId;
+    m_activeChatSessionKey = key;
+    m_recentlyAbortedChatSessionKey.clear();
+    setChatRunning(true);
     beginArtifactTracking(key);
 }
 
@@ -2827,6 +2851,10 @@ void GatewayClient::connectToServer(const QString &url)
     m_pendingRequests.clear();
     m_pendingCreatedSessionMessages.clear();
     m_pendingSessionOutputPatches.clear();
+    m_activeChatRunId.clear();
+    m_activeChatSessionKey.clear();
+    m_recentlyAbortedChatSessionKey.clear();
+    setChatRunning(false);
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
     m_pendingBootstrapChatMessage.clear();
@@ -2837,6 +2865,7 @@ void GatewayClient::connectToServer(const QString &url)
     m_sessionTitleHistReqBatch.clear();
     m_chatSendReqSession.clear();
     m_chatSendReqMessage.clear();
+    m_chatAbortReqSession.clear();
     m_agentFirstUserTitleDebounce.stop();
     m_sessionFirstUserTitleDebounce.stop();
     setState(Connecting);
@@ -2876,11 +2905,44 @@ void GatewayClient::disconnectFromServer()
     m_pendingReconnectDelayMs = 0;
     m_toolResultRefreshTimer.stop();
     m_toolResultRefreshReqSessions.clear();
+    m_activeChatRunId.clear();
+    setChatRunning(false);
     if (m_skillInstallBusy) {
         m_skillInstallBusy = false;
         emit skillInstallBusyChanged();
     }
     m_socket->close();
+}
+
+void GatewayClient::abortChat(const QString &sessionKey)
+{
+    if (m_state != Connected)
+        return;
+
+    QString key = sessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_activeChatSessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_currentTaskSessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_currentViewSessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_session.currentSessionKey().trimmed();
+    if (key.isEmpty())
+        return;
+
+    // Reflect the user's stop action immediately in the local task list;
+    // the server's aborted event remains the authoritative cleanup path.
+    setTaskSessionRunning(key, false);
+
+    QJsonObject params;
+    params[QStringLiteral("sessionKey")] = key;
+    if (!m_activeChatRunId.trimmed().isEmpty()
+        && m_activeChatSessionKey.trimmed() == key) {
+        params[QStringLiteral("runId")] = m_activeChatRunId.trimmed();
+    }
+    const QString reqId = sendRequest(QStringLiteral("chat.abort"), params);
+    m_chatAbortReqSession.insert(reqId, key);
 }
 
 /**
@@ -2946,6 +3008,11 @@ void GatewayClient::onDisconnected()
     m_sessionTitleHistReqBatch.clear();
     m_chatSendReqSession.clear();
     m_chatSendReqMessage.clear();
+    m_chatAbortReqSession.clear();
+    m_activeChatRunId.clear();
+    m_activeChatSessionKey.clear();
+    m_recentlyAbortedChatSessionKey.clear();
+    setChatRunning(false);
     m_sessionFirstUserTitleDebounce.stop();
     m_agentFirstUserTitleDebounce.stop();
 
@@ -3202,6 +3269,42 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     if (event == QLatin1String("agent") || event == QLatin1String("chat"))
         updateTaskSessionRuntimeFromEvent(payload);
 
+    // chat.abort uses the WebChat-native event shape: state is on the
+    // payload itself rather than data.phase. Handle it before the generic
+    // parser, which intentionally ignores empty chat status updates.
+    const QString chatState = payload.value(QStringLiteral("state")).toString().trimmed();
+    const QString chatDataState = payload.value(QStringLiteral("data"))
+                                       .toObject()
+                                       .value(QStringLiteral("state"))
+                                       .toString().trimmed();
+    if (event == QLatin1String("chat")
+        && (chatState.compare(QStringLiteral("aborted"), Qt::CaseInsensitive) == 0
+            || chatDataState.compare(QStringLiteral("aborted"), Qt::CaseInsensitive) == 0)) {
+        const QString eventKey = extractPayloadSessionKey(payload).trimmed();
+        if (!eventKey.isEmpty())
+            setTaskSessionRunning(eventKey, false);
+        else
+            setTaskSessionRunning(m_activeChatSessionKey, false);
+        m_recentlyAbortedChatSessionKey = eventKey.isEmpty()
+            ? m_activeChatSessionKey : eventKey;
+        if (!eventAppliesToCurrentUiSession(payload))
+            return;
+        const QString runId = payload.value(QStringLiteral("runId")).toString().trimmed();
+        if (runId.isEmpty() || m_activeChatRunId.isEmpty() || runId == m_activeChatRunId) {
+            if (m_session.isStreaming()) {
+                m_session.setStreaming(false);
+                emit streamingFinished();
+            }
+            if (runId.isEmpty() || runId == m_activeChatRunId) {
+                m_activeChatRunId.clear();
+                m_activeChatSessionKey.clear();
+                setChatRunning(false);
+            }
+        }
+        schedulePostStreamSidebarRefresh();
+        return;
+    }
+
     // ── 调试日志（前 50 条 agent/chat 事件） ──
     static int debugCount = 0;
     if (event == QLatin1String("agent")
@@ -3331,12 +3434,18 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             return;
         }
         if (r.isComplete) {
+            const bool suppressLateAbortComplete =
+                !m_recentlyAbortedChatSessionKey.isEmpty();
             if (m_session.isStreaming()) {
                 m_session.setStreaming(false);
                 emit streamingFinished();
-            } else if (!r.content.isEmpty()) {
+            } else if (!suppressLateAbortComplete && !r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
+            m_recentlyAbortedChatSessionKey.clear();
+            m_activeChatRunId.clear();
+            m_activeChatSessionKey.clear();
+            setChatRunning(false);
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
             return;
@@ -3364,13 +3473,19 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             return;
         }
         if (r.isComplete) {
+            const bool suppressLateAbortComplete =
+                !m_recentlyAbortedChatSessionKey.isEmpty();
             if (m_session.isStreaming()) {
                 m_session.setStreaming(false);
                 emit streamingFinished();
-            } else if (!r.content.isEmpty()) {
+            } else if (!suppressLateAbortComplete && !r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
+            m_recentlyAbortedChatSessionKey.clear();
+            m_activeChatRunId.clear();
+            m_activeChatSessionKey.clear();
             m_toolResultRefreshTimer.start();
+            setChatRunning(false);
             schedulePostStreamSidebarRefresh();
             return;
         }
@@ -3473,6 +3588,15 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (!failedChatSession.isEmpty())
             setTaskSessionRunning(failedChatSession, false);
         m_chatSendReqMessage.remove(id);
+
+        if (m_chatAbortReqSession.contains(id)) {
+            m_chatAbortReqSession.remove(id);
+        }
+        if (method == QLatin1String("chat.send")) {
+            m_activeChatRunId.clear();
+            m_activeChatSessionKey.clear();
+            setChatRunning(false);
+        }
 
         if (method == QLatin1String("config.patch")) {
             if (m_skillInstallBusy) {
@@ -4208,9 +4332,31 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     }
 
     // 其余 chat.send：只更新当前 agent 侧栏首句标题
+    if (method == QLatin1String("chat.abort")) {
+        const QString abortedSession = m_chatAbortReqSession.take(id);
+        setTaskSessionRunning(abortedSession, false);
+        if (!abortedSession.isEmpty())
+            m_recentlyAbortedChatSessionKey = abortedSession;
+        if (abortedSession.isEmpty()
+            || m_activeChatSessionKey.isEmpty()
+            || abortedSession == m_activeChatSessionKey) {
+            m_activeChatRunId.clear();
+            m_activeChatSessionKey.clear();
+            setChatRunning(false);
+            if (m_session.isStreaming()) {
+                m_session.setStreaming(false);
+                emit streamingFinished();
+            }
+        }
+        return;
+    }
+
     if (method == QLatin1String("chat.send")) {
         const QString sentSession = m_chatSendReqSession.take(id);
         m_chatSendReqMessage.remove(id);
+        const QString responseRunId = payload.value(QStringLiteral("runId")).toString().trimmed();
+        if (!responseRunId.isEmpty())
+            m_activeChatRunId = responseRunId;
         refreshSessions();
         const QString key = sentSession.isEmpty() ? m_session.currentSessionKey() : sentSession;
         touchTaskSessionLocal(key);
@@ -4264,6 +4410,19 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
     QString role = msg.value(QStringLiteral("role")).toString();
     const QString roleNorm = role.trimmed().toLower();
     if (roleNorm.isEmpty()) return false;
+
+    // The server persists a synthetic gateway-injected assistant record when
+    // aborting a run. Consume it if it arrives as a live event as well; it is
+    // transcript bookkeeping and must not become a second chat bubble.
+    const QString injectedModel = msg.value(QStringLiteral("model")).toString().trimmed();
+    const QString injectedProvider = msg.value(QStringLiteral("provider")).toString().trimmed();
+    const QString injectedApi = msg.value(QStringLiteral("api")).toString().trimmed();
+    if (roleNorm == QLatin1String("assistant")
+        && injectedModel.compare(QStringLiteral("gateway-injected"), Qt::CaseInsensitive) == 0
+        && (injectedProvider.compare(QStringLiteral("openclaw"), Qt::CaseInsensitive) == 0
+            || injectedApi.compare(QStringLiteral("openai-responses"), Qt::CaseInsensitive) == 0)) {
+        return true;
+    }
 
     // ── toolResult 消息 ──
     if (roleNorm == QLatin1String("toolresult")

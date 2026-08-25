@@ -4829,7 +4829,9 @@ ApplicationWindow {
                                              : "正在连接服务器，请稍候..."
                             width: parent.width - 24
                             height: chatInputContainer.currentTextInputHeight
-                            readOnly: wsClient.connectionState !== 3 || !newTaskRec.viewingControllerSession
+                            readOnly: wsClient.connectionState !== 3
+                                      || !newTaskRec.viewingControllerSession
+                                      || wsClient.chatRunning
                             onSubmitRequested: function(message, files) {
                                 newTaskRec.doSendMessage(message, files)
                             }
@@ -6153,10 +6155,14 @@ ApplicationWindow {
                                         buttonRadius: 12
                                         text: ""
                                         anchors.verticalCenter: parent.verticalCenter
-                                        enabled: textInputArea.text !== "" && newTaskRec.viewingControllerSession
+                                        enabled: newTaskRec.viewingControllerSession
+                                                  && (wsClient.chatRunning
+                                                      || textInputArea.text !== "")
                                         backgroundColor: "#006BFF"
-                                        iconSource: "qrc:/images/send.png"
-                                        onClicked: textInputArea.submit()
+                                        iconSource: wsClient.chatRunning ? "qrc:/images/pause.svg" : "qrc:/images/send.png"
+                                        onClicked: wsClient.chatRunning
+                                                   ? wsClient.abortChat()
+                                                   : textInputArea.submit()
                                     }
                                 }
                             }
