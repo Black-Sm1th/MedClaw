@@ -3,6 +3,7 @@
         <file alias="LocalOfficeView.qml">viewer-host-qt/qml/LocalOfficeView.qml</file>
         <file alias="ViewerWebView.qml">viewer-host-qt/qml/ViewerWebView.qml</file>
         <file>images/office/file_notlook.png</file>
+        <file>images/minus-square.png</file>
     </qresource>
     <qresource prefix="/">
         <file>main.qml</file>
@@ -236,5 +237,6 @@
         <file>data/TemplatePrompts.js</file>
         <file>images/uploadTemplate.png</file>
         <file>images/templateEmpty.png</file>
+        <file>images/minus-square.png</file>
     </qresource>
 </RCC>

@@ -694,6 +694,7 @@ private:
     /// 设置连接状态并发射 connectionStateChanged 信号
     void setState(ConnectionState state);
     void setChatRunning(bool running);
+    void updateChatRunningForCurrentSession();
 
     /**
      * @brief 处理入站事件帧（type: "event"）
@@ -928,6 +929,7 @@ private:
     // ── 连接状态 ──
     ConnectionState m_state;            ///< 当前连接状态
     bool            m_chatRunning = false; ///< 当前聊天运行是否仍在服务端执行
+    QSet<QString>   m_chatRunningSessionKeys; ///< 服务端仍在执行的聊天会话
     QString         m_connectRequestId; ///< connect 握手请求的 ID（用于匹配响应）
     QString         m_challengeNonce;   ///< 服务器下发的 challenge nonce
 

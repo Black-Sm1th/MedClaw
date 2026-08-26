@@ -334,6 +334,16 @@ void GatewayClient::setChatRunning(bool running)
     emit chatRunningChanged();
 }
 
+void GatewayClient::updateChatRunningForCurrentSession()
+{
+    QString key = m_currentViewSessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_currentTaskSessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_session.currentSessionKey().trimmed();
+    setChatRunning(!key.isEmpty() && m_chatRunningSessionKeys.contains(key));
+}
+
 QString GatewayClient::serverUrl() const { return m_config.serverUrl(); }
 
 QString GatewayClient::gatewayHttpBaseUrl() const
@@ -366,6 +376,8 @@ void GatewayClient::setTaskSessionUserId(const QString &userId)
 
     m_taskSessionUserId = normalized;
     m_runningTaskSessionKeys.clear();
+    m_chatRunningSessionKeys.clear();
+    setChatRunning(false);
     clearActiveAgentContext();
     loadTaskSessionListFromDb();
     loadCronJobOwnershipFromDb();
@@ -1499,6 +1511,10 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
 
     if (!taskKey.isEmpty()) {
         setTaskSessionRunning(taskKey, marksRunning);
+        if (marksComplete) {
+            m_chatRunningSessionKeys.remove(taskKey);
+            updateChatRunningForCurrentSession();
+        }
         if (marksRunning)
             beginArtifactTracking(taskKey);
         else
@@ -1970,6 +1986,7 @@ void GatewayClient::setCurrentViewSessionKeyInternal(const QString &key)
         return;
     m_currentViewSessionKey = trimmed;
     emit currentViewSessionChanged();
+    updateChatRunningForCurrentSession();
 }
 
 QVariantMap GatewayClient::agentInfoById(const QString &agentId) const
@@ -2489,7 +2506,8 @@ void GatewayClient::sendChatMessageNow(const QString &sessionKey,
     m_activeChatRunId = runId;
     m_activeChatSessionKey = key;
     m_recentlyAbortedChatSessionKey.clear();
-    setChatRunning(true);
+    m_chatRunningSessionKeys.insert(key);
+    updateChatRunningForCurrentSession();
     beginArtifactTracking(key);
 }
 
@@ -2854,6 +2872,7 @@ void GatewayClient::connectToServer(const QString &url)
     m_activeChatRunId.clear();
     m_activeChatSessionKey.clear();
     m_recentlyAbortedChatSessionKey.clear();
+    m_chatRunningSessionKeys.clear();
     setChatRunning(false);
     m_pendingAgentCreateForChat = false;
     m_pendingFirstChatMessage.clear();
@@ -2907,6 +2926,7 @@ void GatewayClient::disconnectFromServer()
     m_toolResultRefreshReqSessions.clear();
     m_activeChatRunId.clear();
     setChatRunning(false);
+    m_chatRunningSessionKeys.clear();
     if (m_skillInstallBusy) {
         m_skillInstallBusy = false;
         emit skillInstallBusyChanged();
@@ -2934,6 +2954,8 @@ void GatewayClient::abortChat(const QString &sessionKey)
     // Reflect the user's stop action immediately in the local task list;
     // the server's aborted event remains the authoritative cleanup path.
     setTaskSessionRunning(key, false);
+    m_chatRunningSessionKeys.remove(key);
+    updateChatRunningForCurrentSession();
 
     QJsonObject params;
     params[QStringLiteral("sessionKey")] = key;
@@ -3012,6 +3034,7 @@ void GatewayClient::onDisconnected()
     m_activeChatRunId.clear();
     m_activeChatSessionKey.clear();
     m_recentlyAbortedChatSessionKey.clear();
+    m_chatRunningSessionKeys.clear();
     setChatRunning(false);
     m_sessionFirstUserTitleDebounce.stop();
     m_agentFirstUserTitleDebounce.stop();
@@ -3285,6 +3308,10 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             setTaskSessionRunning(eventKey, false);
         else
             setTaskSessionRunning(m_activeChatSessionKey, false);
+        const QString abortedKey = eventKey.isEmpty()
+            ? m_activeChatSessionKey : eventKey;
+        m_chatRunningSessionKeys.remove(abortedKey);
+        updateChatRunningForCurrentSession();
         m_recentlyAbortedChatSessionKey = eventKey.isEmpty()
             ? m_activeChatSessionKey : eventKey;
         if (!eventAppliesToCurrentUiSession(payload))
@@ -3298,7 +3325,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             if (runId.isEmpty() || runId == m_activeChatRunId) {
                 m_activeChatRunId.clear();
                 m_activeChatSessionKey.clear();
-                setChatRunning(false);
+                updateChatRunningForCurrentSession();
             }
         }
         schedulePostStreamSidebarRefresh();
@@ -3434,18 +3461,27 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             return;
         }
         if (r.isComplete) {
+            const QString completedKey = extractPayloadSessionKey(payload).trimmed();
+            if (!completedKey.isEmpty())
+                m_chatRunningSessionKeys.remove(completedKey);
+            QString viewedKey = m_currentViewSessionKey.trimmed();
+            if (viewedKey.isEmpty())
+                viewedKey = m_currentTaskSessionKey.trimmed();
             const bool suppressLateAbortComplete =
-                !m_recentlyAbortedChatSessionKey.isEmpty();
+                !m_recentlyAbortedChatSessionKey.isEmpty()
+                && m_recentlyAbortedChatSessionKey
+                       == (completedKey.isEmpty() ? viewedKey : completedKey);
             if (m_session.isStreaming()) {
                 m_session.setStreaming(false);
                 emit streamingFinished();
             } else if (!suppressLateAbortComplete && !r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
-            m_recentlyAbortedChatSessionKey.clear();
+            if (suppressLateAbortComplete)
+                m_recentlyAbortedChatSessionKey.clear();
             m_activeChatRunId.clear();
             m_activeChatSessionKey.clear();
-            setChatRunning(false);
+            updateChatRunningForCurrentSession();
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
             return;
@@ -3473,19 +3509,28 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             return;
         }
         if (r.isComplete) {
+            const QString completedKey = extractPayloadSessionKey(payload).trimmed();
+            if (!completedKey.isEmpty())
+                m_chatRunningSessionKeys.remove(completedKey);
+            QString viewedKey = m_currentViewSessionKey.trimmed();
+            if (viewedKey.isEmpty())
+                viewedKey = m_currentTaskSessionKey.trimmed();
             const bool suppressLateAbortComplete =
-                !m_recentlyAbortedChatSessionKey.isEmpty();
+                !m_recentlyAbortedChatSessionKey.isEmpty()
+                && m_recentlyAbortedChatSessionKey
+                       == (completedKey.isEmpty() ? viewedKey : completedKey);
             if (m_session.isStreaming()) {
                 m_session.setStreaming(false);
                 emit streamingFinished();
             } else if (!suppressLateAbortComplete && !r.content.isEmpty()) {
                 emit chatMessageReceived(r.role, r.content, false);
             }
-            m_recentlyAbortedChatSessionKey.clear();
+            if (suppressLateAbortComplete)
+                m_recentlyAbortedChatSessionKey.clear();
             m_activeChatRunId.clear();
             m_activeChatSessionKey.clear();
             m_toolResultRefreshTimer.start();
-            setChatRunning(false);
+            updateChatRunningForCurrentSession();
             schedulePostStreamSidebarRefresh();
             return;
         }
@@ -3585,8 +3630,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_sessionTitleHistReqSession.remove(id);
         m_sessionTitleHistReqBatch.remove(id);
         const QString failedChatSession = m_chatSendReqSession.take(id);
-        if (!failedChatSession.isEmpty())
+        if (!failedChatSession.isEmpty()) {
             setTaskSessionRunning(failedChatSession, false);
+            m_chatRunningSessionKeys.remove(failedChatSession);
+        }
         m_chatSendReqMessage.remove(id);
 
         if (m_chatAbortReqSession.contains(id)) {
@@ -3595,7 +3642,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (method == QLatin1String("chat.send")) {
             m_activeChatRunId.clear();
             m_activeChatSessionKey.clear();
-            setChatRunning(false);
+            updateChatRunningForCurrentSession();
         }
 
         if (method == QLatin1String("config.patch")) {
@@ -4335,6 +4382,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (method == QLatin1String("chat.abort")) {
         const QString abortedSession = m_chatAbortReqSession.take(id);
         setTaskSessionRunning(abortedSession, false);
+        m_chatRunningSessionKeys.remove(abortedSession);
         if (!abortedSession.isEmpty())
             m_recentlyAbortedChatSessionKey = abortedSession;
         if (abortedSession.isEmpty()
@@ -4342,7 +4390,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             || abortedSession == m_activeChatSessionKey) {
             m_activeChatRunId.clear();
             m_activeChatSessionKey.clear();
-            setChatRunning(false);
+            updateChatRunningForCurrentSession();
             if (m_session.isStreaming()) {
                 m_session.setStreaming(false);
                 emit streamingFinished();
@@ -5665,6 +5713,7 @@ void GatewayClient::switchTaskSession(const QString &sessionKey)
     m_session.setCurrentSessionKey(key);
     setCurrentTaskSessionKeyInternal(key);
     setCurrentViewSessionKeyInternal(key);
+    updateChatRunningForCurrentSession();
     emit currentSessionChanged();
 
     getAgentIdentity(key);
@@ -5716,6 +5765,7 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
     m_session.setCurrentSessionKey(sessionKey);
     setCurrentTaskSessionKeyInternal(sessionKey);
     setCurrentViewSessionKeyInternal(sessionKey);
+    updateChatRunningForCurrentSession();
     emit currentSessionChanged();
 
     getAgentIdentity(sessionKey);
