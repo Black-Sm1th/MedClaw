@@ -2,11 +2,17 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Window 2.2
 import QtQuick.Dialogs 1.3
+import Qt.labs.settings 1.1
 import QtGraphicalEffects 1.0
 import "./components"
 import "data/TemplatePrompts.js" as TemplatePrompts
 ApplicationWindow {
     id: window
+    Settings {
+        id: workspaceSettings
+        category: "workspace"
+        property string recentFoldersJson: "[]"
+    }
     // Use logical (DIP) screen dimensions so the initial window fits on
     // high-DPI displays instead of opening larger than the work area.
     readonly property real availableScreenWidth: Screen.desktopAvailableWidth > 0
@@ -2246,7 +2252,7 @@ ApplicationWindow {
                 }
                 ImageButton{
                     id: maxmizeBtn
-                    source: "qrc:/images/add-square.png"
+                    source: window.visibility === Window.Maximized ? "qrc:/images/minus-square.png" : "qrc:/images/add-square.png"
                     btnWidth: 20
                     btnHeight: 20
                     onClicked: {
@@ -2970,6 +2976,7 @@ ApplicationWindow {
                             dropdownSelectionWorkSpace.absolutePath)
                         if (!wsPath)
                             return
+                        dropdownSelectionWorkSpace.rememberRecentFolder(wsPath)
                     }
                     if (newTaskRec.isNewTaskWelcome)
                         // Reset the session key while preserving the model
@@ -4829,7 +4836,9 @@ ApplicationWindow {
                                              : "正在连接服务器，请稍候..."
                             width: parent.width - 24
                             height: chatInputContainer.currentTextInputHeight
-                            readOnly: wsClient.connectionState !== 3 || !newTaskRec.viewingControllerSession
+                            readOnly: wsClient.connectionState !== 3
+                                      || !newTaskRec.viewingControllerSession
+                                      || wsClient.chatRunning
                             onSubmitRequested: function(message, files) {
                                 newTaskRec.doSendMessage(message, files)
                             }
@@ -6153,10 +6162,14 @@ ApplicationWindow {
                                         buttonRadius: 12
                                         text: ""
                                         anchors.verticalCenter: parent.verticalCenter
-                                        enabled: textInputArea.text !== "" && newTaskRec.viewingControllerSession
+                                        enabled: newTaskRec.viewingControllerSession
+                                                  && (wsClient.chatRunning
+                                                      || textInputArea.text !== "")
                                         backgroundColor: "#006BFF"
-                                        iconSource: "qrc:/images/send.png"
-                                        onClicked: textInputArea.submit()
+                                        iconSource: wsClient.chatRunning ? "qrc:/images/pause.svg" : "qrc:/images/send.png"
+                                        onClicked: wsClient.chatRunning
+                                                   ? wsClient.abortChat()
+                                                   : textInputArea.submit()
                                     }
                                 }
                             }
@@ -6506,6 +6519,41 @@ ApplicationWindow {
                 property string absolutePath: ""
                 property var recentFolders: []
 
+                function folderDisplayName(path) {
+                    var normalized = String(path || "").replace(/\\/g, "/")
+                    var parts = normalized.split("/")
+                    return parts[parts.length - 1] || normalized
+                }
+
+                function rememberRecentFolder(path) {
+                    var value = String(path || "").trim()
+                    if (!value)
+                        return
+                    var normalized = value.replace(/\\/g, "/").replace(/\/$/, "")
+                    var key = normalized.toLowerCase()
+                    var updated = []
+                    for (var i = 0; i < recentFolders.length; ++i) {
+                        var existing = String(recentFolders[i] || "").replace(/\\/g, "/").replace(/\/$/, "")
+                        if (existing && existing.toLowerCase() !== key)
+                            updated.push(existing)
+                    }
+                    updated.unshift(normalized)
+                    recentFolders = updated.slice(0, 8)
+                    workspaceSettings.recentFoldersJson = JSON.stringify(recentFolders)
+                }
+
+                Component.onCompleted: {
+                    try {
+                        var stored = JSON.parse(workspaceSettings.recentFoldersJson || "[]")
+                        if (stored instanceof Array)
+                            recentFolders = stored.filter(function(path) {
+                                return String(path || "").trim().length > 0
+                            }).slice(0, 8)
+                    } catch (error) {
+                        recentFolders = []
+                    }
+                }
+
                 readonly property bool pickerLocked: newTaskRec.hasMessages || window.leftSelectedIndex === 6
                 readonly property string effectiveWorkspacePath: {
                     if (pickerLocked) {
@@ -6780,7 +6828,7 @@ ApplicationWindow {
                                         sourceSize: Qt.size(18, 18)
                                     }
                                     Text {
-                                        text: modelData
+                                        text: dropdownSelectionWorkSpace.folderDisplayName(modelData)
                                         font.pixelSize: 14
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         color: "#D9000000"
@@ -6794,7 +6842,8 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        dropdownSelectionWorkSpace.currentText = modelData
+                                        dropdownSelectionWorkSpace.absolutePath = modelData
+                                        dropdownSelectionWorkSpace.currentText = dropdownSelectionWorkSpace.folderDisplayName(modelData)
                                         wsPopup.close()
                                     }
                                 }
@@ -6828,6 +6877,7 @@ ApplicationWindow {
                         dropdownSelectionWorkSpace.absolutePath = path
                         var parts = path.replace(/\\/g, "/").split("/")
                         dropdownSelectionWorkSpace.currentText = parts[parts.length - 1] || path
+                        dropdownSelectionWorkSpace.rememberRecentFolder(path)
                     }
                 }
             }

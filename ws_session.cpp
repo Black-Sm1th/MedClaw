@@ -301,6 +301,20 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
         const QString role = m.value(QStringLiteral("role")).toString();
         if (role.isEmpty()) continue;
 
+        // Gateway abort handling persists a synthetic assistant transcript
+        // entry (model=gateway-injected) so the parent chain remains valid.
+        // It is protocol bookkeeping, not model output, and showing it makes
+        // the first reply appear twice after a stop/reload.
+        const QString model = m.value(QStringLiteral("model")).toString().trimmed();
+        const QString provider = m.value(QStringLiteral("provider")).toString().trimmed();
+        const QString api = m.value(QStringLiteral("api")).toString().trimmed();
+        if (role == QLatin1String("assistant")
+            && model.compare(QStringLiteral("gateway-injected"), Qt::CaseInsensitive) == 0
+            && (provider.compare(QStringLiteral("openclaw"), Qt::CaseInsensitive) == 0
+                || api.compare(QStringLiteral("openai-responses"), Qt::CaseInsensitive) == 0)) {
+            continue;
+        }
+
         // ── toolResult 消息 → 独立条目 ──
         if (role == QLatin1String("toolResult")) {
             const QString tcId  = m.value(QStringLiteral("toolCallId")).toString();

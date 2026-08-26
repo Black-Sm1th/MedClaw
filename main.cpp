@@ -14,6 +14,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QWindow>
+#include <QScreen>
 #include <QtWebEngine/QtWebEngine>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
@@ -260,8 +261,17 @@ int main(int argc, char *argv[])
     OnlineOfficeClient onlineOffice;
     onlineOffice.setBridgeBaseUrl(officeBridgeUrl);
     onlineOffice.setApiKey(officeApiKey);
-    const QSize savedWindowSize = QSettings().value(
+    QSize savedWindowSize = QSettings().value(
         QStringLiteral("ui/windowSize")).toSize();
+    // Older versions could persist the screen-sized geometry while maximizing.
+    // Treat that value as stale so it cannot make a windowed launch look full-screen.
+    if (QScreen *screen = QGuiApplication::primaryScreen()) {
+        const QSize availableSize = screen->availableGeometry().size();
+        if (savedWindowSize.width() >= availableSize.width()
+            && savedWindowSize.height() >= availableSize.height()) {
+            savedWindowSize = QSize();
+        }
+    }
     engine.rootContext()->setContextProperty(
         QStringLiteral("initialWindowWidth"), savedWindowSize.width());
     engine.rootContext()->setContextProperty(
@@ -300,6 +310,19 @@ int main(int argc, char *argv[])
                 saveWindowSizeTimer->setInterval(250);
 
                 const auto scheduleWindowSizeSave = [window, saveWindowSizeTimer]() {
+                    // Window size changes can arrive before windowStateChanged while
+                    // maximizing/restoring. Defer both the cache update and the
+                    // persisted write until the final state is known.
+                    saveWindowSizeTimer->start();
+                };
+                QObject::connect(window, &QWindow::widthChanged, window,
+                                 scheduleWindowSizeSave);
+                QObject::connect(window, &QWindow::heightChanged, window,
+                                 scheduleWindowSizeSave);
+                QObject::connect(window, &QWindow::windowStateChanged, window,
+                                 scheduleWindowSizeSave);
+                QObject::connect(saveWindowSizeTimer, &QTimer::timeout, window,
+                                 [window]() {
                     const Qt::WindowStates states = window->windowStates();
                     if (states.testFlag(Qt::WindowMinimized)
                         || states.testFlag(Qt::WindowMaximized)
@@ -308,14 +331,6 @@ int main(int argc, char *argv[])
                     }
 
                     window->setProperty("normalWindowSize", window->size());
-                    saveWindowSizeTimer->start();
-                };
-                QObject::connect(window, &QWindow::widthChanged, window,
-                                 scheduleWindowSizeSave);
-                QObject::connect(window, &QWindow::heightChanged, window,
-                                 scheduleWindowSizeSave);
-                QObject::connect(saveWindowSizeTimer, &QTimer::timeout, window,
-                                 [window]() {
                     const QSize size = window->property("normalWindowSize").toSize();
                     if (size.isValid())
                         QSettings().setValue(QStringLiteral("ui/windowSize"), size);

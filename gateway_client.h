@@ -67,6 +67,7 @@ class GatewayClient : public QObject
     // ── QML 可绑定属性 ──
     Q_PROPERTY(int connectionState READ connectionState
                NOTIFY connectionStateChanged)
+    Q_PROPERTY(bool chatRunning READ chatRunning NOTIFY chatRunningChanged)
     Q_PROPERTY(QString statusText READ statusText
                NOTIFY connectionStateChanged)
     Q_PROPERTY(QVariantList sessions READ sessions
@@ -192,6 +193,8 @@ public:
 
     /// 获取当前连接状态（枚举值）
     int connectionState() const;
+    /// 当前聊天运行是否仍在服务端执行
+    bool chatRunning() const { return m_chatRunning; }
     /// 获取当前连接状态的中文描述文本
     QString statusText() const;
     /// 获取会话列表（委托给 WsSession）
@@ -264,6 +267,9 @@ public:
 
     /// 主动断开 WebSocket 连接
     Q_INVOKABLE void disconnectFromServer();
+
+    /// 中止当前会话正在执行的聊天运行（服务端仍保持连接）
+    Q_INVOKABLE void abortChat(const QString &sessionKey = QString());
 
     /**
      * @brief 发送聊天消息
@@ -592,6 +598,7 @@ signals:
                              bool isDelta);      ///< 收到聊天消息（完整或增量）
     void streamingStarted();                     ///< 流式输出开始
     void streamingFinished();                    ///< 流式输出结束
+    void chatRunningChanged();                   ///< 当前聊天运行状态变化
 
     // ── 工具调用 ──
     void artifactsDetected(const QString &sessionKey,
@@ -686,6 +693,8 @@ private:
 
     /// 设置连接状态并发射 connectionStateChanged 信号
     void setState(ConnectionState state);
+    void setChatRunning(bool running);
+    void updateChatRunningForCurrentSession();
 
     /**
      * @brief 处理入站事件帧（type: "event"）
@@ -919,6 +928,8 @@ private:
 
     // ── 连接状态 ──
     ConnectionState m_state;            ///< 当前连接状态
+    bool            m_chatRunning = false; ///< 当前聊天运行是否仍在服务端执行
+    QSet<QString>   m_chatRunningSessionKeys; ///< 服务端仍在执行的聊天会话
     QString         m_connectRequestId; ///< connect 握手请求的 ID（用于匹配响应）
     QString         m_challengeNonce;   ///< 服务器下发的 challenge nonce
 
@@ -1010,6 +1021,10 @@ private:
     QMap<QString, quint64> m_sessionTitleHistReqBatch;
     QMap<QString, QString> m_chatSendReqSession;
     QMap<QString, QString> m_chatSendReqMessage;
+    QMap<QString, QString> m_chatAbortReqSession; ///< chat.abort requestId -> sessionKey
+    QString m_activeChatRunId;                    ///< 当前聊天运行的服务端 runId
+    QString m_activeChatSessionKey;               ///< 当前聊天运行所属 sessionKey
+    QString m_recentlyAbortedChatSessionKey;      ///< 中止后用于过滤迟到的 complete 事件
     QHash<QString, ArtifactTrackingState> m_artifactTrackingBySession;
     quint64 m_sidebarTitleBatchGen = 0;
     quint64 m_sessionTitleBatchGen = 0;
