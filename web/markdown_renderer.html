@@ -405,6 +405,15 @@
         }
       };
 
+      // Avoid leaking Qt WebEngine's CF_HTML header into Word as visible text.
+      document.addEventListener('copy', function (event) {
+        var selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !event.clipboardData) return;
+        event.preventDefault();
+        event.clipboardData.clearData();
+        event.clipboardData.setData('text/plain', selection.toString());
+      });
+
       document.addEventListener('click', function (event) {
         var node = event.target;
         while (node && node.tagName !== 'A') node = node.parentNode;

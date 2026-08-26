@@ -1170,6 +1170,18 @@
         scrollToBottom: scrollToBottom
       };
 
+      // Qt WebEngine's default HTML clipboard payload includes CF_HTML
+      // offsets that Microsoft Word may render as visible text.  Export the
+      // selected response as plain text so every paste target receives only
+      // the model content (the same behavior as copying to a text editor).
+      document.addEventListener('copy', function (event) {
+        var selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !event.clipboardData) return;
+        event.preventDefault();
+        event.clipboardData.clearData();
+        event.clipboardData.setData('text/plain', selection.toString());
+      });
+
       document.addEventListener('click', function (event) {
         var artifactToggle = event.target;
         while (artifactToggle && artifactToggle !== document
