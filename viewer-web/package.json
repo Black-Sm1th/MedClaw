@@ -851,6 +851,7 @@
 		"epubjs": "^0.3.93",
 		"file-type": "^19.6.0",
 		"grapesjs": "^0.23.5",
+		"grapesjs-parser-postcss": "^1.0.3",
 		"grapesjs-preset-webpage": "^1.0.3",
 		"heic2any": "^0.0.4",
 		"highlight.js": "^11.10.0",

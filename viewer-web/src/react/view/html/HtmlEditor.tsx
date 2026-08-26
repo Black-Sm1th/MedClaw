@@ -1,6 +1,7 @@
 import { App, Spin } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import grapesjs, { type Editor } from 'grapesjs';
+import parserPostCss from 'grapesjs-parser-postcss';
 import presetWebpage from 'grapesjs-preset-webpage';
 import zh from 'grapesjs/locale/zh';
 import 'grapesjs/dist/css/grapes.min.css';
@@ -90,7 +91,10 @@ function HtmlEditorView() {
                     keepUnusedStyles: true,
                     components: parts.body,
                     style: parts.css,
-                    plugins: [editorInstance => presetWebpage(editorInstance, {
+                    // GrapesJS' default browser CSSOM parser drops valid author styles
+                    // such as CSS variables and prefixed gradient declarations. PostCSS
+                    // keeps the editable canvas visually aligned with the real preview.
+                    plugins: [parserPostCss, editorInstance => presetWebpage(editorInstance, {
                             modalImportTitle: '导入 HTML',
                             modalImportButton: '导入',
                             textCleanCanvas: '确定要清空当前页面吗？',
