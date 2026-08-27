@@ -3450,7 +3450,7 @@ ApplicationWindow {
                                 anchors.bottom: parent.bottom
                                 color: "#E6E7EB"
                                 visible: newTaskRec.officeDocumentVisible
-                                         && newTaskRec.currentSessionOfficeTabCount > 0
+                                         && officeTabsRow.width > officeTabsViewport.width
                                 z: 3
 
                                 MouseArea {
@@ -3559,11 +3559,7 @@ ApplicationWindow {
                                             required property string sessionKey
                                             visible: sessionKey === newTaskRec.currentSidebarSessionKey()
                                             readonly property bool active: index === newTaskRec.activeOfficeTabIndex
-                                            width: Math.max(150,
-                                                   (officeTabsViewport.width
-                                                    - Math.max(0, newTaskRec.currentSessionOfficeTabCount - 1)
-                                                      * officeTabsRow.spacing)
-                                                   / Math.max(1, newTaskRec.currentSessionOfficeTabCount))
+                                            width: 220
                                             height: 36
                                             radius: 8
                                             color: active ? "#EBEDF0"
