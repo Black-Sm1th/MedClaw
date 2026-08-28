@@ -44,6 +44,7 @@ ApplicationWindow {
     property string knowledgeBaseReadyUserId: ""
     property bool userSessionInitializing: authController.loggedIn
     readonly property bool userSessionReady: authController.loggedIn
+                                             && authController.modelConfigReady
                                              && String(authController.userId || "").length > 0
                                              && knowledgeBaseReadyUserId === String(authController.userId || "")
                                              && !userSessionInitializing
@@ -1184,7 +1185,7 @@ ApplicationWindow {
 
     // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
-        if (authController.loggedIn) {
+        if (authController.loggedIn && authController.modelConfigReady) {
             reloadUploadedDocxTemplates()
             kbLoadMetadata()
             wsClient.connectToServer(wsClient.serverUrl)
@@ -1216,7 +1217,8 @@ ApplicationWindow {
                 window.knowledgeBaseReadyUserId = ""
                 window.reloadUploadedDocxTemplates()
                 kbLoadMetadata()
-                wsClient.connectToServer(wsClient.serverUrl)
+                if (authController.modelConfigReady)
+                    wsClient.connectToServer(wsClient.serverUrl)
             } else {
                 window.userSessionInitializing = false
                 window.knowledgeBaseReadyUserId = ""
@@ -1254,6 +1256,13 @@ ApplicationWindow {
                 kbSelectedKeys = []
                 uploadedDocxTemplates = []
                 uploadedDocxTemplatesUserId = ""
+            }
+        }
+        function onModelConfigReadyChanged() {
+            if (authController.loggedIn && authController.modelConfigReady) {
+                window.reloadUploadedDocxTemplates()
+                window.kbLoadMetadata()
+                wsClient.connectToServer(wsClient.serverUrl)
             }
         }
     }
@@ -1360,6 +1369,10 @@ ApplicationWindow {
             leftMidPanel.activeAgentId = String(window.agentIdFromSessionKey(sk) || "")
             if (sk.length > 0)
                 window.leftSelectedIndex = 6
+        }
+        function onStreamingFinished() {
+            if (authController.loggedIn)
+                authController.refreshCredits()
         }
         function onErrorOccurred(message){
             console.warn("[Gateway Error]", message)
@@ -1921,7 +1934,7 @@ ApplicationWindow {
         id: accountPopup
         parent: window.contentItem
         width: window.sidebarExpanded ? 248 : 190
-        height: 92
+        height: 126
         padding: 8
         modal: false
         focus: true
@@ -1937,6 +1950,16 @@ ApplicationWindow {
                     anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     Label { text: "账号"; color: "#73000000"; font.pixelSize: 14 }
                     Label { text: authController.phone; color: "#D9000000"; font.pixelSize: 14 }
+                }
+            }
+            Rectangle {
+                width: parent.width
+                height: 34
+                color: "transparent"
+                Row {
+                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                    Label { text: "积分"; color: "#73000000"; font.pixelSize: 14 }
+                    Label { text: authController.creditsBalance || "-"; color: "#D9000000"; font.pixelSize: 14 }
                 }
             }
             Rectangle {
@@ -12382,8 +12405,11 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.topMargin: rightTopPanel.height
         anchors.bottom: parent.bottom
-        initializing: authController.loggedIn && window.userSessionInitializing
-        initializingText: wsClient.knowledgeBaseDataDirMessage
+        initializing: authController.loggedIn
+                     && (!authController.modelConfigReady || window.userSessionInitializing)
+        initializingText: !authController.modelConfigReady
+                          ? qsTr("正在更新模型配置...")
+                          : wsClient.knowledgeBaseDataDirMessage
         visible: !window.userSessionReady
         enabled: visible
         z: 20000
