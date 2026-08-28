@@ -116,7 +116,8 @@ Rectangle {
         "provenance-tracer": { name: "溯源追踪专员", skills: ["PubMed检索", "PubMed全文获取", "Semantic Scholar检索", "引用链追溯", "联网检索", "URL抓取"], desc: "执行一级→二级→原始来源的引用链追溯，标注每级可追溯深度", avatar: 1 },
         "evidence-examiner": { name: "原始证据检验专员", skills: ["PubMed全文获取", "引用链追溯", "Semantic Scholar检索", "网页抓取"], desc: "获取原始证据全文并逐句比对支持度，识别语境剥离与选择性引用", avatar: 2 },
         "confidence-rater": { name: "可信度评级专员", skills: ["事实核查缓存", "联网检索", "知识库检索"], desc: "综合输出四级可信度评定，并对失真声明生成保守版修正表述", avatar: 3 },
-        "verification-reporter": { name: "核验报告专员", skills: ["知识库检索", "网页抓取", "文件内容读取"], desc: "合成核验报告，含声明评定表、证据摘要、引用链全链路展示与修正建议", avatar: 4 }
+        "verification-reporter": { name: "核验报告专员", skills: ["知识库检索", "网页抓取", "文件内容读取"], desc: "合成核验报告，含声明评定表、证据摘要、引用链全链路展示与修正建议", avatar: 4 },
+        "report-writer": { name: "报告撰写专员", skills: ["整合", "排版", "交付"], desc: "分析产出的\"最后一公里\"整合者。将前面所有专家的产出组装为结构化分析报告，按目标格式排版。确保从数据到结论的逻辑链条连贯、引用规范、表述精准。", avatar: 5 }
     })
 
     function profileForAgent(agent) {
@@ -425,7 +426,7 @@ Rectangle {
                                 Column {
                                     anchors.left: parent.left; anchors.leftMargin: 66; anchors.right: parent.right; anchors.rightMargin: 12; anchors.top: parent.top; anchors.topMargin: 12; spacing: 4
                                     Label { width: parent.width; text: modelData.name; font.pixelSize: 14; font.weight: Font.Bold; color: "#D9000000"; elide: Text.ElideRight }
-                                    Text { width: parent.width; height: 40; text: modelData.desc; font.pixelSize: 14; lineHeight: 1; color: "#73000000"; wrapMode: Text.WrapAtWordBoundaryOrAnywhere; font.family: "Alibaba PuHuiTi 3.0"}
+                                    Text { width: parent.width; height: 40; text: modelData.desc; font.pixelSize: 14; lineHeight: 1; color: "#73000000"; wrapMode: Text.WrapAtWordBoundaryOrAnywhere; font.family: "Alibaba PuHuiTi 3.0"; maximumLineCount: 2}
                                     Rectangle{
                                         width: 1
                                         height: 12

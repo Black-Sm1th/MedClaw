@@ -1955,11 +1955,22 @@ ApplicationWindow {
             Rectangle {
                 width: parent.width
                 height: 34
-                color: "transparent"
+                radius: 5
+                color: creditsMouse.containsMouse ? "#F2F3F5" : "transparent"
                 Row {
                     anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     Label { text: "积分"; color: "#73000000"; font.pixelSize: 14 }
                     Label { text: authController.creditsBalance || "-"; color: "#D9000000"; font.pixelSize: 14 }
+                }
+                MouseArea {
+                    id: creditsMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        accountPopup.close()
+                        Qt.openUrlExternally("http://111.6.178.34:22910/#/profile")
+                    }
                 }
             }
             Rectangle {

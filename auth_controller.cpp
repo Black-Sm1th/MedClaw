@@ -350,7 +350,7 @@ void AuthController::sendSmsCode(const QString &phone)
 
     setBusy(true);
     clearError();
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/auth/sms/send")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/sms/send")));
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
@@ -383,7 +383,7 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
 
     setBusy(true);
     clearError();
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/auth/sms/agent-login")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/sms/agent-login")));
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
@@ -455,7 +455,7 @@ void AuthController::refreshCredits()
 
     m_creditsRefreshInFlight = true;
     const QString token = m_accessToken;
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/credits/me")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/credits/me")));
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
     QNetworkReply *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, token]() {
