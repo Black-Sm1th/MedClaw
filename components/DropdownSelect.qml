@@ -75,8 +75,6 @@ Item {
                     height: root.iconSize
                     anchors.verticalCenter: parent.verticalCenter
                     visible: root.icon !== ""
-                    fillMode: Image.PreserveAspectFit
-                    sourceSize: Qt.size(root.iconSize, root.iconSize)
                 }
 
                 Text {
@@ -216,8 +214,6 @@ Item {
                                 height: root.iconSize
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: root.icon !== ""
-                                fillMode: Image.PreserveAspectFit
-                                sourceSize: Qt.size(root.iconSize, root.iconSize)
                             }
 
                             Text {

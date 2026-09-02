@@ -255,31 +255,28 @@ ApplicationWindow {
     }
     property string pendingExpertPrompt: ""
     property double pendingExpertInstallStartedAt: 0
+    property bool pendingChatExpertInstall: false
 
-    /// 若整段里出现第二对「()」，只保留到第一对括号结束（含前面文字与第一对括号）
-    function trimToFirstParenPairOnly(s) {
-        if (!s || s.length < 2)
-            return s || ""
-        var first = s.indexOf("(")
-        if (first < 0)
-            return s
+    /// 模型列表只展示模型名，不展示括号中的 provider 或其他附加信息。
+    function stripParenthesizedText(value) {
+        var text = String(value || "")
+        var result = ""
         var depth = 0
-        var i
-        for (i = first; i < s.length; i++) {
-            var c = s.charAt(i)
-            if (c === "(")
+        for (var i = 0; i < text.length; i++) {
+            var c = text.charAt(i)
+            if (c === "(") {
                 depth++
-            else if (c === ")") {
-                depth--
-                if (depth === 0)
-                    break
+                continue
             }
+            if (c === ")") {
+                if (depth > 0)
+                    depth--
+                continue
+            }
+            if (depth === 0)
+                result += c
         }
-        if (i >= s.length)
-            return s
-        if (s.indexOf("(", i + 1) < 0)
-            return s
-        return s.substring(0, i + 1).trim()
+        return result.replace(/\s+/g, " ").trim()
     }
 
     /// 任务记录列表中 agent 的展示标题（与左侧列表 Label 渲染逻辑保持一致）
@@ -331,15 +328,42 @@ ApplicationWindow {
         return String(agentId || "").trim().toLowerCase() === "main"
     }
 
+    function isSelectableExpertAgent(agent) {
+        if (!agent)
+            return false
+        var id = String(agent.id || "").trim()
+        if (!id || window.isMainAgentId(id))
+            return false
+
+        // Expert teams expose their roster through subagents.allowAgents;
+        // leaf specialists do not have a configured sub-agent list.
+        var marker = (id + " " + String(agent.name || "")).toLowerCase()
+        if (marker.indexOf("专员") >= 0 || marker.indexOf("specialist") >= 0)
+            return false
+        var subagents = agent.subagents || []
+        return typeof subagents.length === "number" && subagents.length > 0
+    }
+
     function visibleAgentList() {
         var list = wsClient.agentList || []
         var out = []
         for (var i = 0; i < list.length; i++) {
-            var id = list[i].id || ""
-            if (!window.isMainAgentId(id))
+            if (window.isSelectableExpertAgent(list[i]))
                 out.push(list[i])
         }
         return out
+    }
+
+    function isSelectableExpertAgentId(agentId) {
+        var target = String(agentId || "").trim()
+        if (!target)
+            return false
+        var list = wsClient.agentList || []
+        for (var i = 0; i < list.length; i++) {
+            if (String(list[i].id || "").trim() === target)
+                return window.isSelectableExpertAgent(list[i])
+        }
+        return false
     }
 
     function findVisibleAgentId(preferredId) {
@@ -356,12 +380,26 @@ ApplicationWindow {
         return ""
     }
 
+    function findConfiguredAgentId(preferredId) {
+        var target = String(preferredId || "").trim().toLowerCase()
+        if (!target || window.isMainAgentId(target))
+            return ""
+        var list = wsClient.agentList || []
+        for (var i = 0; i < list.length; i++) {
+            var id = String(list[i].id || "").trim()
+            var name = String(list[i].name || "").trim()
+            if (id.toLowerCase() === target || name.toLowerCase() === target)
+                return id
+        }
+        return ""
+    }
+
     function medicalAnalysisTeamAgentIds() {
         var wanted = ["Orchestrator", "writer", "researcher", "analyst"]
         var ids = []
         var missing = []
         for (var i = 0; i < wanted.length; i++) {
-            var id = window.findVisibleAgentId(wanted[i])
+            var id = window.findConfiguredAgentId(wanted[i])
             if (id.length > 0)
                 ids.push(id)
             else
@@ -414,18 +452,27 @@ ApplicationWindow {
         leftMidPanel.activeAgentId = ""
         leftMidPanel.activeSessionKey = ""
         wsClient.clearActiveAgentContext()
-        newTaskRec.clearDocxTemplateSelection(true)
+        newTaskRec.resetChatSelectionState()
         newTaskRec.selectedCollaborationAgentIds = ids
         window.leftSelectedIndex = 0
     }
 
-    function summonExpert(agentId, promptText) {
+    function summonExpert(agentId, promptText, forChatSelection) {
         var id = String(agentId || "").trim()
         if (!id)
             return
-        newTaskRec.clearDocxTemplateSelection(true)
-        chatKnowledgeCollection = ""
-        knowledgePopup.close()
+        if (typeof chatOptionsPopup !== "undefined")
+            chatOptionsPopup.close()
+        var chatInstallRequested = !!forChatSelection
+        if (wsClient.agentInstallBusy || wsClient.toolInstallBusy) {
+            // Keep the context of an install that is already in flight.  The
+            // backend still receives the request and reports its normal
+            // "another install is running" error for management-page calls.
+            if (!chatInstallRequested)
+                wsClient.summonAgent(id)
+            return
+        }
+        pendingChatExpertInstall = chatInstallRequested
         pendingExpertPrompt = String(promptText || "")
         pendingExpertInstallStartedAt = Date.now()
         wsClient.summonAgent(id)
@@ -583,11 +630,21 @@ ApplicationWindow {
 
     function kbToggleChatCollection(collection) {
         var collectionId = String(collection || "")
+        if (!collectionId)
+            return
+        var isCurrentSelection = chatKnowledgeCollection === collectionId
+        if (!newTaskRec.canSelectKnowledgeBase && !isCurrentSelection)
+            return
+        if (newTaskRec.knowledgeSelectionLocked && isCurrentSelection)
+            return
         var nextCollection = chatKnowledgeCollection === collectionId
                 ? "" : collectionId
-        if (nextCollection)
-            newTaskRec.clearDocxTemplateSelection(true)
         chatKnowledgeCollection = nextCollection
+        // A knowledge base selected after the first turn becomes part of the
+        // session contract as well.  Before the first turn it remains
+        // editable so the user can change their mind before sending.
+        if (nextCollection && newTaskRec.chatSelectionsCommitted)
+            newTaskRec.knowledgeSelectionLocked = true
         var metadata = kbMetadata || kbDefaultMetadata()
         metadata.chatSelectedCollection = chatKnowledgeCollection
         kbSaveMetadata(metadata)
@@ -595,8 +652,13 @@ ApplicationWindow {
 
     function chatHasSelectedExpert() {
         var ids = newTaskRec.selectedCollaborationAgentIds || []
+        for (var i = 0; i < ids.length; i++) {
+            var candidate = String(ids[i] || "")
+            if (candidate && !window.isMainAgentId(candidate))
+                return true
+        }
         if (newTaskRec.isNewTaskWelcome)
-            return ids.length > 0
+            return false
         var activeAgentId = String(leftMidPanel.activeAgentId || "")
         var defaultAgentId = String(wsClient.defaultAgentId || "main")
         return activeAgentId.length > 0 && activeAgentId !== defaultAgentId
@@ -771,22 +833,14 @@ ApplicationWindow {
         // Manual tab changes continue to be saved and used until the next reload.
         var selected = metadata.collections.length > 0
                 ? String(metadata.collections[0].id || "") : ""
-        var chatSelected = String(loaded.chatSelectedCollection || "")
-        var chatSelectedExists = false
-        for (var m = 0; m < metadata.collections.length; m++) {
-            if (String(metadata.collections[m].id || "") === chatSelected) {
-                chatSelectedExists = true
-                break
-            }
-        }
-        if (!chatSelectedExists)
-            chatSelected = ""
         metadata.selectedCollection = selected
-        metadata.chatSelectedCollection = chatSelected
+        // Chat resources belong to a task, not to the user's global
+        // knowledge-base metadata. Existing tasks restore this from history.
+        metadata.chatSelectedCollection = ""
         kbMetadata = metadata
         kbCollections = metadata.collections.slice(0)
         kbSelectedCollection = selected
-        chatKnowledgeCollection = chatSelected
+        chatKnowledgeCollection = ""
         kbMetadataUser = String(authController.userId)
         kbSaveMetadata(metadata)
     }
@@ -1179,8 +1233,37 @@ ApplicationWindow {
     }
 
     function modelDisplayLabel(nm, pv) {
-        var raw = pv ? (nm + " (" + pv + ")") : nm
-        return trimToFirstParenPairOnly(raw)
+        return stripParenthesizedText(nm)
+    }
+
+    // The template library uses separate lists for built-in and user-uploaded
+    // templates.  The chat picker presents both lists through one stable model.
+    function chatTemplateOptions() {
+        var result = []
+        var seen = {}
+        function appendRows(rows, userTemplate) {
+            var list = rows || []
+            for (var i = 0; i < list.length; i++) {
+                var source = list[i] || ({})
+                var id = String(source.id || "").trim()
+                if (!id)
+                    continue
+                var key = (userTemplate ? "user:" : "preset:") + id
+                if (seen[key])
+                    continue
+                seen[key] = true
+                result.push({
+                    "id": id,
+                    "name": String(source.name || source.title || qsTr("未命名模板")),
+                    "detail": String(source.detail || source.description || source.desc || ""),
+                    "templatePath": String(source.templatePath || ""),
+                    "isUserTemplate": !!userTemplate
+                })
+            }
+        }
+        appendRows(wsClient.docxTemplates, false)
+        appendRows(uploadedDocxTemplates, true)
+        return result
     }
 
     // Only connect to the Gateway after the user has an authenticated session.
@@ -1234,6 +1317,7 @@ ApplicationWindow {
                 leftMidPanel.activeSessionKey = ""
                 textInputArea.text = ""
                 newTaskRec.resetShortcutSelection()
+                newTaskRec.resetChatSelectionState()
                 newTaskRec.selectedDocxTemplate = ({})
                 newTaskRec.selectedCollaborationAgentIds = []
                 dropdownSelectionWorkSpace.currentText = qsTr("workspace")
@@ -1241,6 +1325,7 @@ ApplicationWindow {
                 dropdownSelectionModel.currentIndex = 0
                 window.pendingExpertPrompt = ""
                 window.pendingExpertInstallStartedAt = 0
+                window.pendingChatExpertInstall = false
                 kbSources = []
                 kbSearchText = ""
                 kbLoading = false
@@ -1338,15 +1423,24 @@ ApplicationWindow {
                 leftMidPanel.activeSessionKey = ""
                 chatModel.clear()
                 wsClient.clearActiveAgentContext()
+                newTaskRec.resetChatSelectionState()
                 /// 被删任务正在选中：跳回「新建任务」首页，与点击侧栏「新建任务」一致
                 window.leftSelectedIndex = 0
             }
         }
         function onAgentInstallFinished(agentId, success, message) {
+            var chatSelectionInstall = window.pendingChatExpertInstall
             var elapsed = window.pendingExpertInstallStartedAt > 0
                     ? Date.now() - window.pendingExpertInstallStartedAt : 0
             var autoOpen = success && elapsed <= 5000
-            if (autoOpen && String(agentId || "").length > 0) {
+            if (chatSelectionInstall) {
+                if (!success) {
+                    var selectedIds = newTaskRec.selectedCollaborationAgentIds || []
+                    if (selectedIds.length === 1
+                            && String(selectedIds[0] || "") === String(agentId || ""))
+                        newTaskRec.selectedCollaborationAgentIds = []
+                }
+            } else if (autoOpen && String(agentId || "").length > 0) {
                 var selected = newTaskRec.selectedCollaborationAgentIds || []
                 if (window.leftSelectedIndex !== 0 || selected.length !== 1
                         || String(selected[0] || "") !== String(agentId || ""))
@@ -1355,13 +1449,10 @@ ApplicationWindow {
                     textInputArea.text = window.pendingExpertPrompt
                     textInputArea.forceActiveFocus()
                 }
-            } else if (success) {
-                errorToast.text = qsTr("专家安装成功")
-                errorToast.visible = true
-                errorToastTimer.restart()
             }
             window.pendingExpertPrompt = ""
             window.pendingExpertInstallStartedAt = 0
+            window.pendingChatExpertInstall = false
         }
         function onCurrentSessionChanged() {
             var sk = wsClient.currentSessionKey || ""
@@ -1379,6 +1470,15 @@ ApplicationWindow {
             errorToast.text = message
             errorToast.visible = true
             errorToastTimer.restart()
+            // Preflight failures (missing installer/runtime or a disconnected
+            // gateway) do not emit agentInstallFinished, so clear the pending
+            // chat-install context here when no install process is active.
+            if (window.pendingChatExpertInstall && !wsClient.agentInstallBusy) {
+                newTaskRec.selectedCollaborationAgentIds = []
+                window.pendingChatExpertInstall = false
+                window.pendingExpertPrompt = ""
+                window.pendingExpertInstallStartedAt = 0
+            }
         }
     }
     ListModel { id: cronRunsModel }
@@ -1603,14 +1703,16 @@ ApplicationWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         window.leftSelectedIndex = targetIndex
-                                            leftMidPanel.activeAgentId = ""
-                                            leftMidPanel.activeSessionKey = ""
-                                            chatModel.clear()
-                                            wsClient.clearActiveAgentContext()
-                                            if (targetIndex === 7) {
-                                                window.kbSearchText = ""
-                                                window.kbRefreshFiles()
-                                            }
+                                        if (targetIndex === 0)
+                                            newTaskRec.resetChatSelectionState()
+                                        leftMidPanel.activeAgentId = ""
+                                        leftMidPanel.activeSessionKey = ""
+                                        chatModel.clear()
+                                        wsClient.clearActiveAgentContext()
+                                        if (targetIndex === 7) {
+                                            window.kbSearchText = ""
+                                            window.kbRefreshFiles()
+                                        }
                                     }
                                 }
                                 ToolTip {
@@ -1675,6 +1777,8 @@ ApplicationWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         window.leftSelectedIndex = targetIndex
+                                        if (targetIndex === 0)
+                                            newTaskRec.resetChatSelectionState()
                                         leftMidPanel.activeAgentId = ""
                                         leftMidPanel.activeSessionKey = ""
                                         chatModel.clear()
@@ -2330,16 +2434,29 @@ ApplicationWindow {
                                                 && !hasActiveTask && !hasMessages
                 property var selectedCollaborationAgentIds: []
                 property var selectedDocxTemplate: ({})
+                // Chat resources are scoped to the current task session.  The
+                // first turn establishes which resources may be changed later:
+                // experts are first-turn-only, while an initially omitted
+                // knowledge base/template can be added in a later turn.
+                property bool chatSelectionsCommitted: false
+                property bool expertSelectionLocked: false
+                property bool knowledgeSelectionLocked: false
+                property bool templateSelectionLocked: false
+                property string selectionSessionKey: ""
                 readonly property bool hasSelectedDocxTemplate:
                     String((selectedDocxTemplate && selectedDocxTemplate.id) || "").length > 0
+                readonly property bool hasSelectedChatResource:
+                    (selectedCollaborationAgentIds || []).length > 0
+                    || String(window.chatKnowledgeCollection || "").length > 0
+                    || hasSelectedDocxTemplate
+                readonly property bool expertInstallActive:
+                    window.pendingChatExpertInstall
+                    && wsClient.agentInstallBusy
+                    && String(wsClient.agentInstallingId || "")
+                       === String((selectedCollaborationAgentIds || [])[0] || "")
                 onSelectedCollaborationAgentIdsChanged: {
-                    if ((selectedCollaborationAgentIds || []).length > 0) {
-                        newTaskRec.clearDocxTemplateSelection(true)
-                        if (newTaskRec.isNewTaskWelcome) {
-                            window.chatKnowledgeCollection = ""
-                            knowledgePopup.close()
-                        }
-                    }
+                    // Expert, knowledge base and template selections are
+                    // intentionally independent and may coexist.
                 }
                 readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
                                                              || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
@@ -2951,7 +3068,69 @@ ApplicationWindow {
                     shortcutCardOffset = 0
                 }
 
-                function clearDocxTemplateSelection(clearMatchingPrompt) {
+                readonly property bool canSelectExpert:
+                    isNewTaskWelcome && !expertSelectionLocked
+                    && (selectedCollaborationAgentIds || []).length === 0
+                    && !expertInstallActive
+                    && window.visibleAgentList().length > 0
+                readonly property bool canSelectKnowledgeBase:
+                    (isNewTaskWelcome || hasActiveTask || chatSelectionsCommitted)
+                    && !knowledgeSelectionLocked
+                    && String(window.chatKnowledgeCollection || "").length === 0
+                    && window.kbCollections.length > 0
+                readonly property bool canSelectTemplate:
+                    (isNewTaskWelcome || hasActiveTask || chatSelectionsCommitted)
+                    && !templateSelectionLocked && !hasSelectedDocxTemplate
+                    && window.chatTemplateOptions().length > 0
+
+                function resetChatSelectionState() {
+                    chatSelectionsCommitted = false
+                    expertSelectionLocked = false
+                    knowledgeSelectionLocked = false
+                    templateSelectionLocked = false
+                    selectionSessionKey = ""
+                    selectedCollaborationAgentIds = []
+                    selectedDocxTemplate = ({})
+                    window.chatKnowledgeCollection = ""
+                    if (typeof chatOptionsPopup !== "undefined")
+                        chatOptionsPopup.close()
+                    if (typeof knowledgePopup !== "undefined")
+                        knowledgePopup.close()
+                }
+
+                function commitChatSelections() {
+                    if (chatSelectionsCommitted)
+                        return
+                    chatSelectionsCommitted = true
+                    expertSelectionLocked = true
+                    knowledgeSelectionLocked = String(window.chatKnowledgeCollection || "").length > 0
+                    templateSelectionLocked = hasSelectedDocxTemplate
+                    selectionSessionKey = String(wsClient.currentTaskSessionKey || "")
+                }
+
+                function beginChatSelectionSession(sessionKey) {
+                    var key = String(sessionKey || "")
+                    if (!key)
+                        return
+                    if (selectionSessionKey && selectionSessionKey !== key) {
+                        chatSelectionsCommitted = false
+                        expertSelectionLocked = false
+                        knowledgeSelectionLocked = false
+                        templateSelectionLocked = false
+                        selectedCollaborationAgentIds = []
+                        selectedDocxTemplate = ({})
+                        window.chatKnowledgeCollection = ""
+                        if (typeof chatOptionsPopup !== "undefined")
+                            chatOptionsPopup.close()
+                        if (typeof knowledgePopup !== "undefined")
+                            knowledgePopup.close()
+                    }
+                    selectionSessionKey = key
+                }
+
+                function clearDocxTemplateSelection(clearMatchingPrompt, force) {
+                    if (templateSelectionLocked && !force)
+                        return
                     if (!hasSelectedDocxTemplate)
                         return
                     var prompt = String(selectedDocxTemplate.prompt || "")
@@ -2959,6 +3138,133 @@ ApplicationWindow {
                     if (clearMatchingPrompt && prompt
                             && String(textInputArea.text || "") === prompt)
                         textInputArea.text = ""
+                }
+
+                function templateFromHistoryReference(reference, isUserTemplate) {
+                    var ref = String(reference || "").trim()
+                    if (!ref)
+                        return ({})
+                    var normalizedId = ref
+                    if (!isUserTemplate && normalizedId.length === 1)
+                        normalizedId = "0" + normalizedId
+                    var options = window.chatTemplateOptions()
+                    for (var i = 0; i < options.length; i++) {
+                        var option = options[i] || ({})
+                        var optionId = String(option.id || "").trim()
+                        if (!isUserTemplate && optionId.length === 1)
+                            optionId = "0" + optionId
+                        var matches = isUserTemplate
+                                ? String(option.templatePath || "").trim() === ref
+                                : optionId === normalizedId
+                        if (!matches)
+                            continue
+                        return {
+                            "id": String(option.id || normalizedId),
+                            "name": String(option.name || option.title || qsTr("模板")),
+                            "detail": String(option.detail || option.description || ""),
+                            "prompt": isUserTemplate
+                                      ? "" : TemplatePrompts.promptForId(normalizedId),
+                            "isUserTemplate": !!isUserTemplate,
+                            "templatePath": String(option.templatePath || (isUserTemplate ? ref : ""))
+                        }
+                    }
+                    return {
+                        "id": isUserTemplate ? ref : normalizedId,
+                        "name": isUserTemplate ? qsTr("用户模板") : qsTr("模板"),
+                        "detail": "",
+                        "prompt": isUserTemplate ? "" : TemplatePrompts.promptForId(normalizedId),
+                        "isUserTemplate": !!isUserTemplate,
+                        "templatePath": isUserTemplate ? ref : ""
+                    }
+                }
+
+                function selectChatExpert(agentId) {
+                    var id = String(agentId || "").trim()
+                    if (!id || !canSelectExpert || !window.isSelectableExpertAgentId(id))
+                        return
+                    if (wsClient.agentInstallBusy || wsClient.toolInstallBusy)
+                        return
+                    selectedCollaborationAgentIds = [id]
+                    window.summonExpert(id, "", true)
+                    chatOptionsPopup.close()
+                }
+
+                function selectChatTemplate(template) {
+                    if (!canSelectTemplate || !template)
+                        return
+                    var isUserTemplate = !!template.isUserTemplate
+                    var templateId = String(template.id || "").trim()
+                    if (!isUserTemplate && templateId.length === 1)
+                        templateId = "0" + templateId
+                    if (!templateId)
+                        return
+                    var prompt = isUserTemplate ? "" : TemplatePrompts.promptForId(templateId)
+                    var templatePath = String(template.templatePath || "")
+                    if (isUserTemplate && !templatePath)
+                        return
+                    if (!isUserTemplate && !prompt)
+                        return
+                    selectedDocxTemplate = {
+                        "id": templateId,
+                        "name": String(template.name || template.title || qsTr("预设模板")),
+                        "detail": String(template.detail || template.description || ""),
+                        "prompt": prompt,
+                        "isUserTemplate": isUserTemplate,
+                        "templatePath": templatePath
+                    }
+                    if (chatSelectionsCommitted)
+                        templateSelectionLocked = true
+                    // A preset template supplies the same starter prompt as
+                    // the template-library flow, but never replaces text the
+                    // user has already entered.
+                    if (!String(textInputArea.text || "").trim() && prompt)
+                        textInputArea.text = prompt
+                    chatOptionsPopup.close()
+                }
+
+                function restoreChatSelectionState(history) {
+                    var viewKey = String(wsClient.currentViewSessionKey || "")
+                    var taskKey = String(wsClient.currentTaskSessionKey || "")
+                    // Collaboration child sessions share the parent task's
+                    // resource contract; loading their history must not reset
+                    // the parent's knowledge-base/template choices.
+                    if (viewKey && taskKey && viewKey !== taskKey)
+                        return
+                    var rows = history || []
+                    var hasUserMessage = false
+                    var latestCollection = ""
+                    var hasTemplate = false
+                    var latestTemplateReference = ""
+                    var latestTemplateIsUser = false
+                    for (var i = 0; i < rows.length; i++) {
+                        var row = rows[i] || ({})
+                        if (String(row.role || "").toLowerCase() !== "user")
+                            continue
+                        hasUserMessage = true
+                        var text = String(row.content || row.text || "")
+                        var kbMatch = text.match(/<knowledge-base-policy>[\s\S]*?collection\s*=\s*\"([^\"]+)\"/i)
+                        if (kbMatch && kbMatch[1])
+                            latestCollection = String(kbMatch[1])
+                        var templateMatch = text.match(/<template-parameters>[\s\S]*?(template_(?:pack_id|path))\s*=\s*([^\n]+)/i)
+                        if (templateMatch) {
+                            hasTemplate = true
+                            latestTemplateReference = String(templateMatch[2] || "").trim()
+                            latestTemplateIsUser = String(templateMatch[1] || "").toLowerCase()
+                                    === "template_path"
+                        }
+                    }
+                    chatSelectionsCommitted = hasUserMessage
+                    expertSelectionLocked = hasUserMessage
+                    knowledgeSelectionLocked = latestCollection.length > 0
+                    templateSelectionLocked = hasTemplate
+                    selectionSessionKey = String(wsClient.currentTaskSessionKey || "")
+                    window.chatKnowledgeCollection = latestCollection
+                    // Restore the selected template so later turns continue
+                    // to carry the same template parameters.
+                    selectedDocxTemplate = hasTemplate
+                            ? templateFromHistoryReference(latestTemplateReference,
+                                                           latestTemplateIsUser)
+                            : ({})
                 }
 
                 function selectShortcutGroup(index) {
@@ -2988,6 +3294,8 @@ ApplicationWindow {
                 }
 
                 function doSendMessage(requestedText, files) {
+                    if (newTaskRec.expertInstallActive)
+                        return
                     var msg = (requestedText === undefined
                                ? textInputArea.text : String(requestedText)).trim()
                     var submittedFiles = files || []
@@ -3016,8 +3324,6 @@ ApplicationWindow {
                         // Reset the session key while preserving the model
                         // selected for this new conversation.
                         wsClient.clearActiveAgentContext(false)
-                    wsClient.setPendingCollaborationAgents(
-                        newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
                     if (newTaskRec.hasSelectedDocxTemplate) {
                         var selectedTemplate = newTaskRec.selectedDocxTemplate || ({})
                         var selectedTemplateId = String(selectedTemplate.id || "").trim()
@@ -3042,8 +3348,11 @@ ApplicationWindow {
                                 + "\n使用SKILLS：report-from-template"
                                 + "\n</template-parameters>"
                     }
+                    if (!newTaskRec.chatSelectionsCommitted)
+                        newTaskRec.commitChatSelections()
+                    wsClient.setPendingCollaborationAgents(
+                        newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
                     textInputArea.text = ""
-                    newTaskRec.selectedDocxTemplate = ({})
                     $MainViewController.sendMessage(
                         msg, wsPath, window.chatKnowledgeCollection)
                     sessionHistoryLoading = false
@@ -3082,9 +3391,19 @@ ApplicationWindow {
                     leftMidPanel.activeSessionKey = ""
                     chatModel.clear()
                     wsClient.clearActiveAgentContext()
+                    // Starting from the template library creates a fresh
+                    // conversation and clears choices from the previous task.
+                    chatSelectionsCommitted = false
+                    expertSelectionLocked = false
+                    knowledgeSelectionLocked = false
+                    templateSelectionLocked = false
+                    selectionSessionKey = ""
                     selectedCollaborationAgentIds = []
                     window.chatKnowledgeCollection = ""
-                    knowledgePopup.close()
+                    if (typeof chatOptionsPopup !== "undefined")
+                        chatOptionsPopup.close()
+                    if (typeof knowledgePopup !== "undefined")
+                        knowledgePopup.close()
                     resetShortcutSelection()
                     selectedDocxTemplate = {
                         "id": templateId,
@@ -3124,9 +3443,11 @@ ApplicationWindow {
                 Connections {
                     target: wsClient
                     function onCurrentViewSessionChanged() {
+                        newTaskRec.beginChatSelectionSession(wsClient.currentTaskSessionKey || "")
                         newTaskRec.beginSidebarSessionSwitch()
                     }
                     function onHistoryLoaded(messages) {
+                        newTaskRec.restoreChatSelectionState(messages)
                         newTaskRec.finishSidebarSessionLoad()
                     }
                 }
@@ -4835,10 +5156,9 @@ ApplicationWindow {
                                                                   : Math.min(maxTextInputHeight,
                                                                              Math.max(defaultTextInputHeight,
                                                                                       Math.ceil(textInputArea.textContentHeight) + 12))
-                    border.color: "#40000000"
-                    border.width: 1
-                    radius: 20
-                    height: currentTextInputHeight + 76
+                    color: "transparent"
+                    border.width: 0
+                    height: currentTextInputHeight + 112
                     readonly property real availableWidth: Math.max(320, parent.width
                                                                     - newTaskRec.artifactSidebarWidth)
                     width: Math.min(840, Math.max(320, availableWidth - 48))
@@ -4848,11 +5168,25 @@ ApplicationWindow {
                        : newTaskRec.height - height - 24
                     Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                    clip: true
+                    clip: false
+                    Rectangle {
+                        id: chatInputSurface
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: chatInputContainer.currentTextInputHeight + 76
+                        color: "#FFFFFF"
+                        border.color: "#40000000"
+                        border.width: 1
+                        radius: 20
+                        z: 1
+                    }
+
                     Column{
-                        anchors.fill: parent
+                        anchors.fill: chatInputSurface
                         padding: 12
                         spacing: 8
+                        z: 2
 
                         PromptComposer {
                             id: textInputArea
@@ -4869,6 +5203,7 @@ ApplicationWindow {
                             readOnly: wsClient.connectionState !== 3
                                       || !newTaskRec.viewingControllerSession
                                       || wsClient.chatRunning
+                                      || newTaskRec.expertInstallActive
                             onSubmitRequested: function(message, files) {
                                 newTaskRec.doSendMessage(message, files)
                             }
@@ -4882,118 +5217,543 @@ ApplicationWindow {
                             Row {
                                 anchors.fill: parent
                                 spacing: 4
-                                Item {
-                                    id: workspaceDialogSlot
-                                    width: newTaskRec.isNewTaskWelcome
-                                           ? (chatInputContainer.width < 700 ? 110 : 137) : 0
-                                    height: 36
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                Item {
-                                    id: modelPickerWrap
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: chatInputContainer.width < 700 ? 160 : 220
-                                    height: 36
-                                    property var modelIds: []
+                                 Item {
+                                     id: chatOptionsTrigger
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     readonly property bool hasOptions:
+                                         newTaskRec.canSelectExpert
+                                         || newTaskRec.canSelectKnowledgeBase
+                                         || newTaskRec.canSelectTemplate
+                                     // The popup is declared here for compatibility with
+                                     // existing references; its visible trigger is placed
+                                     // after the resource tags below.
+                                     visible: false
+                                     width: 0
+                                     height: 36
 
-                                    function qualifyModelRef(mid, pv) {
-                                        if (!mid)
-                                            return ""
-                                        if (!pv)
-                                            return mid
-                                        if (mid.indexOf(pv + "/") === 0)
-                                            return mid
-                                        return pv + "/" + mid
-                                    }
+                                     Popup {
+                                         id: chatOptionsPopup
+                                         parent: Overlay.overlay
+                                        width: Math.min(390, Math.max(300, chatInputContainer.width - 16))
+                                        height: Math.max(chatOptionsPrimaryPanel.height,
+                                                         chatOptionsSecondaryPanel.height)
+                                        z: 100
+                                        padding: 0
+                                        focus: true
+                                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                        property string activeCategory: ""
+                                        readonly property int secondaryItemCount:
+                                            activeCategory === "expert"
+                                            ? window.visibleAgentList().length
+                                            : activeCategory === "knowledge"
+                                              ? window.kbCollections.length
+                                              : activeCategory === "template"
+                                                ? window.chatTemplateOptions().length : 0
+                                        readonly property int secondaryMaximumHeight: 316
 
-                                    function rebuildFromGateway() {
-                                        var list = wsClient.modelList || []
-                                        var labels = []
-                                        var ids = []
-                                        for (var i = 0; i < list.length; i++) {
-                                            var m = list[i]
-                                            var mid = m.id || ""
-                                            if (!mid)
-                                                continue
-                                            var nm = m.name || mid
-                                            var pv = m.provider || ""
-                                            labels.push(window.modelDisplayLabel(nm, pv))
-                                            ids.push(qualifyModelRef(mid, pv))
-                                        }
-                                        modelIds = ids
-                                        if (labels.length === 0) {
-                                            dropdownSelectionModel.model = [qsTr("无可用模型")]
-                                            dropdownSelectionModel.currentIndex = 0
-                                            return
-                                        }
-                                        dropdownSelectionModel.model = labels
-                                        if (dropdownSelectionModel.currentIndex >= labels.length)
-                                            dropdownSelectionModel.currentIndex = 0
-                                        syncIndexFromGateway()
-                                    }
-
-                                    function syncIndexFromGateway() {
-                                        // 优先级：pending（用户最近一次点选的模型，sessions.patch 响应到达前的"意图"）
-                                        //     →  currentModel（服务端已确认的运行时模型）
-                                        // 否则保留 DropdownSelect 当前 currentIndex，避免下拉框被中间状态拉回旧选项。
-                                        var cur = wsClient.pendingSessionModelId || ""
-                                        if (!cur && wsClient.currentSessionKey && wsClient.currentSessionKey.length > 0) {
-                                            var cm = wsClient.currentModel || {}
-                                            cur = qualifyModelRef(cm.model || "",
-                                                                  cm.modelProvider || "")
-                                        }
-                                        var ids = modelIds
-                                        if (!cur || ids.length === 0)
-                                            return
-                                        for (var j = 0; j < ids.length; j++) {
-                                            if (ids[j] === cur) {
-                                                dropdownSelectionModel.currentIndex = j
+                                        function reposition() {
+                                            if (!Overlay.overlay || !chatOptionsVisualTrigger)
                                                 return
+                                            var point = chatOptionsVisualTrigger.mapToItem(Overlay.overlay, 0, 0)
+                                            x = Math.max(8, Math.min(point.x,
+                                                Overlay.overlay.width - width - 8))
+                                            y = Math.max(8, point.y - height - 8)
+                                        }
+
+                                        function firstAvailableCategory() {
+                                            if (newTaskRec.canSelectExpert) return "expert"
+                                            if (newTaskRec.canSelectKnowledgeBase) return "knowledge"
+                                            if (newTaskRec.canSelectTemplate) return "template"
+                                            return ""
+                                        }
+
+                                        function openCategory(category) {
+                                            if (category === "expert" && !newTaskRec.canSelectExpert)
+                                                return
+                                            if (category === "knowledge" && !newTaskRec.canSelectKnowledgeBase)
+                                                return
+                                            if (category === "template" && !newTaskRec.canSelectTemplate)
+                                                return
+                                            activeCategory = category
+                                        }
+
+                                        onAboutToShow: {
+                                            if (!activeCategory ||
+                                                (activeCategory === "expert" && !newTaskRec.canSelectExpert) ||
+                                                (activeCategory === "knowledge" && !newTaskRec.canSelectKnowledgeBase) ||
+                                                (activeCategory === "template" && !newTaskRec.canSelectTemplate))
+                                                activeCategory = firstAvailableCategory()
+                                            Qt.callLater(reposition)
+                                        }
+                                        onOpened: {
+                                            if (!activeCategory)
+                                                activeCategory = firstAvailableCategory()
+                                            Qt.callLater(reposition)
+                                        }
+                                        onWidthChanged: {
+                                            if (visible)
+                                                Qt.callLater(reposition)
+                                        }
+                                        onHeightChanged: {
+                                            if (visible)
+                                                Qt.callLater(reposition)
+                                        }
+
+                                        background: Rectangle {
+                                            color: "transparent"
+                                        }
+
+                                        contentItem: Row {
+                                            spacing: 4
+
+                                            Rectangle {
+                                                id: chatOptionsPrimaryPanel
+                                                width: 144
+                                                height: chatOptionsMenu.implicitHeight + 16
+                                                anchors.bottom: parent.bottom
+                                                radius: 10
+                                                color: "#FFFFFF"
+                                                border.width: 1
+                                                border.color: "#14000000"
+                                                layer.enabled: true
+                                                layer.effect: DropShadow {
+                                                    transparentBorder: true
+                                                    radius: 14
+                                                    samples: 25
+                                                    color: "#26000000"
+                                                    verticalOffset: 4
+                                                }
+
+                                                Column {
+                                                    id: chatOptionsMenu
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    spacing: 2
+
+                                                Rectangle {
+                                                    id: chatExpertMenuItem
+                                                    width: parent.width
+                                                    height: visible ? 38 : 0
+                                                    visible: newTaskRec.canSelectExpert
+                                                    radius: 6
+                                                    color: chatExpertMenuMouse.pressed ? "#14000000"
+                                                         : chatOptionsPopup.activeCategory === "expert"
+                                                           ? "#F0F2F5"
+                                                           : chatExpertMenuMouse.containsMouse ? "#0A000000"
+                                                           : "transparent"
+                                                    Image {
+                                                        width: 18; height: 18
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 10
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        source: "qrc:/images/expertIcon.png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                    }
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 38
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: qsTr("专家")
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                    }
+                                                    Canvas {
+                                                        width: 14; height: 14
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.lineWidth = 1.2
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(4, 3)
+                                                            ctx.lineTo(9, 7)
+                                                            ctx.lineTo(4, 11)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: chatExpertMenuMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: chatOptionsPopup.openCategory("expert")
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    id: chatKnowledgeMenuItem
+                                                    width: parent.width
+                                                    height: visible ? 38 : 0
+                                                    visible: newTaskRec.canSelectKnowledgeBase
+                                                    radius: 6
+                                                    color: chatKnowledgeMenuMouse.pressed ? "#14000000"
+                                                         : chatOptionsPopup.activeCategory === "knowledge"
+                                                           ? "#F0F2F5"
+                                                           : chatKnowledgeMenuMouse.containsMouse ? "#0A000000"
+                                                           : "transparent"
+                                                    Image {
+                                                        width: 18; height: 18
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 10
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        source: "qrc:/images/knowledgeIcon.png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                    }
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 38
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: qsTr("知识库")
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                    }
+                                                    Canvas {
+                                                        width: 14; height: 14
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.lineWidth = 1.2
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(4, 3)
+                                                            ctx.lineTo(9, 7)
+                                                            ctx.lineTo(4, 11)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: chatKnowledgeMenuMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: chatOptionsPopup.openCategory("knowledge")
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    id: chatTemplateMenuItem
+                                                    width: parent.width
+                                                    height: visible ? 38 : 0
+                                                    visible: newTaskRec.canSelectTemplate
+                                                    radius: 6
+                                                    color: chatTemplateMenuMouse.pressed ? "#14000000"
+                                                         : chatOptionsPopup.activeCategory === "template"
+                                                           ? "#F0F2F5"
+                                                           : chatTemplateMenuMouse.containsMouse ? "#0A000000"
+                                                           : "transparent"
+                                                    Image {
+                                                        width: 18; height: 18
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 10
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        source: "qrc:/images/templateIcon.png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                    }
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 38
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: qsTr("模板")
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                    }
+                                                    Canvas {
+                                                        width: 14; height: 14
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.lineWidth = 1.2
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(4, 3)
+                                                            ctx.lineTo(9, 7)
+                                                            ctx.lineTo(4, 11)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: chatTemplateMenuMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: chatOptionsPopup.openCategory("template")
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                            Rectangle {
+                                                id: chatOptionsSecondaryPanel
+                                                width: parent.width - chatOptionsPrimaryPanel.width - parent.spacing
+                                                height: Math.min(chatOptionsPopup.secondaryMaximumHeight,
+                                                                 Math.max(54,
+                                                                          chatOptionsPopup.secondaryItemCount * 38 + 16))
+                                                anchors.bottom: parent.bottom
+                                                radius: 10
+                                                color: "#FFFFFF"
+                                                border.width: 1
+                                                border.color: "#14000000"
+                                                layer.enabled: true
+                                                layer.effect: DropShadow {
+                                                    transparentBorder: true
+                                                    radius: 14
+                                                    samples: 25
+                                                    color: "#26000000"
+                                                    verticalOffset: 4
+                                                }
+
+                                                Item {
+                                                    id: chatOptionsListHost
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+
+                                                    Loader {
+                                                        anchors.fill: parent
+                                                        sourceComponent: chatOptionsPopup.activeCategory === "expert"
+                                                                         ? chatExpertListComponent
+                                                                         : chatOptionsPopup.activeCategory === "knowledge"
+                                                                           ? chatKnowledgeListComponent
+                                                                           : chatOptionsPopup.activeCategory === "template"
+                                                                             ? chatTemplateListComponent : null
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Component {
+                                            id: chatExpertListComponent
+                                            ListView {
+                                                clip: true
+                                                model: window.visibleAgentList()
+                                                boundsBehavior: Flickable.StopAtBounds
+                                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                                                delegate: Rectangle {
+                                                    width: ListView.view.width
+                                                    height: 38
+                                                    radius: 6
+                                                    color: chatExpertOptionMouse.pressed ? "#14000000"
+                                                         : chatExpertOptionMouse.containsMouse ? "#0A000000"
+                                                         : "transparent"
+                                                    Image {
+                                                        width: 18; height: 18
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        source: "qrc:/images/expertIcon.png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                    }
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 34
+                                                        anchors.right: chatExpertOptionCheck.left
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: String(modelData.name || modelData.id || qsTr("未命名专家"))
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                        elide: Text.ElideRight
+                                                    }
+                                                    Canvas {
+                                                        id: chatExpertOptionCheck
+                                                        width: 16; height: 16
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        visible: {
+                                                            var ids = newTaskRec.selectedCollaborationAgentIds || []
+                                                            return ids.indexOf(String(modelData.id || "")) >= 0
+                                                        }
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#006BFF"
+                                                            ctx.lineWidth = 1.8
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(3, 8)
+                                                            ctx.lineTo(6.5, 11)
+                                                            ctx.lineTo(13, 4.5)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: chatExpertOptionMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: newTaskRec.selectChatExpert(String(modelData.id || ""))
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Component {
+                                            id: chatKnowledgeListComponent
+                                            ListView {
+                                                clip: true
+                                                model: window.kbCollections
+                                                boundsBehavior: Flickable.StopAtBounds
+                                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                                                delegate: Rectangle {
+                                                    width: ListView.view.width
+                                                    height: 38
+                                                    radius: 6
+                                                    color: chatKnowledgeOptionMouse.pressed ? "#14000000"
+                                                         : chatKnowledgeOptionMouse.containsMouse ? "#0A000000"
+                                                         : "transparent"
+                                                    Image {
+                                                        width: 18; height: 18
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        source: "qrc:/images/knowledgeIcon.png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                    }
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 34
+                                                        anchors.right: chatKnowledgeOptionCheck.left
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: String(modelData.name || qsTr("未命名知识库"))
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                        elide: Text.ElideRight
+                                                    }
+                                                    Canvas {
+                                                        id: chatKnowledgeOptionCheck
+                                                        width: 16; height: 16
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        visible: window.chatKnowledgeCollection === String(modelData.id || "")
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#006BFF"
+                                                            ctx.lineWidth = 1.8
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(3, 8)
+                                                            ctx.lineTo(6.5, 11)
+                                                            ctx.lineTo(13, 4.5)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: chatKnowledgeOptionMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            window.kbToggleChatCollection(String(modelData.id || ""))
+                                                            chatOptionsPopup.close()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Component {
+                                            id: chatTemplateListComponent
+                                            ListView {
+                                                clip: true
+                                                model: window.chatTemplateOptions()
+                                                boundsBehavior: Flickable.StopAtBounds
+                                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                                                delegate: Rectangle {
+                                                    width: ListView.view.width
+                                                    height: 38
+                                                    radius: 6
+                                                    color: chatTemplateOptionMouse.pressed ? "#14000000"
+                                                         : chatTemplateOptionMouse.containsMouse ? "#0A000000"
+                                                         : "transparent"
+                                                    Image {
+                                                        width: 18; height: 18
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        source: "qrc:/images/templateIcon.png"
+                                                        fillMode: Image.PreserveAspectFit
+                                                    }
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 34
+                                                        anchors.right: chatTemplateOptionCheck.left
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: String(modelData.name || qsTr("未命名模板"))
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                        elide: Text.ElideRight
+                                                    }
+                                                    Canvas {
+                                                        id: chatTemplateOptionCheck
+                                                        width: 16; height: 16
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        visible: newTaskRec.hasSelectedDocxTemplate
+                                                                 && String(newTaskRec.selectedDocxTemplate.id || "")
+                                                                    === String(modelData.id || "")
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#006BFF"
+                                                            ctx.lineWidth = 1.8
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(3, 8)
+                                                            ctx.lineTo(6.5, 11)
+                                                            ctx.lineTo(13, 4.5)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: chatTemplateOptionMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: newTaskRec.selectChatTemplate(modelData)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-
-                                    readonly property bool modelPickerEnabled: wsClient.connectionState === 3
-
-                                    Connections {
-                                        target: wsClient
-                                        function onModelListChanged() { modelPickerWrap.rebuildFromGateway() }
-                                        function onCurrentModelChanged() { modelPickerWrap.syncIndexFromGateway() }
-                                        function onCurrentSessionChanged() { modelPickerWrap.syncIndexFromGateway() }
-                                        function onPendingSessionModelIdChanged() { modelPickerWrap.syncIndexFromGateway() }
-                                    }
-
-                                    DropdownSelect {
-                                        id: dropdownSelectionModel
-                                        anchors.fill: parent
-                                        model: [qsTr("加载中…")]
-                                        icon: "qrc:/images/ai.png"
-                                        iconSize: 16
-                                        currentIndex: 0
-                                        alignment: Qt.AlignLeft
-                                        popupMaxWidth: 320
-                                        popupMaxHeight: 280
-                                        onSelected: function(index, text) {
-                                            if (modelPickerWrap.modelIds.length === 0)
-                                                return
-                                            if (index < 0 || index >= modelPickerWrap.modelIds.length)
-                                                return
-                                            wsClient.patchSessionModel(modelPickerWrap.modelIds[index])
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        visible: !modelPickerWrap.modelPickerEnabled
-                                        hoverEnabled: false
-                                        onClicked: {}
-                                    }
                                 }
-                                Item {
-                                    id: templateSelectionTag
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    visible: newTaskRec.isNewTaskWelcome
-                                             && newTaskRec.hasSelectedDocxTemplate
+                                 Row {
+                                     id: resourceTagRow
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     visible: newTaskRec.hasSelectedChatResource
+                                     width: visible ? implicitWidth : 0
+                                     height: 36
+                                     spacing: 8
+                                     layoutDirection: Qt.RightToLeft
+                                     clip: true
+                                 }
+                                 Item {
+                                     id: templateSelectionTag
+                                     parent: resourceTagRow
+                                     anchors.verticalCenter: parent.verticalCenter
+                                    visible: newTaskRec.hasSelectedDocxTemplate
                                     width: visible
                                            ? Math.min(chatInputContainer.width < 700 ? 180 : 240,
                                                       templateTagRow.implicitWidth + 24)
@@ -5013,7 +5773,7 @@ ApplicationWindow {
                                             Image {
                                                 width: 16
                                                 height: 16
-                                                source: "qrc:/images/chosenTemplate.png"
+                                                source: "qrc:/images/templateIcon.png"
                                                 fillMode: Image.PreserveAspectFit
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
@@ -5032,6 +5792,7 @@ ApplicationWindow {
                                                 width: 16
                                                 height: 16
                                                 source: "qrc:/images/close.png"
+                                                visible: !newTaskRec.templateSelectionLocked
                                                 fillMode: Image.PreserveAspectFit
                                                 opacity: templateTagCloseMouse.containsMouse ? 1 : 0.65
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -5041,7 +5802,8 @@ ApplicationWindow {
                                                     anchors.fill: parent
                                                     anchors.margins: -6
                                                     hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
+                                                    enabled: !newTaskRec.templateSelectionLocked
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                     onClicked: newTaskRec.clearDocxTemplateSelection(true)
                                                 }
                                             }
@@ -5058,10 +5820,12 @@ ApplicationWindow {
                                     readonly property string selectedName: window.chatKnowledgeCollection
                                             ? window.kbCollectionName(window.chatKnowledgeCollection)
                                             : qsTr("知识库")
-                                    visible: !expertSelected && !templateSelected
-                                    width: visible
-                                           ? Math.min(220, Math.max(104, knowledgeTriggerTextMetrics.advanceWidth + 58))
-                                           : 0
+                                    // Kept as a compatibility shell for the
+                                    // existing knowledge popup references.  The
+                                    // chat-facing trigger now lives under the
+                                    // composer plus button below.
+                                    visible: false
+                                    width: 0
                                     height: 36
 
                                     Rectangle {
@@ -5243,12 +6007,83 @@ ApplicationWindow {
                                         }
                                     }
                                 }
-                                Item {
-                                    id: expertSelectionTag
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    readonly property string expertId: {
+                                 Item {
+                                     id: knowledgeSelectionTag
+                                     parent: resourceTagRow
+                                     anchors.verticalCenter: parent.verticalCenter
+                                    visible: String(window.chatKnowledgeCollection || "").length > 0
+                                    width: visible
+                                           ? Math.min(chatInputContainer.width < 700 ? 180 : 240,
+                                                      knowledgeTagRow.implicitWidth + 24)
+                                           : 0
+                                    height: 36
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: "#F0F2F5"
+
+                                        Row {
+                                            id: knowledgeTagRow
+                                            anchors.centerIn: parent
+                                            spacing: 8
+
+                                            Image {
+                                                width: 16
+                                                height: 16
+                                                source: "qrc:/images/knowledgeIcon.png"
+                                                fillMode: Image.PreserveAspectFit
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Label {
+                                                width: Math.min(chatInputContainer.width < 700 ? 116 : 176,
+                                                                implicitWidth)
+                                                text: window.kbCollectionName(window.chatKnowledgeCollection)
+                                                font.pixelSize: 14
+                                                color: "#D9000000"
+                                                elide: Text.ElideRight
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Image {
+                                                width: 16
+                                                height: 16
+                                                source: "qrc:/images/close.png"
+                                                visible: !newTaskRec.knowledgeSelectionLocked
+                                                fillMode: Image.PreserveAspectFit
+                                                opacity: knowledgeTagCloseMouse.containsMouse ? 1 : 0.65
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                MouseArea {
+                                                    id: knowledgeTagCloseMouse
+                                                    anchors.fill: parent
+                                                    anchors.margins: -6
+                                                    enabled: !newTaskRec.knowledgeSelectionLocked
+                                                    hoverEnabled: true
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                    onClicked: window.kbToggleChatCollection(window.chatKnowledgeCollection)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                 Item {
+                                     id: expertSelectionTag
+                                     parent: resourceTagRow
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     readonly property bool expertInstalling:
+                                         newTaskRec.expertInstallActive
+                                         && String(wsClient.agentInstallingId || "")
+                                            === expertSelectionTag.expertId
+                                     readonly property string expertId: {
                                         var ids = newTaskRec.selectedCollaborationAgentIds || []
-                                        return ids.length > 0 ? String(ids[0] || "") : ""
+                                        for (var i = 0; i < ids.length; i++) {
+                                            var id = String(ids[i] || "")
+                                            if (id && window.isSelectableExpertAgentId(id))
+                                                return id
+                                        }
+                                        return ""
                                     }
                                     readonly property string expertName: {
                                         var list = wsClient.agentList || []
@@ -5258,6 +6093,8 @@ ApplicationWindow {
                                         }
                                         return expertId
                                     }
+                                    // Once the first turn starts, the active
+                                    // expert team is shown by CollaborationPicker.
                                     visible: newTaskRec.isNewTaskWelcome && expertId.length > 0
                                     width: visible ? Math.min(chatInputContainer.width < 700 ? 180 : 240,
                                                               expertTagRow.implicitWidth + 24) : 0
@@ -5268,18 +6105,52 @@ ApplicationWindow {
                                         radius: 8
                                         color: "#F7F9FA"
 
+                                        HoverHandler {
+                                            id: expertTagInstallHover
+                                            enabled: expertSelectionTag.expertInstalling
+                                        }
+
                                         Row {
                                             id: expertTagRow
                                             anchors.centerIn: parent
                                             spacing: 8
 
-                                            Image {
-                                                width: 16
-                                                height: 16
-                                                source: "qrc:/images/expert.png"
-                                                fillMode: Image.PreserveAspectFit
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
+                                             Image {
+                                                 id: expertTagIcon
+                                                 width: 16
+                                                 height: 16
+                                                 visible: !expertSelectionTag.expertInstalling
+                                                 source: "qrc:/images/expertIcon.png"
+                                                 fillMode: Image.PreserveAspectFit
+                                                 anchors.verticalCenter: parent.verticalCenter
+                                             }
+
+                                             TaskSessionStatusIndicator {
+                                                 id: expertTagInstallIndicator
+                                                 width: 16
+                                                 height: 16
+                                                 visible: expertSelectionTag.expertInstalling
+                                                 running: visible
+                                                 anchors.verticalCenter: parent.verticalCenter
+
+                                                 ToolTip {
+                                                     id: expertTagInstallToolTip
+                                                     visible: expertTagInstallIndicator.visible
+                                                              && expertTagInstallHover.hovered
+                                                     text: qsTr("正在准备环境中")
+                                                     delay: 500
+                                                     background: Rectangle {
+                                                         color: "#A6000000"
+                                                         radius: 4
+                                                     }
+                                                     contentItem: Text {
+                                                         text: expertTagInstallToolTip.text
+                                                         font.pixelSize: 13
+                                                         color: "#FFFFFF"
+                                                         font.family: "Alibaba PuHuiTi 3.0"
+                                                     }
+                                                 }
+                                             }
 
                                             Label {
                                                 width: Math.min(170, implicitWidth)
@@ -5295,6 +6166,7 @@ ApplicationWindow {
                                                 width: 20
                                                 height: 20
                                                 source: "qrc:/images/close.png"
+                                                visible: !newTaskRec.expertSelectionLocked
                                                 fillMode: Image.PreserveAspectFit
                                                 opacity: expertTagCloseMouse.containsMouse ? 1 : 0.65
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -5303,15 +6175,71 @@ ApplicationWindow {
                                                     id: expertTagCloseMouse
                                                     anchors.fill: parent
                                                     anchors.margins: -6
+                                                    enabled: !newTaskRec.expertSelectionLocked
                                                     hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                     onClicked: newTaskRec.selectedCollaborationAgentIds = []
                                                 }
                                             }
                                         }
-                                    }
-                                }
-                                CollaborationPicker {
+                                     }
+                                 }
+                                 Item {
+                                     id: chatOptionsVisualTrigger
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     visible: chatOptionsTrigger.hasOptions
+                                     width: visible ? 36 : 0
+                                     height: 36
+
+                                     Rectangle {
+                                         id: chatOptionsVisualButton
+                                         anchors.fill: parent
+                                         radius: 8
+                                         color: chatOptionsVisualButtonMouse.pressed ? "#14000000"
+                                              : chatOptionsVisualButtonMouse.containsMouse ? "#0A000000"
+                                              : "transparent"
+                                         border.width: chatOptionsPopup.visible ? 1 : 0
+                                         border.color: "#26006BFF"
+
+                                         Label {
+                                             anchors.centerIn: parent
+                                             text: "+"
+                                             font.pixelSize: 23
+                                             font.weight: Font.Normal
+                                             color: "#73000000"
+                                         }
+
+                                         MouseArea {
+                                             id: chatOptionsVisualButtonMouse
+                                             anchors.fill: parent
+                                             hoverEnabled: true
+                                             cursorShape: Qt.PointingHandCursor
+                                             onClicked: {
+                                                 if (chatOptionsPopup.visible)
+                                                     chatOptionsPopup.close()
+                                                 else {
+                                                     chatOptionsPopup.reposition()
+                                                     chatOptionsPopup.open()
+                                                 }
+                                             }
+                                         }
+
+                                         ToolTip {
+                                             id: chatOptionsVisualButtonToolTip
+                                             visible: chatOptionsVisualButtonMouse.containsMouse
+                                             text: qsTr("添加专家、知识库或模板")
+                                             delay: 500
+                                             background: Rectangle { color: "#A6000000"; radius: 4 }
+                                             contentItem: Text {
+                                                 text: chatOptionsVisualButtonToolTip.text
+                                                 font.pixelSize: 13
+                                                 color: "#FFFFFF"
+                                                 font.family: "Alibaba PuHuiTi 3.0"
+                                             }
+                                         }
+                                     }
+                                 }
+                                 CollaborationPicker {
                                     id: collaborationPicker
                                     anchors.verticalCenter: parent.verticalCenter
                                     visible: newTaskRec.hasActiveTask
@@ -6077,14 +7005,13 @@ ApplicationWindow {
                                 //         }
                                 //     }
                                 // }
-                                Rectangle{
-                                    width: Math.max(0, parent.width - workspaceDialogSlot.width
-                                                    - dropdownSelectionModel.width
-                                                    - templateSelectionTag.width
+                                 Rectangle{
+                                     width: Math.max(0, parent.width - chatOptionsTrigger.width
+                                                      - resourceTagRow.width
+                                                      - chatOptionsVisualTrigger.width
                                                     - knowledgePickerWrap.width
-                                                    - expertSelectionTag.width
                                                     - collaborationPicker.width
-                                                    - inputLeftRow.width - 7 * 4)
+                                                     - inputLeftRow.width - 6 * 4)
                                     height: 1
                                 }
                                 Row{
@@ -6193,6 +7120,7 @@ ApplicationWindow {
                                         text: ""
                                         anchors.verticalCenter: parent.verticalCenter
                                         enabled: newTaskRec.viewingControllerSession
+                                                  && !newTaskRec.expertInstallActive
                                                   && (wsClient.chatRunning
                                                       || textInputArea.text !== "")
                                         backgroundColor: "#006BFF"
@@ -6201,6 +7129,158 @@ ApplicationWindow {
                                                    ? wsClient.abortChat()
                                                    : textInputArea.submit()
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        id: composerSettingsSurface
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: chatInputSurface.height + 40
+                        radius: 22
+                        color: "#EBEDF0"
+                        z: 0
+                        Row {
+                            id: composerSettingsRow
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.bottom: parent.bottom
+                            height: 40
+                            spacing: 4
+                            Item {
+                                id: workspaceDialogSlot
+                                width: newTaskRec.isNewTaskWelcome
+                                       ? (chatInputContainer.width < 700 ? 110 : 137) : 0
+                                height: 36
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            Item {
+                                id: modelPickerWrap
+                                anchors.verticalCenter: parent.verticalCenter
+                                readonly property int modelPickerMinWidth: 132
+                                readonly property int modelPickerHardMaxWidth:
+                                    chatInputContainer.width < 700 ? 240 : 480
+                                readonly property int modelPickerDesiredWidth:
+                                    Math.ceil(modelPickerTextMetrics.advanceWidth) + 66
+                                readonly property int modelPickerAvailableWidth: {
+                                    if (!parent)
+                                        return modelPickerHardMaxWidth
+                                    return Math.max(modelPickerMinWidth,
+                                                    parent.width
+                                                    - workspaceDialogSlot.width
+                                                    - 4)
+                                }
+                                width: Math.min(modelPickerHardMaxWidth,
+                                                Math.max(modelPickerMinWidth,
+                                                         Math.min(modelPickerDesiredWidth,
+                                                                  modelPickerAvailableWidth)))
+                                height: 36
+                                property var modelIds: []
+
+                                function qualifyModelRef(mid, pv) {
+                                    if (!mid)
+                                        return ""
+                                    if (!pv)
+                                        return mid
+                                    if (mid.indexOf(pv + "/") === 0)
+                                        return mid
+                                    return pv + "/" + mid
+                                }
+
+                                function rebuildFromGateway() {
+                                    var list = wsClient.modelList || []
+                                    var labels = []
+                                    var ids = []
+                                    for (var i = 0; i < list.length; i++) {
+                                        var m = list[i]
+                                        var mid = m.id || ""
+                                        if (!mid)
+                                            continue
+                                        var nm = m.name || mid
+                                        var pv = m.provider || ""
+                                        labels.push(window.modelDisplayLabel(nm, pv))
+                                        ids.push(qualifyModelRef(mid, pv))
+                                    }
+                                    modelIds = ids
+                                    if (labels.length === 0) {
+                                        dropdownSelectionModel.model = [qsTr("无可用模型")]
+                                        dropdownSelectionModel.currentIndex = 0
+                                        return
+                                    }
+                                    dropdownSelectionModel.model = labels
+                                    if (dropdownSelectionModel.currentIndex >= labels.length)
+                                        dropdownSelectionModel.currentIndex = 0
+                                    syncIndexFromGateway()
+                                }
+
+                                function syncIndexFromGateway() {
+                                    // 优先级：pending（用户最近一次点选的模型，sessions.patch 响应到达前的"意图"）
+                                    //     →  currentModel（服务端已确认的运行时模型）
+                                    // 否则保留 DropdownSelect 当前 currentIndex，避免下拉框被中间状态拉回旧选项。
+                                    var cur = wsClient.pendingSessionModelId || ""
+                                    if (!cur && wsClient.currentSessionKey && wsClient.currentSessionKey.length > 0) {
+                                        var cm = wsClient.currentModel || {}
+                                        cur = qualifyModelRef(cm.model || "",
+                                                              cm.modelProvider || "")
+                                    }
+                                    var ids = modelIds
+                                    if (!cur || ids.length === 0)
+                                        return
+                                    for (var j = 0; j < ids.length; j++) {
+                                        if (ids[j] === cur) {
+                                            dropdownSelectionModel.currentIndex = j
+                                            return
+                                        }
+                                    }
+                                }
+
+                                readonly property bool modelPickerEnabled: wsClient.connectionState === 3
+
+                                Connections {
+                                    target: wsClient
+                                    function onModelListChanged() { modelPickerWrap.rebuildFromGateway() }
+                                    function onCurrentModelChanged() { modelPickerWrap.syncIndexFromGateway() }
+                                    function onCurrentSessionChanged() { modelPickerWrap.syncIndexFromGateway() }
+                                    function onPendingSessionModelIdChanged() { modelPickerWrap.syncIndexFromGateway() }
+                                }
+
+                                DropdownSelect {
+                                    id: dropdownSelectionModel
+                                    anchors.fill: parent
+                                    model: [qsTr("加载中…")]
+                                    icon: "qrc:/images/aiGrey.png"
+                                    iconSize: 16
+                                    textColor: "#A6000000"
+                                    currentIndex: 0
+                                    alignment: Qt.AlignLeft
+                                    popupMaxWidth: 320
+                                    popupMaxHeight: 280
+                                    onSelected: function(index, text) {
+                                        if (modelPickerWrap.modelIds.length === 0)
+                                            return
+                                        if (index < 0 || index >= modelPickerWrap.modelIds.length)
+                                            return
+                                        wsClient.patchSessionModel(modelPickerWrap.modelIds[index])
+                                    }
+                                }
+
+                                TextMetrics {
+                                    id: modelPickerTextMetrics
+                                    text: dropdownSelectionModel.currentText
+                                    font.pixelSize: dropdownSelectionModel.fontSize
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    visible: !modelPickerWrap.modelPickerEnabled
+                                    hoverEnabled: false
+                                    onClicked: {}
                                 }
                             }
                         }
@@ -6568,7 +7648,7 @@ ApplicationWindow {
                             updated.push(existing)
                     }
                     updated.unshift(normalized)
-                    recentFolders = updated.slice(0, 8)
+                    recentFolders = updated.slice(0, 5)
                     workspaceSettings.recentFoldersJson = JSON.stringify(recentFolders)
                 }
 
@@ -6578,7 +7658,7 @@ ApplicationWindow {
                         if (stored instanceof Array)
                             recentFolders = stored.filter(function(path) {
                                 return String(path || "").trim().length > 0
-                            }).slice(0, 8)
+                            }).slice(0, 5)
                     } catch (error) {
                         recentFolders = []
                     }
@@ -6682,7 +7762,7 @@ ApplicationWindow {
                             elide: Text.ElideMiddle
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
-                            color: "#D9000000"
+                            color: "#A6000000"
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -6787,8 +7867,6 @@ ApplicationWindow {
                                     source: "qrc:/images/folder.png"
                                     width: 18; height: 18
                                     anchors.verticalCenter: parent.verticalCenter
-                                    fillMode: Image.PreserveAspectFit
-                                    sourceSize: Qt.size(18, 18)
                                 }
                                 Text {
                                     text: qsTr("打开文件夹")
@@ -6836,7 +7914,7 @@ ApplicationWindow {
                             visible: dropdownSelectionWorkSpace.recentFolders.length > 0
                             model: dropdownSelectionWorkSpace.recentFolders
                             delegate: Rectangle {
-                                width: wsPopup.width - 8
+                                width: wsPopup.width - 16
                                 height: 36
                                 radius: 6
                                 color: recentMouse.pressed ? "#14000000"
@@ -6848,14 +7926,12 @@ ApplicationWindow {
                                     spacing: 8
                                     anchors.verticalCenter: parent.verticalCenter
                                     anchors.left: parent.left
-                                    anchors.leftMargin: 12
+                                    anchors.leftMargin: 6
 
                                     Image {
                                         source: "qrc:/images/folder.png"
                                         width: 18; height: 18
                                         anchors.verticalCenter: parent.verticalCenter
-                                        fillMode: Image.PreserveAspectFit
-                                        sourceSize: Qt.size(18, 18)
                                     }
                                     Text {
                                         text: dropdownSelectionWorkSpace.folderDisplayName(modelData)
@@ -7988,7 +9064,7 @@ ApplicationWindow {
 
                 ExpertPage {
                     anchors.fill: parent
-                    agentList: wsClient.agentList || []
+                    agentList: window.visibleAgentList()
                     searchText: agentManageRec.searchText
                     installBusy: wsClient.agentInstallBusy
                     installProgress: wsClient.agentInstallProgress
@@ -10412,6 +11488,7 @@ ApplicationWindow {
                             leftMidPanel.activeAgentId = ""
                             leftMidPanel.activeSessionKey = ""
                             chatModel.clear()
+                            newTaskRec.resetChatSelectionState()
                             window.leftSelectedIndex = 0
                         }
                         deleteSessionPopup.close()

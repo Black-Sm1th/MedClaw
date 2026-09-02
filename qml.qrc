@@ -238,5 +238,10 @@
         <file>images/uploadTemplate.png</file>
         <file>images/templateEmpty.png</file>
         <file>images/minus-square.png</file>
+        <file>images/AI.png</file>
+        <file>images/expertIcon.png</file>
+        <file>images/knowledgeIcon.png</file>
+        <file>images/templateIcon.png</file>
+        <file>images/aiGrey.png</file>
     </qresource>
 </RCC>
