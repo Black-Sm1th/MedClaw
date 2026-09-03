@@ -8758,6 +8758,45 @@ ApplicationWindow {
                                             }
                                             contentItem: Column {
                                                 spacing: 2
+                                                // 置顶
+                                                Rectangle {
+                                                    width: 140
+                                                    height: 36
+                                                    radius: 6
+                                                    color: miPin.pressed ? "#14000000"
+                                                         : miPin.containsMouse ? "#EBEDF0" : "transparent"
+                                                    Row {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 12
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        spacing: 8
+                                                        Image {
+                                                            width: 16
+                                                            height: 16
+                                                            source: "qrc:/images/pin.png"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                        Label {
+                                                            text: cronJobRow.job.pinned
+                                                                  ? qsTr("取消置顶") : qsTr("置顶")
+                                                            font.pixelSize: 14
+                                                            color: "#D9000000"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: miPin
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            cronRowMoreMenu.close()
+                                                            wsClient.setCronJobPinned(
+                                                                        cronJobRow.job.id,
+                                                                        !cronJobRow.job.pinned)
+                                                        }
+                                                    }
+                                                }
                                                 // 立即运行
                                                 Rectangle {
                                                     width: 140

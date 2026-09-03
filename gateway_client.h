@@ -499,6 +499,9 @@ public:
     /// 启用/禁用定时任务
     Q_INVOKABLE void setCronJobEnabled(const QString &jobId, bool enabled);
 
+    /// 更新当前用户定时任务的本地置顶状态。
+    Q_INVOKABLE void setCronJobPinned(const QString &jobId, bool pinned);
+
     /// 删除定时任务
     Q_INVOKABLE void removeCronJob(const QString &jobId);
 
@@ -883,6 +886,7 @@ private:
     void loadCronJobOwnershipFromDb();
     void upsertCronJobOwnershipLocal(const QString &jobId,
                                      const QString &userId = QString());
+    void setCronJobPinnedLocal(const QString &jobId, bool pinned);
     void softDeleteCronJobOwnershipLocal(const QString &jobId);
     bool isCronJobOwnedByCurrentUser(const QString &jobId) const;
     static QString taskTitleFromFirstMessage(const QString &message);
@@ -992,6 +996,7 @@ private:
     QSet<QString>    m_runningTaskSessionKeys;
     QString          m_taskSessionUserId;
     QSet<QString>    m_currentUserCronJobIds; ///< 当前登录用户拥有的 cron job ID
+    QSet<QString>    m_currentUserPinnedCronJobIds; ///< 当前用户置顶的 cron job ID
     QString          m_defaultAgentId;  ///< 默认 agent ID
     QString          m_currentTaskSessionKey; ///< 主控任务 sessionKey
     QString          m_currentViewSessionKey; ///< 聊天区当前查看 sessionKey

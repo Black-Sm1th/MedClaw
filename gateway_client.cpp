@@ -652,16 +652,24 @@ QVariantList GatewayClient::skillList() const
 /// 委托给 WsScheduledTask 获取任务列表
 QVariantList GatewayClient::cronJobs() const
 {
-    QVariantList owned;
+    QVariantList pinnedJobs;
+    QVariantList regularJobs;
     if (m_taskSessionUserId.isEmpty())
-        return owned;
+        return regularJobs;
     for (const QVariant &v : m_scheduledTask.jobList()) {
-        const QString jobId =
-            v.toMap().value(QStringLiteral("id")).toString().trimmed();
-        if (m_currentUserCronJobIds.contains(jobId))
-            owned.append(v);
+        QVariantMap job = v.toMap();
+        const QString jobId = job.value(QStringLiteral("id")).toString().trimmed();
+        if (!m_currentUserCronJobIds.contains(jobId))
+            continue;
+        const bool pinned = m_currentUserPinnedCronJobIds.contains(jobId);
+        job[QStringLiteral("pinned")] = pinned;
+        if (pinned)
+            pinnedJobs.append(job);
+        else
+            regularJobs.append(job);
     }
-    return owned;
+    pinnedJobs.append(regularJobs);
+    return pinnedJobs;
 }
 
 /// 委托给 WsScheduledTask 获取 cron 服务状态
@@ -1003,9 +1011,27 @@ bool GatewayClient::initTaskSessionDb()
             "created_at INTEGER NOT NULL,"
             "updated_at INTEGER NOT NULL,"
             "deleted_at INTEGER,"
+            "pinned INTEGER NOT NULL DEFAULT 0,"
             "PRIMARY KEY (user_id, job_id)"
             ")"))) {
         qWarning().noquote() << "[TaskSessionDb] create cron_jobs failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    bool cronJobsHasPinned = false;
+    if (q.exec(QStringLiteral("PRAGMA table_info(cron_jobs)"))) {
+        while (q.next()) {
+            if (q.value(1).toString() == QLatin1String("pinned")) {
+                cronJobsHasPinned = true;
+                break;
+            }
+        }
+    }
+    if (!cronJobsHasPinned
+        && !q.exec(QStringLiteral(
+            "ALTER TABLE cron_jobs "
+            "ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"))) {
+        qWarning().noquote() << "[TaskSessionDb] add cron pinned failed:"
                              << q.lastError().text();
         return false;
     }
@@ -2402,6 +2428,7 @@ QString GatewayClient::normalizeWorkspacePath(const QString &workspace) const
 void GatewayClient::loadCronJobOwnershipFromDb()
 {
     m_currentUserCronJobIds.clear();
+    m_currentUserPinnedCronJobIds.clear();
     if (m_taskSessionUserId.isEmpty() || !initTaskSessionDb()) {
         emit cronJobsChanged();
         return;
@@ -2418,7 +2445,7 @@ void GatewayClient::loadCronJobOwnershipFromDb()
 
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
-        "SELECT job_id FROM cron_jobs "
+        "SELECT job_id, pinned FROM cron_jobs "
         "WHERE user_id=? AND deleted_at IS NULL"));
     q.addBindValue(m_taskSessionUserId);
     if (!q.exec()) {
@@ -2429,8 +2456,11 @@ void GatewayClient::loadCronJobOwnershipFromDb()
     }
     while (q.next()) {
         const QString jobId = q.value(0).toString().trimmed();
-        if (!jobId.isEmpty())
+        if (!jobId.isEmpty()) {
             m_currentUserCronJobIds.insert(jobId);
+            if (q.value(1).toBool())
+                m_currentUserPinnedCronJobIds.insert(jobId);
+        }
     }
     emit cronJobsChanged();
     emit cronStatusChanged();
@@ -2498,6 +2528,34 @@ void GatewayClient::softDeleteCronJobOwnershipLocal(const QString &jobId)
         return;
     }
     m_currentUserCronJobIds.remove(jid);
+    m_currentUserPinnedCronJobIds.remove(jid);
+}
+
+void GatewayClient::setCronJobPinnedLocal(const QString &jobId, bool pinned)
+{
+    const QString jid = jobId.trimmed();
+    if (jid.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return;
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE cron_jobs SET pinned=? "
+        "WHERE user_id=? AND job_id=? AND deleted_at IS NULL"));
+    q.addBindValue(pinned ? 1 : 0);
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(jid);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] set cron pinned failed:"
+                             << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() <= 0)
+        return;
+    if (pinned)
+        m_currentUserPinnedCronJobIds.insert(jid);
+    else
+        m_currentUserPinnedCronJobIds.remove(jid);
+    emit cronJobsChanged();
 }
 
 bool GatewayClient::isCronJobOwnedByCurrentUser(const QString &jobId) const
@@ -6545,6 +6603,15 @@ void GatewayClient::setCronJobEnabled(const QString &jobId, bool enabled)
     }
     sendRequest(QStringLiteral("cron.update"),
                 m_scheduledTask.buildToggleEnabledParams(jobId, enabled));
+}
+
+void GatewayClient::setCronJobPinned(const QString &jobId, bool pinned)
+{
+    if (!isCronJobOwnedByCurrentUser(jobId)) {
+        emit errorOccurred(QStringLiteral("无权修改该定时任务"));
+        return;
+    }
+    setCronJobPinnedLocal(jobId, pinned);
 }
 
 /**
