@@ -191,9 +191,15 @@ ApplicationWindow {
         return value
     }
     property string pendingDeleteMcpName: ""
-    /// 右键删除任务会话流程暂存（上下文菜单 → 确认弹窗）
-    property string pendingDeleteTaskSessionId: ""
-    property string pendingDeleteTaskSessionName: ""
+    /// 当前任务会话菜单所操作的记录。
+    property string pendingTaskSessionId: ""
+    property string pendingTaskSessionName: ""
+    property string pendingTaskSessionWorkspace: ""
+    property bool pendingTaskSessionPinned: false
+    property string pendingProjectId: ""
+    property string pendingProjectTitle: ""
+    property string pendingProjectWorkspace: ""
+    property string newProjectWorkspace: ""
     property string pendingDeleteAgentId: ""
     property string pendingDeleteAgentName: ""
     property int agentManageTabIndex: 0
@@ -484,6 +490,18 @@ ApplicationWindow {
         if (t.length === 0)
             t = qsTr("新对话")
         return t
+    }
+
+    function openTaskSessionMenu(sessionId, title, workspace, pinned, sceneX, sceneY) {
+        window.pendingTaskSessionId = String(sessionId || "")
+        window.pendingTaskSessionName = String(title || "")
+        window.pendingTaskSessionWorkspace = String(workspace || "")
+        window.pendingTaskSessionPinned = !!pinned
+        taskSessionMenu.x = Math.max(4, Math.min(sceneX,
+                                                window.width - taskSessionMenu.width - 4))
+        taskSessionMenu.y = Math.max(4, Math.min(sceneY,
+                                                window.height - taskSessionMenu.height - 4))
+        taskSessionMenu.open()
     }
 
     function agentIdFromSessionKey(sessionKey) {
@@ -1842,7 +1860,7 @@ ApplicationWindow {
                 }
 
                 // ═══════════════════════════════════════════════
-                //  任务记录列表（本地 SQLite 会话列表）
+                //  项目与任务记录（本地 SQLite 会话列表）
                 // ═══════════════════════════════════════════════
                 Item {
                     visible: window.sidebarExpanded
@@ -1852,6 +1870,128 @@ ApplicationWindow {
                     anchors.bottomMargin: 16
                     width: parent.width
 
+                    Item {
+                        id: projectHeader
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 28
+
+                        Label {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("项目")
+                            font.pixelSize: 12
+                            color: "#80000000"
+                        }
+
+                        Rectangle {
+                            visible: wsClient.projectList.length > 0
+                            width: 26
+                            height: 26
+                            radius: 6
+                            anchors.right: parent.right
+                            anchors.rightMargin: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: projectAddMouse.pressed ? "#14000000"
+                                 : projectAddMouse.containsMouse ? "#0A000000"
+                                 : "transparent"
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: "+"
+                                font.pixelSize: 20
+                                color: "#73000000"
+                            }
+                            MouseArea {
+                                id: projectAddMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    projectNameInput.text = ""
+                                    window.newProjectWorkspace = ""
+                                    createProjectPopup.open()
+                                    projectNameInput.forceActiveFocus()
+                                }
+                            }
+                            ToolTip {
+                                id: projectAddTip
+                                visible: projectAddMouse.containsMouse
+                                text: qsTr("新建项目")
+                                delay: 500
+                                background: Rectangle {
+                                    color: "#A6000000"
+                                    radius: 4
+                                }
+                                contentItem: Text {
+                                    text: projectAddTip.text
+                                    font.pixelSize: 14
+                                    color: "#FFFFFF"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                }
+                            }
+                        }
+                    }
+
+                    ScrollView {
+                        id: projectListScrollView
+                        anchors.top: projectHeader.bottom
+                        anchors.topMargin: 2
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: Math.min(projectSidebar.implicitHeight,
+                                         Math.max(0, parent.height * 0.48 - 30))
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        ProjectSidebar {
+                            id: projectSidebar
+                            width: projectListScrollView.width
+                            projects: wsClient.projectList
+                            currentSessionKey: String(wsClient.currentTaskSessionKey || "")
+                            sessionTitleFormatter: function(session) {
+                                return window.taskSessionDisplayTitle(session)
+                            }
+                            onNewProjectRequested: {
+                                projectNameInput.text = ""
+                                window.newProjectWorkspace = ""
+                                createProjectPopup.open()
+                                projectNameInput.forceActiveFocus()
+                            }
+                            onNewChatRequested: function(projectId) {
+                                chatModel.clear()
+                                leftMidPanel.activeAgentId = ""
+                                leftMidPanel.activeSessionKey = ""
+                                newTaskRec.resetChatSelectionState()
+                                dropdownSelectionWorkSpace.resetPicker()
+                                wsClient.beginProjectChat(projectId)
+                                window.leftSelectedIndex = 0
+                            }
+                            onMoreRequested: function(projectId, title, workspace, sceneX, sceneY) {
+                                window.pendingProjectId = projectId
+                                window.pendingProjectTitle = title
+                                window.pendingProjectWorkspace = workspace
+                                projectContextMenu.x = Math.min(sceneX,
+                                                                window.width - projectContextMenu.width - 4)
+                                projectContextMenu.y = Math.min(sceneY,
+                                                                window.height - projectContextMenu.height - 4)
+                                projectContextMenu.open()
+                            }
+                            onSessionRequested: function(sessionId) {
+                                window.leftSelectedIndex = 6
+                                wsClient.switchTaskSession(sessionId)
+                            }
+                            onSessionMoreRequested: function(sessionId, title, workspace,
+                                                             pinned, sceneX, sceneY) {
+                                window.openTaskSessionMenu(sessionId, title, workspace,
+                                                           pinned, sceneX, sceneY)
+                            }
+                        }
+                    }
+
                     // 分隔标题
                     Label {
                         id: taskRecordLabel
@@ -1860,6 +2000,8 @@ ApplicationWindow {
                         color: "#80000000"
                         anchors.left: parent.left
                         anchors.leftMargin: 12
+                        anchors.top: projectListScrollView.bottom
+                        anchors.topMargin: 12
                     }
 
                     // 可滚动的任务会话列表
@@ -1886,18 +2028,20 @@ ApplicationWindow {
                                     width: agentListScrollView.width
                                     height: 55
                                     radius: 8
+                                    property bool hovered: agentItemMouse.containsMouse
+                                                           || agentItemStatus.moreHovered
                                     color: {
                                         var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
                                         if (isActive) return "#E6E7EB"
-                                        if (agentItemMouse.containsMouse) return "#0A000000"
+                                        if (agentItemRect.hovered) return "#0A000000"
                                         return "transparent"
                                     }
 
                                     Column {
                                         anchors.left: parent.left
                                         anchors.leftMargin: 12
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 12
+                                        anchors.right: agentItemStatus.left
+                                        anchors.rightMargin: 8
                                         anchors.verticalCenter: parent.verticalCenter
                                         spacing: 2
 
@@ -1928,23 +2072,33 @@ ApplicationWindow {
                                         }
 
                                         // 最近活跃会话的更新时间（与上行标题为同一条 session）
-                                        Row {
-                                            spacing: 5
-
-                                            TaskSessionStatusIndicator {
-                                                running: modelData.isRunning || false
-                                                anchors.verticalCenter: parent.verticalCenter
+                                        Label {
+                                            text: {
+                                                var ms = Number(modelData.updated_at || modelData.created_at || 0)
+                                                if (!ms || ms <= 0) return ""
+                                                return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
                                             }
+                                            font.pixelSize: 12
+                                            color: "#73000000"
+                                        }
+                                    }
 
-                                            Label {
-                                                text: {
-                                                    var ms = Number(modelData.updated_at || modelData.created_at || 0)
-                                                    if (!ms || ms <= 0) return ""
-                                                    return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
-                                                }
-                                                font.pixelSize: 12
-                                                color: "#73000000"
-                                            }
+                                    TaskSessionStatusIndicator {
+                                        id: agentItemStatus
+                                        running: modelData.isRunning || false
+                                        hovered: agentItemRect.hovered
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 4
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 4
+                                        z: 2
+                                        onMoreClicked: function(sceneX, sceneY) {
+                                            window.openTaskSessionMenu(
+                                                        modelData.session_id,
+                                                        window.taskSessionDisplayTitle(modelData),
+                                                        modelData.workspace,
+                                                        modelData.pinned || false,
+                                                        sceneX, sceneY)
                                         }
                                     }
 
@@ -1952,18 +2106,9 @@ ApplicationWindow {
                                         id: agentItemMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                        acceptedButtons: Qt.LeftButton
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
-                                            if (mouse.button === Qt.RightButton) {
-                                                window.pendingDeleteTaskSessionId = modelData.session_id || ""
-                                                window.pendingDeleteTaskSessionName = window.taskSessionDisplayTitle(modelData)
-                                                var p = agentItemMouse.mapToItem(window.contentItem, mouse.x, mouse.y)
-                                                agentContextMenu.x = Math.min(p.x, window.width - agentContextMenu.width - 4)
-                                                agentContextMenu.y = Math.min(p.y, window.height - agentContextMenu.height - 4)
-                                                agentContextMenu.open()
-                                                return
-                                            }
                                             leftMidPanel.activeAgentId = modelData.agentId || ""
                                             window.leftSelectedIndex = 6
                                             wsClient.switchTaskSession(modelData.session_id)
@@ -2155,21 +2300,24 @@ ApplicationWindow {
                     model: wsClient.taskSessionList
 
                     delegate: Rectangle {
+                        id: histPopAgentRect
                         width: collapsedHistoryPopupScroll.width
                         height: 55
                         radius: 8
+                        property bool hovered: histPopAgentMouse.containsMouse
+                                               || histPopAgentStatus.moreHovered
                         color: {
                             var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
                             if (isActive) return "#E6E7EB"
-                            if (histPopAgentMouse.containsMouse) return "#0A000000"
+                            if (histPopAgentRect.hovered) return "#0A000000"
                             return "transparent"
                         }
 
                         Column {
                             anchors.left: parent.left
                             anchors.leftMargin: 12
-                            anchors.right: parent.right
-                            anchors.rightMargin: 12
+                            anchors.right: histPopAgentStatus.left
+                            anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
 
@@ -2199,23 +2347,33 @@ ApplicationWindow {
                                 }
                             }
 
-                            Row {
-                                spacing: 5
-
-                                TaskSessionStatusIndicator {
-                                    running: modelData.isRunning || false
-                                    anchors.verticalCenter: parent.verticalCenter
+                            Label {
+                                text: {
+                                    var ms = Number(modelData.updated_at || modelData.created_at || 0)
+                                    if (!ms || ms <= 0) return ""
+                                    return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
                                 }
+                                font.pixelSize: 12
+                                color: "#73000000"
+                            }
+                        }
 
-                                Label {
-                                    text: {
-                                        var ms = Number(modelData.updated_at || modelData.created_at || 0)
-                                        if (!ms || ms <= 0) return ""
-                                        return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
-                                    }
-                                    font.pixelSize: 12
-                                    color: "#73000000"
-                                }
+                        TaskSessionStatusIndicator {
+                            id: histPopAgentStatus
+                            running: modelData.isRunning || false
+                            hovered: histPopAgentRect.hovered
+                            anchors.right: parent.right
+                            anchors.rightMargin: 4
+                            anchors.top: parent.top
+                            anchors.topMargin: 4
+                            z: 2
+                            onMoreClicked: function(sceneX, sceneY) {
+                                window.openTaskSessionMenu(
+                                            modelData.session_id,
+                                            window.taskSessionDisplayTitle(modelData),
+                                            modelData.workspace,
+                                            modelData.pinned || false,
+                                            sceneX, sceneY)
                             }
                         }
 
@@ -2223,18 +2381,9 @@ ApplicationWindow {
                             id: histPopAgentMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            acceptedButtons: Qt.LeftButton
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                if (mouse.button === Qt.RightButton) {
-                                    window.pendingDeleteTaskSessionId = modelData.session_id || ""
-                                    window.pendingDeleteTaskSessionName = window.taskSessionDisplayTitle(modelData)
-                                    var p = histPopAgentMouse.mapToItem(window.contentItem, mouse.x, mouse.y)
-                                    agentContextMenu.x = Math.min(p.x, window.width - agentContextMenu.width - 4)
-                                    agentContextMenu.y = Math.min(p.y, window.height - agentContextMenu.height - 4)
-                                    agentContextMenu.open()
-                                    return
-                                }
                                 leftMidPanel.activeAgentId = modelData.agentId || ""
                                 window.leftSelectedIndex = 6
                                 wsClient.switchTaskSession(modelData.session_id)
@@ -3385,8 +3534,11 @@ ApplicationWindow {
                     }
                     var wsPath = ""
                     if (!newTaskRec.hasActiveTask) {
-                        wsPath = wsClient.prepareTaskWorkspace(
-                            dropdownSelectionWorkSpace.absolutePath)
+                        if (String(wsClient.currentProjectId || "").length > 0)
+                            wsPath = String(wsClient.currentProjectWorkspace || "")
+                        else
+                            wsPath = wsClient.prepareTaskWorkspace(
+                                dropdownSelectionWorkSpace.absolutePath)
                         if (!wsPath)
                             return
                         dropdownSelectionWorkSpace.rememberRecentFolder(wsPath)
@@ -6239,8 +6391,8 @@ ApplicationWindow {
 
                                             Image {
                                                 id: expertTagCloseIcon
-                                                width: 20
-                                                height: 20
+                                                width: 16
+                                                height: 16
                                                 source: "qrc:/images/close.png"
                                                 visible: !newTaskRec.expertSelectionLocked
                                                 fillMode: Image.PreserveAspectFit
@@ -7227,12 +7379,105 @@ ApplicationWindow {
                             height: 40
                             spacing: 4
                             Item {
+                                id: projectDialogSlot
+                                visible: newTaskRec.isNewTaskWelcome
+                                         && String(wsClient.currentProjectId || "").length > 0
+                                width: visible ? Math.min(240, Math.max(96,
+                                    Math.ceil(projectNameMetrics.advanceWidth) + 64)) : 0
+                                height: 36
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 8
+                                    color: "transparent"
+                                    MouseArea {
+                                        id: projectDialogHover
+                                        anchors.fill: parent
+                                        acceptedButtons: Qt.NoButton
+                                        hoverEnabled: true
+                                    }
+                                    Image {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 10
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 16; height: 16
+                                        source: "qrc:/images/folder.png"
+                                    }
+                                    Label {
+                                        id: projectDialogNameLabel
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 32
+                                        anchors.right: clearProjectButton.left
+                                        anchors.rightMargin: 3
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: wsClient.currentProjectTitle || qsTr("项目")
+                                        font.pixelSize: 14
+                                        color: "#D9000000"
+                                        elide: Text.ElideRight
+
+                                        ToolTip {
+                                            visible: projectDialogHover.containsMouse
+                                                     && projectDialogNameLabel.truncated
+                                            text: projectDialogNameLabel.text
+                                            delay: 500
+                                            x: 0
+                                            y: -height - 4
+                                            width: Math.min(implicitContentWidth + 20, 360)
+                                            background: Rectangle {
+                                                color: "#A6000000"
+                                                radius: 4
+                                            }
+                                            contentItem: Text {
+                                                text: projectDialogNameLabel.text
+                                                font.pixelSize: 14
+                                                color: "#FFFFFF"
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                wrapMode: Text.Wrap
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        id: clearProjectButton
+                                        width: 24
+                                        height: 24
+                                        radius: 12
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: clearProjectMouse.containsMouse
+                                               ? "#1F000000" : "transparent"
+
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: "\u00d7"
+                                            font.pixelSize: 16
+                                            color: clearProjectMouse.containsMouse
+                                                   ? "#D9000000" : "#73000000"
+                                        }
+                                        MouseArea {
+                                            id: clearProjectMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: wsClient.clearProjectSelection()
+                                        }
+                                    }
+                                }
+                                TextMetrics {
+                                    id: projectNameMetrics
+                                    text: wsClient.currentProjectTitle || qsTr("项目")
+                                    font.pixelSize: 13
+                                }
+                            }
+                            Item {
                                 id: workspaceDialogSlot
                                 width: newTaskRec.isNewTaskWelcome
                                        ? Math.max(0,
                                                   Math.min(dropdownSelectionWorkSpace.compactWidth,
                                                            composerSettingsRow.width
                                                            - modelPickerWrap.modelPickerMinWidth
+                                                           - projectDialogSlot.width
                                                            - composerSettingsRow.spacing))
                                        : 0
                                 height: 36
@@ -7250,9 +7495,10 @@ ApplicationWindow {
                                     if (!parent)
                                         return modelPickerHardMaxWidth
                                     return Math.max(modelPickerMinWidth,
-                                                    parent.width
+                                                     parent.width
+                                                    - projectDialogSlot.width
                                                     - workspaceDialogSlot.width
-                                                    - 4)
+                                                    - composerSettingsRow.spacing * 2)
                                 }
                                 width: Math.min(modelPickerHardMaxWidth,
                                                 Math.max(modelPickerMinWidth,
@@ -7752,8 +7998,13 @@ ApplicationWindow {
                     }
                 }
 
-                readonly property bool pickerLocked: newTaskRec.hasMessages || window.leftSelectedIndex === 6
+                readonly property bool projectLocked:
+                    String(wsClient.currentProjectId || "").length > 0
+                readonly property bool pickerLocked: projectLocked
+                    || newTaskRec.hasMessages || window.leftSelectedIndex === 6
                 readonly property string effectiveWorkspacePath: {
+                    if (projectLocked)
+                        return String(wsClient.currentProjectWorkspace || "")
                     if (pickerLocked) {
                         var taskWs = wsClient.currentTaskWorkspace || ""
                         if (taskWs)
@@ -11493,13 +11744,12 @@ ApplicationWindow {
         }
     }
 
-    /// 任务记录右键菜单：当前仅一项「删除」
     Popup {
-        id: agentContextMenu
+        id: projectContextMenu
         parent: window.contentItem
         padding: 4
-        width: 132
-        height: agentContextMenuCol.implicitHeight + 8
+        width: 184
+        height: projectContextMenuColumn.implicitHeight + 8
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
         background: Rectangle {
             radius: 8
@@ -11508,41 +11758,447 @@ ApplicationWindow {
             border.width: 1
         }
         contentItem: Column {
-            id: agentContextMenuCol
+            id: projectContextMenuColumn
             spacing: 0
             width: parent.width
 
             Rectangle {
-                id: agentContextDeleteItem
                 width: parent.width
-                height: 32
+                height: 36
                 radius: 6
-                color: agentContextDeleteMouse.containsMouse ? "#0A000000" : "transparent"
-
+                color: openProjectFolderMouse.containsMouse ? "#0A000000" : "transparent"
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
-                    anchors.verticalCenter: parent.verticalCenter
+                    height: parent.height
                     spacing: 8
-
-                    Label {
-                        text: qsTr("删除")
-                        font.pixelSize: 14
-                        color: "#E54545"
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
+                    Image { width: 16; height: 16; source: "qrc:/images/folder.png"; anchors.verticalCenter: parent.verticalCenter}
+                    Label { text: qsTr("在资源管理器打开"); font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
                 }
-
                 MouseArea {
-                    id: agentContextDeleteMouse
+                    id: openProjectFolderMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        agentContextMenu.close()
-                        if (window.pendingDeleteTaskSessionId.length > 0)
-                            deleteSessionPopup.open()
+                        var id = window.pendingProjectId
+                        projectContextMenu.close()
+                        if (id)
+                            wsClient.openProjectFolder(id)
                     }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 36
+                radius: 6
+                color: deleteProjectMenuMouse.containsMouse ? "#0A000000" : "transparent"
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    height: parent.height
+                    spacing: 8
+                    Image { width: 16; height: 16; source: "qrc:/images/delete.png"; anchors.verticalCenter: parent.verticalCenter }
+                    Label { text: qsTr("删除"); font.pixelSize: 14; color: "#E54545"; anchors.verticalCenter: parent.verticalCenter }
+                }
+                MouseArea {
+                    id: deleteProjectMenuMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        projectContextMenu.close()
+                        if (window.pendingProjectId)
+                            deleteProjectPopup.open()
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: createProjectPopup
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: Math.min(420, window.width - 48)
+        padding: 20
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: {
+            projectNameInput.text = ""
+            window.newProjectWorkspace = ""
+        }
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#14000000"
+            border.width: 1
+        }
+        contentItem: Column {
+            spacing: 16
+            width: parent.width
+            Label {
+                text: qsTr("新建项目")
+                font.pixelSize: 18
+                font.bold: true
+                color: "#D9000000"
+            }
+            Column {
+                width: parent.width
+                spacing: 6
+                Label { text: qsTr("项目名称"); font.pixelSize: 13; color: "#A6000000" }
+                TextField {
+                    id: projectNameInput
+                    width: parent.width
+                    height: 40
+                    placeholderText: qsTr("请输入项目名称")
+                    selectByMouse: true
+                    font.pixelSize: 14
+                    background: Rectangle {
+                        radius: 6
+                        color: "#FFFFFF"
+                        border.width: 1
+                        border.color: projectNameInput.activeFocus ? "#006BFF" : "#D9DCE1"
+                    }
+                    onAccepted: createProjectButton.clicked()
+                }
+            }
+            Column {
+                width: parent.width
+                spacing: 6
+                Label { text: qsTr("项目工作空间"); font.pixelSize: 13; color: "#A6000000" }
+                Rectangle {
+                    width: parent.width
+                    height: 40
+                    radius: 6
+                    color: "#F7F9FA"
+                    border.width: 1
+                    border.color: "#E6E7EB"
+                    Image {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16; height: 16
+                        source: "qrc:/images/folder.png"
+                    }
+                    Label {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 34
+                        anchors.right: chooseProjectFolderButton.left
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: window.newProjectWorkspace || qsTr("自动创建项目文件夹")
+                        color: window.newProjectWorkspace ? "#D9000000" : "#73000000"
+                        font.pixelSize: 13
+                        elide: Text.ElideMiddle
+                    }
+                    CustomButton {
+                        id: chooseProjectFolderButton
+                        anchors.right: parent.right
+                        anchors.rightMargin: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 64
+                        height: 32
+                        text: qsTr("选择")
+                        fontSize: 13
+                        textColor: "#A6000000"
+                        backgroundColor: "#FFFFFF"
+                        borderColor: "#D9DCE1"
+                        borderWidth: 1
+                        onClicked: projectFolderDialog.open()
+                    }
+                }
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 10
+                layoutDirection: Qt.RightToLeft
+                CustomButton {
+                    id: createProjectButton
+                    width: 88
+                    height: 36
+                    text: qsTr("创建")
+                    fontSize: 14
+                    backgroundColor: "#006BFF"
+                    textColor: "#FFFFFF"
+                    enabled: projectNameInput.text.trim().length > 0
+                    onClicked: {
+                        var projectId = wsClient.createProject(
+                                    projectNameInput.text, window.newProjectWorkspace)
+                        if (projectId)
+                            createProjectPopup.close()
+                    }
+                }
+                CustomButton {
+                    width: 88
+                    height: 36
+                    text: qsTr("取消")
+                    fontSize: 14
+                    backgroundColor: "#F7F9FA"
+                    textColor: "#A6000000"
+                    borderColor: "#E6E7EB"
+                    borderWidth: 1
+                    onClicked: createProjectPopup.close()
+                }
+            }
+        }
+    }
+
+    FileDialog {
+        id: projectFolderDialog
+        title: qsTr("选择项目工作空间")
+        selectFolder: true
+        onAccepted: window.newProjectWorkspace = window.localFilePathFromUrl(fileUrl)
+    }
+
+    Popup {
+        id: deleteProjectPopup
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: Math.min(380, window.width - 48)
+        padding: 20
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: {
+            window.pendingProjectId = ""
+            window.pendingProjectTitle = ""
+            window.pendingProjectWorkspace = ""
+        }
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#14000000"
+            border.width: 1
+        }
+        contentItem: Column {
+            spacing: 16
+            width: parent.width
+            Label {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("确定删除项目“%1”？\n项目及其会话将从列表移除，工作空间中的文件不会被删除。")
+                      .arg(window.pendingProjectTitle)
+                font.pixelSize: 15
+                color: "#D9000000"
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 10
+                layoutDirection: Qt.RightToLeft
+                CustomButton {
+                    width: 88; height: 36
+                    text: qsTr("删除")
+                    fontSize: 14
+                    backgroundColor: "#E54545"
+                    textColor: "#FFFFFF"
+                    onClicked: {
+                        var deletingActive = window.pendingProjectId
+                                === String(wsClient.currentProjectId || "")
+                        wsClient.deleteProject(window.pendingProjectId)
+                        if (deletingActive) {
+                            chatModel.clear()
+                            newTaskRec.resetChatSelectionState()
+                            window.leftSelectedIndex = 0
+                        }
+                        deleteProjectPopup.close()
+                    }
+                }
+                CustomButton {
+                    width: 88; height: 36
+                    text: qsTr("取消")
+                    fontSize: 14
+                    backgroundColor: "#F7F9FA"
+                    textColor: "#A6000000"
+                    borderColor: "#E6E7EB"
+                    borderWidth: 1
+                    onClicked: deleteProjectPopup.close()
+                }
+            }
+        }
+    }
+
+    /// 任务记录 hover 菜单；普通任务和项目任务共用。
+    Popup {
+        id: taskSessionMenu
+        parent: window.contentItem
+        padding: 4
+        width: 184
+        height: taskSessionMenuColumn.implicitHeight + 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#E6E7EB"
+            border.width: 1
+        }
+        contentItem: Column {
+            id: taskSessionMenuColumn
+            spacing: 0
+            width: parent.width
+
+            Repeater {
+                model: [
+                    {
+                        action: "pin",
+                        text: window.pendingTaskSessionPinned ? qsTr("取消置顶") : qsTr("置顶"),
+                        icon: "qrc:/images/pin.png",
+                        danger: false
+                    },
+                    {
+                        action: "open",
+                        text: qsTr("在资源管理器打开"),
+                        icon: "qrc:/images/folder.png",
+                        danger: false
+                    },
+                    {
+                        action: "rename",
+                        text: qsTr("重命名"),
+                        icon: "qrc:/images/edit.png",
+                        danger: false
+                    },
+                    {
+                        action: "delete",
+                        text: qsTr("删除任务"),
+                        icon: "qrc:/images/delete.png",
+                        danger: true
+                    }
+                ]
+
+                delegate: Rectangle {
+                    id: taskSessionMenuItem
+                    width: taskSessionMenuColumn.width
+                    height: 36
+                    radius: 6
+                    color: taskSessionMenuMouse.containsMouse ? "#0A000000" : "transparent"
+
+                    Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+
+                        Image {
+                            width: 16
+                            height: 16
+                            source: modelData.icon
+                            anchors.verticalCenter: parent.verticalCenter
+                            fillMode: Image.PreserveAspectFit
+                        }
+                        Label {
+                            text: modelData.text
+                            font.pixelSize: 14
+                            color: modelData.danger ? "#E54545" : "#D9000000"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    MouseArea {
+                        id: taskSessionMenuMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            var action = modelData.action
+                            var sessionId = window.pendingTaskSessionId
+                            var wasPinned = window.pendingTaskSessionPinned
+                            taskSessionMenu.close()
+                            if (!sessionId)
+                                return
+                            if (action === "pin") {
+                                wsClient.setTaskSessionPinned(sessionId, !wasPinned)
+                            } else if (action === "open") {
+                                wsClient.openTaskSessionFolder(sessionId)
+                            } else if (action === "rename") {
+                                renameTaskSessionPopup.open()
+                            } else if (action === "delete") {
+                                deleteSessionPopup.open()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: renameTaskSessionPopup
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: Math.min(380, window.width - 48)
+        padding: 20
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: {
+            renameTaskSessionInput.text = window.pendingTaskSessionName
+            renameTaskSessionInput.forceActiveFocus()
+            renameTaskSessionInput.selectAll()
+        }
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#14000000"
+            border.width: 1
+        }
+        contentItem: Column {
+            width: parent.width
+            spacing: 16
+
+            Label {
+                text: qsTr("重命名任务")
+                font.pixelSize: 18
+                font.bold: true
+                color: "#D9000000"
+            }
+            TextField {
+                id: renameTaskSessionInput
+                width: parent.width
+                height: 40
+                font.pixelSize: 14
+                selectByMouse: true
+                maximumLength: 200
+                background: Rectangle {
+                    radius: 6
+                    color: "#FFFFFF"
+                    border.width: 1
+                    border.color: renameTaskSessionInput.activeFocus ? "#006BFF" : "#D9DCE1"
+                }
+                onAccepted: renameTaskSessionButton.clicked()
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 10
+                layoutDirection: Qt.RightToLeft
+                CustomButton {
+                    id: renameTaskSessionButton
+                    width: 88
+                    height: 36
+                    text: qsTr("保存")
+                    fontSize: 14
+                    backgroundColor: "#006BFF"
+                    textColor: "#FFFFFF"
+                    enabled: renameTaskSessionInput.text.trim().length > 0
+                    onClicked: {
+                        wsClient.renameTaskSession(window.pendingTaskSessionId,
+                                                   renameTaskSessionInput.text)
+                        renameTaskSessionPopup.close()
+                    }
+                }
+                CustomButton {
+                    width: 88
+                    height: 36
+                    text: qsTr("取消")
+                    fontSize: 14
+                    backgroundColor: "#F7F9FA"
+                    textColor: "#A6000000"
+                    borderColor: "#E6E7EB"
+                    borderWidth: 1
+                    onClicked: renameTaskSessionPopup.close()
                 }
             }
         }
@@ -11558,8 +12214,10 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onClosed: {
-            window.pendingDeleteTaskSessionId = ""
-            window.pendingDeleteTaskSessionName = ""
+            window.pendingTaskSessionId = ""
+            window.pendingTaskSessionName = ""
+            window.pendingTaskSessionWorkspace = ""
+            window.pendingTaskSessionPinned = false
         }
         background: Rectangle {
             radius: 12
@@ -11590,7 +12248,7 @@ ApplicationWindow {
                     text: qsTr("删除")
                     fontSize: 14
                     onClicked: {
-                        var sid = window.pendingDeleteTaskSessionId
+                        var sid = window.pendingTaskSessionId
                         var deletingCurrent = sid.length > 0
                                 && sid === String(wsClient.currentTaskSessionKey || "")
                         if (sid.length > 0)

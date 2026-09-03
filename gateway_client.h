@@ -94,6 +94,14 @@ class GatewayClient : public QObject
                NOTIFY agentListChanged)
     Q_PROPERTY(QVariantList taskSessionList READ taskSessionList
                NOTIFY taskSessionListChanged)
+    Q_PROPERTY(QVariantList projectList READ projectList
+               NOTIFY projectListChanged)
+    Q_PROPERTY(QString currentProjectId READ currentProjectId
+               NOTIFY currentProjectChanged)
+    Q_PROPERTY(QString currentProjectTitle READ currentProjectTitle
+               NOTIFY currentProjectChanged)
+    Q_PROPERTY(QString currentProjectWorkspace READ currentProjectWorkspace
+               NOTIFY currentProjectChanged)
     Q_PROPERTY(QString defaultAgentId READ defaultAgentId
                NOTIFY agentListChanged)
     Q_PROPERTY(QVariantList modelList READ modelList
@@ -221,6 +229,11 @@ public:
     QVariantList agentList() const;
     /// 获取本地 SQLite 任务会话列表
     QVariantList taskSessionList() const;
+    /// 获取本地项目列表；每个项目包含同一 workspace 下的 sessions。
+    QVariantList projectList() const;
+    QString currentProjectId() const;
+    QString currentProjectTitle() const;
+    QString currentProjectWorkspace() const;
     /// 获取默认 agent ID
     QString defaultAgentId() const;
     /// 获取可用模型列表
@@ -311,6 +324,21 @@ public:
     Q_INVOKABLE void deleteSession(const QString &sessionKey);
     /// 从本地任务列表软删除任务会话（不删除 agent）
     Q_INVOKABLE void deleteTaskSession(const QString &sessionKey);
+    /// 更新本地任务会话的置顶状态。
+    Q_INVOKABLE void setTaskSessionPinned(const QString &sessionKey, bool pinned);
+    /// 更新本地任务会话标题。
+    Q_INVOKABLE void renameTaskSession(const QString &sessionKey, const QString &title);
+    /// 在系统文件管理器中打开任务会话的工作空间。
+    Q_INVOKABLE bool openTaskSessionFolder(const QString &sessionKey) const;
+    /// 创建项目；workspace 为空时在默认项目目录中创建独立工作空间。
+    Q_INVOKABLE QString createProject(const QString &title,
+                                      const QString &workspace = QString());
+    /// 软删除项目及其本地会话记录，不删除磁盘中的项目文件。
+    Q_INVOKABLE void deleteProject(const QString &projectId);
+    Q_INVOKABLE bool openProjectFolder(const QString &projectId) const;
+    /// 清空当前会话并将下一条新会话固定到指定项目 workspace。
+    Q_INVOKABLE void beginProjectChat(const QString &projectId);
+    Q_INVOKABLE void clearProjectSelection();
 
     /// 切换当前活跃会话
     Q_INVOKABLE void setCurrentSessionKey(const QString &key);
@@ -657,6 +685,8 @@ signals:
     void agentIdentityChanged();     ///< Agent 身份信息更新
     void agentListChanged();         ///< Agent 列表更新
     void taskSessionListChanged();   ///< 本地任务会话列表更新
+    void projectListChanged();       ///< 本地项目及其会话列表更新
+    void currentProjectChanged();    ///< 当前/待创建会话所属项目变化
     void agentCreated(const QString &agentId, bool success,
                       const QString &message,
                       bool forChat); ///< 新 Agent 创建结果
@@ -830,15 +860,19 @@ private:
 
     bool initTaskSessionDb();
     void loadTaskSessionListFromDb();
+    void loadProjectListFromDb();
     void upsertTaskSessionLocal(const QString &sessionKey,
                                 const QString &workspace,
                                 const QString &title,
                                 const QStringList &agentIds,
                                 qint64 createdAt,
-                                qint64 updatedAt);
+                                qint64 updatedAt,
+                                const QString &projectId = QString());
     void touchTaskSessionLocal(const QString &sessionKey);
     void softDeleteTaskSessionLocal(const QString &sessionKey);
     QVariantMap taskSessionInfoByKey(const QString &sessionKey) const;
+    QVariantMap projectInfoById(const QString &projectId) const;
+    void setCurrentProjectIdInternal(const QString &projectId);
     QStringList taskSessionAgentIds(const QVariantMap &row) const;
     void setTaskSessionRunning(const QString &sessionKey, bool running);
     void updateTaskSessionRuntimeFromEvent(const QJsonObject &payload);
@@ -952,6 +986,7 @@ private:
     QVariantMap      m_agentIdentity;   ///< 当前 agent 身份缓存
     QVariantList     m_agentList;       ///< agents.list 缓存
     QVariantList     m_taskSessionList; ///< SQLite 任务会话缓存
+    QVariantList     m_projectList;     ///< SQLite 项目缓存（含项目会话）
     QSqlDatabase     m_taskSessionDb;   ///< 本地任务会话 SQLite
     bool             m_taskSessionDbReady = false;
     QSet<QString>    m_runningTaskSessionKeys;
@@ -960,6 +995,7 @@ private:
     QString          m_defaultAgentId;  ///< 默认 agent ID
     QString          m_currentTaskSessionKey; ///< 主控任务 sessionKey
     QString          m_currentViewSessionKey; ///< 聊天区当前查看 sessionKey
+    QString          m_currentProjectId; ///< 当前任务或待新建会话所属项目
     QVariantList     m_collaborationChildSessionHints; ///< 实时发现的子 agent 会话（等待 sessions.list 落盘前）
     QStringList      m_pendingCollaborationAgentIds; ///< 新建任务前选择的协作 agent
     QString          m_pendingCollabControllerSessionKey;

@@ -43,6 +43,7 @@
         <file>components/TemplateLibraryPage.qml</file>
         <file>components/CollaborationPicker.qml</file>
         <file>components/TaskSessionStatusIndicator.qml</file>
+        <file>components/ProjectSidebar.qml</file>
         <file>images/folder.png</file>
         <file>images/puzzle.png</file>
         <file>images/search.png</file>
@@ -245,5 +246,6 @@
         <file>images/knowledgeIcon.png</file>
         <file>images/templateIcon.png</file>
         <file>images/aiGrey.png</file>
+        <file>images/pin.png</file>
     </qresource>
 </RCC>

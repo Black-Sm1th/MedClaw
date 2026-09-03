@@ -7,7 +7,7 @@ Item {
     property int resendSeconds: 0
     property bool initializing: false
     property string initializingText: ""
-    readonly property real contentWidth: Math.min(577, Math.max(280, width - 48))
+    readonly property real contentWidth: Math.min(709, Math.max(280, width - 48))
     readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
     readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
 
@@ -30,8 +30,8 @@ Item {
         visible: !loginPage.initializing
         Image {
             source: "qrc:/images/login/loginTitle.png"
-            width: Math.min(577, parent.width)
-            height: width * 110 / 577
+            width: Math.min(709, parent.width)
+            height: width * 110 / 709
             fillMode: Image.PreserveAspectFit
             anchors.horizontalCenter: parent.horizontalCenter
         }
@@ -239,10 +239,51 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
         }
         BusyIndicator {
+            id: initializingIndicator
             width: 48
             height: 48
             running: loginPage.initializing
             anchors.horizontalCenter: parent.horizontalCenter
+            padding: 0
+
+            contentItem: Item {
+                implicitWidth: 48
+                implicitHeight: 48
+                opacity: initializingIndicator.running ? 1 : 0
+
+                Item {
+                    width: 36
+                    height: 36
+                    anchors.centerIn: parent
+
+                    Canvas {
+                        anchors.fill: parent
+                        antialiasing: true
+                        onPaint: {
+                            var context = getContext("2d")
+                            context.clearRect(0, 0, width, height)
+                            context.beginPath()
+                            context.lineWidth = 3
+                            context.lineCap = "round"
+                            context.strokeStyle = "#006BFF"
+                            context.arc(width / 2, height / 2,
+                                        (Math.min(width, height) - context.lineWidth) / 2,
+                                        -Math.PI / 2, Math.PI * 1.15, false)
+                            context.stroke()
+                        }
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                    }
+
+                    RotationAnimator on rotation {
+                        from: 0
+                        to: 360
+                        duration: 850
+                        loops: Animation.Infinite
+                        running: initializingIndicator.running
+                    }
+                }
+            }
         }
         Label {
             width: parent.width

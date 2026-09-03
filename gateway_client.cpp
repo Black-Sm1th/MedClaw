@@ -17,6 +17,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -685,7 +686,12 @@ QVariantList GatewayClient::agentList() const
 
 QVariantList GatewayClient::taskSessionList() const
 {
-    QVariantList rows = m_taskSessionList;
+    QVariantList rows;
+    for (const QVariant &value : m_taskSessionList) {
+        const QVariantMap row = value.toMap();
+        if (row.value(QStringLiteral("project_id")).toString().trimmed().isEmpty())
+            rows.append(row);
+    }
     for (int i = 0; i < rows.size(); ++i) {
         QVariantMap row = rows.at(i).toMap();
         const QString key = row.value(QStringLiteral("session_id")).toString();
@@ -693,6 +699,28 @@ QVariantList GatewayClient::taskSessionList() const
         rows[i] = row;
     }
     return rows;
+}
+
+QVariantList GatewayClient::projectList() const
+{
+    return m_projectList;
+}
+
+QString GatewayClient::currentProjectId() const
+{
+    return m_currentProjectId;
+}
+
+QString GatewayClient::currentProjectTitle() const
+{
+    return projectInfoById(m_currentProjectId)
+        .value(QStringLiteral("title")).toString();
+}
+
+QString GatewayClient::currentProjectWorkspace() const
+{
+    return projectInfoById(m_currentProjectId)
+        .value(QStringLiteral("workspace")).toString();
 }
 
 /// 获取默认 agent ID
@@ -784,6 +812,8 @@ void GatewayClient::clearActiveAgentContext(bool clearModelSelection)
         emit currentSessionChanged();
     setCurrentTaskSessionKeyInternal(QString());
     setCurrentViewSessionKeyInternal(QString());
+    if (clearModelSelection)
+        setCurrentProjectIdInternal(QString());
 }
 
 void GatewayClient::setPendingCollaborationAgents(const QVariantList &agentIds)
@@ -841,6 +871,7 @@ bool GatewayClient::initTaskSessionDb()
         "updated_at INTEGER NOT NULL,"
         "deleted_at INTEGER,"
         "agents_json TEXT NOT NULL DEFAULT '[]',"
+        "pinned INTEGER NOT NULL DEFAULT 0,"
         "PRIMARY KEY (user_id, session_id)"
         ")"));
     if (!ok) {
@@ -883,6 +914,7 @@ bool GatewayClient::initTaskSessionDb()
             "updated_at INTEGER NOT NULL,"
             "deleted_at INTEGER,"
             "agents_json TEXT NOT NULL DEFAULT '[]',"
+            "pinned INTEGER NOT NULL DEFAULT 0,"
             "PRIMARY KEY (user_id, session_id)"
             ")"));
         const QString sourceUserId = hasUserId ? QStringLiteral("COALESCE(user_id, '')")
@@ -906,6 +938,63 @@ bool GatewayClient::initTaskSessionDb()
     q.exec(QStringLiteral(
         "CREATE INDEX IF NOT EXISTS idx_task_sessions_user_visible "
         "ON task_sessions(user_id, deleted_at, updated_at)"));
+
+    bool hasProjectId = false;
+    if (q.exec(QStringLiteral("PRAGMA table_info(task_sessions)"))) {
+        while (q.next()) {
+            if (q.value(1).toString() == QLatin1String("project_id")) {
+                hasProjectId = true;
+                break;
+            }
+        }
+    }
+    if (!hasProjectId
+        && !q.exec(QStringLiteral(
+            "ALTER TABLE task_sessions "
+            "ADD COLUMN project_id TEXT NOT NULL DEFAULT ''"))) {
+        qWarning().noquote() << "[TaskSessionDb] add project_id failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    bool hasPinned = false;
+    if (q.exec(QStringLiteral("PRAGMA table_info(task_sessions)"))) {
+        while (q.next()) {
+            if (q.value(1).toString() == QLatin1String("pinned")) {
+                hasPinned = true;
+                break;
+            }
+        }
+    }
+    if (!hasPinned
+        && !q.exec(QStringLiteral(
+            "ALTER TABLE task_sessions "
+            "ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"))) {
+        qWarning().noquote() << "[TaskSessionDb] add pinned failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_task_sessions_project "
+        "ON task_sessions(user_id, project_id, deleted_at, updated_at)"));
+
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS projects ("
+            "user_id TEXT NOT NULL,"
+            "project_id TEXT NOT NULL,"
+            "title TEXT NOT NULL,"
+            "workspace TEXT NOT NULL,"
+            "created_at INTEGER NOT NULL,"
+            "updated_at INTEGER NOT NULL,"
+            "deleted_at INTEGER,"
+            "PRIMARY KEY (user_id, project_id)"
+            ")"))) {
+        qWarning().noquote() << "[TaskSessionDb] create projects failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_projects_user_visible "
+        "ON projects(user_id, deleted_at, updated_at)"));
 
     if (!q.exec(QStringLiteral(
             "CREATE TABLE IF NOT EXISTS cron_jobs ("
@@ -1223,7 +1312,9 @@ void GatewayClient::loadTaskSessionListFromDb()
 
     if (m_taskSessionUserId.isEmpty()) {
         m_taskSessionList.clear();
+        m_projectList.clear();
         emit taskSessionListChanged();
+        emit projectListChanged();
         emit currentTaskWorkspaceChanged();
         return;
     }
@@ -1232,10 +1323,10 @@ void GatewayClient::loadTaskSessionListFromDb()
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
             "SELECT session_id, workspace, title, created_at, updated_at, "
-            "deleted_at, agents_json "
+            "deleted_at, agents_json, project_id, pinned "
             "FROM task_sessions "
             "WHERE user_id=? AND deleted_at IS NULL "
-            "ORDER BY updated_at DESC, created_at DESC"));
+            "ORDER BY pinned DESC, updated_at DESC, created_at DESC"));
     q.addBindValue(m_taskSessionUserId);
     if (!q.exec()) {
         qWarning().noquote() << "[TaskSessionDb] load failed:"
@@ -1265,12 +1356,70 @@ void GatewayClient::loadTaskSessionListFromDb()
         row[QStringLiteral("agents")] = agents;
         if (!agents.isEmpty())
             row[QStringLiteral("agentId")] = agents.first().toString();
+        row[QStringLiteral("project_id")] = q.value(7).toString();
+        row[QStringLiteral("pinned")] = q.value(8).toBool();
         rows.append(row);
     }
 
     m_taskSessionList = rows;
     emit taskSessionListChanged();
+    loadProjectListFromDb();
     emit currentTaskWorkspaceChanged();
+}
+
+void GatewayClient::loadProjectListFromDb()
+{
+    if (!initTaskSessionDb())
+        return;
+
+    if (m_taskSessionUserId.isEmpty()) {
+        m_projectList.clear();
+        emit projectListChanged();
+        return;
+    }
+
+    QVariantList projects;
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "SELECT project_id, title, workspace, created_at, updated_at "
+        "FROM projects WHERE user_id=? AND deleted_at IS NULL "
+        "ORDER BY updated_at DESC, created_at DESC"));
+    q.addBindValue(m_taskSessionUserId);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] load projects failed:"
+                             << q.lastError().text();
+        return;
+    }
+
+    while (q.next()) {
+        QVariantMap project;
+        const QString projectId = q.value(0).toString();
+        project[QStringLiteral("project_id")] = projectId;
+        project[QStringLiteral("title")] = q.value(1).toString();
+        project[QStringLiteral("workspace")] = q.value(2).toString();
+        project[QStringLiteral("created_at")] =
+            QVariant(static_cast<qlonglong>(q.value(3).toLongLong()));
+        project[QStringLiteral("updated_at")] =
+            QVariant(static_cast<qlonglong>(q.value(4).toLongLong()));
+
+        QVariantList sessions;
+        for (const QVariant &value : m_taskSessionList) {
+            QVariantMap session = value.toMap();
+            if (session.value(QStringLiteral("project_id")).toString() != projectId)
+                continue;
+            const QString key = session.value(QStringLiteral("session_id")).toString();
+            session[QStringLiteral("isRunning")] =
+                m_runningTaskSessionKeys.contains(key);
+            sessions.append(session);
+        }
+        project[QStringLiteral("sessions")] = sessions;
+        project[QStringLiteral("session_count")] = sessions.size();
+        projects.append(project);
+    }
+
+    m_projectList = projects;
+    emit projectListChanged();
+    emit currentProjectChanged();
 }
 
 void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
@@ -1278,7 +1427,8 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
                                            const QString &title,
                                            const QStringList &agentIds,
                                            qint64 createdAt,
-                                           qint64 updatedAt)
+                                           qint64 updatedAt,
+                                           const QString &projectId)
 {
     const QString key = sessionKey.trimmed();
     if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
@@ -1306,6 +1456,10 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
     if (agentsJson.isNull() || agentsJson.trimmed().isEmpty())
         agentsJson = QStringLiteral("[]");
 
+    QString projectIdValue = projectId.trimmed();
+    if (projectIdValue.isNull())
+        projectIdValue = QStringLiteral("");
+
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
         "UPDATE task_sessions SET "
@@ -1313,12 +1467,15 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
         "title=CASE WHEN title='' THEN ? ELSE title END,"
         "updated_at=?,"
         "deleted_at=NULL,"
-        "agents_json=? "
+        "agents_json=?,"
+        "project_id=CASE WHEN ?='' THEN project_id ELSE ? END "
         "WHERE user_id=? AND session_id=?"));
     q.addBindValue(QVariant(workspaceValue));
     q.addBindValue(QVariant(titleValue));
     q.addBindValue(QVariant(static_cast<qlonglong>(updatedAt)));
     q.addBindValue(agentsJson);
+    q.addBindValue(projectIdValue);
+    q.addBindValue(projectIdValue);
     q.addBindValue(m_taskSessionUserId);
     q.addBindValue(key);
     if (!q.exec()) {
@@ -1331,8 +1488,8 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
         QSqlQuery ins(m_taskSessionDb);
         ins.prepare(QStringLiteral(
             "INSERT INTO task_sessions "
-            "(user_id, session_id, workspace, title, created_at, updated_at, deleted_at, agents_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, NULL, ?)"));
+            "(user_id, session_id, workspace, title, created_at, updated_at, deleted_at, agents_json, project_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)"));
         ins.addBindValue(m_taskSessionUserId);
         ins.addBindValue(QVariant(key));
         ins.addBindValue(QVariant(workspaceValue));
@@ -1340,6 +1497,7 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
         ins.addBindValue(QVariant(static_cast<qlonglong>(createdAt)));
         ins.addBindValue(QVariant(static_cast<qlonglong>(updatedAt)));
         ins.addBindValue(agentsJson);
+        ins.addBindValue(projectIdValue);
         if (!ins.exec()) {
             qWarning().noquote() << "[TaskSessionDb] insert failed:"
                                  << ins.lastError().text();
@@ -1348,6 +1506,18 @@ void GatewayClient::upsertTaskSessionLocal(const QString &sessionKey,
     }
 
     loadTaskSessionListFromDb();
+    if (!projectIdValue.isEmpty()) {
+        QSqlQuery projectQuery(m_taskSessionDb);
+        projectQuery.prepare(QStringLiteral(
+            "UPDATE projects SET updated_at=? "
+            "WHERE user_id=? AND project_id=? AND deleted_at IS NULL"));
+        projectQuery.addBindValue(
+            QVariant(static_cast<qlonglong>(updatedAt)));
+        projectQuery.addBindValue(m_taskSessionUserId);
+        projectQuery.addBindValue(projectIdValue);
+        if (projectQuery.exec())
+            loadProjectListFromDb();
+    }
     if (m_currentTaskSessionKey.trimmed() == key)
         emit currentTaskWorkspaceChanged();
     qDebug().noquote() << "[TaskSessionDb] upsert ok"
@@ -1414,6 +1584,149 @@ QVariantMap GatewayClient::taskSessionInfoByKey(const QString &sessionKey) const
     return QVariantMap();
 }
 
+QVariantMap GatewayClient::projectInfoById(const QString &projectId) const
+{
+    const QString id = projectId.trimmed();
+    for (const QVariant &value : m_projectList) {
+        const QVariantMap project = value.toMap();
+        if (project.value(QStringLiteral("project_id")).toString() == id)
+            return project;
+    }
+    return QVariantMap();
+}
+
+void GatewayClient::setCurrentProjectIdInternal(const QString &projectId)
+{
+    const QString id = projectId.trimmed();
+    if (m_currentProjectId == id)
+        return;
+    m_currentProjectId = id;
+    emit currentProjectChanged();
+}
+
+QString GatewayClient::createProject(const QString &title,
+                                     const QString &workspace)
+{
+    const QString normalizedTitle = title.trimmed();
+    if (m_taskSessionUserId.isEmpty()) {
+        emit errorOccurred(QStringLiteral("请先登录后再创建项目"));
+        return QString();
+    }
+    if (normalizedTitle.isEmpty()) {
+        emit errorOccurred(QStringLiteral("请输入项目名称"));
+        return QString();
+    }
+    if (!initTaskSessionDb())
+        return QString();
+
+    const QString projectId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QString projectWorkspace = workspace.trimmed();
+    if (projectWorkspace.isEmpty()) {
+        const QString folderName = QStringLiteral("%1-%2")
+            .arg(agentWorkspaceSlug(normalizedTitle), projectId.left(8));
+        projectWorkspace = QDir(defaultTaskWorkspaceRoot())
+            .absoluteFilePath(QStringLiteral("projects/%1").arg(folderName));
+    }
+    projectWorkspace = prepareTaskWorkspace(projectWorkspace);
+    if (projectWorkspace.isEmpty())
+        return QString();
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "INSERT INTO projects "
+        "(user_id, project_id, title, workspace, created_at, updated_at, deleted_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULL)"));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(projectId);
+    q.addBindValue(normalizedTitle);
+    q.addBindValue(projectWorkspace);
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] create project failed:"
+                             << q.lastError().text();
+        emit errorOccurred(QStringLiteral("项目创建失败"));
+        return QString();
+    }
+
+    loadProjectListFromDb();
+    return projectId;
+}
+
+void GatewayClient::deleteProject(const QString &projectId)
+{
+    const QString id = projectId.trimmed();
+    if (id.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return;
+
+    const bool deletingCurrent = m_currentProjectId == id;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!m_taskSessionDb.transaction()) {
+        emit errorOccurred(QStringLiteral("无法删除项目"));
+        return;
+    }
+
+    QSqlQuery projectQuery(m_taskSessionDb);
+    projectQuery.prepare(QStringLiteral(
+        "UPDATE projects SET deleted_at=?, updated_at=? "
+        "WHERE user_id=? AND project_id=?"));
+    projectQuery.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    projectQuery.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    projectQuery.addBindValue(m_taskSessionUserId);
+    projectQuery.addBindValue(id);
+
+    QSqlQuery sessionQuery(m_taskSessionDb);
+    sessionQuery.prepare(QStringLiteral(
+        "UPDATE task_sessions SET deleted_at=?, updated_at=? "
+        "WHERE user_id=? AND project_id=? AND deleted_at IS NULL"));
+    sessionQuery.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    sessionQuery.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    sessionQuery.addBindValue(m_taskSessionUserId);
+    sessionQuery.addBindValue(id);
+
+    if (!projectQuery.exec() || !sessionQuery.exec()
+        || !m_taskSessionDb.commit()) {
+        m_taskSessionDb.rollback();
+        emit errorOccurred(QStringLiteral("项目删除失败"));
+        return;
+    }
+
+    if (deletingCurrent) {
+        clearActiveAgentContext();
+        emit historyLoaded(QVariantList());
+    }
+    loadTaskSessionListFromDb();
+}
+
+bool GatewayClient::openProjectFolder(const QString &projectId) const
+{
+    const QString workspace = projectInfoById(projectId)
+        .value(QStringLiteral("workspace")).toString().trimmed();
+    if (workspace.isEmpty())
+        return false;
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(workspace));
+}
+
+void GatewayClient::beginProjectChat(const QString &projectId)
+{
+    const QString id = projectId.trimmed();
+    if (projectInfoById(id).isEmpty()) {
+        emit errorOccurred(QStringLiteral("项目不存在或已被删除"));
+        return;
+    }
+    clearActiveAgentContext(false);
+    setCurrentProjectIdInternal(id);
+    emit historyLoaded(QVariantList());
+}
+
+void GatewayClient::clearProjectSelection()
+{
+    if (!m_currentTaskSessionKey.trimmed().isEmpty())
+        return;
+    setCurrentProjectIdInternal(QString());
+}
+
 QStringList GatewayClient::taskSessionAgentIds(const QVariantMap &row) const
 {
     QStringList ids;
@@ -1448,6 +1761,7 @@ void GatewayClient::setTaskSessionRunning(const QString &sessionKey, bool runnin
     else
         m_runningTaskSessionKeys.remove(key);
     emit taskSessionListChanged();
+    loadProjectListFromDb();
 }
 
 void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload)
@@ -1979,6 +2293,11 @@ void GatewayClient::setAgentListSidebarTitle(const QString &agentId, const QStri
 void GatewayClient::setCurrentTaskSessionKeyInternal(const QString &key)
 {
     const QString trimmed = key.trimmed();
+    if (!trimmed.isEmpty()) {
+        setCurrentProjectIdInternal(
+            taskSessionInfoByKey(trimmed)
+                .value(QStringLiteral("project_id")).toString());
+    }
     if (m_currentTaskSessionKey == trimmed)
         return;
     m_currentTaskSessionKey = trimmed;
@@ -4886,6 +5205,63 @@ void GatewayClient::deleteTaskSession(const QString &sessionKey)
     }
 }
 
+void GatewayClient::setTaskSessionPinned(const QString &sessionKey, bool pinned)
+{
+    const QString key = sessionKey.trimmed();
+    if (key.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return;
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE task_sessions SET pinned=? "
+        "WHERE user_id=? AND session_id=? AND deleted_at IS NULL"));
+    q.addBindValue(pinned ? 1 : 0);
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(key);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] set pinned failed:"
+                             << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() > 0)
+        loadTaskSessionListFromDb();
+}
+
+void GatewayClient::renameTaskSession(const QString &sessionKey,
+                                      const QString &title)
+{
+    const QString key = sessionKey.trimmed();
+    const QString normalizedTitle = title.trimmed();
+    if (key.isEmpty() || normalizedTitle.isEmpty()
+        || m_taskSessionUserId.isEmpty() || !initTaskSessionDb()) {
+        return;
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE task_sessions SET title=? "
+        "WHERE user_id=? AND session_id=? AND deleted_at IS NULL"));
+    q.addBindValue(normalizedTitle);
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(key);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] rename failed:"
+                             << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() > 0)
+        loadTaskSessionListFromDb();
+}
+
+bool GatewayClient::openTaskSessionFolder(const QString &sessionKey) const
+{
+    const QString workspace = taskSessionInfoByKey(sessionKey)
+        .value(QStringLiteral("workspace")).toString().trimmed();
+    if (workspace.isEmpty())
+        return false;
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(workspace));
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  7. 技能管理
 // ═══════════════════════════════════════════════════════════════════════
@@ -5972,11 +6348,17 @@ void GatewayClient::sendChatMessage(const QString &message,
         }
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         const QString title = taskTitleFromFirstMessage(trimmed);
-        const QString businessWorkspace = prepareTaskWorkspace(workspaceForNewAgent);
+        const QVariantMap project = projectInfoById(m_currentProjectId);
+        const QString projectId =
+            project.value(QStringLiteral("project_id")).toString();
+        const QString requestedWorkspace = projectId.isEmpty()
+            ? workspaceForNewAgent
+            : project.value(QStringLiteral("workspace")).toString();
+        const QString businessWorkspace = prepareTaskWorkspace(requestedWorkspace);
         if (businessWorkspace.isEmpty())
             return;
         upsertTaskSessionLocal(controllerKey, businessWorkspace,
-                               title, taskAgents, now, now);
+                               title, taskAgents, now, now, projectId);
         setTaskSessionRunning(controllerKey, true);
         m_localOnlyTaskSessionKeys.insert(controllerKey);
 

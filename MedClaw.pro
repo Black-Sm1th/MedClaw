@@ -48,6 +48,7 @@ RESOURCES += qml.qrc
 
 OTHER_FILES += \
     components/ExpertPage.qml \
+    components/ProjectSidebar.qml \
     components/TemplateLibraryPage.qml \
     data/TemplatePrompts.js
 
