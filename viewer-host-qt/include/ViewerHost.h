@@ -6,6 +6,7 @@
 #include <QTcpServer>
 #include <QUrl>
 #include <QVariant>
+#include <QStringList>
 
 class QTcpSocket;
 
@@ -32,6 +33,10 @@ public:
     Q_INVOKABLE QString openDocument(const QString &localPath,
                                      bool readOnly = false,
                                      const QString &language = QStringLiteral("zh-CN"));
+    // Starts the local Cornerstone3D viewer. The viewer receives files through
+    // the session-scoped manifest/file endpoints instead of file:// URLs,
+    // which are intentionally blocked by Qt WebEngine.
+    Q_INVOKABLE QString openMedicalImage(const QString &localPath);
     Q_INVOKABLE void closeDocument();
     Q_INVOKABLE bool saveAsCurrent();
 
@@ -56,6 +61,7 @@ private:
     QString contentTypeForPath(const QString &path) const;
     QString viewerRoot() const;
     QJsonObject openPayload() const;
+    QJsonObject medicalManifest() const;
     bool writeBytes(const QString &path, const QByteArray &bytes);
 
     QTcpServer m_server;
@@ -64,6 +70,8 @@ private:
     QString m_language = QStringLiteral("zh-CN");
     QString m_lastError;
     QString m_viewerRootOverride;
+    QStringList m_medicalFiles;
     bool m_readOnly = false;
+    bool m_medicalMode = false;
     quint64 m_nonce = 0;
 };

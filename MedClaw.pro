@@ -1,6 +1,5 @@
 QT += quick quickcontrols2 websockets sql webengine network
 
-include(online-office-integration/client-qt/online-office-client.pri)
 include(viewer-host-qt/viewer-host-qt.pri)
 
 TARGET = AetherStudy
@@ -50,12 +49,7 @@ RESOURCES += qml.qrc
 OTHER_FILES += \
     components/ExpertPage.qml \
     components/TemplateLibraryPage.qml \
-    data/TemplatePrompts.js \
-    config/office.json
-
-office_config.files = config/office.json
-office_config.path = $$OUT_PWD/config
-COPIES += office_config
+    data/TemplatePrompts.js
 
 # Keep the local viewer assets beside the executable. A post-link directory
 # copy avoids expanding every frontend asset into qmake's source archive rule.

@@ -22,6 +22,36 @@
 #include <QStringList>
 #include <QUrl>
 
+namespace {
+bool looksLikeDicomFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+
+    const QByteArray header = file.read(132);
+    if (header.size() >= 132 && header.mid(128, 4) == QByteArrayLiteral("DICM"))
+        return true;
+
+    // A valid DICOM object may omit the 128-byte preamble and DICM marker.
+    // Recognize the common little-endian group/element prefix without reading
+    // the pixel payload; the extension check remains the primary fast path.
+    if (header.size() < 8)
+        return false;
+    const quint16 group = static_cast<quint8>(header.at(0))
+        | (static_cast<quint16>(static_cast<quint8>(header.at(1))) << 8);
+    const quint16 element = static_cast<quint8>(header.at(2))
+        | (static_cast<quint16>(static_cast<quint8>(header.at(3))) << 8);
+    if (group == 0 || group > 0x0020 || element == 0)
+        return false;
+
+    const bool explicitVr = header.at(4) >= 'A' && header.at(4) <= 'Z'
+        && header.at(5) >= 'A' && header.at(5) <= 'Z';
+    const bool implicitVr = header.at(4) == 0 && header.at(5) == 0;
+    return explicitVr || implicitVr;
+}
+}
+
 MainViewController::MainViewController(QObject* parent)
     : QObject(parent)
 {
@@ -171,6 +201,29 @@ QVariantMap MainViewController::localFileInfo(const QString &fileUrl) const
     entry[QStringLiteral("fileSize")] = fileSizeHumanBytes(fi.size());
     entry[QStringLiteral("modifiedAt")] = fi.lastModified().toMSecsSinceEpoch();
     entry[QStringLiteral("ext")] = fi.suffix().toLower();
+    return entry;
+}
+
+QVariantMap MainViewController::localPathInfo(const QString &fileUrl) const
+{
+    QString path = fileUrl;
+    if (path.startsWith(QStringLiteral("file://")))
+        path = QUrl(path).toLocalFile();
+
+    const QFileInfo fi(path);
+    if (!fi.exists() || (!fi.isFile() && !fi.isDir()))
+        return QVariantMap();
+
+    QVariantMap entry;
+    entry[QStringLiteral("fileName")] = fi.fileName();
+    entry[QStringLiteral("absolutePath")] = fi.absoluteFilePath();
+    entry[QStringLiteral("fileUrl")] = QUrl::fromLocalFile(fi.absoluteFilePath()).toString();
+    entry[QStringLiteral("sizeBytes")] = fi.isFile() ? fi.size() : 0;
+    entry[QStringLiteral("fileSize")] = fileSizeHuman(fileUrl);
+    entry[QStringLiteral("modifiedAt")] = fi.lastModified().toMSecsSinceEpoch();
+    entry[QStringLiteral("ext")] = fi.suffix().toLower();
+    entry[QStringLiteral("isDirectory")] = fi.isDir();
+    entry[QStringLiteral("isDicom")] = fi.isFile() && looksLikeDicomFile(fi.absoluteFilePath());
     return entry;
 }
 

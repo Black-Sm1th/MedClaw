@@ -10,6 +10,7 @@ import { loadOfficeBuffer } from '../../util/loadOfficeContent';
 import {
     composeHtmlDocument,
     decodeHtml,
+    restoreCanvasEventHandlers,
     splitHtmlDocument,
     type HtmlDocumentParts,
 } from './htmlDocument';
@@ -26,6 +27,38 @@ function applyDocumentAttributes(document: Document, parts: HtmlDocumentParts) {
     };
     apply(document.documentElement, parts.htmlAttributeMap);
     apply(document.body, parts.bodyAttributeMap);
+}
+
+async function activateCanvasRuntime(frameWindow: Window, parts: HtmlDocumentParts) {
+    const document = frameWindow.document;
+    restoreCanvasEventHandlers(document, parts);
+
+    for (const source of parts.scripts) {
+        const parsed = new DOMParser().parseFromString(`<body>${source}</body>`, 'text/html');
+        const original = parsed.body.querySelector('script');
+        if (!original) continue;
+
+        const script = document.createElement('script');
+        Array.from(original.attributes).forEach(attribute => {
+            script.setAttribute(attribute.name, attribute.value);
+        });
+        script.textContent = original.textContent;
+
+        if (script.src) {
+            await new Promise<void>(resolve => {
+                script.addEventListener('load', () => resolve(), { once: true });
+                script.addEventListener('error', () => resolve(), { once: true });
+                document.body.appendChild(script);
+            });
+        } else {
+            document.body.appendChild(script);
+        }
+    }
+
+    // Body scripts are activated after GrapesJS' iframe has loaded, so pages
+    // that initialize through DOMContentLoaded need the lifecycle event again.
+    document.dispatchEvent(new frameWindow.Event('DOMContentLoaded', { bubbles: true }));
+    frameWindow.dispatchEvent(new frameWindow.Event('load'));
 }
 
 function HtmlEditorView() {
@@ -70,6 +103,7 @@ function HtmlEditorView() {
 
     useEffect(() => {
         let disposed = false;
+        const canvasRetryTimers: number[] = [];
         handler.on('open', payload => {
             readOnlyRef.current = payload.readOnly === true;
             loadOfficeBuffer(payload).then(buffer => {
@@ -78,9 +112,17 @@ function HtmlEditorView() {
                 partsRef.current = parts;
 
                 const session = new URLSearchParams(location.search).get('session');
-                const documentBase = session
-                    ? new URL(`/api/html/${encodeURIComponent(session)}/`, location.origin).href
-                    : location.href;
+                const workspaceBaseUrl = typeof payload.workspaceBaseUrl === 'string'
+                    ? payload.workspaceBaseUrl
+                    : (session ? `/api/html/${encodeURIComponent(session)}/` : location.href);
+                const documentBase = new URL(workspaceBaseUrl, location.origin).href;
+                const stylesheetUrls = parts.stylesheetHrefs.flatMap(href => {
+                    try {
+                        return [new URL(href, documentBase).href];
+                    } catch {
+                        return [];
+                    }
+                });
                 const editor = grapesjs.init({
                     container: containerRef.current,
                     height: '100%',
@@ -89,8 +131,11 @@ function HtmlEditorView() {
                     noticeOnUnload: false,
                     telemetry: false,
                     keepUnusedStyles: true,
-                    components: parts.body,
-                    style: parts.css,
+                    // Populate the document only after the canvas iframe is
+                    // ready. Older Qt WebEngine builds can otherwise lose the
+                    // initial render while frameContent is being installed.
+                    components: '',
+                    style: '',
                     // GrapesJS' default browser CSSOM parser drops valid author styles
                     // such as CSS variables and prefixed gradient declarations. PostCSS
                     // keeps the editable canvas visually aligned with the real preview.
@@ -122,7 +167,7 @@ function HtmlEditorView() {
                     },
                     canvas: {
                         frameContent: `<!doctype html><html><head><base href="${documentBase.replace(/"/g, '&quot;')}"></head><body></body></html>`,
-                        styles: parts.stylesheetHrefs.map(href => new URL(href, documentBase).href),
+                        styles: stylesheetUrls,
                     },
                 });
                 editorRef.current = editor;
@@ -130,17 +175,56 @@ function HtmlEditorView() {
                 // Source import/export bypasses preservation of the original document shell.
                 editor.Panels.removeButton('options', 'export-template');
                 editor.Panels.removeButton('options', 'gjs-open-import-webpage');
-                editor.on('load', () => {
+                let canvasReady = false;
+                let canvasInitializing = false;
+                let initGeneration = 0;
+                const initializeCanvas = async () => {
+                    if (disposed || canvasInitializing) return false;
+                    const generation = initGeneration;
                     const canvasDocument = editor.Canvas.getDocument();
-                    if (canvasDocument) applyDocumentAttributes(canvasDocument, parts);
-                    editorReadyRef.current = true;
-                    setLoading(false);
-                });
+                    const frameWindow = editor.Canvas.getWindow();
+                    if (!canvasDocument?.body || !frameWindow) return false;
+                    canvasInitializing = true;
+                    try {
+                        editor.setComponents(parts.body);
+                        editor.setStyle(parts.css);
+                        const refresh = (editor as Editor & { refresh?: () => void }).refresh;
+                        if (typeof refresh === 'function') refresh.call(editor);
+                        applyDocumentAttributes(canvasDocument, parts);
+                        await activateCanvasRuntime(frameWindow, parts);
+                        if (disposed || generation !== initGeneration) return false;
+                        const hasAuthorContent = Boolean(parts.body.trim());
+                        const rendered = Boolean(
+                            canvasDocument.body.childElementCount
+                            || canvasDocument.body.textContent?.trim(),
+                        );
+                        if (hasAuthorContent && !rendered) return false;
+                        canvasReady = true;
+                        editorReadyRef.current = true;
+                        setLoading(false);
+                        return true;
+                    } catch (canvasError) {
+                        if (disposed || generation !== initGeneration) return false;
+                        setError(canvasError instanceof Error ? canvasError.message : String(canvasError));
+                        setLoading(false);
+                        return false;
+                    } finally {
+                        canvasInitializing = false;
+                    }
+                };
+                editor.on('load', () => { void initializeCanvas(); });
                 editor.on('update', () => {
                     if (editorReadyRef.current) handler.emit('change');
                 });
                 editor.on('canvas:frame:load', ({ window: frameWindow }: { window: Window }) => {
+                    // Qt WebEngine often installs frameContent after the first
+                    // initializeCanvas pass, wiping the iframe. Invalidate any
+                    // in-flight populate and paint into the new document.
+                    initGeneration += 1;
+                    canvasReady = false;
+                    canvasInitializing = false;
                     applyDocumentAttributes(frameWindow.document, parts);
+                    void initializeCanvas();
                     frameWindow.addEventListener('keydown', event => {
                         if ((event.ctrlKey || event.metaKey) && event.code === 'KeyS') {
                             event.preventDefault();
@@ -148,6 +232,23 @@ function HtmlEditorView() {
                         }
                     });
                 });
+                const frameEl = (editor.Canvas as { getFrameEl?: () => HTMLIFrameElement | undefined }).getFrameEl?.();
+                frameEl?.addEventListener('load', () => { void initializeCanvas(); });
+                let attempts = 0;
+                const retryTimer = window.setInterval(() => {
+                    if (disposed || canvasReady) {
+                        window.clearInterval(retryTimer);
+                        return;
+                    }
+                    attempts += 1;
+                    if (!canvasInitializing)
+                        void initializeCanvas();
+                    if (attempts >= 40) {
+                        window.clearInterval(retryTimer);
+                        if (!canvasReady && !disposed) setLoading(false);
+                    }
+                }, 100);
+                canvasRetryTimers.push(retryTimer);
             }).catch(loadError => {
                 if (disposed) return;
                 setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -157,6 +258,7 @@ function HtmlEditorView() {
 
         return () => {
             disposed = true;
+            canvasRetryTimers.forEach(timer => window.clearInterval(timer));
             editorReadyRef.current = false;
             editorRef.current?.destroy();
             editorRef.current = null;

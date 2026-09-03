@@ -1,7 +1,9 @@
 <RCC>
     <qresource prefix="/localviewer">
         <file alias="LocalOfficeView.qml">viewer-host-qt/qml/LocalOfficeView.qml</file>
+        <file alias="MedicalImageView.qml">viewer-host-qt/qml/MedicalImageView.qml</file>
         <file alias="ViewerWebView.qml">viewer-host-qt/qml/ViewerWebView.qml</file>
+        <file alias="html-compat.js">viewer-host-qt/qml/html-compat.js</file>
         <file>images/office/file_notlook.png</file>
         <file>images/minus-square.png</file>
     </qresource>

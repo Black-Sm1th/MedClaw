@@ -2420,7 +2420,11 @@ ApplicationWindow {
         }
         Rectangle{
             id: rightMainPanel
-            enabled: window.userSessionReady
+            // A document preview can remain visible while the session
+            // bootstrap reconnects. Keep the embedded WebEngine interactive
+            // in that state; the login overlay still owns the rest of the UI
+            // whenever the session is not ready.
+            enabled: window.userSessionReady || newTaskRec.officeDocumentVisible
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: rightTopPanel.bottom
@@ -2647,6 +2651,9 @@ ApplicationWindow {
                                  || file.type === "directory" || file.type === "folder"))
                         return "qrc:/images/doc/document-fold.svg"
                     var ext = String((file && file.extension) || fileExtension(file && file.path)).toLowerCase()
+                    if (/^(dcm|dicom|ima|nii|gz|jpg|jpeg|png|gif|bmp|webp|tif|tiff)$/.test(ext)
+                            || /\.nii(?:\.gz)?$/i.test(String((file && file.path) || "")))
+                        return "qrc:/images/knowledge/others.png"
                     if (ext === "doc" || ext === "docx")
                         return "qrc:/images/doc/document-word.svg"
                     if (ext === "xls" || ext === "xlsx" || ext === "xlsm" || ext === "csv")
@@ -2663,6 +2670,62 @@ ApplicationWindow {
                     if (isNeverOpenFile(file))
                         return false
                     return true
+                }
+
+                function isMedicalImage(file) {
+                    if (!file)
+                        return false
+                    if (file.folder === true || file.isDirectory === true
+                            || file.type === "directory" || file.type === "folder")
+                        return true
+                    var path = String(file.path || "")
+                    var name = path.replace(/\\/g, "/").split("/").pop().toLowerCase()
+                    var ext = String((file.extension || fileExtension(path))).toLowerCase()
+                    if (/\.nii(?:\.gz)?$/.test(name))
+                        return true
+                    if (/^(dcm|dicom|ima|nii|jpg|jpeg|png|gif|bmp|webp|tif|tiff)$/.test(ext))
+                        return true
+                    // DICOM files frequently have no extension. The native
+                    // controller checks the preamble/header without loading
+                    // the pixel payload, so extensionless artifacts still use
+                    // the medical viewer while ordinary files do not.
+                    var info = $MainViewController.localPathInfo(path)
+                    return info && info.isDicom === true
+                }
+
+                function openMedicalImageFile(file) {
+                    var path = String((file && file.path) || "")
+                    if (!path)
+                        return
+                    var tabIndex = findOfficeTab(path)
+                    var reloadExistingPreview = tabIndex >= 0
+                    if (tabIndex < 0) {
+                        officeTabs.append({
+                            "name": String(file.name || path.replace(/\\/g, "/").split("/").pop()),
+                            "path": path,
+                            "extension": String(file.extension || fileExtension(path)),
+                            "kind": "medical",
+                            "sessionKey": currentSidebarSessionKey()
+                        })
+                        tabIndex = officeTabs.count - 1
+                    } else if (String(officeTabs.get(tabIndex).kind || "office") !== "medical") {
+                        // Keep a path unique per session while allowing a file
+                        // previously opened by the office viewer to switch to
+                        // the medical viewer.
+                        officeTabs.setProperty(tabIndex, "kind", "medical")
+                    }
+                    activateOfficeTab(tabIndex)
+                    if (reloadExistingPreview) {
+                        var reloadIndex = tabIndex
+                        Qt.callLater(function() {
+                            var host = officeViewsRepeater.itemAt(reloadIndex)
+                            if (!host || !host.officeView || reloadIndex !== activeOfficeTabIndex)
+                                return
+                            officePreviewPending = true
+                            if (!host.officeView.open(path, "view"))
+                                officePreviewPending = false
+                        })
+                    }
                 }
 
                 function isNeverOpenFile(file) {
@@ -2682,6 +2745,10 @@ ApplicationWindow {
                     var path = String((file && file.path) || "")
                     if (!path)
                         return
+                    if (isMedicalImage(file)) {
+                        openMedicalImageFile(file)
+                        return
+                    }
                     if (!supportsLocalViewer(file)) {
                         errorToast.text = qsTr("该文件类型不支持打开")
                         errorToast.visible = true
@@ -2702,6 +2769,7 @@ ApplicationWindow {
                             "name": String(file.name || path.replace(/\\/g, "/").split("/").pop()),
                             "path": path,
                             "extension": String(file.extension || fileExtension(path)),
+                            "kind": "office",
                             "sessionKey": currentSidebarSessionKey()
                         })
                         tabIndex = officeTabs.count - 1
@@ -2757,7 +2825,8 @@ ApplicationWindow {
                     var source = officeTabs.get(index)
                     if (String(source.sessionKey || "") !== currentSidebarSessionKey())
                         return
-                    var file = { name: source.name, path: source.path, extension: source.extension }
+                    var file = { name: source.name, path: source.path, extension: source.extension,
+                                 kind: String(source.kind || "office") }
                     var path = String(file.path || "")
                     if (!path)
                         return
@@ -2833,7 +2902,7 @@ ApplicationWindow {
                         console.warn("artifact file not found:", raw)
                         return
                     }
-                    var info = $MainViewController.localFileInfo(resolved)
+                    var info = $MainViewController.localPathInfo(resolved)
                     if (!info || !info.absolutePath) {
                         errorToast.text = qsTr("文件不存在或已被删除")
                         errorToast.visible = true
@@ -2843,7 +2912,8 @@ ApplicationWindow {
                     var file = {
                         name: info.fileName || raw.replace(/\\/g, "/").split("/").pop(),
                         path: info.absolutePath,
-                        extension: info.ext || fileExtension(info.absolutePath)
+                        extension: info.ext || fileExtension(info.absolutePath),
+                        folder: info.isDirectory === true
                     }
                     openOfficeFile(file)
                 }
@@ -4299,6 +4369,7 @@ ApplicationWindow {
                                 required property string name
                                 required property string path
                                 required property string sessionKey
+                                required property string kind
                                 property bool closeWhenFinished: false
                                 property bool returnToPreviewAfterSave: false
                                 property bool downloadWhenFinished: false
@@ -4317,7 +4388,9 @@ ApplicationWindow {
                                 Loader {
                                     id: tabOfficeLoader
                                     anchors.fill: parent
-                                    source: "qrc:/localviewer/LocalOfficeView.qml"
+                                    source: officeViewHost.kind === "medical"
+                                            ? "qrc:/localviewer/MedicalImageView.qml"
+                                            : "qrc:/localviewer/LocalOfficeView.qml"
                                     onLoaded: {
                                         item.open(officeViewHost.path, "view")
                                     }
@@ -4368,6 +4441,14 @@ ApplicationWindow {
                                             newTaskRec.artifactSidebarMode = "preview"
                                             newTaskRec.officePreviewPending = false
                                         }
+                                    }
+                                    function onViewerLoadFailed(message) {
+                                        if (!officeViewHost.active)
+                                            return
+                                        newTaskRec.officePreviewPending = false
+                                        errorToast.text = message || qsTr("医学影像查看器加载失败")
+                                        errorToast.visible = true
+                                        errorToastTimer.restart()
                                     }
                                     function onSessionClosed(filePath, saved) {
                                         if (officeViewHost.active && newTaskRec.officeSaveRequested)
@@ -13528,7 +13609,10 @@ ApplicationWindow {
         initializingText: !authController.modelConfigReady
                           ? qsTr("正在更新模型配置...")
                           : wsClient.knowledgeBaseDataDirMessage
-        visible: !window.userSessionReady
+        // A document preview is intentionally usable while the session is
+        // reconnecting. Do not let the login overlay's full-window MouseArea
+        // swallow clicks inside the embedded WebEngine document.
+        visible: !window.userSessionReady && !newTaskRec.officeDocumentVisible
         enabled: visible
         z: 20000
     }
