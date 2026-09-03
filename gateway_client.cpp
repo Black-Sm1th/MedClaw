@@ -1515,10 +1515,18 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
             m_chatRunningSessionKeys.remove(taskKey);
             updateChatRunningForCurrentSession();
         }
+    }
+
+    // Child-agent events are not stored in task_sessions. Map them back to
+    // the controller task so workspace snapshots still cover files written
+    // after the user switches the visible expert identity.
+    const QString artifactKey = resolveArtifactTrackingKey(
+        taskKey.isEmpty() ? eventKey : taskKey);
+    if (!artifactKey.isEmpty()) {
         if (marksRunning)
-            beginArtifactTracking(taskKey);
+            beginArtifactTracking(artifactKey, false);
         else
-            finishArtifactTracking(taskKey);
+            finishArtifactTracking(artifactKey);
     }
 }
 
@@ -2508,7 +2516,7 @@ void GatewayClient::sendChatMessageNow(const QString &sessionKey,
     m_recentlyAbortedChatSessionKey.clear();
     m_chatRunningSessionKeys.insert(key);
     updateChatRunningForCurrentSession();
-    beginArtifactTracking(key);
+    beginArtifactTracking(key, true);
 }
 
 bool GatewayClient::shouldIgnoreArtifactPath(const QString &relativePath)
@@ -2562,18 +2570,106 @@ GatewayClient::WorkspaceSnapshot GatewayClient::snapshotWorkspace(
     return snapshot;
 }
 
-void GatewayClient::beginArtifactTracking(const QString &sessionKey)
+QString GatewayClient::resolveArtifactTrackingKey(const QString &sessionKey) const
 {
     const QString key = sessionKey.trimmed();
-    const QString workspace = normalizeWorkspacePath(
-        taskSessionInfoByKey(key).value(QStringLiteral("workspace")).toString());
-    if (key.isEmpty() || workspace.isEmpty()
-        || m_artifactTrackingBySession.contains(key)) {
+    if (key.isEmpty())
+        return QString();
+    if (!taskSessionInfoByKey(key).isEmpty())
+        return key;
+
+    auto parentFromPair = [this](const QString &spawnedBy,
+                                 const QString &parent) -> QString {
+        if (!spawnedBy.isEmpty() && !taskSessionInfoByKey(spawnedBy).isEmpty())
+            return spawnedBy;
+        if (!parent.isEmpty() && !taskSessionInfoByKey(parent).isEmpty())
+            return parent;
+        return QString();
+    };
+
+    for (const QVariant &value : m_collaborationChildSessionHints) {
+        const QVariantMap hinted = value.toMap();
+        if (hinted.value(QStringLiteral("sessionKey")).toString().trimmed() != key)
+            continue;
+        const QString parent = parentFromPair(
+            hinted.value(QStringLiteral("spawnedBy")).toString().trimmed(),
+            hinted.value(QStringLiteral("parentSessionKey")).toString().trimmed());
+        if (!parent.isEmpty())
+            return parent;
+    }
+
+    const QVariantMap session = sessionInfoByKey(key);
+    const QString parent = parentFromPair(
+        session.value(QStringLiteral("spawnedBy")).toString().trimmed(),
+        session.value(QStringLiteral("parentSessionKey")).toString().trimmed());
+    if (!parent.isEmpty())
+        return parent;
+
+    const QString currentTask = m_currentTaskSessionKey.trimmed();
+    if (!currentTask.isEmpty()
+        && (key == currentTask || sessionBelongsToTask(session, currentTask))) {
+        return currentTask;
+    }
+    return key;
+}
+
+QString GatewayClient::workspaceForArtifactSession(const QString &sessionKey) const
+{
+    const QString key = sessionKey.trimmed();
+    const QString trackingKey = resolveArtifactTrackingKey(key);
+    QString workspace = normalizeWorkspacePath(
+        taskSessionInfoByKey(trackingKey).value(QStringLiteral("workspace")).toString());
+    if (workspace.isEmpty())
+        workspace = normalizeWorkspacePath(
+            taskSessionInfoByKey(m_currentTaskSessionKey)
+                .value(QStringLiteral("workspace")).toString());
+    if (workspace.isEmpty())
+        workspace = normalizeWorkspacePath(
+            sessionInfoByKey(trackingKey)
+                .value(QStringLiteral("sessionOutputDir")).toString());
+    if (workspace.isEmpty())
+        workspace = normalizeWorkspacePath(
+            sessionInfoByKey(key)
+                .value(QStringLiteral("sessionOutputDir")).toString());
+    return workspace;
+}
+
+bool GatewayClient::artifactResultsBelongToView(const QString &artifactSessionKey,
+                                                const QString &viewSessionKey) const
+{
+    const QString artifactKey = resolveArtifactTrackingKey(artifactSessionKey);
+    const QString viewKey = viewSessionKey.trimmed();
+    if (artifactKey.isEmpty() || viewKey.isEmpty())
+        return false;
+    if (artifactKey == viewKey)
+        return true;
+    const QString viewTask = resolveArtifactTrackingKey(viewKey);
+    return !viewTask.isEmpty() && viewTask == artifactKey;
+}
+
+void GatewayClient::beginArtifactTracking(const QString &sessionKey, bool resetSnapshot)
+{
+    const QString key = resolveArtifactTrackingKey(sessionKey);
+    const QString workspace = workspaceForArtifactSession(key);
+    if (key.isEmpty() || workspace.isEmpty())
+        return;
+
+    auto trackingIt = m_artifactTrackingBySession.find(key);
+    if (trackingIt != m_artifactTrackingBySession.end()) {
+        if (!resetSnapshot)
+            return;
+        trackingIt->workspace = workspace;
+        trackingIt->before = snapshotWorkspace(workspace);
+        ++trackingIt->generation;
+        qDebug() << "[Gateway] artifact tracking reset:" << key
+                 << workspace << trackingIt->before.size() << "files";
         return;
     }
+
     ArtifactTrackingState state;
     state.workspace = workspace;
     state.before = snapshotWorkspace(workspace);
+    state.generation = 1;
     m_artifactTrackingBySession.insert(key, state);
     qDebug() << "[Gateway] artifact tracking started:" << key
              << workspace << state.before.size() << "files";
@@ -2581,20 +2677,28 @@ void GatewayClient::beginArtifactTracking(const QString &sessionKey)
 
 void GatewayClient::finishArtifactTracking(const QString &sessionKey)
 {
-    const QString key = sessionKey.trimmed();
+    const QString key = resolveArtifactTrackingKey(sessionKey);
     auto trackingIt = m_artifactTrackingBySession.find(key);
     if (key.isEmpty() || trackingIt == m_artifactTrackingBySession.end()) {
         return;
     }
 
     const ArtifactTrackingState tracking = trackingIt.value();
-    m_artifactTrackingBySession.erase(trackingIt);
     const QString workspace = tracking.workspace;
     const WorkspaceSnapshot before = tracking.before;
+    const quint64 generation = tracking.generation;
+    // Keep the original snapshot until the next user turn. Child experts may
+    // still be writing after the controller reports complete, especially if
+    // the user switched identity mid-run.
 
     // External tools such as Chrome and Office can return before the final
     // output file is fully flushed to disk.
-    QTimer::singleShot(2000, this, [this, key, workspace, before]() {
+    QTimer::singleShot(2000, this, [this, key, workspace, before, generation]() {
+        const auto trackingIt = m_artifactTrackingBySession.constFind(key);
+        if (trackingIt != m_artifactTrackingBySession.cend()
+            && trackingIt->generation != generation) {
+            return;
+        }
         const WorkspaceSnapshot after = snapshotWorkspace(workspace);
         QVariantList artifacts;
         QStringList paths = after.keys();

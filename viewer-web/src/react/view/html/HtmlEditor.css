@@ -43,6 +43,21 @@ body,
     background-color: #fff;
 }
 
+.html-grapes-editor .gjs-editor,
+.html-grapes-editor .gjs-editor-cont,
+.html-grapes-editor .gjs-cv-canvas {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.html-grapes-editor iframe.gjs-frame {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
 .html-grapes-editor .gjs-pn-panels,
 .html-grapes-editor .gjs-cv-canvas,
 .html-grapes-editor .gjs-editor-cont {

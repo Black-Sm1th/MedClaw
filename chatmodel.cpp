@@ -333,24 +333,36 @@ QVariantList ChatModel::messages() const
     return out;
 }
 
-void ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
+bool ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
 {
     if (artifacts.isEmpty())
-        return;
+        return false;
 
+    int fallback = -1;
     for (int i = m_messages.count() - 1; i >= 0; --i) {
         ChatMessage &msg = m_messages[i];
         if (msg.role != QLatin1String("assistant")
-            || msg.msgType != QLatin1String("text")
-            || msg.isIntermediate || msg.isStreaming) {
+            || msg.msgType != QLatin1String("text")) {
             continue;
         }
+        if (fallback < 0)
+            fallback = i;
+        if (msg.isIntermediate)
+            continue;
         msg.artifacts = artifacts;
         const QModelIndex idx = index(i);
         emit dataChanged(idx, idx, { ArtifactsRole });
         emit messagePayloadChanged();
-        return;
+        return true;
     }
+    if (fallback < 0)
+        return false;
+
+    m_messages[fallback].artifacts = artifacts;
+    const QModelIndex idx = index(fallback);
+    emit dataChanged(idx, idx, { ArtifactsRole });
+    emit messagePayloadChanged();
+    return true;
 }
 
 void ChatModel::loadHistory(const QVariantList &messages)

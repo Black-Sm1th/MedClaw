@@ -30,6 +30,7 @@ public:
     Q_INVOKABLE QVariantList listFolderFiles(const QString &folderUrl) const;
 
     Q_INVOKABLE QVariantMap localFileInfo(const QString &fileUrl) const;
+    Q_INVOKABLE QVariantMap localPathInfo(const QString &fileUrl) const;
 
     Q_INVOKABLE QVariantList listKnowledgeBaseFolderFiles(const QString &folderUrl) const;
 

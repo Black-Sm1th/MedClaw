@@ -91,6 +91,10 @@ Item {
             root.scheduleSyncMessages()
         }
 
+        function onMessagePayloadChanged() {
+            root.scheduleSyncMessages()
+        }
+
         function onStreamFlushed(row, delta) {
             root.appendStreamDelta(row, delta)
         }

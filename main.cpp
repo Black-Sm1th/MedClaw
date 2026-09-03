@@ -5,9 +5,6 @@
 #include <QFontDatabase>
 #include <QDir>
 #include <QFileInfo>
-#include <QFile>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QPainterPath>
 #include <QRegion>
 #include <QSettings>
@@ -15,6 +12,8 @@
 #include <QTimer>
 #include <QWindow>
 #include <QScreen>
+#include <QDebug>
+#include <QSurfaceFormat>
 #include <QtWebEngine/QtWebEngine>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
@@ -22,9 +21,24 @@
 #include "chatmodel.h"
 #include "session_reader.h"
 #include "auth_controller.h"
-#include "online-office-integration/client-qt/OnlineOfficeClient.h"
 #include "viewer-host-qt/include/ViewerHost.h"
 
+static void appendChromiumFlag(QByteArray &flags, const char *flag)
+{
+    const QList<QByteArray> tokens = flags.split(' ');
+    for (const QByteArray &token : tokens) {
+        if (token == flag)
+            return;
+    }
+    if (!flags.isEmpty() && !flags.endsWith(' '))
+        flags += ' ';
+    flags += flag;
+}
+
+// Qt 5.15.2 WebEngine is Chromium 83. WebGL2 exists, but the UI process was
+// sharing a GLES2 context and Chromium was left on the GPU blocklist / D3D9
+// ANGLE path, so getContext('webgl2') returned null. Cornerstone3D MPR and
+// volume rendering need a real WebGL2 (ES 3.0) context.
 static void configureQtWebEngineRuntime(const char *executablePath)
 {
     const QString appDir = QFileInfo(QString::fromLocal8Bit(executablePath)).absolutePath();
@@ -43,10 +57,40 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     if (qEnvironmentVariableIsEmpty("QTWEBENGINE_DISABLE_SANDBOX"))
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
 
-    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_CHROMIUM_FLAGS")) {
-        QByteArray flags("--no-sandbox");
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
-    }
+    if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
+        qputenv("QT_OPENGL", "angle");
+    if (qEnvironmentVariableIsEmpty("QT_ANGLE_PLATFORM"))
+        qputenv("QT_ANGLE_PLATFORM", "d3d11");
+
+    QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+    appendChromiumFlag(flags, "--no-sandbox");
+    appendChromiumFlag(flags, "--disable-gpu-sandbox");
+    appendChromiumFlag(flags, "--ignore-gpu-blacklist");
+    appendChromiumFlag(flags, "--ignore-gpu-blocklist");
+    appendChromiumFlag(flags, "--enable-gpu");
+    appendChromiumFlag(flags, "--enable-webgl");
+    appendChromiumFlag(flags, "--enable-webgl2");
+    appendChromiumFlag(flags, "--enable-accelerated-2d-canvas");
+    appendChromiumFlag(flags, "--enable-gpu-rasterization");
+    appendChromiumFlag(flags, "--use-gl=angle");
+    appendChromiumFlag(flags, "--use-angle=d3d11");
+    appendChromiumFlag(flags, "--disable-gpu-driver-bug-workarounds");
+    appendChromiumFlag(flags, "--disable-features=RendererCodeIntegrity");
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
+
+    QSurfaceFormat format;
+    format.setRenderableType(QSurfaceFormat::OpenGLES);
+    format.setVersion(3, 0);
+    format.setProfile(QSurfaceFormat::NoProfile);
+    format.setDepthBufferSize(24);
+    format.setStencilBufferSize(8);
+    format.setSamples(0);
+    format.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    QSurfaceFormat::setDefaultFormat(format);
+
+    qDebug().noquote() << "[WebEngine] QT_OPENGL=" << qgetenv("QT_OPENGL")
+                       << "QT_ANGLE_PLATFORM=" << qgetenv("QT_ANGLE_PLATFORM")
+                       << "CHROMIUM_FLAGS=" << qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
 }
 
 static void updateRoundedWindowMask(QWindow *window)
@@ -67,32 +111,6 @@ static void updateRoundedWindowMask(QWindow *window)
     window->setMask(QRegion(path.toFillPolygon().toPolygon()));
 }
 
-static QJsonObject loadOfficeConfig(const QString &dataRoot)
-{
-    const QDir applicationDir(QCoreApplication::applicationDirPath());
-    const QStringList candidates = {
-        QDir(dataRoot).filePath(QStringLiteral("AppData/config/office.json")),
-        applicationDir.filePath(QStringLiteral("config/office.json")),
-        QDir(applicationDir.filePath(QStringLiteral("..")))
-            .filePath(QStringLiteral("config/office.json"))
-    };
-    for (const QString &path : candidates) {
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly))
-            continue;
-        QJsonParseError error;
-        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
-        if (error.error != QJsonParseError::NoError || !document.isObject()) {
-            qWarning() << "[OnlineOffice] invalid config:" << path
-                       << error.errorString();
-            continue;
-        }
-        qDebug().noquote() << "[OnlineOffice] loaded config:" << path;
-        return document.object();
-    }
-    return {};
-}
-
 int main(int argc, char *argv[])
 {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
@@ -103,11 +121,9 @@ int main(int argc, char *argv[])
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 #endif
 #endif
-    if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
-        qputenv("QT_OPENGL", "angle");
+    configureQtWebEngineRuntime(argv[0]);
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
-    configureQtWebEngineRuntime(argv[0]);
     QtWebEngine::initialize();
 
     QApplication app(argc, argv);
@@ -158,11 +174,15 @@ int main(int argc, char *argv[])
         QString visibleSession = wsClient.currentViewSessionKey().trimmed();
         if (visibleSession.isEmpty())
             visibleSession = wsClient.currentTaskSessionKey().trimmed();
-        if (sessionKey.trimmed() == visibleSession) {
-            chatModel.setArtifactsForLastAssistant(artifacts);
-            wsClient.persistSessionArtifacts(sessionKey, chatModel.messages());
+        const QString trackingKey = sessionKey.trimmed();
+        if (wsClient.artifactResultsBelongToView(trackingKey, visibleSession)) {
+            if (chatModel.setArtifactsForLastAssistant(artifacts))
+                wsClient.persistSessionArtifacts(visibleSession, chatModel.messages());
+            wsClient.persistDetectedArtifacts(visibleSession, artifacts);
+            if (!trackingKey.isEmpty() && trackingKey != visibleSession)
+                wsClient.persistDetectedArtifacts(trackingKey, artifacts);
         } else {
-            wsClient.persistDetectedArtifacts(sessionKey, artifacts);
+            wsClient.persistDetectedArtifacts(trackingKey, artifacts);
         }
     });
 
@@ -245,22 +265,7 @@ int main(int argc, char *argv[])
     GET_SINGLETON(MainViewController)->init(&chatModel, &wsClient);
 
     QQmlApplicationEngine engine;
-    qmlRegisterType<OnlineOfficeClient>("MedClaw.Office", 1, 0,
-                                        "OnlineOfficeClient");
     qmlRegisterType<ViewerHost>("MedClaw.Viewer", 1, 0, "ViewerHost");
-    const QJsonObject officeConfig = loadOfficeConfig(dataRoot);
-    QString officeBridgeUrl = qEnvironmentVariable("MEDCLAW_OFFICE_BRIDGE_URL").trimmed();
-    QString officeApiKey = qEnvironmentVariable("MEDCLAW_OFFICE_API_KEY").trimmed();
-    if (officeBridgeUrl.isEmpty())
-        officeBridgeUrl = officeConfig.value(QStringLiteral("bridgeUrl")).toString().trimmed();
-    if (officeApiKey.isEmpty())
-        officeApiKey = officeConfig.value(QStringLiteral("apiKey")).toString().trimmed();
-    if (officeBridgeUrl.isEmpty())
-        officeBridgeUrl = QStringLiteral("http://111.6.178.34:24641/bridge");
-
-    OnlineOfficeClient onlineOffice;
-    onlineOffice.setBridgeBaseUrl(officeBridgeUrl);
-    onlineOffice.setApiKey(officeApiKey);
     QSize savedWindowSize = QSettings().value(
         QStringLiteral("ui/windowSize")).toSize();
     // Older versions could persist the screen-sized geometry while maximizing.
@@ -281,7 +286,6 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
     engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
     engine.rootContext()->setContextProperty(QStringLiteral("authController"), &authController);
-    engine.rootContext()->setContextProperty(QStringLiteral("onlineOffice"), &onlineOffice);
 
     int fontId1 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     int fontId2 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");

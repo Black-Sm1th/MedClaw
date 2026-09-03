@@ -295,6 +295,11 @@ public:
                                   const QVariantList &artifacts);
     QVariantList restoreSessionArtifacts(const QString &sessionKey,
                                           const QVariantList &history);
+    /// True when artifact results for artifactSessionKey should be shown on
+    /// the currently viewed Q&A session (same task, including a switched
+    /// collaboration expert).
+    bool artifactResultsBelongToView(const QString &artifactSessionKey,
+                                     const QString &viewSessionKey) const;
 
     /// 刷新会话列表（发送 sessions.list RPC）
     Q_INVOKABLE void refreshSessions();
@@ -814,9 +819,12 @@ private:
     struct ArtifactTrackingState {
         QString workspace;
         WorkspaceSnapshot before;
+        quint64 generation = 0;
     };
     WorkspaceSnapshot snapshotWorkspace(const QString &workspace) const;
-    void beginArtifactTracking(const QString &sessionKey);
+    QString resolveArtifactTrackingKey(const QString &sessionKey) const;
+    QString workspaceForArtifactSession(const QString &sessionKey) const;
+    void beginArtifactTracking(const QString &sessionKey, bool resetSnapshot = false);
     void finishArtifactTracking(const QString &sessionKey);
     static bool shouldIgnoreArtifactPath(const QString &relativePath);
 

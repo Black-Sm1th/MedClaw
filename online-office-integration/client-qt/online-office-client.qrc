@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="/onlineoffice">
-        <file alias="OnlineOfficeView.qml">OnlineOfficeView.qml</file>
-    </qresource>
-</RCC>

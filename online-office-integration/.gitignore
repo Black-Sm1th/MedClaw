@@ -1,8 +1,0 @@
-server/.env
-client-qt/Makefile*
-client-qt/.qmake.stash
-client-qt/debug/
-client-qt/release/
-client-qt/*.exe
-client-qt/*.obj
-client-qt/moc_*.cpp

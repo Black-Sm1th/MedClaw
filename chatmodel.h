@@ -81,7 +81,7 @@ public:
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
     Q_INVOKABLE QVariantList messages() const;
-    Q_INVOKABLE void setArtifactsForLastAssistant(const QVariantList &artifacts);
+    Q_INVOKABLE bool setArtifactsForLastAssistant(const QVariantList &artifacts);
     void loadHistory(const QVariantList &messages);
 
     void beginStreaming();

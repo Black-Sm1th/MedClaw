@@ -113,6 +113,15 @@ export function splitHtmlDocument(source: string): HtmlDocumentParts {
     };
 }
 
+export function restoreCanvasEventHandlers(document: Document, parts: HtmlDocumentParts): void {
+    document.body.querySelectorAll(`[${EVENT_SLOT}]`).forEach(element => {
+        const slot = element.getAttribute(EVENT_SLOT) ?? '';
+        const handlers = parts.eventHandlers[slot];
+        if (!handlers) return;
+        Object.entries(handlers).forEach(([name, value]) => element.setAttribute(name, value));
+    });
+}
+
 function restorePreservedBody(parts: HtmlDocumentParts, editedBody: string): string {
     const document = new DOMParser().parseFromString(`<body>${editedBody}</body>`, 'text/html');
 
@@ -141,7 +150,10 @@ function restorePreservedBody(parts: HtmlDocumentParts, editedBody: string): str
 }
 
 export function composeHtmlDocument(parts: HtmlDocumentParts, editedBody: string, css: string): string {
-    const style = `<style data-medclaw-editor-overrides>${css.replace(/<\/style/gi, '<\\/style')}</style>`;
+    // GrapesJS' CSSOM parser can emit this invalid declaration when parsing
+    // custom properties in older Chromium builds.
+    const cleanCss = css.replace(/(^|[;{])\s*undefined\s*:\s*undefined\s*;?/gim, '$1');
+    const style = `<style data-medclaw-editor-overrides>${cleanCss.replace(/<\/style/gi, '<\\/style')}</style>`;
     const head = parts.headTemplate.includes(STYLE_MARKER)
         ? parts.headTemplate.replace(STYLE_MARKER, style)
         : `${parts.headTemplate}${style}`;
