@@ -8570,7 +8570,7 @@ ApplicationWindow {
                                     Flickable {
                                         id: cronTemplateCardsFlick
                                         width: parent.width
-                                        height: 184
+                                        height: 114
                                         clip: true
                                         contentWidth: cronTemplateCardsRow.width
                                         contentHeight: cronTemplateCardsRow.height
@@ -8586,7 +8586,7 @@ ApplicationWindow {
                                         Row {
                                             id: cronTemplateCardsRow
                                             spacing: 16
-                                            height: 170
+                                            height: 100
 
                                             Repeater {
                                                 model: window.cronTemplateCategories[window.selectedCronTemplateCategory].tasks
@@ -8594,7 +8594,7 @@ ApplicationWindow {
                                                     id: cronTemplateCard
                                                     property var task: modelData
                                                     width: 195
-                                                    height: 170
+                                                    height: 100
 
                                                     DropShadow {
                                                         anchors.fill: cardImage
@@ -8613,15 +8613,16 @@ ApplicationWindow {
                                                         source: "qrc:/images/cron/"
                                                                 + (window.selectedCronTemplateCategory + 1)
                                                                 + "-" + (index + 1) + ".png"
-                                                        fillMode: Image.PreserveAspectFit
-                                                        sourceSize: Qt.size(195, 170)
                                                     }
 
                                                     Rectangle {
-                                                        width: 58
-                                                        height: 38
+                                                        width: 52
+                                                        height: 28
                                                         radius: 8
-                                                        anchors.centerIn: parent
+                                                        anchors.right: parent.right
+                                                        anchors.top: parent.top
+                                                        anchors.rightMargin: 16
+                                                        anchors.topMargin: 16
                                                         color: templateMouse.pressed ? "#005CE6" : "#006BFF"
                                                         visible: templateMouse.containsMouse
                                                         z: 2
@@ -8646,7 +8647,7 @@ ApplicationWindow {
                                     }
                                 }
 
-                                Item { width: parent.width; height: 60 }
+                                Item { width: parent.width; height: 40 }
                             }
 
                             Repeater{
@@ -11189,7 +11190,7 @@ ApplicationWindow {
             Rectangle {
                 id: cronIdeaDialogCard
                 width: Math.min(980, parent.width - 64)
-                height: Math.min(640, parent.height - 80)
+                height: Math.min(440, parent.height - 80)
                 anchors.centerIn: parent
                 radius: 16
                 color: "#FFFFFF"
@@ -11291,9 +11292,9 @@ ApplicationWindow {
                             id: cronIdeaCardsGrid
                             width: cronIdeaCardsScroll.width
                             property int cardColumns: Math.max(1, Math.min(5,
-                                Math.floor((width + spacing) / 170)))
+                                Math.floor((width + spacing) / 100)))
                             property real cardWidth: (width - (cardColumns - 1) * spacing) / cardColumns
-                            property real cardHeight: cardWidth * 170 / 196
+                            property real cardHeight: cardWidth * 100 / 196
                             columns: cardColumns
                             spacing: 14
                             height: Math.ceil(window.cronTemplateCategories[window.selectedCronTemplateCategory].tasks.length
@@ -11326,15 +11327,16 @@ ApplicationWindow {
                                         source: "qrc:/images/cron/"
                                                 + (window.selectedCronTemplateCategory + 1)
                                                 + "-" + (index + 1) + ".png"
-                                        fillMode: Image.PreserveAspectFit
-                                        sourceSize: Qt.size(196, 170)
                                     }
 
                                     Rectangle {
-                                        width: 58
-                                        height: 38
+                                        width: 52
+                                        height: 28
                                         radius: 8
-                                        anchors.centerIn: parent
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.rightMargin: 16
+                                        anchors.topMargin: 16
                                         color: ideaCardMouse.pressed ? "#005CE6" : "#006BFF"
                                         visible: ideaCardMouse.containsMouse
                                         z: 2
