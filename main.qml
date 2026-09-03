@@ -1520,7 +1520,7 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     text: "!"
                     color: "#FFFFFF"
-                    font.pixelSize: 13
+                    font.pixelSize: 14
                     font.bold: true
                 }
             }
@@ -2340,7 +2340,8 @@ ApplicationWindow {
                     id: workspaceTopBarSlot
                     width: (window.userSessionReady
                             && (window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6)
-                            && !newTaskRec.isNewTaskWelcome) ? 137 : 0
+                            && !newTaskRec.isNewTaskWelcome)
+                           ? dropdownSelectionWorkSpace.compactWidth : 0
                     height: parent.height
                     clip: true
                 }
@@ -3063,7 +3064,7 @@ ApplicationWindow {
                 }
 
                 function resetShortcutSelection() {
-                    selectedShortcutGroup = -1
+                    selectedShortcutGroup = 0
                     selectedShortcutTab = 0
                     shortcutCardOffset = 0
                 }
@@ -5124,7 +5125,7 @@ ApplicationWindow {
                 //                         }
                 //                         Text {
                 //                             text: toolName
-                //                             font.pixelSize: 13
+                //                             font.pixelSize: 14
                 //                             font.bold: true
                 //                             color: "#D9000000"
                 //                         }
@@ -5151,9 +5152,7 @@ ApplicationWindow {
                     id: chatInputContainer
                     readonly property int defaultTextInputHeight: 66
                     readonly property int maxTextInputHeight: 220
-                    readonly property int currentTextInputHeight: newTaskRec.selectedShortcut
-                                                                  ? defaultTextInputHeight
-                                                                  : Math.min(maxTextInputHeight,
+                    readonly property int currentTextInputHeight: Math.min(maxTextInputHeight,
                                                                              Math.max(defaultTextInputHeight,
                                                                                       Math.ceil(textInputArea.textContentHeight) + 12))
                     color: "transparent"
@@ -5234,7 +5233,9 @@ ApplicationWindow {
                                      Popup {
                                          id: chatOptionsPopup
                                          parent: Overlay.overlay
-                                        width: Math.min(390, Math.max(300, chatInputContainer.width - 16))
+                                        width: activeCategory
+                                               ? Math.min(390, Math.max(300, chatInputContainer.width - 16))
+                                               : chatOptionsPrimaryPanel.width
                                         height: Math.max(chatOptionsPrimaryPanel.height,
                                                          chatOptionsSecondaryPanel.height)
                                         z: 100
@@ -5257,7 +5258,7 @@ ApplicationWindow {
                                             var point = chatOptionsVisualTrigger.mapToItem(Overlay.overlay, 0, 0)
                                             x = Math.max(8, Math.min(point.x,
                                                 Overlay.overlay.width - width - 8))
-                                            y = Math.max(8, point.y - height - 8)
+                                            y = point.y - height - 8
                                         }
 
                                         function firstAvailableCategory() {
@@ -5278,25 +5279,16 @@ ApplicationWindow {
                                         }
 
                                         onAboutToShow: {
-                                            if (!activeCategory ||
-                                                (activeCategory === "expert" && !newTaskRec.canSelectExpert) ||
-                                                (activeCategory === "knowledge" && !newTaskRec.canSelectKnowledgeBase) ||
-                                                (activeCategory === "template" && !newTaskRec.canSelectTemplate))
-                                                activeCategory = firstAvailableCategory()
-                                            Qt.callLater(reposition)
-                                        }
-                                        onOpened: {
-                                            if (!activeCategory)
-                                                activeCategory = firstAvailableCategory()
-                                            Qt.callLater(reposition)
+                                            activeCategory = ""
+                                            reposition()
                                         }
                                         onWidthChanged: {
                                             if (visible)
-                                                Qt.callLater(reposition)
+                                                reposition()
                                         }
                                         onHeightChanged: {
                                             if (visible)
-                                                Qt.callLater(reposition)
+                                                reposition()
                                         }
 
                                         background: Rectangle {
@@ -5499,10 +5491,13 @@ ApplicationWindow {
 
                                             Rectangle {
                                                 id: chatOptionsSecondaryPanel
+                                                visible: chatOptionsPopup.activeCategory !== ""
                                                 width: parent.width - chatOptionsPrimaryPanel.width - parent.spacing
-                                                height: Math.min(chatOptionsPopup.secondaryMaximumHeight,
-                                                                 Math.max(54,
-                                                                          chatOptionsPopup.secondaryItemCount * 38 + 16))
+                                                height: visible
+                                                        ? Math.min(chatOptionsPopup.secondaryMaximumHeight,
+                                                                   Math.max(54,
+                                                                            chatOptionsPopup.secondaryItemCount * 38 + 16))
+                                                        : 0
                                                 anchors.bottom: parent.bottom
                                                 radius: 10
                                                 color: "#FFFFFF"
@@ -6145,7 +6140,7 @@ ApplicationWindow {
                                                      }
                                                      contentItem: Text {
                                                          text: expertTagInstallToolTip.text
-                                                         font.pixelSize: 13
+                                                         font.pixelSize: 14
                                                          color: "#FFFFFF"
                                                          font.family: "Alibaba PuHuiTi 3.0"
                                                      }
@@ -6217,22 +6212,20 @@ ApplicationWindow {
                                              onClicked: {
                                                  if (chatOptionsPopup.visible)
                                                      chatOptionsPopup.close()
-                                                 else {
-                                                     chatOptionsPopup.reposition()
+                                                 else
                                                      chatOptionsPopup.open()
-                                                 }
                                              }
                                          }
 
                                          ToolTip {
                                              id: chatOptionsVisualButtonToolTip
-                                             visible: chatOptionsVisualButtonMouse.containsMouse
+                                             visible: chatOptionsVisualButtonMouse.containsMouse && !chatOptionsPopup.visible
                                              text: qsTr("添加专家、知识库或模板")
                                              delay: 500
                                              background: Rectangle { color: "#A6000000"; radius: 4 }
                                              contentItem: Text {
                                                  text: chatOptionsVisualButtonToolTip.text
-                                                 font.pixelSize: 13
+                                                 font.pixelSize: 14
                                                  color: "#FFFFFF"
                                                  font.family: "Alibaba PuHuiTi 3.0"
                                              }
@@ -6986,7 +6979,7 @@ ApplicationWindow {
                                 //                 text: dropdownSelectionTool.toolSearchText
                                 //                       ? qsTr("未找到匹配的工具")
                                 //                       : qsTr("暂无可用工具")
-                                //                 font.pixelSize: 13
+                                //                 font.pixelSize: 14
                                 //                 font.family: "Alibaba PuHuiTi 3.0"
                                 //                 color: "#80000000"
                                 //                 width: parent.width
@@ -7155,7 +7148,12 @@ ApplicationWindow {
                             Item {
                                 id: workspaceDialogSlot
                                 width: newTaskRec.isNewTaskWelcome
-                                       ? (chatInputContainer.width < 700 ? 110 : 137) : 0
+                                       ? Math.max(0,
+                                                  Math.min(dropdownSelectionWorkSpace.compactWidth,
+                                                           composerSettingsRow.width
+                                                           - modelPickerWrap.modelPickerMinWidth
+                                                           - composerSettingsRow.spacing))
+                                       : 0
                                 height: 36
                                 anchors.verticalCenter: parent.verticalCenter
                             }
@@ -7260,6 +7258,7 @@ ApplicationWindow {
                                     alignment: Qt.AlignLeft
                                     popupMaxWidth: 320
                                     popupMaxHeight: 280
+                                    popupOpensUpward: true
                                     onSelected: function(index, text) {
                                         if (modelPickerWrap.modelIds.length === 0)
                                             return
@@ -7540,7 +7539,7 @@ ApplicationWindow {
                                         text: shortcutLargeCard.card.detail
                                         anchors.fill: parent
                                         anchors.margins: 14
-                                        font.pixelSize: 13
+                                        font.pixelSize: 14
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.weight: Font.Medium
                                         color: "#D9000000"
@@ -7577,7 +7576,15 @@ ApplicationWindow {
 
             Item {
                 id: dropdownSelectionWorkSpace
-                width: 137
+                readonly property int minimumWidth: 110
+                readonly property int maximumWidth: 240
+                readonly property int desiredWidth:
+                    Math.ceil(workspaceTextMetrics.advanceWidth)
+                    + (pickerLocked ? 48 : 68)
+                readonly property int compactWidth:
+                    Math.min(maximumWidth, Math.max(minimumWidth, desiredWidth))
+
+                width: compactWidth
                 height: 36
                 z: 10
 
@@ -7726,9 +7733,10 @@ ApplicationWindow {
 
                     ToolTip {
                         id: wsToolTip
-                        visible: wsMouseArea.containsMouse
+                        visible: wsMouseArea.containsMouse && !wsPopup.visible
                                  && (dropdownSelectionWorkSpace.hasWorkspaceSelected
-                                     ? dropdownSelectionWorkSpace.pickerLocked
+                                     ? (dropdownSelectionWorkSpace.pickerLocked
+                                        || workspaceNameLabel.truncated)
                                      : true)
                         text: dropdownSelectionWorkSpace.hasWorkspaceSelected
                             ? dropdownSelectionWorkSpace.effectiveWorkspacePath
@@ -7745,11 +7753,13 @@ ApplicationWindow {
                     }
 
                     Row {
+                        id: workspaceSelectRow
                         spacing: 6
+                        anchors.left: parent.left
+                        anchors.leftMargin: 12
+                        anchors.right: wsChevron.visible ? wsChevron.left : parent.right
+                        anchors.rightMargin: wsChevron.visible ? 4 : 12
                         anchors.verticalCenter: parent.verticalCenter
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.horizontalCenterOffset: dropdownSelectionWorkSpace.pickerLocked ? 0 : (-wsChevron.width / 2 - 2)
-
                         Image {
                             source: "qrc:/images/folder.png"
                             width: 16; height: 16
@@ -7757,8 +7767,9 @@ ApplicationWindow {
                             fillMode: Image.PreserveAspectFit
                         }
                         Text {
+                            id: workspaceNameLabel
                             text: dropdownSelectionWorkSpace.displayText
-                            width: Math.min(implicitWidth, 90)
+                            width: Math.max(0, workspaceSelectRow.width - 16 - workspaceSelectRow.spacing)
                             elide: Text.ElideMiddle
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
@@ -7813,23 +7824,19 @@ ApplicationWindow {
                     }
                 }
 
+                TextMetrics {
+                    id: workspaceTextMetrics
+                    text: dropdownSelectionWorkSpace.displayText
+                    font.pixelSize: 14
+                    font.family: "Alibaba PuHuiTi 3.0"
+                }
+
                 Popup {
                     id: wsPopup
                     x: 0
                     width: 200
                     padding: 8
-
-                    function calcY() {
-                        var globalPos = dropdownSelectionWorkSpace.mapToItem(null, 0, 0)
-                        var windowH = window.height
-                        var popupH = contentItem.implicitHeight + padding * 2
-                        if (globalPos.y + dropdownSelectionWorkSpace.height + 4 + popupH > windowH)
-                            return -popupH - 4
-                        return dropdownSelectionWorkSpace.height + 4
-                    }
-
-                    y: calcY()
-                    onAboutToShow: y = calcY()
+                    y: -height - 4
 
                     background: Rectangle {
                         radius: 8
@@ -7848,6 +7855,96 @@ ApplicationWindow {
                     contentItem: Column {
                         spacing: 0
 
+
+                        Text {
+                            text: qsTr("最近")
+                            font.pixelSize: 12
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            color: "#73000000"
+                            leftPadding: 12
+                            topPadding: 4
+                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
+                        }
+
+                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
+
+                        Repeater {
+                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
+                            model: dropdownSelectionWorkSpace.recentFolders
+                            delegate: Rectangle {
+                                width: wsPopup.width - 16
+                                height: 36
+                                radius: 6
+                                color: recentMouse.pressed ? "#14000000"
+                                     : recentMouse.containsMouse ? "#0A000000"
+                                     : "transparent"
+                                Behavior on color { ColorAnimation { duration: 100 } }
+
+                                Row {
+                                    spacing: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: wsPopup.width - 16
+                                    leftPadding: 12
+                                    rightPadding: 12
+                                    Image {
+                                        source: "qrc:/images/folder.png"
+                                        width: 18; height: 18
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Text {
+                                        id: workspacePopName
+                                        width: wsPopup.width - 16 - 18 - 8 - 24
+                                        elide: Text.ElideMiddle
+                                        text: dropdownSelectionWorkSpace.folderDisplayName(modelData)
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        color: "#D9000000"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        ToolTip {
+                                            visible: recentMouse.containsMouse && workspacePopName.truncated
+                                            text: workspacePopName.text
+                                            delay: 500
+                                            x: -8
+                                            y: -height - 4
+                                            width: implicitContentWidth + 20
+                                            background: Rectangle {
+                                                color: "#A6000000"
+                                                radius: 4
+                                            }
+                                            contentItem: Text {
+                                                text: workspacePopName.text
+                                                font.pixelSize: 14
+                                                color: "#FFFFFF"
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                wrapMode: Text.Wrap
+                                            }
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: recentMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        dropdownSelectionWorkSpace.absolutePath = modelData
+                                        dropdownSelectionWorkSpace.currentText = dropdownSelectionWorkSpace.folderDisplayName(modelData)
+                                        wsPopup.close()
+                                    }
+                                }
+                            }
+                        }
+                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
+                        Rectangle {
+                            width: wsPopup.width - 16
+                            height: 1
+                            color: "#EBEDF0"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
+                        }
+
+                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0 }
                         Rectangle {
                             width: wsPopup.width - 16
                             height: 36
@@ -7885,73 +7982,6 @@ ApplicationWindow {
                                 onClicked: {
                                     wsPopup.close()
                                     folderDialogWorkSpace.open()
-                                }
-                            }
-                        }
-                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
-                        Rectangle {
-                            width: wsPopup.width - 16
-                            height: 1
-                            color: "#EBEDF0"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
-                        }
-
-                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0 }
-
-                        Text {
-                            text: qsTr("最近")
-                            font.pixelSize: 12
-                            font.family: "Alibaba PuHuiTi 3.0"
-                            color: "#73000000"
-                            leftPadding: 12
-                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
-                        }
-
-                        Item { width: 1; height: 8; visible: dropdownSelectionWorkSpace.recentFolders.length > 0}
-
-                        Repeater {
-                            visible: dropdownSelectionWorkSpace.recentFolders.length > 0
-                            model: dropdownSelectionWorkSpace.recentFolders
-                            delegate: Rectangle {
-                                width: wsPopup.width - 16
-                                height: 36
-                                radius: 6
-                                color: recentMouse.pressed ? "#14000000"
-                                     : recentMouse.containsMouse ? "#0A000000"
-                                     : "transparent"
-                                Behavior on color { ColorAnimation { duration: 100 } }
-
-                                Row {
-                                    spacing: 8
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: 6
-
-                                    Image {
-                                        source: "qrc:/images/folder.png"
-                                        width: 18; height: 18
-                                        anchors.verticalCenter: parent.verticalCenter
-                                    }
-                                    Text {
-                                        text: dropdownSelectionWorkSpace.folderDisplayName(modelData)
-                                        font.pixelSize: 14
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        color: "#D9000000"
-                                        anchors.verticalCenter: parent.verticalCenter
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: recentMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        dropdownSelectionWorkSpace.absolutePath = modelData
-                                        dropdownSelectionWorkSpace.currentText = dropdownSelectionWorkSpace.folderDisplayName(modelData)
-                                        wsPopup.close()
-                                    }
                                 }
                             }
                         }
@@ -9968,7 +9998,7 @@ ApplicationWindow {
                                     background: Rectangle { color: "#A6000000"; radius: 4 }
                                     contentItem: Text {
                                         text: kbAddCollectionTip.text
-                                        font.pixelSize: 13
+                                        font.pixelSize: 14
                                         color: "#FFFFFF"
                                         font.family: "Alibaba PuHuiTi 3.0"
                                     }
@@ -10302,7 +10332,7 @@ ApplicationWindow {
                                 Label {
                                     text: window.kbBusyText
                                     color: "#73000000"
-                                    font.pixelSize: 13
+                                    font.pixelSize: 14
                                 }
                             }
                         }
@@ -10400,7 +10430,7 @@ ApplicationWindow {
                                 placeholderTextColor: "#40000000"
                                 selectByMouse: true
                                 verticalAlignment: TextInput.AlignVCenter
-                                font.pixelSize: 13
+                                font.pixelSize: 14
                                 color: "#D9000000"
                                 background: Item {}
                                 onAccepted: {
@@ -10415,7 +10445,7 @@ ApplicationWindow {
                                 anchors.rightMargin: 10
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: kbCollectionNameInput.text.length + "/40"
-                                font.pixelSize: 13
+                                font.pixelSize: 14
                                 color: "#40000000"
                             }
                         }
@@ -13002,7 +13032,7 @@ ApplicationWindow {
                                             }
                                             Label {
                                                 text: modelData.content || ""
-                                                font.pixelSize: 13
+                                                font.pixelSize: 14
                                                 color: "#73000000"
                                                 elide: Text.ElideRight
                                                 width: Math.min(implicitWidth, 180)

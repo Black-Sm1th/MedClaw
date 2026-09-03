@@ -206,7 +206,7 @@ Rectangle {
         anchors.rightMargin: 60
         anchors.bottomMargin: 24
         clip: true
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
         Grid {
@@ -306,7 +306,7 @@ Rectangle {
                                 Label {
                                     width: parent.width - expertCardInstallPercent.width - 12
                                     text: root.installMessage || qsTr("专家安装中...")
-                                    font.pixelSize: 13
+                                    font.pixelSize: 14
                                     font.weight: Font.DemiBold
                                     color: "#A6000000"
                                     elide: Text.ElideRight
@@ -314,7 +314,7 @@ Rectangle {
                                 Label {
                                     id: expertCardInstallPercent
                                     text: root.installProgress + "%"
-                                    font.pixelSize: 13
+                                    font.pixelSize: 14
                                     font.weight: Font.DemiBold
                                     color: "#006BFF"
                                 }
@@ -512,7 +512,7 @@ Rectangle {
                 Label {
                     width: parent.width - installPercentLabel.width - 16
                     text: root.installMessage || qsTr("专家召唤中...")
-                    font.pixelSize: 13
+                    font.pixelSize: 14
                     color: "#A6000000"
                     elide: Text.ElideRight
                 }
@@ -520,7 +520,7 @@ Rectangle {
                 Label {
                     id: installPercentLabel
                     text: root.installProgress + "%"
-                    font.pixelSize: 13
+                    font.pixelSize: 14
                     font.weight: Font.DemiBold
                     color: "#006BFF"
                 }

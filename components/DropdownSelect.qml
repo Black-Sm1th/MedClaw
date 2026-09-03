@@ -26,6 +26,8 @@ Item {
     property int popupMaxWidth: 320
     /// 弹出层内容区最大高度，超出则出现纵向滚动条
     property int popupMaxHeight: 280
+    /// 固定在按钮上方展开；默认保留其他页面现有的自适应方向
+    property bool popupOpensUpward: false
 
     readonly property int contentListHeight: {
         var n = model.length
@@ -154,10 +156,12 @@ Item {
         property real maxItemWidth: 0
 
         function calcY() {
-            var globalPos = root.mapToItem(null, 0, 0)
-            var windowH = root.Window.height || 800
             var scrollH = Math.min(root.popupMaxHeight, Math.max(root.itemHeight, root.contentListHeight))
             var popupH = scrollH + padding * 2
+            if (root.popupOpensUpward)
+                return -popupH - 4
+            var globalPos = root.mapToItem(null, 0, 0)
+            var windowH = root.Window.height || 800
             if (globalPos.y + root.height + 4 + popupH > windowH)
                 return -popupH - 4
             return root.height + 4
