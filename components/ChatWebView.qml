@@ -5,6 +5,7 @@ Item {
     id: root
 
     property var model: null
+    property bool conversationRunning: false
     property bool webReady: false
     property bool forceFullSyncPending: false
     property bool fileTipVisible: false
@@ -30,7 +31,8 @@ Item {
         forceFullSyncPending = false
         webView.runJavaScript("window.MedClawChat.setMessages("
                               + JSON.stringify(model.messages()) + ","
-                              + (forceFullSync ? "true" : "false") + ");")
+                              + (forceFullSync ? "true" : "false") + ","
+                              + (root.conversationRunning ? "true" : "false") + ");")
     }
 
     function scheduleSyncMessages(forceFullSync) {
@@ -64,6 +66,7 @@ Item {
 
     Component.onCompleted: scheduleSyncMessages(true)
     onModelChanged: scheduleSyncMessages(true)
+    onConversationRunningChanged: scheduleSyncMessages()
 
     Timer {
         id: syncTimer

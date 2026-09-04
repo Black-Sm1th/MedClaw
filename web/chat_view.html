@@ -3,6 +3,27 @@
 <head>
   <meta charset="utf-8">
   <style>
+    @font-face {
+      font-family: "Alibaba PuHuiTi Regular";
+      src: url("qrc:///fonts/AlibabaPuHuiTi-3-55-Regular.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Alibaba PuHuiTi Medium";
+      src: url("qrc:///fonts/AlibabaPuHuiTi-3-65-Medium.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Alibaba PuHuiTi Bold";
+      src: url("qrc:///fonts/AlibabaPuHuiTi-3-85-Bold.ttf") format("truetype");
+      font-style: normal;
+      font-weight: bold;
+      font-display: swap;
+    }
     html, body {
       margin: 0;
       padding: 0;
@@ -15,7 +36,7 @@
     body {
       box-sizing: border-box;
       color: rgba(0, 0, 0, .86);
-      font-family: Arial, "Alibaba PuHuiTi 3.0", "Noto Sans CJK SC", "Microsoft YaHei", "Noto Color Emoji", sans-serif;
+      font-family: "Alibaba PuHuiTi Regular", "Microsoft YaHei", Arial, "Noto Sans CJK SC", "Noto Color Emoji", sans-serif;
       font-size: 16px;
       line-height: 1.62;
       letter-spacing: 0;
@@ -31,13 +52,92 @@
       height: 100%;
       overflow-x: hidden;
       overflow-y: auto;
-      padding: 0 16px 8px;
+      padding: 0 16px 8px 44px;
+    }
+
+    .turn-nav {
+      position: absolute;
+      z-index: 20;
+      left: 10px;
+      top: 50%;
+      display: flex;
+      max-height: 60%;
+      flex-direction: column;
+      gap: 0;
+      overflow: visible;
+      transform: translateY(-50%);
+    }
+    .turn-nav[hidden] { display: none; }
+    .turn-nav-item {
+      position: relative;
+      display: flex;
+      width: 24px;
+      height: 6px;
+      padding: 0;
+      align-items: center;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+      margin-bottom: 4px;
+    }
+    .turn-nav-item:last-child {
+      margin-bottom: 0;
+    }
+    .turn-nav-item:focus,
+    .turn-nav-item:focus-visible {
+      outline: none;
+      box-shadow: none;
+    }
+    .turn-nav-mark {
+      display: block;
+      width: 6px;
+      height: 6px;
+      border-radius: 111px;
+      background: #EBEDF0;
+      transition: width 140ms ease, background-color 140ms ease;
+    }
+    .turn-nav-item:hover .turn-nav-mark {
+      width: 6px;
+      background: #C9CDD5;
+    }
+    .turn-nav-item.active .turn-nav-mark {
+      width: 12px;
+      background: #E6E7EB;
+    }
+    .turn-nav-tooltip {
+      position: fixed;
+      z-index: 1000;
+      display: block;
+      width: max-content;
+      max-width: 280px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.65) !important;
+      color: #FFFFFF !important;
+      font-size: 14px !important;
+      line-height: 19px;
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-50%);
+      transition: opacity 120ms ease, transform 120ms ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .18);
+    }
+    .turn-nav-tooltip.visible {
+      opacity: 1;
+      visibility: visible;
     }
 
     #app::-webkit-scrollbar,
     pre::-webkit-scrollbar,
     .table-wrap::-webkit-scrollbar,
-    .tool-box::-webkit-scrollbar,
+    .tool-detail-text::-webkit-scrollbar,
     .orphan-tool::-webkit-scrollbar {
       width: 6px;
       height: 6px;
@@ -46,7 +146,7 @@
     #app::-webkit-scrollbar-track,
     pre::-webkit-scrollbar-track,
     .table-wrap::-webkit-scrollbar-track,
-    .tool-box::-webkit-scrollbar-track,
+    .tool-detail-text::-webkit-scrollbar-track,
     .orphan-tool::-webkit-scrollbar-track {
       background: transparent;
     }
@@ -54,7 +154,7 @@
     #app::-webkit-scrollbar-thumb,
     pre::-webkit-scrollbar-thumb,
     .table-wrap::-webkit-scrollbar-thumb,
-    .tool-box::-webkit-scrollbar-thumb,
+    .tool-detail-text::-webkit-scrollbar-thumb,
     .orphan-tool::-webkit-scrollbar-thumb {
       border-radius: 999px;
       background: transparent;
@@ -66,8 +166,8 @@
     pre.scrolling::-webkit-scrollbar-thumb,
     .table-wrap:hover::-webkit-scrollbar-thumb,
     .table-wrap.scrolling::-webkit-scrollbar-thumb,
-    .tool-box:hover::-webkit-scrollbar-thumb,
-    .tool-box.scrolling::-webkit-scrollbar-thumb,
+    .tool-detail-text:hover::-webkit-scrollbar-thumb,
+    .tool-detail-text.scrolling::-webkit-scrollbar-thumb,
     .orphan-tool:hover::-webkit-scrollbar-thumb,
     .orphan-tool.scrolling::-webkit-scrollbar-thumb {
       background: rgba(15, 23, 42, .24);
@@ -77,7 +177,7 @@
     #app.scrolling::-webkit-scrollbar-thumb:hover,
     pre:hover::-webkit-scrollbar-thumb:hover,
     .table-wrap:hover::-webkit-scrollbar-thumb:hover,
-    .tool-box:hover::-webkit-scrollbar-thumb:hover,
+    .tool-detail-text:hover::-webkit-scrollbar-thumb:hover,
     .orphan-tool:hover::-webkit-scrollbar-thumb:hover {
       background: rgba(15, 23, 42, .38);
     }
@@ -282,9 +382,29 @@
       margin-top: 8px;
       padding-top: 16px;
       border-top: 1px solid #E6E7EB;
-      font-family: "Alibaba PuHuiTi 3.0", "Alibaba PuHuiTi", "Microsoft YaHei", sans-serif;
+      font-family: "Alibaba PuHuiTi Regular", "Microsoft YaHei", sans-serif;
       font-weight: 400;
       letter-spacing: 0;
+    }
+    .artifact-header {
+      display: flex;
+      min-height: 32px;
+      margin-bottom: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .artifact-heading {
+      min-width: 0;
+      font-family: "Alibaba PuHuiTi Bold", "Microsoft YaHei", sans-serif;
+      font-size: 20px;
+      font-weight: bold;
+      line-height: 28px;
+      white-space: nowrap;
+    }
+    .artifact-title { color: #000000; }
+    .artifact-count {
+      margin-left: 4px;
+      color: rgba(0, 0, 0, 0.45);
     }
     .artifact-grid {
       display: grid;
@@ -296,13 +416,13 @@
       box-sizing: border-box;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 0;
       min-width: 0;
       height: 36px;
       padding: 6px 8px;
       border-radius: 8px;
       background: #F7F9FA;
-      color: rgba(0, 0, 0, .85);
+      color: #000000;
       text-decoration: none;
     }
     .artifact-card:hover { background: #EBEDF0; }
@@ -311,6 +431,7 @@
       flex: 0 0 20px;
       width: 20px;
       height: 20px;
+      margin-right: 4px;
       object-fit: contain;
     }
     .artifact-name {
@@ -320,30 +441,37 @@
       white-space: nowrap;
       font-size: 16px;
       line-height: 24px;
-      color: rgba(0, 0, 0, .85);
+      color: #000000;
     }
     .artifact-more {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      height: 40px;
-      margin-top: 8px;
-      padding: 8px;
+      gap: 0;
+      height: 32px;
+      margin: 0;
+      padding: 4px 0 4px 12px;
       border: 0;
-      border-radius: 8px;
       background: transparent;
-      color: rgba(0, 0, 0, .65);
+      color: #006BFF;
       font-family: inherit;
       font-weight: 400;
       font-size: 16px;
       line-height: 24px;
       letter-spacing: 0;
       cursor: pointer;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .artifact-more:focus,
+    .artifact-more:focus-visible {
+      outline: none;
+      box-shadow: none;
     }
     .artifact-more:hover {
-      background: #F7F9FA;
-      color: rgba(0, 0, 0, .65);
+      background: transparent;
+      color: #006BFF;
+      text-decoration: none;
     }
     .artifact-more-arrow {
       position: relative;
@@ -351,6 +479,7 @@
       flex: 0 0 16px;
       width: 16px;
       height: 16px;
+      margin-left: 4px;
     }
     .artifact-more-arrow:before {
       content: "";
@@ -391,123 +520,126 @@
       margin: 0 auto 12px;
       color: rgba(0, 0, 0, .86);
     }
-    .tool-header,
-    .tool-status {
+    .tool-header {
       display: flex;
       align-items: center;
-      gap: 10px;
-      min-height: 28px;
+      gap: 0;
+      min-height: 24px;
       user-select: none;
-    }
-    .tool-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
       cursor: pointer;
-      font-weight: 700;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tool-header:focus,
+    .tool-header:focus-visible {
+      outline: none;
+      box-shadow: none;
     }
     .tool-name {
+      font-family: "Alibaba PuHuiTi Bold", "Microsoft YaHei", Arial, sans-serif;
       font-size: 16px;
+      font-weight: bold;
+      color: #000000;
     }
-    .chevron {
-      color: rgba(0, 0, 0, .6);
-      font-size: 14px;
+    .tool-arrow {
       margin-left: 2px;
+      color: rgba(0, 0, 0, .55);
+      font-size: 13px;
+      line-height: 1;
     }
     .status-slot {
-      width: 20px;
-      height: 20px;
+      width: 16px;
+      height: 16px;
+      margin-right: 8px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex: 0 0 auto;
     }
+    .status-icon {
+      display: block;
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+    }
+    .spinner {
+      box-sizing: border-box;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      border: 2px solid rgba(0, 107, 255, .22);
+      border-top-color: #006BFF;
+      animation: spin .75s linear infinite;
+    }
     .dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #006BFF;
-      animation: pulse 1.3s ease-in-out infinite;
     }
     .dot.error { background: #EF4444; animation: none; }
-    .check {
-      color: #56CA00;
-      font-size: 16px;
-      font-weight: 700;
-      line-height: 1;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
-    @keyframes pulse {
-      0%, 100% { opacity: .35; }
-      50% { opacity: 1; }
-    }
-    .tool-detail {
-      display: grid;
-      grid-template-columns: 1px minmax(0, 1fr);
-      column-gap: 10px;
-      margin: 8px 0 0 9px;
-    }
-    .tool-line {
-      background: #E6E7EB;
-      border-radius: 1px;
-    }
-    .tool-stack {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-    .tool-box,
+    .tool-detail-text,
     .orphan-tool {
+      font-family: "Alibaba PuHuiTi Regular", "Microsoft YaHei", Arial, sans-serif;
       box-sizing: border-box;
-      max-height: 320px;
-      overflow: auto;
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid #E5E7EB;
-      background: #F3F4F6;
-      color: rgba(0, 0, 0, .65);
+      color: #000000;
       white-space: pre-wrap;
       overflow-wrap: break-word;
       word-break: break-word;
-      font-size: 14px;
+      font-size: 16px;
+      font-weight: 400;
     }
-    .tool-box.args {
-      max-height: 200px;
-      font-family: Consolas, "Courier New", "Alibaba PuHuiTi 3.0", monospace;
+    .tool-detail-text {
+      max-height: 160px;
+      margin: 0 0 0 24px;
+      overflow: auto;
+      line-height: 22px;
     }
-    .tool-box.result.after-args {
-      margin-top: 8px;
-    }
-    .tool-box.error,
+    .tool-detail-text.error,
     .orphan-tool.error {
       color: #FF3D40;
-      border-color: #FECACA;
     }
-    .tool-status {
-      margin-top: 8px;
-      color: #006BFF;
-    }
-    .tool-status.done { color: #16A34A; }
-    .tool-status.error { color: #FF3D40; }
     .orphan-tool-title {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 0;
       margin-bottom: 6px;
-      color: rgba(0, 0, 0, .85);
-      font-weight: 700;
-      font-size: 13px;
+      color: #000000;
+      font-family: "Alibaba PuHuiTi Bold", "Microsoft YaHei", Arial, sans-serif;
+      font-weight: bold;
+      font-size: 16px;
+    }
+    .task-complete {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      min-height: 24px;
+      margin-top: 8px;
+      color: #000000;
+      font-family: "Alibaba PuHuiTi Bold", "Microsoft YaHei", Arial, sans-serif;
+      font-size: 16px;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
   <div id="app"></div>
+  <nav id="turn-nav" class="turn-nav" aria-label="对话快速跳转" hidden></nav>
+  <div id="turn-nav-tooltip" class="turn-nav-tooltip" role="tooltip" aria-hidden="true"></div>
   <script>
     (function () {
       var app = document.getElementById('app');
       var messages = [];
-      var collapsed = {};
+      var expandedTools = {};
       var renderToken = 0;
       var hoveredFile = null;
+      var conversationRunning = false;
+      var turnNav = document.getElementById('turn-nav');
+      var turnNavTooltip = document.getElementById('turn-nav-tooltip');
+      var activeTurnRow = -1;
+      var turnNavSignature = '';
 
       function fileNodeFromTarget(target) {
         return target && target.closest
@@ -799,7 +931,15 @@
           return '';
         var key = 'artifacts:' + row;
         var visible = artifacts;
-        var html = ['<div class="artifact-section"><div class="artifact-grid">'];
+        var html = ['<div class="artifact-section">'];
+        html.push('<div class="artifact-header">'
+          + '<div class="artifact-heading"><span class="artifact-title">产物</span>'
+          + '<span class="artifact-count">(' + artifacts.length + ')</span></div>'
+          + '<button class="artifact-more" type="button" data-artifact-key="'
+          + escapeAttr(key) + '">查看全部'
+          + '<span class="artifact-more-arrow" aria-hidden="true"></span></button>'
+          + '</div>');
+        html.push('<div class="artifact-grid">');
         for (var i = 0; i < visible.length; i++) {
           var file = visible[i] || {};
           var path = String(file.path || '');
@@ -811,9 +951,6 @@
             + '</a>');
         }
         html.push('</div>');
-        html.push('<button class="artifact-more" type="button" data-artifact-key="'
-          + escapeAttr(key) + '">查看所有产物'
-          + '<span class="artifact-more-arrow" aria-hidden="true"></span></button>');
         html.push('</div>');
         return html.join('');
       }
@@ -826,44 +963,49 @@
           && c === 'compaction';
       }
 
-      function toolKey(msg, index) {
-        return (msg.toolCallId && String(msg.toolCallId).length > 0)
-          ? 'id:' + msg.toolCallId
-          : 'idx:' + index;
+      function toolVisuallyComplete(items, index, isRunning) {
+        var msg = items[index] || {};
+        if (!msg.hasToolResult) return false;
+        if (msg.isError || !isRunning) return true;
+
+        var lastUser = -1;
+        for (var i = items.length - 1; i >= 0; i--) {
+          if ((items[i] || {}).msgRole === 'user') {
+            lastUser = i;
+            break;
+          }
+        }
+        if (index < lastUser) return true;
+
+        for (var j = index + 1; j < items.length; j++) {
+          if ((items[j] || {}).msgType === 'toolCall') return true;
+        }
+        return false;
       }
 
-      function statusIcon(msg) {
-        if (!msg.hasToolResult) return '<span class="dot"></span>';
+      function statusIcon(msg, completed) {
+        if (!completed) return '<span class="spinner"></span>';
         if (msg.isError) return '<span class="dot error"></span>';
-        return '<span class="check">✓</span>';
+        return '<img class="status-icon" src="qrc:///images/toolSuccess.png" alt="">';
       }
 
       function renderToolCall(msg, index) {
+        var completed = toolVisuallyComplete(messages, index, conversationRunning);
+        var detail = completed ? msg.toolResultText : msg.toolArgs;
         var key = toolKey(msg, index);
-        var expanded = collapsed[key] !== true;
-        var hasArgs = String(msg.toolArgs || '').length > 0;
-        var hasResult = String(msg.toolResultText || '').length > 0;
+        var expanded = !completed || expandedTools[key] === true;
         var html = [];
         html.push('<div class="tool" data-row="' + index + '">');
-        html.push('<div class="tool-header">');
-        html.push('<span class="status-slot">' + statusIcon(msg) + '</span>');
-        html.push('<span class="tool-toggle" data-tool-key="' + escapeAttr(key) + '">');
+        html.push('<div class="tool-header" data-tool-key="' + escapeAttr(key)
+          + '" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '">');
+        html.push('<span class="status-slot">' + statusIcon(msg, completed) + '</span>');
         html.push('<span class="tool-name">' + escapeHtml(msg.toolName || '工具') + '</span>');
-        html.push('<span class="chevron">' + (expanded ? '▾' : '▸') + '</span>');
-        html.push('</span></div>');
-        if (expanded) {
-          html.push('<div class="tool-detail"><div class="tool-line"></div><div class="tool-stack">');
-          if (hasArgs)
-            html.push('<div class="tool-box args">' + escapeHtml(msg.toolArgs || '') + '</div>');
-          if (hasResult)
-            html.push('<div class="tool-box result' + (hasArgs ? ' after-args' : '') + (msg.isError ? ' error' : '') + '" data-tool-result-row="' + index + '">' + plainTextHtml(msg.toolResultText || '') + '</div>');
-          html.push('</div></div>');
-          if (!msg.hasToolResult) {
-            html.push('<div class="tool-status"><span class="status-slot"><span class="dot"></span></span><span>执行中...</span></div>');
-          } else {
-            html.push('<div class="tool-status ' + (msg.isError ? 'error' : 'done') + '"><span class="status-slot">' + statusIcon(msg) + '</span><span>' + (msg.isError ? '任务失败' : '任务完成') + '</span></div>');
-          }
-        }
+        html.push('<span class="tool-arrow" aria-hidden="true">' + (expanded ? '▾' : '▸') + '</span>');
+        html.push('</div>');
+        if (expanded && String(detail || '').length > 0)
+          html.push('<div class="tool-detail-text' + (msg.isError ? ' error' : '')
+            + (completed ? '" data-tool-result-row="' + index : '') + '">'
+            + plainTextHtml(detail || '') + '</div>');
         html.push('</div>');
         return html.join('');
       }
@@ -871,7 +1013,7 @@
       function renderOrphanToolResult(msg, index) {
         return '<div class="message" data-row="' + index + '">'
           + '<div class="orphan-tool' + (msg.isError ? ' error' : '') + '">'
-          + '<div class="orphan-tool-title"><span class="status-slot">' + statusIcon({ hasToolResult: true, isError: msg.isError }) + '</span>'
+          + '<div class="orphan-tool-title"><span class="status-slot">' + statusIcon({ isError: msg.isError }, true) + '</span>'
           + '<span>' + escapeHtml(msg.toolName || '工具结果') + '</span></div>'
           + plainTextHtml(msg.content || '')
           + '</div></div>';
@@ -890,8 +1032,37 @@
           body = renderMarkdown(msg.content || '');
         return '<div class="message ' + (isUser ? 'user' : 'assistant') + '" data-row="' + index + '">'
           + '<div class="' + classes + '" data-content-row="' + index + '">' + body + '</div>'
+          + (!isUser && shouldRenderTaskComplete(index)
+              ? '<div class="task-complete"><span class="status-slot"><img class="status-icon" src="qrc:///images/missonSuccess.png" alt=""></span><span>任务完成</span></div>'
+              : '')
           + (!isUser ? renderArtifacts(msg.artifacts, index) : '')
           + '</div>';
+      }
+
+      function shouldRenderTaskComplete(index) {
+        if (conversationRunning || !messages[index]
+            || messages[index].msgRole !== 'assistant'
+            || messages[index].msgType !== 'text'
+            || messages[index].isIntermediate)
+          return false;
+        var lastUser = -1;
+        var lastFinalAssistant = -1;
+        var allToolsFinished = true;
+        for (var i = 0; i < messages.length; i++) {
+          var item = messages[i] || {};
+          if (item.msgRole === 'user') {
+            lastUser = i;
+            lastFinalAssistant = -1;
+            allToolsFinished = true;
+          } else if (i > lastUser && item.msgType === 'toolCall') {
+            if (!item.hasToolResult) allToolsFinished = false;
+          } else if (i > lastUser && item.msgRole === 'assistant'
+                     && item.msgType === 'text' && !item.isIntermediate
+                     && String(item.content || '').trim().length > 0) {
+            lastFinalAssistant = i;
+          }
+        }
+        return lastUser >= 0 && allToolsFinished && index === lastFinalAssistant;
       }
 
       function renderMessage(msg, index) {
@@ -907,6 +1078,103 @@
 
       function scrollToBottom() {
         app.scrollTop = app.scrollHeight;
+        updateActiveTurn();
+      }
+
+      function toolKey(msg, index) {
+        return (msg.toolCallId && String(msg.toolCallId).length > 0)
+          ? 'id:' + msg.toolCallId
+          : 'idx:' + index;
+      }
+
+      function turnLabel(msg) {
+        var text = String((msg && msg.content) || '')
+          .replace(/\s+/g, ' ').trim();
+        if (!text) return '对话';
+        return text.length > 34 ? text.slice(0, 34) + '…' : text;
+      }
+
+      function rebuildTurnNav() {
+        hideTurnTooltip();
+        var html = [];
+        var signature = [];
+        for (var i = 0; i < messages.length; i++) {
+          var msg = messages[i] || {};
+          if (msg.msgRole !== 'user' || msg.msgType === 'toolCall'
+              || msg.msgType === 'toolResult')
+            continue;
+          var label = turnLabel(msg);
+          signature.push(i + ':' + label);
+          html.push('<button class="turn-nav-item" type="button" data-turn-row="'
+            + i + '" data-turn-label="' + escapeAttr(label)
+            + '" aria-label="跳转到：' + escapeAttr(label) + '">');
+          html.push('<span class="turn-nav-mark" aria-hidden="true"></span>');
+          html.push('</button>');
+        }
+        signature = signature.join('|');
+        if (signature === turnNavSignature) {
+          updateActiveTurn();
+          return;
+        }
+        turnNavSignature = signature;
+        turnNav.innerHTML = html.join('');
+        turnNav.hidden = html.length === 0;
+        activeTurnRow = -1;
+        updateActiveTurn();
+      }
+
+      function updateActiveTurn() {
+        if (!turnNav || turnNav.hidden) return;
+        var rows = turnNav.querySelectorAll('[data-turn-row]');
+        if (!rows.length) return;
+        var appTop = app.getBoundingClientRect().top;
+        var threshold = appTop + Math.min(120, app.clientHeight * .28);
+        var selected = Number(rows[0].getAttribute('data-turn-row'));
+        for (var i = 0; i < rows.length; i++) {
+          var row = Number(rows[i].getAttribute('data-turn-row'));
+          var messageNode = app.querySelector(':scope > [data-row="' + row + '"]');
+          if (messageNode && messageNode.getBoundingClientRect().top <= threshold)
+            selected = row;
+          else if (messageNode)
+            break;
+        }
+        if (isNearBottom())
+          selected = Number(rows[rows.length - 1].getAttribute('data-turn-row'));
+        if (activeTurnRow === selected) return;
+        activeTurnRow = selected;
+        for (var j = 0; j < rows.length; j++)
+          rows[j].classList.toggle('active', Number(rows[j].getAttribute('data-turn-row')) === selected);
+      }
+
+      function jumpToTurn(row) {
+        var node = app.querySelector(':scope > [data-row="' + row + '"]');
+        if (!node) return;
+        var targetTop = app.scrollTop + node.getBoundingClientRect().top
+          - app.getBoundingClientRect().top - 12;
+        if (app.scrollTo)
+          app.scrollTo({ top: targetTop, behavior: 'smooth' });
+        else
+          app.scrollTop = targetTop;
+        activeTurnRow = -1;
+        updateActiveTurn();
+      }
+
+      function showTurnTooltip(turn) {
+        if (!turnNavTooltip || !turn) return;
+        var label = turn.getAttribute('data-turn-label') || '';
+        if (!label) return;
+        var rect = turn.getBoundingClientRect();
+        turnNavTooltip.textContent = label;
+        turnNavTooltip.style.left = Math.round(rect.right + 8) + 'px';
+        turnNavTooltip.style.top = Math.round(rect.top + rect.height / 2) + 'px';
+        turnNavTooltip.classList.add('visible');
+        turnNavTooltip.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideTurnTooltip() {
+        if (!turnNavTooltip) return;
+        turnNavTooltip.classList.remove('visible');
+        turnNavTooltip.setAttribute('aria-hidden', 'true');
       }
 
       function isNearBottom() {
@@ -1016,7 +1284,11 @@
         var changed = [];
         var sharedCount = Math.min(messages.length, nextMessages.length);
         for (var i = 0; i < sharedCount; i++) {
-          if (!messageEquals(messages[i], nextMessages[i]))
+          var dataChanged = !messageEquals(messages[i], nextMessages[i]);
+          var visualStateChanged = (messages[i] || {}).msgType === 'toolCall'
+            && toolVisuallyComplete(messages, i, conversationRunning)
+              !== toolVisuallyComplete(nextMessages, i, conversationRunning);
+          if (dataChanged || visualStateChanged)
             changed.push(i);
         }
 
@@ -1029,16 +1301,22 @@
         messages = nextMessages;
         for (var j = 0; j < changed.length; j++) {
           var changedRow = changed[j];
-          if (!replaceMessageRow(changedRow))
-            return false;
           var before = previousMessages[changedRow] || {};
           var after = messages[changedRow] || {};
+          var beforeCompleted = before.msgType === 'toolCall'
+            && toolVisuallyComplete(previousMessages, changedRow, conversationRunning);
+          var afterCompleted = after.msgType === 'toolCall'
+            && toolVisuallyComplete(messages, changedRow, conversationRunning);
+          if (!beforeCompleted && afterCompleted)
+            delete expandedTools[toolKey(after, changedRow)];
+          if (!replaceMessageRow(changedRow))
+            return false;
           if (after.msgType === 'toolCall'
-              && !after.hasToolResult
+              && !afterCompleted
               && String(after.toolResultText || '').length > 0)
             scrollToolResultToBottom(changedRow);
           if (after.msgType === 'toolCall'
-              && !before.hasToolResult && after.hasToolResult
+              && !beforeCompleted && afterCompleted
               && String(before.toolResultText || '').length === 0
               && String(after.toolResultText || '').length > 0)
             revealToolResult(changedRow, after.toolResultText, followBottom);
@@ -1095,9 +1373,12 @@
           // inserted every batch into #app, changing scrollHeight repeatedly
           // before the final scroll-to-bottom and making the thumb jump.
           app.innerHTML = htmlParts.join('');
+          rebuildTurnNav();
           requestAnimationFrame(function () {
-            if (token === renderToken)
+            if (token === renderToken) {
               restoreViewport(viewport, shouldScrollToBottom);
+              updateActiveTurn();
+            }
           });
         }
 
@@ -1105,15 +1386,22 @@
       }
 
       window.MedClawChat = {
-        setMessages: function (items, forceFullRender) {
+        setMessages: function (items, forceFullRender, isConversationRunning) {
           var nextMessages = Array.isArray(items) ? items : [];
+          var nextRunning = isConversationRunning === true;
+          var runningChanged = conversationRunning !== nextRunning;
+          conversationRunning = nextRunning;
+          if (forceFullRender || (runningChanged && !nextRunning))
+            expandedTools = {};
           var followBottom = messages.length === 0 || isNearBottom();
           var viewport = followBottom ? null : captureViewport();
-          if (forceFullRender || !patchMessages(nextMessages, followBottom)) {
+          if (forceFullRender || runningChanged
+              || !patchMessages(nextMessages, followBottom)) {
             messages = nextMessages;
             renderAll(followBottom, viewport);
             return;
           }
+          rebuildTurnNav();
           restoreViewport(viewport, followBottom);
         },
         appendStreamDelta: function (row, delta) {
@@ -1193,12 +1481,23 @@
           return;
         }
 
-        var toggle = event.target;
-        while (toggle && toggle !== document && !toggle.getAttribute('data-tool-key'))
-          toggle = toggle.parentNode;
-        if (toggle && toggle.getAttribute && toggle.getAttribute('data-tool-key')) {
-          var key = toggle.getAttribute('data-tool-key');
-          collapsed[key] = collapsed[key] !== true;
+        var turn = event.target;
+        while (turn && turn !== document && !turn.getAttribute('data-turn-row'))
+          turn = turn.parentNode;
+        if (turn && turn.getAttribute && turn.getAttribute('data-turn-row')) {
+          jumpToTurn(Number(turn.getAttribute('data-turn-row')));
+          return;
+        }
+
+        var tool = event.target;
+        while (tool && tool !== document && !tool.getAttribute('data-tool-key'))
+          tool = tool.parentNode;
+        if (tool && tool.getAttribute && tool.getAttribute('data-tool-key')) {
+          var toolKeyValue = tool.getAttribute('data-tool-key');
+          if (expandedTools[toolKeyValue] === true)
+            delete expandedTools[toolKeyValue];
+          else
+            expandedTools[toolKeyValue] = true;
           renderAll(false, captureViewport());
           return;
         }
@@ -1218,16 +1517,39 @@
         window.location.href = href.indexOf('medclaw-local:') === 0 ? href : node.href;
       });
 
+      document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var tool = event.target;
+        if (!tool || !tool.getAttribute || !tool.getAttribute('data-tool-key')) return;
+        event.preventDefault();
+        var key = tool.getAttribute('data-tool-key');
+        if (expandedTools[key] === true)
+          delete expandedTools[key];
+        else
+          expandedTools[key] = true;
+        renderAll(false, captureViewport());
+      });
+
       document.addEventListener('mouseover', function (event) {
         updateFileHover(fileNodeFromTarget(event.target));
+        var turn = event.target;
+        while (turn && turn !== document && !turn.getAttribute('data-turn-row'))
+          turn = turn.parentNode;
+        if (turn && turn.classList)
+          showTurnTooltip(turn);
       });
 
       document.addEventListener('mouseout', function (event) {
         var file = fileNodeFromTarget(event.target);
-        if (!file || file !== hoveredFile
-            || (event.relatedTarget && file.contains(event.relatedTarget)))
-          return;
-        clearFileHover();
+        if (file && file === hoveredFile
+            && !(event.relatedTarget && file.contains(event.relatedTarget)))
+          clearFileHover();
+        var turn = event.target;
+        while (turn && turn !== document && !turn.getAttribute('data-turn-row'))
+          turn = turn.parentNode;
+        if (turn && turn.classList
+            && !(event.relatedTarget && turn.contains(event.relatedTarget)))
+          hideTurnTooltip();
       });
 
       document.addEventListener('mousemove', function (event) {
@@ -1244,7 +1566,9 @@
 
       document.addEventListener('scroll', function (event) {
         clearFileHover();
+        hideTurnTooltip();
         markScrolling(event.target);
+        if (event.target === app) updateActiveTurn();
       }, true);
     })();
   </script>

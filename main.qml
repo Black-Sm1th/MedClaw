@@ -3716,6 +3716,7 @@ ApplicationWindow {
                     anchors.left: parent.left
                     anchors.right: newTaskRec.artifactSidebarVisible ? artifactSidebar.left : parent.right
                     model: chatModel
+                    conversationRunning: wsClient.chatRunning
                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                     onArtifactsRequested: newTaskRec.toggleArtifactSidebar()
                     onArtifactRequested: function(path) { newTaskRec.openArtifactPath(path) }
