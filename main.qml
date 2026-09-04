@@ -4805,18 +4805,51 @@ ApplicationWindow {
                     }
                 }
 
-                Label {
+                Item {
+                    id: emptyChatState
                     visible: newTaskRec.hasActiveTask && !newTaskRec.hasMessages
                     anchors.top: parent.top
                     anchors.topMargin: 16
                     anchors.bottom: chatInputContainer.top
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    text: qsTr("暂无聊天记录")
-                    font.pixelSize: 14
-                    color: "#66000000"
+
+                    Column {
+                        width: Math.max(0, Math.min(parent.width - 32, 440))
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        Item {
+                            width: parent.width
+                            height: 96
+
+                            AnimatedImage {
+                                width: 146
+                                height: 96
+                                anchors.centerIn: parent
+                                source: "qrc:/images/loading.gif"
+                                playing: true
+                            }
+                        }
+                        Item{ width: 1; height: 12}
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: qsTr("等待模型响应")
+                            font.pixelSize: 20
+                            font.weight: Font.Bold
+                            color: "#D9000000"
+                        }
+
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            text: qsTr("模型正在明确输出格式，减少无效展开和二次改写")
+                            font.pixelSize: 14
+                            color: "#A6000000"
+                        }
+                    }
                 }
 
                 // ListView {

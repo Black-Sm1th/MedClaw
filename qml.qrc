@@ -249,5 +249,6 @@
         <file>images/pin.png</file>
         <file>images/missonSuccess.png</file>
         <file>images/toolSuccess.png</file>
+        <file>images/loading.gif</file>
     </qresource>
 </RCC>
