@@ -247,5 +247,7 @@
         <file>images/templateIcon.png</file>
         <file>images/aiGrey.png</file>
         <file>images/pin.png</file>
+        <file>images/missonSuccess.png</file>
+        <file>images/toolSuccess.png</file>
     </qresource>
 </RCC>
