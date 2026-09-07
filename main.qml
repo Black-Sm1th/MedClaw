@@ -2218,7 +2218,7 @@ ApplicationWindow {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         accountPopup.close()
-                        Qt.openUrlExternally("http://111.6.178.34:22910/#/profile")
+                        Qt.openUrlExternally("https://www.aethermind.cn/aether/#/profile")
                     }
                 }
             }
