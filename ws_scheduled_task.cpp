@@ -96,6 +96,8 @@ QVariantMap WsScheduledTask::jobFromJson(const QJsonObject &obj) const
     // ── 会话与投递 ──
     entry[QStringLiteral("sessionTarget")] =
         obj.value(QStringLiteral("sessionTarget")).toString();
+    entry[QStringLiteral("sessionKey")] =
+        obj.value(QStringLiteral("sessionKey")).toString();
     entry[QStringLiteral("deleteAfterRun")] =
         obj.value(QStringLiteral("deleteAfterRun")).toBool(false);
 
@@ -136,6 +138,14 @@ QVariantMap WsScheduledTask::jobFromJson(const QJsonObject &obj) const
         obj.value(QStringLiteral("createdAt")).toString();
     entry[QStringLiteral("updatedAt")] =
         obj.value(QStringLiteral("updatedAt")).toString();
+    // Keep the numeric creation timestamp for reconciling jobs created by a
+    // model tool call when the live tool result is redacted by the gateway.
+    const QJsonValue createdAtMs = obj.value(QStringLiteral("createdAtMs"));
+    if (createdAtMs.isDouble())
+        entry[QStringLiteral("createdAtMs")] = QVariant(
+            static_cast<qlonglong>(createdAtMs.toDouble()));
+    else if (createdAtMs.isString())
+        entry[QStringLiteral("createdAtMs")] = createdAtMs.toString();
 
     return entry;
 }

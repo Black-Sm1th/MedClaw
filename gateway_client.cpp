@@ -205,6 +205,283 @@ QString loadAgentDescription(const QString &agentId)
         .value(QStringLiteral("description")).toString().trimmed();
 }
 
+QString normalizedToolName(QString toolName)
+{
+    toolName = toolName.trimmed().toLower();
+    toolName.replace(QLatin1Char('.'), QLatin1Char('_'));
+    toolName.replace(QLatin1Char('-'), QLatin1Char('_'));
+    return toolName;
+}
+
+bool isCronToolName(const QString &toolName)
+{
+    const QString normalized = normalizedToolName(toolName);
+    return normalized == QLatin1String("cron")
+        || normalized == QLatin1String("cron_add");
+}
+
+QJsonObject parseToolArguments(const QString &toolArgs)
+{
+    const QString text = toolArgs.trimmed();
+    if (text.isEmpty())
+        return QJsonObject();
+
+    QJsonParseError error;
+    const QJsonDocument document =
+        QJsonDocument::fromJson(text.toUtf8(), &error);
+    if (error.error == QJsonParseError::NoError && document.isObject())
+        return document.object();
+    return QJsonObject();
+}
+
+bool cronToolRequestsAdd(const QString &toolName, const QJsonObject &args)
+{
+    const QString normalized = normalizedToolName(toolName);
+    if (normalized == QLatin1String("cron_add"))
+        return true;
+    if (normalized != QLatin1String("cron"))
+        return false;
+
+    QString action = args.value(QStringLiteral("action")).toString();
+    if (action.isEmpty())
+        action = args.value(QStringLiteral("operation")).toString();
+    if (action.isEmpty())
+        action = args.value(QStringLiteral("op")).toString();
+    if (action.isEmpty())
+        action = args.value(QStringLiteral("method")).toString();
+    action = action.trimmed().toLower();
+    if (action == QLatin1String("add")
+        || action == QLatin1String("create")
+        || action == QLatin1String("schedule")) {
+        return true;
+    }
+
+    // A few gateway versions omit action when the add schema is selected.
+    return action.isEmpty()
+        && (args.contains(QStringLiteral("schedule"))
+            || args.contains(QStringLiteral("job"))
+            || args.contains(QStringLiteral("name")));
+}
+
+QString cronJobIdFromToolValue(const QJsonValue &value, int depth = 0)
+{
+    if (depth > 6)
+        return QString();
+
+    if (value.isObject()) {
+        const QJsonObject object = value.toObject();
+        for (const QString &key : {QStringLiteral("jobId"),
+                                   QStringLiteral("job_id")}) {
+            const QString id = object.value(key).toString().trimmed();
+            if (!id.isEmpty())
+                return id;
+        }
+
+        const QString id = object.value(QStringLiteral("id")).toString().trimmed();
+        if (!id.isEmpty())
+            return id;
+
+        for (const QString &key : {QStringLiteral("job"),
+                                   QStringLiteral("created"),
+                                   QStringLiteral("result"),
+                                   QStringLiteral("data"),
+                                   QStringLiteral("payload")}) {
+            const QString nested = cronJobIdFromToolValue(object.value(key), depth + 1);
+            if (!nested.isEmpty())
+                return nested;
+        }
+
+        for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
+            const QString nested = cronJobIdFromToolValue(it.value(), depth + 1);
+            if (!nested.isEmpty())
+                return nested;
+        }
+        return QString();
+    }
+
+    if (value.isArray()) {
+        for (const QJsonValue &item : value.toArray()) {
+            const QString nested = cronJobIdFromToolValue(item, depth + 1);
+            if (!nested.isEmpty())
+                return nested;
+        }
+    } else if (value.isString()) {
+        const QString text = value.toString().trimmed();
+        if (text.startsWith(QLatin1Char('{'))
+            || text.startsWith(QLatin1Char('['))) {
+            QJsonParseError error;
+            const QJsonDocument document =
+                QJsonDocument::fromJson(text.toUtf8(), &error);
+            if (error.error == QJsonParseError::NoError) {
+                const QJsonValue nestedValue = document.isObject()
+                    ? QJsonValue(document.object())
+                    : QJsonValue(document.array());
+                return cronJobIdFromToolValue(nestedValue, depth + 1);
+            }
+        }
+    }
+    return QString();
+}
+
+QString cronJobIdFromToolResult(const QString &toolResult)
+{
+    QString text = toolResult.trimmed();
+    if (text.startsWith(QStringLiteral("```"))) {
+        const int firstLineEnd = text.indexOf(QLatin1Char('\n'));
+        const int closingFence = text.lastIndexOf(QStringLiteral("```"));
+        if (firstLineEnd >= 0 && closingFence > firstLineEnd)
+            text = text.mid(firstLineEnd + 1,
+                            closingFence - firstLineEnd - 1).trimmed();
+    }
+
+    QJsonParseError error;
+    QJsonDocument document =
+        QJsonDocument::fromJson(text.toUtf8(), &error);
+    if (error.error == QJsonParseError::NoError) {
+        QString id = cronJobIdFromToolValue(document.isObject()
+                                                 ? QJsonValue(document.object())
+                                                 : QJsonValue(document.array()));
+        if (!id.isEmpty())
+            return id;
+    }
+
+    // Some tool adapters return a short human-readable confirmation instead
+    // of the JSON job object. Keep this fallback constrained to confirmations.
+    const QString lower = text.toLower();
+    if (!lower.contains(QStringLiteral("creat"))
+        && !lower.contains(QStringLiteral("schedul"))
+        && !lower.contains(QStringLiteral("add"))) {
+        return QString();
+    }
+    const QRegularExpression idPattern(
+        QStringLiteral(R"re((?:job\s*)?(?:id)\s*[:=]\s*[\"']?([A-Za-z0-9][A-Za-z0-9._:-]*))re"),
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = idPattern.match(text);
+    return match.hasMatch() ? match.captured(1).trimmed() : QString();
+}
+
+bool cronToolResultLooksLikeAdd(const QString &toolResult)
+{
+    const QString text = toolResult.trimmed();
+    const QString lower = text.toLower();
+    if (lower.contains(QStringLiteral("creat"))
+        || lower.contains(QStringLiteral("schedul"))
+        || lower.contains(QStringLiteral("added"))) {
+        return true;
+    }
+
+    QJsonParseError error;
+    const QJsonDocument document =
+        QJsonDocument::fromJson(text.toUtf8(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject())
+        return false;
+    const QJsonObject object = document.object();
+    const QString action = object.value(QStringLiteral("action")).toString()
+        .trimmed().toLower();
+    return (object.contains(QStringLiteral("id"))
+            && (object.contains(QStringLiteral("schedule"))
+                || object.contains(QStringLiteral("payload"))))
+        || object.contains(QStringLiteral("job"))
+        || action == QLatin1String("add")
+        || action == QLatin1String("create");
+}
+
+QString compactJsonValue(const QJsonValue &value)
+{
+    if (value.isString())
+        return value.toString();
+    if (value.isObject())
+        return QString::fromUtf8(
+            QJsonDocument(value.toObject()).toJson(QJsonDocument::Compact));
+    if (value.isArray())
+        return QString::fromUtf8(
+            QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact));
+    return QString();
+}
+
+QString textFromToolContent(const QJsonValue &value)
+{
+    if (value.isString())
+        return value.toString();
+
+    if (value.isArray()) {
+        QStringList textParts;
+        for (const QJsonValue &item : value.toArray()) {
+            if (item.isObject()) {
+                const QJsonObject object = item.toObject();
+                const QString type = object.value(QStringLiteral("type"))
+                                         .toString().trimmed().toLower();
+                if (type == QLatin1String("text")
+                    || type == QLatin1String("output_text")) {
+                    const QString text = object.value(QStringLiteral("text"))
+                                             .toString();
+                    if (!text.isEmpty())
+                        textParts.append(text);
+                    continue;
+                }
+            }
+            const QString nested = textFromToolContent(item);
+            if (!nested.isEmpty())
+                textParts.append(nested);
+        }
+        if (!textParts.isEmpty())
+            return textParts.join(QLatin1Char('\n'));
+        return QString();
+    }
+
+    if (value.isObject()) {
+        const QJsonObject object = value.toObject();
+        for (const QString &key : {QStringLiteral("text"),
+                                   QStringLiteral("result"),
+                                   QStringLiteral("output"),
+                                   QStringLiteral("content")}) {
+            const QString nested = textFromToolContent(object.value(key));
+            if (!nested.isEmpty())
+                return nested;
+        }
+    }
+
+    return compactJsonValue(value);
+}
+
+QJsonArray historyMessagesFromPayload(const QJsonObject &payload)
+{
+    for (const QString &key : {QStringLiteral("messages"),
+                               QStringLiteral("items"),
+                               QStringLiteral("data")}) {
+        const QJsonArray messages = payload.value(key).toArray();
+        if (!messages.isEmpty())
+            return messages;
+    }
+    return QJsonArray();
+}
+
+bool isHistoryToolCallType(const QString &type)
+{
+    const QString normalized = type.trimmed().toLower();
+    return normalized == QLatin1String("toolcall")
+        || normalized == QLatin1String("tool_call")
+        || normalized == QLatin1String("tooluse")
+        || normalized == QLatin1String("tool_use")
+        || normalized == QLatin1String("tool-use")
+        || normalized == QLatin1String("functioncall")
+        || normalized == QLatin1String("function_call");
+}
+
+QJsonObject historyToolArguments(const QJsonObject &object)
+{
+    for (const QString &key : {QStringLiteral("arguments"),
+                               QStringLiteral("args"),
+                               QStringLiteral("input")}) {
+        const QJsonValue value = object.value(key);
+        if (value.isObject())
+            return value.toObject();
+        if (value.isString())
+            return parseToolArguments(value.toString());
+    }
+    return QJsonObject();
+}
+
 } // namespace
 
 /// 帧类型常量：事件帧
@@ -376,6 +653,7 @@ void GatewayClient::setTaskSessionUserId(const QString &userId)
         return;
 
     m_taskSessionUserId = normalized;
+    m_pendingCronToolCalls.clear();
     m_runningTaskSessionKeys.clear();
     m_chatRunningSessionKeys.clear();
     setChatRunning(false);
@@ -1910,9 +2188,50 @@ void GatewayClient::reconcileCronTaskSessionsWithJobs()
 {
     QSet<QString> liveJobIds;
     for (const QVariant &v : m_scheduledTask.jobList()) {
-        const QString id = v.toMap().value(QStringLiteral("id")).toString().trimmed();
-        if (!id.isEmpty())
-            liveJobIds.insert(id);
+        const QVariantMap job = v.toMap();
+        const QString id = job.value(QStringLiteral("id")).toString().trimmed();
+        if (id.isEmpty())
+            continue;
+        liveJobIds.insert(id);
+
+        // Model-created cron jobs carry the originating task session key.
+        // That key is already user-scoped in the local task_sessions table,
+        // so it is a reliable migration path even when tool history was not
+        // loaded in this client session.
+        const QString sessionKey = job.value(QStringLiteral("sessionKey"))
+                                       .toString().trimmed();
+        if (!m_currentUserCronJobIds.contains(id)) {
+            if (sessionKey.isEmpty()
+                || taskSessionInfoByKey(sessionKey).isEmpty()) {
+                continue;
+            }
+            upsertCronJobOwnershipLocal(id, m_taskSessionUserId);
+            qDebug().noquote() << "[TaskSessionDb] cron job ownership recovered"
+                               << "jobId=" << id
+                               << "session=" << sessionKey;
+        }
+
+        // The UI-created cron.add path creates this local session immediately
+        // from its pending request. Model-created jobs do not have that RPC
+        // request in the desktop client, so create the same session once the
+        // authoritative cron.list entry is available.
+        if (!m_currentUserCronJobIds.contains(id))
+            continue;
+        QString agentId = job.value(QStringLiteral("agentId"))
+                              .toString().trimmed();
+        if (agentId.isEmpty())
+            agentId = agentIdFromSessionKey(sessionKey);
+        if (agentId.isEmpty())
+            continue;
+
+        const QString cronSessionKey =
+            QStringLiteral("agent:%1:cron:%2").arg(agentId, id);
+        if (taskSessionInfoByKey(cronSessionKey).isEmpty()) {
+            createCronTaskSessionLocal(
+                id, agentId,
+                job.value(QStringLiteral("name")).toString(),
+                job.value(QStringLiteral("workspace")).toString());
+        }
     }
 
     QStringList staleKeys;
@@ -3316,6 +3635,344 @@ void GatewayClient::createCronTaskSessionLocal(
                        << "workspace=" << workspaceValue;
 }
 
+void GatewayClient::rememberCronToolCall(const QString &toolName,
+                                          const QString &toolArgs,
+                                          const QString &toolCallId)
+{
+    const QString callId = toolCallId.trimmed();
+    if (callId.isEmpty() || !isCronToolName(toolName))
+        return;
+
+    PendingCronToolCall pending;
+    bool hadPrevious = false;
+    const auto previous = m_pendingCronToolCalls.constFind(callId);
+    if (previous != m_pendingCronToolCalls.cend()) {
+        pending = previous.value();
+        hadPrevious = true;
+    }
+    pending.toolName = toolName.trimmed();
+    if (pending.userId.isEmpty())
+        pending.userId = m_taskSessionUserId.trimmed();
+    pending.sessionKey = m_currentTaskSessionKey.trimmed();
+    if (pending.sessionKey.isEmpty())
+        pending.sessionKey = m_currentViewSessionKey.trimmed();
+    if (pending.sessionKey.isEmpty())
+        pending.sessionKey = m_session.currentSessionKey().trimmed();
+    const QJsonObject parsedArgs = parseToolArguments(toolArgs);
+    if (!parsedArgs.isEmpty() || pending.args.isEmpty())
+        pending.args = parsedArgs;
+    if (!hadPrevious || pending.seenAtMs <= 0)
+        pending.seenAtMs = QDateTime::currentMSecsSinceEpoch();
+    m_pendingCronToolCalls.insert(callId, pending);
+    qDebug().noquote() << "[TaskSessionDb] tracking cron tool call"
+                       << "name=" << pending.toolName
+                       << "callId=" << callId
+                       << "userId=" << pending.userId
+                       << "hasArgs=" << !pending.args.isEmpty();
+}
+
+void GatewayClient::processCronToolHistory(const QJsonObject &payload)
+{
+    const QJsonArray messages = historyMessagesFromPayload(payload);
+    if (messages.isEmpty())
+        return;
+
+    // The gateway redacts live tool result payloads at the default verbose
+    // level. The transcript still contains the complete tool result, so use it
+    // as the authoritative source for the created job ID.
+    for (const QJsonValue &value : messages) {
+        const QJsonObject message = value.toObject();
+        const QString role = message.value(QStringLiteral("role"))
+                                 .toString().trimmed().toLower();
+        if (role != QLatin1String("assistant"))
+            continue;
+
+        const QJsonArray content = message.value(QStringLiteral("content"))
+                                       .toArray();
+        for (const QJsonValue &blockValue : content) {
+            const QJsonObject block = blockValue.toObject();
+            if (!isHistoryToolCallType(
+                    block.value(QStringLiteral("type")).toString())) {
+                continue;
+            }
+            const QString toolName = block.value(QStringLiteral("name"))
+                                         .toString(
+                                             block.value(QStringLiteral("toolName"))
+                                                 .toString());
+            const QString callId = block.value(QStringLiteral("id"))
+                                       .toString(
+                                           block.value(QStringLiteral("toolCallId"))
+                                               .toString(
+                                                   block.value(QStringLiteral("toolUseId"))
+                                                       .toString()));
+            const QJsonObject args = historyToolArguments(block);
+            rememberCronToolCall(
+                toolName,
+                args.isEmpty() ? QString() : compactJsonValue(args),
+                callId);
+        }
+    }
+
+    for (const QJsonValue &value : messages) {
+        const QJsonObject message = value.toObject();
+        const QString role = message.value(QStringLiteral("role"))
+                                 .toString().trimmed().toLower();
+        if (role != QLatin1String("toolresult")
+            && role != QLatin1String("tool_result")
+            && role != QLatin1String("tool")) {
+            continue;
+        }
+
+        const QString toolName = message.value(QStringLiteral("toolName"))
+                                     .toString(
+                                         message.value(QStringLiteral("name"))
+                                             .toString());
+        const QString callId = message.value(QStringLiteral("toolCallId"))
+                                   .toString(
+                                       message.value(QStringLiteral("toolUseId"))
+                                           .toString(
+                                               message.value(QStringLiteral("id"))
+                                                   .toString()));
+        QString resultText = textFromToolContent(
+            message.value(QStringLiteral("content")));
+        if (resultText.isEmpty())
+            resultText = textFromToolContent(message.value(QStringLiteral("result")));
+        if (resultText.isEmpty())
+            resultText = textFromToolContent(message.value(QStringLiteral("output")));
+
+        persistCronToolResult(toolName, resultText, callId,
+                              message.value(QStringLiteral("isError"))
+                                  .toBool(false));
+    }
+}
+
+void GatewayClient::reconcilePendingCronToolCallsWithJobs()
+{
+    if (m_pendingCronToolCalls.isEmpty() || m_taskSessionUserId.isEmpty())
+        return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QStringList expiredCallIds;
+    for (auto it = m_pendingCronToolCalls.constBegin();
+         it != m_pendingCronToolCalls.constEnd(); ++it) {
+        if (it.value().seenAtMs > 0 && now - it.value().seenAtMs > 10 * 60 * 1000)
+            expiredCallIds.append(it.key());
+    }
+    for (const QString &callId : expiredCallIds)
+        m_pendingCronToolCalls.remove(callId);
+
+    QStringList matchedCallIds;
+    for (auto pendingIt = m_pendingCronToolCalls.constBegin();
+         pendingIt != m_pendingCronToolCalls.constEnd(); ++pendingIt) {
+        const PendingCronToolCall &pending = pendingIt.value();
+        const QString userId = pending.userId.isEmpty()
+            ? m_taskSessionUserId : pending.userId;
+        if (userId != m_taskSessionUserId
+            || !cronToolRequestsAdd(pending.toolName, pending.args)) {
+            continue;
+        }
+
+        QJsonObject jobArgs = pending.args.value(QStringLiteral("job")).toObject();
+        if (jobArgs.isEmpty())
+            jobArgs = pending.args;
+        const QString expectedName = jobArgs.value(QStringLiteral("name"))
+                                         .toString().trimmed();
+        const QJsonObject expectedSchedule =
+            jobArgs.value(QStringLiteral("schedule")).toObject();
+        const QJsonObject expectedPayload =
+            jobArgs.value(QStringLiteral("payload")).toObject();
+        const QString expectedMessage = expectedPayload.value(QStringLiteral("message"))
+            .toString(expectedPayload.value(QStringLiteral("text")).toString()).trimmed();
+        const QString expectedAgentId = jobArgs.value(QStringLiteral("agentId"))
+                                            .toString().trimmed();
+
+        QStringList candidateIds;
+        for (const QVariant &value : m_scheduledTask.jobList()) {
+            const QVariantMap job = value.toMap();
+            const QString jobId = job.value(QStringLiteral("id"))
+                                      .toString().trimmed();
+            if (jobId.isEmpty() || m_currentUserCronJobIds.contains(jobId))
+                continue;
+
+            const qint64 createdAtMs = job.value(QStringLiteral("createdAtMs"))
+                                           .toLongLong();
+            if (createdAtMs > 0 && pending.seenAtMs > 0
+                && createdAtMs + 5000 < pending.seenAtMs) {
+                continue;
+            }
+            if (!expectedName.isEmpty()
+                && job.value(QStringLiteral("name")).toString().trimmed()
+                       != expectedName) {
+                continue;
+            }
+
+            bool hasStableField = !expectedName.isEmpty();
+            if (!expectedSchedule.isEmpty()) {
+                const QString kind = expectedSchedule.value(QStringLiteral("kind"))
+                                         .toString().trimmed();
+                if (!kind.isEmpty()) {
+                    hasStableField = true;
+                    if (job.value(QStringLiteral("scheduleKind"))
+                            .toString().trimmed() != kind) {
+                        continue;
+                    }
+                }
+                QString expectedExpr;
+                if (kind == QLatin1String("cron"))
+                    expectedExpr = expectedSchedule.value(QStringLiteral("expr"))
+                                       .toString().trimmed();
+                else if (kind == QLatin1String("every"))
+                    expectedExpr = QString::number(
+                        expectedSchedule.value(QStringLiteral("everyMs"))
+                            .toVariant().toLongLong());
+                else if (kind == QLatin1String("at"))
+                    expectedExpr = expectedSchedule.value(QStringLiteral("at"))
+                                       .toString().trimmed();
+                if (!expectedExpr.isEmpty()) {
+                    hasStableField = true;
+                    if (job.value(QStringLiteral("scheduleExpr"))
+                            .toString().trimmed() != expectedExpr) {
+                        continue;
+                    }
+                }
+                const QString expectedTz = expectedSchedule.value(QStringLiteral("tz"))
+                                               .toString().trimmed();
+                if (!expectedTz.isEmpty()
+                    && job.value(QStringLiteral("scheduleTz"))
+                           .toString().trimmed() != expectedTz) {
+                    continue;
+                }
+            }
+            if (!expectedMessage.isEmpty()) {
+                hasStableField = true;
+                if (job.value(QStringLiteral("payloadMessage"))
+                        .toString().trimmed() != expectedMessage) {
+                    continue;
+                }
+            }
+            if (!expectedAgentId.isEmpty()) {
+                hasStableField = true;
+                if (job.value(QStringLiteral("agentId"))
+                        .toString().trimmed() != expectedAgentId) {
+                    continue;
+                }
+            }
+            if (hasStableField)
+                candidateIds.append(jobId);
+        }
+
+        // Only claim an unambiguous new job. This prevents an old unrelated
+        // job with the same name from being assigned to the current account.
+        if (candidateIds.size() != 1)
+            continue;
+
+        const QString jobId = candidateIds.first();
+        upsertCronJobOwnershipLocal(jobId, m_taskSessionUserId);
+        matchedCallIds.append(pendingIt.key());
+        qDebug().noquote() << "[TaskSessionDb] cron tool task reconciled"
+                           << "jobId=" << jobId
+                           << "callId=" << pendingIt.key();
+        emit cronJobAdded(jobId);
+    }
+    for (const QString &callId : matchedCallIds)
+        m_pendingCronToolCalls.remove(callId);
+}
+
+void GatewayClient::persistCronToolResult(const QString &toolName,
+                                          const QString &toolResult,
+                                          const QString &toolCallId,
+                                          bool isError)
+{
+    PendingCronToolCall pending;
+    bool hasPending = false;
+    const QString callId = toolCallId.trimmed();
+    QString matchedCallId;
+    if (!callId.isEmpty()) {
+        const auto it = m_pendingCronToolCalls.constFind(callId);
+        if (it != m_pendingCronToolCalls.cend()) {
+            pending = it.value();
+            hasPending = true;
+            matchedCallId = callId;
+        }
+    }
+
+    // Transcript adapters may rewrite or omit tool call IDs. If there is one
+    // recent cron call waiting for a result, use it as fallback context.
+    if (!hasPending) {
+        qint64 newestSeenAt = 0;
+        for (auto it = m_pendingCronToolCalls.constBegin();
+             it != m_pendingCronToolCalls.constEnd(); ++it) {
+            if (!isCronToolName(it.value().toolName)
+                || (!toolName.isEmpty()
+                    && normalizedToolName(it.value().toolName)
+                           != normalizedToolName(toolName))) {
+                continue;
+            }
+            if (!hasPending || it.value().seenAtMs >= newestSeenAt) {
+                pending = it.value();
+                hasPending = true;
+                matchedCallId = it.key();
+                newestSeenAt = it.value().seenAtMs;
+            }
+        }
+    }
+
+    if (!isCronToolName(toolName)
+        && (!hasPending || !isCronToolName(pending.toolName))) {
+        return;
+    }
+
+    if (isError) {
+        if (!matchedCallId.isEmpty())
+            m_pendingCronToolCalls.remove(matchedCallId);
+        return;
+    }
+
+    const bool isAdd = hasPending
+        ? cronToolRequestsAdd(pending.toolName, pending.args)
+        : cronToolRequestsAdd(toolName, QJsonObject())
+          || cronToolResultLooksLikeAdd(toolResult);
+    if (!isAdd) {
+        if (!matchedCallId.isEmpty())
+            m_pendingCronToolCalls.remove(matchedCallId);
+        return;
+    }
+
+    const QString jobId = cronJobIdFromToolResult(toolResult);
+    if (jobId.isEmpty()) {
+        // Keep the pending add until chat.history or cron.list provides the
+        // full result. Live tool events commonly omit result at verbose=off.
+        qDebug().noquote() << "[TaskSessionDb] cron add result has no job id"
+                           << "callId=" << (matchedCallId.isEmpty()
+                                                ? callId : matchedCallId)
+                           << "resultLen=" << toolResult.size();
+        return;
+    }
+
+    const QString userId = hasPending && !pending.userId.isEmpty()
+        ? pending.userId : m_taskSessionUserId.trimmed();
+    if (userId.isEmpty())
+        return;
+
+    const bool wasOwnedByCurrentUser = userId == m_taskSessionUserId
+        && m_currentUserCronJobIds.contains(jobId);
+    upsertCronJobOwnershipLocal(jobId, userId);
+    if (!matchedCallId.isEmpty())
+        m_pendingCronToolCalls.remove(matchedCallId);
+    if (userId != m_taskSessionUserId || wasOwnedByCurrentUser)
+        return;
+
+    qDebug().noquote() << "[TaskSessionDb] cron tool task ownership inserted"
+                       << "jobId=" << jobId
+                       << "session=" << pending.sessionKey;
+    emit cronJobsChanged();
+    emit cronJobAdded(jobId);
+    // The tool result is not a cron.add RPC response, so the normal cron event
+    // may arrive later or be omitted by older gateways. Pull the authoritative
+    // job object so the newly owned row can be rendered immediately.
+    refreshCronJobs(true);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  3. 连接生命周期
 // ═══════════════════════════════════════════════════════════════════════
@@ -3348,6 +4005,7 @@ void GatewayClient::connectToServer(const QString &url)
 
     m_challengeNonce.clear();
     m_pendingRequests.clear();
+    m_pendingCronToolCalls.clear();
     m_pendingCreatedSessionMessages.clear();
     m_pendingSessionOutputPatches.clear();
     m_activeChatRunId.clear();
@@ -3491,6 +4149,7 @@ void GatewayClient::onDisconnected()
 
     m_session.setStreaming(false);
     m_pendingRequests.clear();
+    m_pendingCronToolCalls.clear();
     m_pendingCreatedSessionMessages.clear();
     m_pendingSessionOutputPatches.clear();
     if (m_toolInstallBusy) {
@@ -3861,6 +4520,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         if (tr.isToolCall) {
             qDebug().noquote() << "[Gateway] session.tool → call:" << tr.toolName
                                << "id:" << tr.toolCallId;
+            rememberCronToolCall(tr.toolName, tr.toolArgs, tr.toolCallId);
             emit toolCallReceived(tr.toolName, tr.toolArgs, tr.toolCallId);
             return;
         }
@@ -3873,6 +4533,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
                                << "error:" << tr.toolIsError
                                << "contentLen:" << tr.content.length();
             refreshCollaborationSessionsAfterSpawn(tr.toolName, tr.content);
+            persistCronToolResult(tr.toolName, tr.content,
+                                  tr.toolCallId, tr.toolIsError);
             emit toolResultReceived(tr.toolName, tr.content,
                                     tr.toolCallId, tr.toolIsError);
             m_toolResultRefreshTimer.start();
@@ -3905,6 +4567,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     if (r.isToolCall) {
         qDebug().noquote() << "[Gateway] tool call:" << r.toolName
                            << "id:" << r.toolCallId;
+        rememberCronToolCall(r.toolName, r.toolArgs, r.toolCallId);
         emit toolCallReceived(r.toolName, r.toolArgs, r.toolCallId);
         return;
     }
@@ -3917,6 +4580,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
                            << "error:" << r.toolIsError
                            << "contentLen:" << r.content.length();
         refreshCollaborationSessionsAfterSpawn(r.toolName, r.content);
+        persistCronToolResult(r.toolName, r.content,
+                              r.toolCallId, r.toolIsError);
         emit toolResultReceived(r.toolName, r.content,
                                 r.toolCallId, r.toolIsError);
         m_toolResultRefreshTimer.start();
@@ -4518,6 +5183,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
     // chat.history 响应 → 侧栏首句预取 / 工具结果补拉 / 当前会话历史
     if (method == QLatin1String("chat.history")) {
+        processCronToolHistory(payload);
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
 
@@ -4593,6 +5259,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // cron.list 响应 → 委托 WsScheduledTask 解析
     if (method == QLatin1String("cron.list")) {
         m_scheduledTask.parseJobListResponse(payload);
+        reconcilePendingCronToolCallsWithJobs();
         reconcileCronTaskSessionsWithJobs();
         emit cronJobsChanged();
         return;
@@ -5003,6 +5670,7 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
             m_session.setStreaming(false);
             emit streamingFinished();
         }
+        persistCronToolResult(tName, resultText, tcId, isErr);
         emit toolResultReceived(tName, resultText, tcId, isErr);
 
         // 防抖补拉历史，原地合并完整 toolResult 文本
@@ -5054,11 +5722,13 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
             } else if (co.value(QStringLiteral("arguments")).isString()) {
                 argsStr = co.value(QStringLiteral("arguments")).toString();
             }
+            const QString fullArgsStr = argsStr;
             if (argsStr.length() > 1000)
                 argsStr = argsStr.left(1000) + QStringLiteral("...");
 
             qDebug().noquote() << "[Gateway] chat → toolCall:" << tName
                                << "id:" << tcId;
+            rememberCronToolCall(tName, fullArgsStr, tcId);
             emit toolCallReceived(tName, argsStr, tcId);
         }
         // text 条目不在这里重复发射，因为流式 delta 已经推送过了
