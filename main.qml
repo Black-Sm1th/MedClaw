@@ -1563,7 +1563,7 @@ ApplicationWindow {
         id: errorToast
         property string text: ""
         visible: false
-        z: 9999
+        z: 29999
         width: Math.min(errorToastLabel.implicitWidth + 40, window.width - 80)
         height: 44
         radius: 8
@@ -14348,6 +14348,11 @@ ApplicationWindow {
         visible: !window.userSessionReady && !newTaskRec.officeDocumentVisible
         enabled: visible
         z: 20000
+        onErrorRequested: {
+            errorToast.text = message
+            errorToast.visible = true
+            errorToastTimer.restart()
+        }
     }
 
     Rectangle {

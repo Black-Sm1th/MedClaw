@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 
 Item {
     id: loginPage
+    signal errorRequested(string message)
     property bool showPhoneForm: false
     property int resendSeconds: 0
     property bool initializing: false
@@ -220,7 +221,6 @@ Item {
                 }
             }
         }
-        Label { visible: authController.errorMessage.length > 0; width: parent.width; topPadding: 14; text: authController.errorMessage; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: "#E54D42"; font.pixelSize: 16 }
     }
 
     Column {
@@ -297,7 +297,14 @@ Item {
 
     Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: "#73000000"; font.pixelSize: 16 }
     Timer { interval: 1000; repeat: true; running: loginPage.resendSeconds > 0; onTriggered: loginPage.resendSeconds-- }
-    Connections { target: authController; function onSmsCodeSent() { loginPage.resendSeconds = 60; codeInput.forceActiveFocus() } }
+    Connections {
+        target: authController
+        function onSmsCodeSent() { loginPage.resendSeconds = 60; codeInput.forceActiveFocus() }
+        function onErrorMessageChanged() {
+            if (authController.errorMessage.length > 0)
+                loginPage.errorRequested(authController.errorMessage)
+        }
+    }
     onVisibleChanged: {
         if (visible && !initializing) {
             showPhoneForm = false
