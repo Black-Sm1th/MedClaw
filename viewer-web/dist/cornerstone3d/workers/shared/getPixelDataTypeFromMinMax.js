@@ -1,0 +1,1 @@
+export default function getPixelDataTypeFromMinMax(r,t){let e;return Number.isInteger(r)&&Number.isInteger(t)&&(r>=0?t<=255?e=Uint8Array:t<=65535?e=Uint16Array:t<=4294967295&&(e=Uint32Array):r>=-128&&t<=127?e=Int8Array:r>=-32768&&t<=32767&&(e=Int16Array)),e||Float32Array}export function validatePixelDataType(r,t,e){return getPixelDataTypeFromMinMax(r,t)===e}

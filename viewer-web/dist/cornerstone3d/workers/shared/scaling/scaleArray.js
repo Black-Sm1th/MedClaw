@@ -1,0 +1,1 @@
+export default function scaleArray(e,t){const l=e.length,{rescaleSlope:r,rescaleIntercept:o,suvbw:a,doseGridScaling:s}=t;if("PT"!==t.modality||"number"!=typeof a||isNaN(a))if("RTDOSE"!==t.modality||"number"!=typeof s||isNaN(s))for(let t=0;t<l;t++)e[t]=e[t]*r+o;else for(let t=0;t<l;t++)e[t]=e[t]*s;else for(let t=0;t<l;t++)e[t]=a*(e[t]*r+o);return!0}

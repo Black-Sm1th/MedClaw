@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QHostAddress>
@@ -134,7 +135,7 @@ QByteArray expandLegacyCssInset(const QByteArray &css)
             bottom = tokens.at(2);
             left = tokens.at(3);
         }
-        const QByteArray suffix = important ? " !important" : QByteArray();
+        const QByteArray suffix = important ? QByteArrayLiteral(" !important") : QByteArray();
         out += "top:" + top + suffix
             + ";right:" + right + suffix
             + ";bottom:" + bottom + suffix
@@ -151,15 +152,15 @@ QByteArray withDocumentBase(QByteArray html, const QByteArray &baseUrl)
         return html;
 
     const QByteArray baseTag = "<base href=\"" + baseUrl + "\">";
-    auto tagEnd = [&lower](const QByteArray &tagName) {
+    auto tagEnd = [&lower](const QByteArray &tagName) -> int {
         int position = 0;
-        while ((position = lower.indexOf(tagName, position)) >= 0) {
-            const int nameEnd = position + tagName.size();
+        while ((position = int(lower.indexOf(tagName, position))) >= 0) {
+            const int nameEnd = position + int(tagName.size());
             if (nameEnd < lower.size()
                 && (lower.at(nameEnd) == '>' || lower.at(nameEnd) == ' '
                     || lower.at(nameEnd) == '\t' || lower.at(nameEnd) == '\r'
                     || lower.at(nameEnd) == '\n')) {
-                return lower.indexOf('>', nameEnd);
+                return int(lower.indexOf('>', nameEnd));
             }
             position = nameEnd;
         }
@@ -219,6 +220,7 @@ QByteArray withHtmlCompat(QByteArray html)
     html.prepend(snippet);
     return html;
 }
+
 }
 
 ViewerHost::ViewerHost(QObject *parent)
@@ -466,8 +468,14 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           return;
       }
       const QString htmlPrefix = QStringLiteral("/api/html/") + m_sessionId + QLatin1Char('/');
-      if (method == "GET" && !m_sessionId.isEmpty() && url.path().startsWith(htmlPrefix)) {
-          const QString relative = QDir::cleanPath(url.path().mid(htmlPrefix.size()));
+      const QString htmlPrefixNoSlash = htmlPrefix.chopped(1);
+      if (method == "GET" && !m_sessionId.isEmpty()
+          && (url.path().startsWith(htmlPrefix) || url.path() == htmlPrefixNoSlash)) {
+          QString relative = QDir::cleanPath(url.path().mid(htmlPrefix.size()));
+          // <base href=".../session/"> makes in-page #anchors hit this directory
+          // URL. Serve the current HTML file instead of 403'ing the folder.
+          if (relative.isEmpty() || relative == QLatin1String("."))
+              relative = QFileInfo(m_currentPath).fileName();
           const QDir root(QFileInfo(m_currentPath).absolutePath());
           const QString path = QDir::fromNativeSeparators(
               QFileInfo(root.filePath(relative)).absoluteFilePath());
@@ -475,6 +483,7 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
               QFileInfo(root.absolutePath()).absoluteFilePath()) + QLatin1Char('/');
           if (relative.startsWith(QStringLiteral(".."))
               || !path.startsWith(rootPath, Qt::CaseInsensitive)) {
+              qWarning().noquote() << "[ViewerHost] 403 html" << url.path() << relative << path;
               respond(socket, 403, "text/plain", "Forbidden");
               return;
           }
@@ -496,8 +505,6 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           } else if (path.endsWith(QStringLiteral(".css"), Qt::CaseInsensitive)) {
               content = expandLegacyCssInset(content);
           }
-          // Do not synthesize a CSP here: author pages often legitimately load
-          // scripts, styles, fonts, and images from external origins.
           respond(socket, 200, contentTypeForPath(path).toLatin1(), content,
                   {{"Cache-Control", "no-store"}});
           return;
@@ -532,12 +539,12 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           const QFileInfo info(localPath);
           const QByteArray disposition = "inline; filename*=UTF-8''"
               + QUrl::toPercentEncoding(info.fileName());
-          respond(socket, 200, contentTypeForPath(info.absoluteFilePath()).toLatin1(),
+          respond(socket, 200, "application/octet-stream",
                   file.readAll(), {{"Cache-Control", "no-store"},
                                    {"Content-Disposition", disposition}});
           return;
       }
-      if (method == "GET" && url.path() == QStringLiteral("/api/document")) {
+      if (method == "GET" && url.path().startsWith(QStringLiteral("/api/document"))) {
         const QUrlQuery query(url);
         if (m_currentPath.isEmpty() || query.queryItemValue(QStringLiteral("session")) != m_sessionId) {
             respond(socket, 403, "text/plain", "Forbidden");
@@ -558,8 +565,7 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
                 break;
             }
         }
-        const QByteArray disposition = "inline; filename*=UTF-8''"
-            + QUrl::toPercentEncoding(QFileInfo(m_currentPath).fileName());
+        const QByteArray disposition = "inline";
         if (rangeValue.startsWith("bytes=")) {
             const QByteArray range = rangeValue.mid(6).split(',').first().trimmed();
             const int dash = range.indexOf('-');
@@ -640,8 +646,32 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
     }
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        respond(socket, 404, "text/plain", "Not found");
-        return;
+        // Edit-mode / history may navigate to the document file name
+        // (e.g. /foo.pptx) or a client route (/ppt). Those are not viewer-web
+        // assets; keep the SPA shell so the editor can boot.
+        const QString suffix = QFileInfo(relative).suffix().toLower();
+        static const QStringList assetSuffixes{
+            QStringLiteral("js"), QStringLiteral("mjs"), QStringLiteral("css"),
+            QStringLiteral("map"), QStringLiteral("json"), QStringLiteral("wasm"),
+            QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
+            QStringLiteral("gif"), QStringLiteral("svg"), QStringLiteral("webp"),
+            QStringLiteral("woff"), QStringLiteral("woff2"), QStringLiteral("ttf"),
+            QStringLiteral("eot"), QStringLiteral("ico"), QStringLiteral("html")
+        };
+        const QString spaIndex = QDir::fromNativeSeparators(
+            QFileInfo(root.filePath(QStringLiteral("index.html"))).absoluteFilePath());
+        if (spaIndex.startsWith(rootPath, Qt::CaseInsensitive)
+            && QFileInfo::exists(spaIndex)
+            && !assetSuffixes.contains(suffix)) {
+            file.setFileName(spaIndex);
+        }
+        if (!file.open(QIODevice::ReadOnly)) {
+            qWarning().noquote() << "[ViewerHost] 404" << url.path() << path;
+            respond(socket, 404, "text/plain", "Not found");
+            return;
+        }
+        path = spaIndex;
+        relative = QStringLiteral("index.html");
     }
       QByteArray responseBody = file.readAll();
       if (relative == QStringLiteral("pdf/viewer.html"))
@@ -752,7 +782,10 @@ void ViewerHost::respond(QTcpSocket *socket, int statusCode, const QByteArray &c
     response += "Content-Type: " + contentType + "\r\n";
     response += "Content-Length: " + QByteArray::number(body.size()) + "\r\n";
     response += "Access-Control-Allow-Origin: *\r\n";
-    response += "Access-Control-Allow-Headers: Content-Type\r\n";
+    response += "Access-Control-Allow-Headers: *\r\n";
+    response += "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
+    response += "Cross-Origin-Resource-Policy: cross-origin\r\n";
+    response += "Cross-Origin-Embedder-Policy: unsafe-none\r\n";
     response += "Connection: close\r\n";
     for (const auto &header : headers)
         response += header.first + ": " + header.second + "\r\n";

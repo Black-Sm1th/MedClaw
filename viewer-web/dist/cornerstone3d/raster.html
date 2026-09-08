@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>医学影像预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090b0f; color: #e8edf2; font-family: "Segoe UI", Arial, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header { height: 44px; display: flex; align-items: center; padding: 0 14px; background: #151a20; border-bottom: 1px solid #2b333c; font-size: 13px; }
+    #name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #status { margin-left: auto; color: #8f9aa6; font-size: 11px; }
+    main { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; }
+    #image { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: auto; }
+    #message { color: #aab6c2; font-size: 13px; }
+    .error { color: #ff8d98 !important; }
+  </style>
+</head>
+<body>
+  <header><span id="name">医学影像</span><span id="status">读取中...</span></header>
+  <main><span id="message">正在加载影像...</span><img id="image" hidden alt="医学影像"></main>
+  <script>
+    (async function () {
+      var params = new URLSearchParams(location.search);
+      var session = params.get('session') || '';
+      var status = document.getElementById('status');
+      var message = document.getElementById('message');
+      var image = document.getElementById('image');
+      try {
+        var response = await fetch('/api/medical/manifest?session=' + encodeURIComponent(session), { cache: 'no-store' });
+        if (!response.ok) throw new Error('影像清单读取失败 (' + response.status + ')');
+        var manifest = await response.json();
+        var entry = manifest.files && manifest.files[0];
+        if (!entry) throw new Error('没有可读取的影像文件');
+        document.getElementById('name').textContent = entry.name || '医学影像';
+        image.onload = function () { message.hidden = true; image.hidden = false; status.textContent = '已加载'; };
+        image.onerror = function () { message.textContent = '影像格式无法在当前查看器中显示'; message.classList.add('error'); status.textContent = '加载失败'; };
+        image.src = entry.url;
+      } catch (error) {
+        message.textContent = error && error.message ? error.message : String(error);
+        message.classList.add('error');
+        status.textContent = '加载失败';
+      }
+    }());
+  </script>
+</body>
+</html>

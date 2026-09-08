@@ -11,6 +11,7 @@
 #include <QJsonArray>
 #include <QDateTime>
 #include <QDebug>
+#include <QRegularExpression>
 #include <algorithm>
 
 namespace {
@@ -393,7 +394,8 @@ QVariantList SessionReader::readSessionMessages(const QString &filePath)
 
                 // 清理用户消息中的时间戳前缀 [Sat 2026-03-14 11:13 GMT+8]
                 if (role == QLatin1String("user")) {
-                    QRegExp tsRegex(QStringLiteral("^\\[.*?GMT[+-]\\d+\\]\\s*"));
+                    const QRegularExpression tsRegex(
+                        QStringLiteral("^\\[.*?GMT[+-]\\d+\\]\\s*"));
                     t.replace(tsRegex, QString());
                     t = userVisibleText(t);
                 }

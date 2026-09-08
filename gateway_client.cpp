@@ -290,9 +290,14 @@ GatewayClient::GatewayClient(QObject *parent)
             this, &GatewayClient::onDisconnected);
     connect(m_socket, &QWebSocket::textMessageReceived,
             this, &GatewayClient::onTextMessageReceived);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    connect(m_socket, &QWebSocket::errorOccurred,
+            this, &GatewayClient::onSocketError);
+#else
     connect(m_socket,
             QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error),
             this, &GatewayClient::onSocketError);
+#endif
     connect(m_socket, &QWebSocket::binaryMessageReceived, this, [=](const QByteArray &data) {
         QString json = QString::fromUtf8(data);
         qDebug() << "收到完整二进制消息，字节数：" << data.size();
@@ -4367,7 +4372,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             QFile identityFile(dir.filePath(QStringLiteral("IDENTITY.md")));
             if (identityFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
                 QTextStream ts(&identityFile);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
                 ts.setCodec("UTF-8");
+#endif
                 ts << m_pendingCreateIdentityMarkdown;
                 if (!m_pendingCreateIdentityMarkdown.endsWith(QLatin1Char('\n')))
                     ts << '\n';
@@ -5624,7 +5631,9 @@ void GatewayClient::updateAgentIdentity(const QString &agentId,
     }
 
     QTextStream ts(&identityFile);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     ts.setCodec("UTF-8");
+#endif
     ts << identityMarkdown;
     if (!identityMarkdown.endsWith(QLatin1Char('\n')))
         ts << '\n';

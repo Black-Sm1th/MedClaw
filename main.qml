@@ -1,9 +1,9 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Window 2.2
-import QtQuick.Dialogs 1.3
-import Qt.labs.settings 1.1
-import QtGraphicalEffects 1.0
+import QtQuick.Dialogs
+import QtCore
+import Qt5Compat.GraphicalEffects
 import "./components"
 import "data/TemplatePrompts.js" as TemplatePrompts
 ApplicationWindow {
@@ -38,6 +38,8 @@ ApplicationWindow {
     color: "transparent"
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
+    palette.highlight: "#006BFF"
+    palette.accent: "#006BFF"
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
@@ -2771,12 +2773,11 @@ ApplicationWindow {
                     }
                 }
 
-                FileDialog {
+                FolderDialog {
                     id: officeDownloadFolderDialog
                     title: qsTr("选择下载位置")
-                    selectFolder: true
                     onAccepted: {
-                        var destination = window.localFilePathFromUrl(fileUrl)
+                        var destination = window.localFilePathFromUrl(selectedFolder)
                         var copiedName = $MainViewController.copyFileToWorkspace(
                                     newTaskRec.officeDownloadSourcePath, destination)
                         errorToast.text = copiedName
@@ -2991,7 +2992,7 @@ ApplicationWindow {
                         var host = officeViewsRepeater.itemAt(index)
                         if (!host || index !== activeOfficeTabIndex)
                             return
-                        officeSaveRequested = host.officeClient.saving
+                        officeSaveRequested = !!(host.officeClient && host.officeClient.saving)
                         if (host.officeView && host.officeView.mode === "edit")
                             artifactSidebarMode = "edit"
                     })
@@ -3001,7 +3002,12 @@ ApplicationWindow {
                     if (index < 0 || index >= officeTabs.count)
                         return
                     var host = officeViewsRepeater.itemAt(index)
-                    if (host && host.officeView && host.officeClient.busy) {
+                    if (host && host.closeWhenFinished) {
+                        closeOfficeTabNow(index)
+                        return
+                    }
+                    if (host && host.officeView && host.officeClient && host.officeClient.busy
+                            && host.officeView.mode === "edit") {
                         host.closeWhenFinished = true
                         host.officeView.closeEditor()
                         return
@@ -3079,7 +3085,7 @@ ApplicationWindow {
                         if (String(tab.sessionKey || "") !== owner)
                             continue
                         var host = officeViewsRepeater.itemAt(i)
-                        if (host && host.officeClient.busy)
+                        if (host && host.officeClient && host.officeClient.busy)
                             host.officeClient.cancel()
                         officeTabs.remove(i)
                     }
@@ -3099,7 +3105,7 @@ ApplicationWindow {
                             ? officeViewsRepeater.itemAt(activeOfficeTabIndex) : null
                     if (host && host.officeView && host.officeView.mode === "edit") {
                         host.downloadWhenFinished = true
-                        if (!host.officeClient.saving) {
+                        if (!host.officeClient || !host.officeClient.saving) {
                             officeSaveRequested = true
                             if (!host.officeView.saveEditor()) {
                                 host.downloadWhenFinished = false
@@ -4386,6 +4392,7 @@ ApplicationWindow {
                                              && !newTaskRec.officeEditPending
                                              && !newTaskRec.officePreviewPending
                                              && !newTaskRec.officeSaveRequested
+                                             && officeActionButton.activeHost.officeClient
                                              && !officeActionButton.activeHost.officeClient.saving
                                              && String(officeActionButton.activeHost.officeClient.editorUrl || "").length > 0
                                     onClicked: {
@@ -4535,7 +4542,6 @@ ApplicationWindow {
                                 anchors.top: officeTitleBar.bottom
                                 anchors.bottom: parent.bottom
                                 visible: active
-                                opacity: active && newTaskRec.officePreviewPending ? 0 : 1
 
                                 Loader {
                                     id: tabOfficeLoader
@@ -4629,6 +4635,8 @@ ApplicationWindow {
                             running: newTaskRec.officePreviewPending
                             visible: running
                             z: 30
+                            palette.dark: "#006BFF"
+                            palette.mid: "#006BFF"
                         }
 
                     }
@@ -7309,10 +7317,10 @@ ApplicationWindow {
                                     FileDialog {
                                         id: attachFileDialog
                                         title: qsTr("选择文件")
-                                        selectMultiple: true
+                                        fileMode: FileDialog.OpenFiles
                                         onAccepted: {
-                                            for (var i = 0; i < fileUrls.length; i++) {
-                                                var url = fileUrls[i].toString()
+                                            for (var i = 0; i < selectedFiles.length; i++) {
+                                                var url = selectedFiles[i].toString()
                                                 var path = window.localFilePathFromUrl(url)
                                                 var parts = path.split(/[\\\/]/)
                                                 var name = parts[parts.length - 1] || path
@@ -7320,12 +7328,11 @@ ApplicationWindow {
                                             }
                                         }
                                     }
-                                    FileDialog {
+                                    FolderDialog {
                                         id: attachFolderDialog
                                         title: qsTr("选择文件夹")
-                                        selectFolder: true
                                         onAccepted: {
-                                            var url = fileUrl.toString()
+                                            var url = selectedFolder.toString()
                                             var path = window.localFilePathFromUrl(url).replace(/[\\\/]+$/, "")
                                             var parts = path.split(/[\\\/]/)
                                             var name = parts[parts.length - 1] || path
@@ -8328,12 +8335,11 @@ ApplicationWindow {
                     }
                 }
 
-                FileDialog {
+                FolderDialog {
                     id: folderDialogWorkSpace
                     title: qsTr("选择文件夹")
-                    selectFolder: true
                     onAccepted: {
-                        var url = folderDialogWorkSpace.fileUrl.toString()
+                        var url = folderDialogWorkSpace.selectedFolder.toString()
                         var path = decodeURIComponent(url.replace(/^file:\/{2,3}/, ""))
                         if (Qt.platform.os === "windows") {
                         if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
@@ -10700,6 +10706,8 @@ ApplicationWindow {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     running: window.kbLoading
                                     width: 32; height: 32
+                                    palette.dark: "#006BFF"
+                                    palette.mid: "#006BFF"
                                 }
                                 Label {
                                     text: window.kbBusyText
@@ -11898,6 +11906,11 @@ ApplicationWindow {
                     placeholderText: qsTr("请输入项目名称")
                     selectByMouse: true
                     font.pixelSize: 14
+                    verticalAlignment: Text.AlignVCenter
+                    topPadding: 0
+                    bottomPadding: 0
+                    leftPadding: 10
+                    rightPadding: 10
                     background: Rectangle {
                         radius: 6
                         color: "#FFFFFF"
@@ -11988,11 +12001,10 @@ ApplicationWindow {
         }
     }
 
-    FileDialog {
+    FolderDialog {
         id: projectFolderDialog
         title: qsTr("选择项目工作空间")
-        selectFolder: true
-        onAccepted: window.newProjectWorkspace = window.localFilePathFromUrl(fileUrl)
+        onAccepted: window.newProjectWorkspace = window.localFilePathFromUrl(selectedFolder)
     }
 
     Popup {
@@ -12203,6 +12215,11 @@ ApplicationWindow {
                 font.pixelSize: 14
                 selectByMouse: true
                 maximumLength: 200
+                verticalAlignment: Text.AlignVCenter
+                topPadding: 0
+                bottomPadding: 0
+                leftPadding: 10
+                rightPadding: 10
                 background: Rectangle {
                     radius: 6
                     color: "#FFFFFF"
@@ -12610,35 +12627,33 @@ ApplicationWindow {
         id: kbFileDialog
         title: qsTr("选择知识库文件")
         nameFilters: [qsTr("支持的文件 (*.pdf *.doc *.docx *.txt *.md *.xlsx)")]
-        selectMultiple: true
-        onAccepted: window.kbStartUpload(kbFileDialog.fileUrls)
+        fileMode: FileDialog.OpenFiles
+        onAccepted: window.kbStartUpload(kbFileDialog.selectedFiles)
     }
 
     FileDialog {
         id: zipFileDialog
         title: qsTr("选择 ZIP 文件")
         nameFilters: ["ZIP files (*.zip)"]
-        selectMultiple: false
+        fileMode: FileDialog.OpenFile
         onAccepted: {
-            wsClient.addSkillFromZip(window.localFilePathFromUrl(zipFileDialog.fileUrl))
+            wsClient.addSkillFromZip(window.localFilePathFromUrl(zipFileDialog.selectedFile))
         }
     }
 
-    FileDialog {
+    FolderDialog {
         id: folderDialog
         title: qsTr("选择文件夹")
-        selectFolder: true
         onAccepted: {
-            wsClient.addSkillFromFolder(window.localFilePathFromUrl(folderDialog.fileUrl))
+            wsClient.addSkillFromFolder(window.localFilePathFromUrl(folderDialog.selectedFolder))
         }
     }
 
-    FileDialog {
+    FolderDialog {
         id: workDirDialog
         title: qsTr("选择工作目录")
-        selectFolder: true
         onAccepted: {
-            var path = decodeURIComponent(workDirDialog.fileUrl.toString().replace(/^file:\/{2,3}/, ""))
+            var path = decodeURIComponent(workDirDialog.selectedFolder.toString().replace(/^file:\/{2,3}/, ""))
             if (Qt.platform.os === "windows") {
                 if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
                     path = path.substring(1)
@@ -14285,6 +14300,8 @@ ApplicationWindow {
                     height: 28
                     running: window.configurationUpdateActive
                     anchors.verticalCenter: parent.verticalCenter
+                    palette.dark: "#006BFF"
+                    palette.mid: "#006BFF"
                 }
 
                 Label {

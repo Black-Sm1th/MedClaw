@@ -6779,7 +6779,7 @@ class PDFObjects {
     const obj = _classPrivateFieldGet(this, _objs)[objId];
 
     if (!(obj !== null && obj !== void 0 && obj.capability.settled)) {
-      throw new Error(`Requesting object that isn't resolved yet ${objId}.`);
+      return null;
     }
 
     return obj.data;
@@ -12081,7 +12081,16 @@ class CanvasGraphics {
     if (this.cachedPatterns.has(objId)) {
       pattern = this.cachedPatterns.get(objId);
     } else {
-      pattern = (0, _pattern_helper.getShadingPattern)(this.objs.get(objId));
+      const patternData = this.objs.has(objId) ? this.objs.get(objId) : null;
+      if (!patternData) {
+        return {
+          matrix: matrix,
+          getPattern: function () {
+            return "#000000";
+          }
+        };
+      }
+      pattern = (0, _pattern_helper.getShadingPattern)(patternData);
       this.cachedPatterns.set(objId, pattern);
     }
 

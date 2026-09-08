@@ -26,10 +26,11 @@ Item {
         if (!targetPath)
             return false
 
-        viewerHost.closeDocument()
         filePath = targetPath
         mode = targetMode
         editorSource = viewerHost.openDocument(filePath, mode === "view", "zh-CN")
+        console.log("[LocalOffice] open", targetPath, "mode", mode,
+                    "url", editorSource, "error", viewerHost.lastError)
         if (!editorSource) {
             saving = false
             pendingMode = ""
@@ -50,9 +51,12 @@ Item {
     }
 
     function closeEditor() {
-        if (!busy)
-            return
-        if (mode === "edit") {
+        const currentUrl = String(viewerWebView.url || "")
+        const editorAlive = currentUrl.indexOf("/index.html") >= 0
+                         || currentUrl.indexOf("/markdown/") >= 0
+                         || currentUrl.indexOf("/pdf/") >= 0
+                         || currentUrl.indexOf("/api/html/") >= 0
+        if (mode === "edit" && editorAlive && busy) {
             closeAfterSave = true
             saving = true
             if (!viewerWebView.requestSave()) {
@@ -158,6 +162,8 @@ Item {
         anchors.centerIn: parent
         running: root.editorSource.length === 0 && root.lastError.length === 0
         visible: running
+        palette.dark: "#006BFF"
+        palette.mid: "#006BFF"
     }
 
     Label {

@@ -1,0 +1,125 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>MediView DICOM Viewer</title><script src="/webgl2-compat.js"></script><script defer="defer" src="/bundle.78604e41.js"></script><style>.layout-bar{position:absolute!important;top:56px!important;left:50%!important;right:auto!important;bottom:auto!important;transform:translateX(-50%)!important;z-index:45!important;}.viewport-area{padding:52px 10px 10px!important;}.bottombar,#statusBar{height:64px!important;}.playbtns{gap:12px!important;}.pbtn{width:42px!important;height:42px!important;font-size:18px!important;border-radius:8px!important;}.pbtn-play,#btnCinePlay{width:50px!important;height:50px!important;font-size:20px!important;}.pbtn-loop,#btnCineLoop{width:auto!important;min-width:64px!important;height:42px!important;padding:0 16px!important;font-size:15px!important;}#cineFpsLabel{font-size:15px!important;font-weight:600;color:var(--text);}</style></head><body><div class="topbar"><div class="logo"><b>◆</b> MediView <span style="color:var(--muted);font-weight:400;font-size:12px">DICOM Viewer</span></div><div class="patient-chip" id="patientChip">未加载影像</div><div class="topbar-hidden-imports"><label id="btnImportFiles" class="btn-primary upload-control">导入文件 <input type="file" id="fileInput" multiple="multiple" accept=".dcm,.dicom,.ima,.nii,.nii.gz"/></label> <label id="btnImportFolder" class="btn-secondary upload-control">导入文件夹 <input type="file" id="folderInput" webkitdirectory directory multiple="multiple" accept=".dcm,.dicom,.ima,*"/></label> <span id="fileInfo" class="file-info">未加载数据</span></div></div><div class="toolbar-wrap"><div id="toolbar"><div class="tgroup"><button type="button" class="tbtn" id="btnPan" data-tool="pan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg> <span class="tip">移动 (Pan)</span></button> <button type="button" class="tbtn" id="btnZoom" data-tool="zoom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M8 10.5h5M10.5 8v5"/></svg> <span class="tip">放大缩小 (Zoom)</span></button> <button type="button" class="tbtn active" id="btnWwwc" data-tool="wwwc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><path d="M12 8.5a3.5 3.5 0 0 1 3.5 3.5" stroke="#e8b73a"/></svg> <span class="tip">窗宽窗位 (W/L)</span></button> <button type="button" class="tbtn" id="btnCrosshairs" data-tool="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="3.5"/></svg> <span class="tip">十字线 (Crosshair)</span></button></div><div class="tsep"></div><div class="tgroup"><button type="button" class="tbtn" id="btnDistance" data-tool="distance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20L20 4"/><circle cx="4" cy="20" r="1.6" fill="currentColor"/><circle cx="20" cy="4" r="1.6" fill="currentColor"/><path d="M8 16l1.5 1.5M11 13l1.5 1.5M14 10l1.5 1.5M17 7l1.5 1.5"/></svg> <span class="tip">距离测量</span></button> <button type="button" class="tbtn" id="btnAngle" data-tool="angle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20L14 5M4 20h16"/><path d="M13 20a9 9 0 0 0-3.2-6.9" stroke="#e8b73a"/></svg> <span class="tip">角度测量</span></button></div><div class="tsep"></div><div class="tgroup"><button type="button" class="tbtn" id="btnReset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg> <span class="tip">复位视图</span></button></div><div class="tsep"></div><select id="windowPreset" class="mode-select" title="窗宽窗位预设"><option value="soft">腹部</option><option value="lung">肺窗</option><option value="bone">骨窗</option><option value="brain">脑窗</option></select></div></div><div class="main"><div class="left"><div class="panel-title">切片 SOP UID <span class="count" id="sliceCount">0</span></div><div class="series-head"><div class="sname" id="seriesName">未加载序列</div><div class="ssub" id="seriesSub">打开 DICOM 文件夹后显示切片列表</div></div><div class="series-list" id="sliceList"></div></div><div class="viewport-area"><div class="layout-bar" id="medclawLayoutToolbar" hidden><button type="button" class="lbtn active" data-medclaw-layout="single"><span class="grid-ico" style="grid-template-columns:10px;grid-template-rows:10px"><i style="width:10px;height:10px"></i></span> 单图 · 轴向</button> <button type="button" class="lbtn" data-medclaw-layout="mpr"><span class="grid-ico" style="grid-template-columns:5px 5px;grid-template-rows:5px 5px"><i style="width:5px;height:5px"></i><i style="width:5px;height:5px"></i><i style="width:5px;height:5px"></i></span> 三视图 MPR</button> <button type="button" class="lbtn" data-medclaw-layout="four"><span class="grid-ico" style="grid-template-columns:5px 5px;grid-template-rows:5px 5px"><i style="width:5px;height:5px"></i><i style="width:5px;height:5px"></i><i style="width:5px;height:5px"></i><i style="width:5px;height:5px"></i></span> MPR + 3D</button></div><div id="viewportGrid" data-layout="single"><div class="viewport-container active-vp" id="container-axial"><div class="viewport-label">Axial</div><div class="viewport-element" id="viewport-axial"></div><div class="corner tl"><div class="lbl">Axial</div><span id="hudAxSeries"></span></div><div class="corner tr" id="hudAxPatient"></div><div class="corner bl" id="hudAxBl">Image: —</div><div class="corner br" id="hudAxBr"></div><div class="orient" style="top:46%;left:8px">R</div><div class="orient" style="top:46%;right:8px">L</div><div class="orient" style="left:50%;top:6px;transform:translateX(-50%)">A</div><div class="orient" style="left:50%;bottom:6px;transform:translateX(-50%)">P</div></div><div class="viewport-container" id="container-coronal"><div class="viewport-label">Coronal</div><div class="viewport-element" id="viewport-coronal"></div><div class="corner tl"><div class="lbl">Coronal</div>MPR · 重建</div><div class="corner bl" id="hudCorBl">Slice: —</div><div class="corner br" id="hudCorBr"></div><div class="orient" style="top:46%;left:8px">R</div><div class="orient" style="top:46%;right:8px">L</div><div class="orient" style="left:50%;top:6px;transform:translateX(-50%)">H</div><div class="orient" style="left:50%;bottom:6px;transform:translateX(-50%)">F</div></div><div class="viewport-container" id="container-sagittal"><div class="viewport-label">Sagittal</div><div class="viewport-element" id="viewport-sagittal"></div><div class="corner tl"><div class="lbl">Sagittal</div>MPR · 重建</div><div class="corner bl" id="hudSagBl">Slice: —</div><div class="corner br" id="hudSagBr"></div><div class="orient" style="top:46%;left:8px">A</div><div class="orient" style="top:46%;right:8px">P</div><div class="orient" style="left:50%;top:6px;transform:translateX(-50%)">H</div><div class="orient" style="left:50%;bottom:6px;transform:translateX(-50%)">F</div></div><div class="viewport-container" id="container-3d"><div class="viewport-label">3D</div><div class="viewport-element" id="viewport-3d"></div><div class="badge3d">3D VOLUME RENDERING</div><div class="corner tl"><div class="lbl">3D</div>VR 重建</div><div class="d3-controls"><select id="blendMode" class="mode-select" title="3D 混合模式"><option value="composite">复合渲染</option><option value="mip">MIP</option><option value="minip">MinIP</option><option value="average">平均</option></select> <select id="volumePreset" class="mode-select" title="体渲染预设"><option value="CT-AAA2">真实人体</option><option value="CT-Soft-Tissue">软组织</option><option value="CT-Bone">骨骼</option><option value="CT-Muscle">肌肉</option><option value="CT-Lung">肺部</option><option value="CT-Chest-Vessels">胸部血管</option><option value="CT-Pulmonary-Arteries">肺动脉</option><option value="CT-Coronary-Arteries-2">冠状动脉</option><option value="CT-Cardiac">心脏</option><option value="MR-Default">MR 默认</option></select> <input id="volumeShift" type="range" min="-1000" max="1000" step="10" value="-280" title="密度偏移"/><output id="volumeShiftValue" for="volumeShift">-280</output></div></div></div></div><div class="right"><div class="panel-title">DICOM Tags</div><div class="tag-filter"><input id="tagFilter" placeholder="过滤标签... (tag, keyword)"/></div><div class="tag-list" id="tagList"></div></div></div><div class="bottombar" id="statusBar"><div class="info" id="statusLeft">就绪</div><span id="statusRight">Cornerstone3D</span><div class="playbtns"><button type="button" class="pbtn" id="btnCineFirst" title="第一张">⏮</button> <button type="button" class="pbtn" id="btnCinePrev" title="上一张">◀</button> <button type="button" class="pbtn pbtn-play" id="btnCinePlay" title="播放">▶</button> <button type="button" class="pbtn" id="btnCineNext" title="下一张">⏭</button> <span id="cineFpsLabel">10 fps</span> <button type="button" class="pbtn pbtn-loop active" id="btnCineLoop" title="循环">Loop</button></div></div><div id="diagnosticPanel" class="diagnostic-panel"><div class="diagnostic-title">加载状态</div><div id="diagnosticMessage">正在准备医学影像查看器...</div></div>
+<script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var mode = params.get('mode') || 'single';
+      var session = params.get('session') || '';
+      var grid = document.getElementById('viewportGrid');
+      var layoutToolbar = document.getElementById('medclawLayoutToolbar');
+      var inputBound = false;
+      var loading = false;
+
+      function setLayout(layout) {
+        layout = layout === 'mpr' || layout === 'four' || layout === '3d' ? layout : 'single';
+        if (layout === '3d') layout = 'four';
+        if (document.body && document.body.dataset.stackFallback && layout !== 'single') {
+          setStatus('当前环境未能创建 WebGL2 上下文，暂无法切换 MPR/3D');
+          layout = 'single';
+        }
+        if (grid) grid.setAttribute('data-layout', layout);
+        document.querySelectorAll('[data-medclaw-layout]').forEach(function (button) {
+          button.classList.toggle('active', button.getAttribute('data-medclaw-layout') === layout);
+        });
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            if (typeof window.__medclawOnLayoutChanged === 'function') {
+              window.__medclawOnLayoutChanged(layout);
+            }
+          });
+        });
+        return layout;
+      }
+
+      window.__medclawSetLayout = setLayout;
+      if (mode === 'series' || mode === 'volume') layoutToolbar.hidden = false;
+      setLayout('single');
+      document.querySelectorAll('[data-medclaw-layout]').forEach(function (button) {
+        button.addEventListener('click', function () { setLayout(button.getAttribute('data-medclaw-layout')); });
+      });
+
+      var addEventListener = EventTarget.prototype.addEventListener;
+      EventTarget.prototype.addEventListener = function (type, listener, options) {
+        if (this && this.id === 'fileInput' && type === 'change') inputBound = true;
+        return addEventListener.call(this, type, listener, options);
+      };
+
+      function setStatus(message, error) {
+        var diagnostic = document.getElementById('diagnosticMessage');
+        if (diagnostic) diagnostic.textContent = message;
+        var panel = document.getElementById('diagnosticPanel');
+        if (panel) {
+          panel.classList.toggle('error', !!error);
+          if (error || /读取|提交|失败|超时/.test(String(message || ''))) {
+            panel.classList.remove('hidden');
+          }
+        }
+      }
+
+      async function loadFromHost() {
+        if (loading || !session) return;
+        loading = true;
+        try {
+          var response = await fetch('/api/medical/manifest?session=' + encodeURIComponent(session), { cache: 'no-store' });
+          if (!response.ok) throw new Error('影像清单读取失败 (' + response.status + ')');
+          var manifest = await response.json();
+          var entries = Array.isArray(manifest.files) ? manifest.files : [];
+          if (!entries.length) throw new Error('没有可读取的影像文件');
+          var started = Date.now();
+          var nifti = entries.some(function (entry) {
+            return /\.nii(\.gz)?$/i.test(String(entry.name || entry.url || ''));
+          });
+          if (!nifti) {
+            while (typeof window.__medclawLoadFromHostEntries !== 'function' && Date.now() - started < 60000) {
+              await new Promise(function (resolve) { setTimeout(resolve, 100); });
+            }
+            if (typeof window.__medclawLoadFromHostEntries !== 'function') {
+              throw new Error('Cornerstone3D 初始化超时');
+            }
+            await window.__medclawLoadFromHostEntries(entries);
+            setStatus('已提交 ' + entries.length + ' 个影像文件');
+            return;
+          }
+          while (!inputBound && Date.now() - started < 60000) {
+            await new Promise(function (resolve) { setTimeout(resolve, 100); });
+          }
+          if (!inputBound) throw new Error('Cornerstone3D 初始化超时');
+          var transfer;
+          try { transfer = new DataTransfer(); } catch (e) { transfer = new ClipboardEvent('').clipboardData; }
+          if (!transfer) throw new Error('当前 QtWebEngine 不支持构造本地文件列表');
+          for (var i = 0; i < entries.length; i += 1) {
+            var entry = entries[i];
+            setStatus('正在读取影像 ' + (i + 1) + '/' + entries.length + '...');
+            var controller = new AbortController();
+            var abortTimer = setTimeout(function () { controller.abort(); }, 120000);
+            var fileResponse;
+            try {
+              fileResponse = await fetch(entry.url, { cache: 'no-store', signal: controller.signal });
+            } finally {
+              clearTimeout(abortTimer);
+            }
+            if (!fileResponse.ok) continue;
+            var blob = await fileResponse.blob();
+            var file = new File([blob], entry.name || ('image-' + i + '.dcm'), {
+              type: 'application/octet-stream',
+              lastModified: Number(entry.modifiedAt || Date.now())
+            });
+            try { Object.defineProperty(file, 'webkitRelativePath', { value: entry.relativePath || entry.name || file.name }); } catch (e) { /* ignore */ }
+            try { Object.defineProperty(file, '__medclawSourceUrl', { value: entry.url }); } catch (e) { /* ignore */ }
+            transfer.items.add(file);
+          }
+          var input = document.getElementById('fileInput');
+          if (!input || !transfer.files.length) throw new Error('影像文件读取失败');
+          input.files = transfer.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          setStatus('已提交 ' + transfer.files.length + ' 个影像文件');
+        } catch (error) {
+          loading = false;
+          setStatus(error && error.message ? error.message : String(error), true);
+        }
+      }
+
+      window.__medclawLoad = loadFromHost;
+      window.addEventListener('load', function () { setTimeout(loadFromHost, 120); });
+    }());
+  </script>
+</body></html>

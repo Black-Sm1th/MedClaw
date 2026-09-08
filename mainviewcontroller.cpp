@@ -532,7 +532,7 @@ QVariantList MainViewController::importClipboardFiles() const
             if (format.contains(QStringLiteral("FileNameW"), Qt::CaseInsensitive)) {
                 const int charCount = raw.size() / 2;
                 const QString decoded = QString::fromUtf16(
-                    reinterpret_cast<const ushort *>(raw.constData()), charCount);
+                    reinterpret_cast<const char16_t *>(raw.constData()), charCount);
                 const QStringList paths = decoded.split(QChar('\0'), Qt::SkipEmptyParts);
                 for (const QString &path : paths)
                     appendPath(path);

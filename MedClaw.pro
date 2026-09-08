@@ -1,10 +1,10 @@
-QT += quick quickcontrols2 websockets sql webengine network
+QT += quick quickcontrols2 websockets sql network webenginequick widgets core5compat
 
 include(viewer-host-qt/viewer-host-qt.pri)
 
 TARGET = AetherStudy
 
-CONFIG += c++11
+CONFIG += c++17
 
 msvc: QMAKE_CXXFLAGS += /utf-8
 

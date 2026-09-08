@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Dialogs 1.3
-import QtGraphicalEffects 1.0
+import QtQuick.Dialogs
+import Qt5Compat.GraphicalEffects
 
 Item {
     id: root
@@ -1190,15 +1190,15 @@ Item {
         id: templateFileDialog
         title: qsTr("选择模板附件")
         nameFilters: [qsTr("支持的模板 (*.doc *.docx *.md *.html *.htm)")]
-        selectMultiple: false
-        onAccepted: root.setTemplateFile(fileUrl)
+        fileMode: FileDialog.OpenFile
+        onAccepted: root.setTemplateFile(selectedFile)
     }
 
     FileDialog {
         id: coverFileDialog
         title: qsTr("选择模板封面")
         nameFilters: [qsTr("支持的图片 (*.jpg *.jpeg *.png)")]
-        selectMultiple: false
-        onAccepted: root.setCoverFile(fileUrl)
+        fileMode: FileDialog.OpenFile
+        onAccepted: root.setCoverFile(selectedFile)
     }
 }

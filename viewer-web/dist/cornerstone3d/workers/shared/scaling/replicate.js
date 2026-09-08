@@ -1,0 +1,1 @@
+export default function replicate(o,t){const{rows:e,columns:l,pixelData:r,samplesPerPixel:a=1}=o,{rows:s,columns:f,pixelData:n}=t,c=[];for(let o=0;o<f;o++){const t=o*(l-1)/(f-1);c[o]=Math.floor(t)*a}for(let o=0;o<s;o++){const t=o*(e-1)/(s-1),i=Math.floor(t)*l*a,p=o*f;for(let o=0;o<f;o++)for(let t=0;t<a;t++)n[p+o+t]=r[i+c[o]+t]}return n}

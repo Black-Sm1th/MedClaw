@@ -81,3 +81,7 @@ CMakeLists.txt.user*
 .uic/
 /build*/
 /viewer-web/node_modules/
+
+# Compressed archives of viewer-web/dist; commit the dist folder instead
+*.7z
+
