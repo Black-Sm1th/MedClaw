@@ -17,8 +17,9 @@
 #include <QUrl>
 
 namespace {
-const char kDefaultApiBaseUrl[] = "http://111.6.178.34:22910";
-const char kPreviousDefaultApiBaseUrl[] = "http://111.6.178.34:24638";
+const char kDefaultApiBaseUrl[] = "https://www.aethermind.cn/aether";
+const char kLegacyApiBaseUrl[] = "http://111.6.178.34:22910";
+const char kPreviousLegacyApiBaseUrl[] = "http://111.6.178.34:24638";
 
 QString normalizedBaseUrl(QString url)
 {
@@ -228,7 +229,8 @@ AuthController::AuthController(QObject *parent)
     }
     m_apiBaseUrl = normalizedBaseUrl(settings.value(QStringLiteral("auth/apiBaseUrl"),
                                                     QString::fromLatin1(kDefaultApiBaseUrl)).toString());
-    if (m_apiBaseUrl == QString::fromLatin1(kPreviousDefaultApiBaseUrl)
+    if (m_apiBaseUrl == QString::fromLatin1(kLegacyApiBaseUrl)
+        || m_apiBaseUrl == QString::fromLatin1(kPreviousLegacyApiBaseUrl)
         || m_apiBaseUrl == QStringLiteral("http://192.168.0.36:8080")) {
         m_apiBaseUrl = QString::fromLatin1(kDefaultApiBaseUrl);
         settings.setValue(QStringLiteral("auth/apiBaseUrl"), m_apiBaseUrl);

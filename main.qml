@@ -1565,7 +1565,7 @@ ApplicationWindow {
         id: errorToast
         property string text: ""
         visible: false
-        z: 9999
+        z: 29999
         width: Math.min(errorToastLabel.implicitWidth + 40, window.width - 80)
         height: 44
         radius: 8
@@ -2220,7 +2220,7 @@ ApplicationWindow {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         accountPopup.close()
-                        Qt.openUrlExternally("http://111.6.178.34:22910/#/profile")
+                        Qt.openUrlExternally("https://www.aethermind.cn/aether/#/profile")
                     }
                 }
             }
@@ -3722,6 +3722,7 @@ ApplicationWindow {
                     anchors.left: parent.left
                     anchors.right: newTaskRec.artifactSidebarVisible ? artifactSidebar.left : parent.right
                     model: chatModel
+                    conversationRunning: wsClient.chatRunning
                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                     onArtifactsRequested: newTaskRec.toggleArtifactSidebar()
                     onArtifactRequested: function(path) { newTaskRec.openArtifactPath(path) }
@@ -4812,18 +4813,51 @@ ApplicationWindow {
                     }
                 }
 
-                Label {
+                Item {
+                    id: emptyChatState
                     visible: newTaskRec.hasActiveTask && !newTaskRec.hasMessages
                     anchors.top: parent.top
                     anchors.topMargin: 16
                     anchors.bottom: chatInputContainer.top
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    text: qsTr("暂无聊天记录")
-                    font.pixelSize: 14
-                    color: "#66000000"
+
+                    Column {
+                        width: Math.max(0, Math.min(parent.width - 32, 440))
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        Item {
+                            width: parent.width
+                            height: 96
+
+                            AnimatedImage {
+                                width: 146
+                                height: 96
+                                anchors.centerIn: parent
+                                source: "qrc:/images/loading.gif"
+                                playing: true
+                            }
+                        }
+                        Item{ width: 1; height: 12}
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: qsTr("等待模型响应")
+                            font.pixelSize: 20
+                            font.weight: Font.Bold
+                            color: "#D9000000"
+                        }
+
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            text: qsTr("模型正在明确输出格式，减少无效展开和二次改写")
+                            font.pixelSize: 14
+                            color: "#A6000000"
+                        }
+                    }
                 }
 
                 // ListView {
@@ -14331,6 +14365,11 @@ ApplicationWindow {
         visible: !window.userSessionReady && !newTaskRec.officeDocumentVisible
         enabled: visible
         z: 20000
+        onErrorRequested: {
+            errorToast.text = message
+            errorToast.visible = true
+            errorToastTimer.restart()
+        }
     }
 
     Rectangle {

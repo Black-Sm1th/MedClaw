@@ -928,6 +928,15 @@ private:
                                     const QString &agentId,
                                     const QString &jobName,
                                     const QString &workspace);
+    void rememberCronToolCall(const QString &toolName,
+                              const QString &toolArgs,
+                              const QString &toolCallId);
+    void processCronToolHistory(const QJsonObject &payload);
+    void reconcilePendingCronToolCallsWithJobs();
+    void persistCronToolResult(const QString &toolName,
+                               const QString &toolResult,
+                               const QString &toolCallId,
+                               bool isError);
 
     /// 生成唯一的请求 ID（UUID v4，不含花括号）
     QString nextRequestId();
@@ -1062,6 +1071,14 @@ private:
         QString userId;
     };
     QMap<QString, PendingCronTaskSession> m_pendingCronTaskSessions; ///< cron.add reqId -> task row info
+    struct PendingCronToolCall {
+        QString toolName;
+        QString userId;
+        QString sessionKey;
+        QJsonObject args;
+        qint64 seenAtMs = 0;
+    };
+    QMap<QString, PendingCronToolCall> m_pendingCronToolCalls; ///< cron 工具调用上下文
 
     /// 侧栏「首句问话」：chat.history 请求 id → agentId / 批次号（与切换会话的历史请求区分）
     QMap<QString, QString> m_sidebarTitleHistReqAgent;
