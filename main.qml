@@ -10410,6 +10410,23 @@ ApplicationWindow {
                 onUseTemplateRequested: function(template) {
                     newTaskRec.startDocxTemplate(template)
                 }
+                onDeleteTemplateRequested: function(template) {
+                    if (!authController.loggedIn || !authController.userId) {
+                        errorToast.text = qsTr("当前用户未登录")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    var result = $MainViewController.deleteUserTemplate(
+                                String(authController.userId), String(template.id || "")) || ({})
+                    if (!result.success) {
+                        errorToast.text = String(result.error || qsTr("模板删除失败"))
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    window.reloadUploadedDocxTemplates()
+                }
                 onMessageRequested: function(message) {
                     errorToast.text = message
                     errorToast.visible = true

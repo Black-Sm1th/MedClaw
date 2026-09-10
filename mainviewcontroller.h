@@ -47,6 +47,9 @@ public:
                                                const QString &templateFileUrl,
                                                const QString &coverFileUrl) const;
 
+    Q_INVOKABLE QVariantMap deleteUserTemplate(const QString &userId,
+                                               const QString &templateId) const;
+
     Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl,
                                             const QString &workspace) const;
 
