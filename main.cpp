@@ -11,7 +11,6 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
-#include "updatecontroller.h"
 #include <QWindow>
 #include <QScreen>
 #include <QDebug>
@@ -296,7 +295,6 @@ int main(int argc, char *argv[])
     // ── 本地会话历史读取器 ──
     SessionReader sessionReader;
     AuthController authController;
-    UpdateController updateController;
     wsClient.setTaskSessionUserId(authController.userId());
     QObject::connect(&authController, &AuthController::userChanged,
                      [&wsClient, &authController]() {
@@ -327,7 +325,6 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
     engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
     engine.rootContext()->setContextProperty(QStringLiteral("authController"), &authController);
-    engine.rootContext()->setContextProperty(QStringLiteral("updateController"), &updateController);
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");

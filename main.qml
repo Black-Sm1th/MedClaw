@@ -43,7 +43,6 @@ ApplicationWindow {
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
-    property string notifiedUpdateVersion: ""
     property string knowledgeBaseReadyUserId: ""
     property bool userSessionInitializing: authController.loggedIn
     readonly property bool userSessionReady: authController.loggedIn
@@ -66,200 +65,6 @@ ApplicationWindow {
     property string pendingCronTemplateExpr: ""
     property string pendingCronTemplateTz: "Asia/Shanghai"
     property string pendingCronTemplateTrigger: ""
-
-    Connections {
-        target: updateController
-        function onUpdateAvailableChanged() {
-            var version = String(updateController.latestVersion || "")
-            if (updateController.updateAvailable && version
-                    && window.notifiedUpdateVersion !== version) {
-                window.notifiedUpdateVersion = version
-                updateDialog.open()
-            }
-        }
-    }
-
-    Popup {
-        id: updateDialog
-        anchors.centerIn: parent
-        width: parent.width
-        height: parent.height
-        modal: true
-        padding: 0
-        closePolicy: updateController.forceUpdate ? Popup.NoAutoClose
-                                                   : Popup.CloseOnEscape
-        Overlay.modal: Rectangle {
-            color: "#40000000"
-        }
-        background: Rectangle { color: "transparent" }
-        contentItem: Item {
-            anchors.fill: parent
-
-            MouseArea {
-                anchors.fill: parent
-                enabled: !updateController.forceUpdate
-                onClicked: updateDialog.close()
-            }
-
-            Rectangle {
-                width: Math.min(560, parent.width - 32)
-                height: Math.min(320, parent.height - 32)
-                anchors.centerIn: parent
-                radius: 16
-                color: "#FFFFFF"
-
-                MouseArea { anchors.fill: parent; onClicked: {} }
-
-                Item {
-                    id: updateTitleBar
-                    width: parent.width
-                    height: 64
-                    Label {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: updateController.forceUpdate ? "需要更新" : "发现新版本"
-                        color: "#D9000000"
-                        font.pixelSize: 18
-                        font.weight: Font.Bold
-                    }
-                    ImageButton {
-                        visible: !updateController.forceUpdate
-                        btnHeight: 20
-                        btnWidth: 20
-                        source: "qrc:/images/close.png"
-                        anchors.right: parent.right
-                        anchors.rightMargin: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        onClicked: updateDialog.close()
-                    }
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: "#14000000"
-                        anchors.bottom: parent.bottom
-                    }
-                }
-
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: updateTitleBar.bottom
-                    anchors.bottom: updateFooter.top
-                    padding: 24
-                    spacing: 10
-
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.latestTitle.length > 0
-                        text: updateController.latestTitle
-                        color: "#D9000000"
-                        font.pixelSize: 24
-                        font.weight: Font.DemiBold
-                        wrapMode: Text.Wrap
-                    }
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.latestSummary.length > 0
-                        text: updateController.latestSummary
-                        color: "#73000000"
-                        font.pixelSize: 16
-                        wrapMode: Text.Wrap
-                    }
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.errorMessage.length > 0
-                        text: updateController.errorMessage
-                        color: "#C62828"
-                        font.pixelSize: 14
-                        wrapMode: Text.Wrap
-                    }
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.checking || updateController.downloading
-                        text: updateController.checking
-                              ? "正在检查更新..."
-                              : (updateController.downloadTotalBytes > 0
-                                 ? "正在下载安装包 " + Math.round(updateController.downloadProgress * 100) + "%"
-                                 : "正在下载安装包...")
-                        color: "#006BFF"
-                        font.pixelSize: 14
-                    }
-                    Rectangle {
-                        width: parent.width - 48
-                        height: 6
-                        radius: 3
-                        visible: updateController.downloading
-                        color: "#E6EAF0"
-                        Rectangle {
-                            width: parent.width * updateController.downloadProgress
-                            height: parent.height
-                            radius: 3
-                            color: "#006BFF"
-                        }
-                    }
-                }
-
-                Item {
-                    id: updateFooter
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: 64
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: "#14000000"
-                        anchors.top: parent.top
-                    }
-                    Row {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 12
-                        layoutDirection: Qt.RightToLeft
-                        CustomButton {
-                            width: 96
-                            height: 40
-                            visible: !updateController.forceUpdate
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
-                            borderWidth: 0
-                            text: updateController.downloading ? "处理中..." : "立即更新"
-                            fontSize: 14
-                            enabled: !updateController.downloading && !updateController.checking
-                            onClicked: updateController.installUpdate()
-                        }
-                        CustomButton {
-                            width: 96
-                            height: 40
-                            visible: !updateController.forceUpdate
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
-                            borderWidth: 1
-                            text: "稍后提醒"
-                            fontSize: 14
-                            enabled: !updateController.downloading
-                            onClicked: updateDialog.close()
-                        }
-                        CustomButton {
-                            width: 96
-                            height: 40
-                            visible: updateController.forceUpdate
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
-                            borderWidth: 0
-                            text: updateController.downloading ? "处理中..." : "立即更新"
-                            fontSize: 14
-                            enabled: !updateController.downloading && !updateController.checking
-                            onClicked: updateController.installUpdate()
-                        }
-                    }
-                }
-            }
-        }
-    }
     property var cronTemplateCategories: [
         { name: "医疗科研", tasks: [
             { title: "每日文献追踪", expr: "0 8 * * *", prompt: "检索 PubMed上[研究方向]近3天新文献，按IF排序TOP10，标注与课题组方向关联度，摘要中译，附带DOI" },
@@ -2380,7 +2185,7 @@ ApplicationWindow {
         id: accountPopup
         parent: window.contentItem
         width: window.sidebarExpanded ? 248 : 190
-        height: 166
+        height: 126
         padding: 8
         modal: false
         focus: true
@@ -2396,31 +2201,6 @@ ApplicationWindow {
                     anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     Label { text: "账号"; color: "#73000000"; font.pixelSize: 14 }
                     Label { text: authController.phone; color: "#D9000000"; font.pixelSize: 14 }
-                }
-            }
-            Rectangle {
-                width: parent.width
-                height: 34
-                radius: 5
-                color: updateMouse.containsMouse ? "#F2F3F5" : "transparent"
-                Row {
-                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                    Label { text: "版本"; color: "#73000000"; font.pixelSize: 14 }
-                    Label { text: updateController.currentVersion; color: "#D9000000"; font.pixelSize: 14 }
-                    Label { visible: updateController.updateAvailable; text: "有新版本"; color: "#006BFF"; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
-                }
-                MouseArea {
-                    id: updateMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        accountPopup.close()
-                        if (updateController.updateAvailable)
-                            updateDialog.open()
-                        else
-                            updateController.checkForUpdates()
-                    }
                 }
             }
             Rectangle {
