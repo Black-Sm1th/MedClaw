@@ -1,5 +1,5 @@
 import QtQuick 2.15
-import QtWebEngine 1.10
+import QtWebEngine
 
 Rectangle {
     id: root
@@ -121,8 +121,17 @@ Rectangle {
         url: "qrc:/web/prompt_composer.html"
         backgroundColor: "transparent"
 
-        onLoadingChanged: function(loadRequest) {
-            if (loadRequest.status !== WebEngineLoadRequest.LoadSucceededStatus)
+        onLoadingChanged: function(info) {
+            var status = info ? info.status : -1
+            var succeeded = status === 2
+            if (typeof WebEngineLoadingInfo !== "undefined")
+                succeeded = status === WebEngineLoadingInfo.LoadSucceededStatus
+            else if (typeof WebEngineLoadRequest !== "undefined")
+                succeeded = status === WebEngineLoadRequest.LoadSucceededStatus
+            else if (typeof WebEngineView !== "undefined"
+                     && WebEngineView.LoadSucceededStatus !== undefined)
+                succeeded = status === WebEngineView.LoadSucceededStatus
+            if (!succeeded)
                 return
             root.webReady = true
             root.callEditor("configure", [root.text, root.placeholderText, root.readOnly])

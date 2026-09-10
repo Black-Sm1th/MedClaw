@@ -5,16 +5,20 @@
 #include <QFontDatabase>
 #include <QDir>
 #include <QFileInfo>
+#include <QStringList>
 #include <QPainterPath>
 #include <QRegion>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
+#include "updatecontroller.h"
 #include <QWindow>
 #include <QScreen>
 #include <QDebug>
 #include <QSurfaceFormat>
-#include <QtWebEngine/QtWebEngine>
+#include <QLibraryInfo>
+#include <QtWebEngineQuick>
+#include <QQuickStyle>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
 #include "gateway_client.h"
@@ -39,28 +43,54 @@ static void appendChromiumFlag(QByteArray &flags, const char *flag)
 // sharing a GLES2 context and Chromium was left on the GPU blocklist / D3D9
 // ANGLE path, so getContext('webgl2') returned null. Cornerstone3D MPR and
 // volume rendering need a real WebGL2 (ES 3.0) context.
+static QString firstExistingPath(const QStringList &candidates)
+{
+    for (const QString &path : candidates) {
+        if (!path.isEmpty() && QFileInfo::exists(path))
+            return path;
+    }
+    return {};
+}
+
 static void configureQtWebEngineRuntime(const char *executablePath)
 {
     const QString appDir = QFileInfo(QString::fromLocal8Bit(executablePath)).absolutePath();
-    const QString processPath = QDir(appDir).filePath(QStringLiteral("QtWebEngineProcess.exe"));
-    const QString resourcesPath = QDir(appDir).filePath(QStringLiteral("resources"));
-    const QString localesPath =
-        QDir(appDir).filePath(QStringLiteral("translations/qtwebengine_locales"));
+    const QString qtBin = QLibraryInfo::path(QLibraryInfo::BinariesPath);
+    const QString qtLibExec = QLibraryInfo::path(QLibraryInfo::LibraryExecutablesPath);
+    const QString qtData = QLibraryInfo::path(QLibraryInfo::DataPath);
+    const QString qtTranslations = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
 
-    if (qEnvironmentVariableIsEmpty("QTWEBENGINEPROCESS_PATH"))
+    const QString processPath = firstExistingPath({
+        QDir(appDir).filePath(QStringLiteral("QtWebEngineProcess.exe")),
+        QDir(qtLibExec).filePath(QStringLiteral("QtWebEngineProcess.exe")),
+        QDir(qtBin).filePath(QStringLiteral("QtWebEngineProcess.exe")),
+    });
+    const QString resourcesPath = firstExistingPath({
+        QDir(appDir).filePath(QStringLiteral("resources")),
+        QDir(qtData).filePath(QStringLiteral("resources")),
+        QDir(qtBin).filePath(QStringLiteral("../resources")),
+    });
+    const QString localesPath = firstExistingPath({
+        QDir(appDir).filePath(QStringLiteral("translations/qtwebengine_locales")),
+        QDir(qtTranslations).filePath(QStringLiteral("qtwebengine_locales")),
+    });
+
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINEPROCESS_PATH") && !processPath.isEmpty())
         qputenv("QTWEBENGINEPROCESS_PATH", processPath.toLocal8Bit());
-    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_RESOURCES_PATH"))
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_RESOURCES_PATH") && !resourcesPath.isEmpty())
         qputenv("QTWEBENGINE_RESOURCES_PATH", resourcesPath.toLocal8Bit());
-    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_LOCALES_PATH"))
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_LOCALES_PATH") && !localesPath.isEmpty())
         qputenv("QTWEBENGINE_LOCALES_PATH", localesPath.toLocal8Bit());
 
     if (qEnvironmentVariableIsEmpty("QTWEBENGINE_DISABLE_SANDBOX"))
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
         qputenv("QT_OPENGL", "angle");
     if (qEnvironmentVariableIsEmpty("QT_ANGLE_PLATFORM"))
         qputenv("QT_ANGLE_PLATFORM", "d3d11");
+#endif
 
     QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
     appendChromiumFlag(flags, "--no-sandbox");
@@ -72,12 +102,21 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     appendChromiumFlag(flags, "--enable-webgl2");
     appendChromiumFlag(flags, "--enable-accelerated-2d-canvas");
     appendChromiumFlag(flags, "--enable-gpu-rasterization");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     appendChromiumFlag(flags, "--use-gl=angle");
     appendChromiumFlag(flags, "--use-angle=d3d11");
+#else
+    appendChromiumFlag(flags, "--disable-web-security");
+    appendChromiumFlag(flags, "--allow-running-insecure-content");
+    appendChromiumFlag(flags, "--disable-features=LocalNetworkAccess,BlockInsecurePrivateNetworkRequests,RendererCodeIntegrity");
+#endif
     appendChromiumFlag(flags, "--disable-gpu-driver-bug-workarounds");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     appendChromiumFlag(flags, "--disable-features=RendererCodeIntegrity");
+#endif
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QSurfaceFormat format;
     format.setRenderableType(QSurfaceFormat::OpenGLES);
     format.setVersion(3, 0);
@@ -87,6 +126,7 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     format.setSamples(0);
     format.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
     QSurfaceFormat::setDefaultFormat(format);
+#endif
 
     qDebug().noquote() << "[WebEngine] QT_OPENGL=" << qgetenv("QT_OPENGL")
                        << "QT_ANGLE_PLATFORM=" << qgetenv("QT_ANGLE_PLATFORM")
@@ -123,8 +163,8 @@ int main(int argc, char *argv[])
 #endif
     configureQtWebEngineRuntime(argv[0]);
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-    QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
-    QtWebEngine::initialize();
+    QtWebEngineQuick::initialize();
+    QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
@@ -256,6 +296,7 @@ int main(int argc, char *argv[])
     // ── 本地会话历史读取器 ──
     SessionReader sessionReader;
     AuthController authController;
+    UpdateController updateController;
     wsClient.setTaskSessionUserId(authController.userId());
     QObject::connect(&authController, &AuthController::userChanged,
                      [&wsClient, &authController]() {
@@ -286,11 +327,12 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
     engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
     engine.rootContext()->setContextProperty(QStringLiteral("authController"), &authController);
+    engine.rootContext()->setContextProperty(QStringLiteral("updateController"), &updateController);
 
-    int fontId1 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
-    int fontId2 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");
-    int fontId3 = QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-85-Regular.ttf");
-    int fontId4 = QFontDatabase::addApplicationFont(":/fonts/AlimamaShuHeiTi-Bold.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-85-Regular.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/AlimamaShuHeiTi-Bold.ttf");
 
     // --test 启动 WebSocket 测试页。
     const bool testMode = app.arguments().contains(QStringLiteral("--test"));

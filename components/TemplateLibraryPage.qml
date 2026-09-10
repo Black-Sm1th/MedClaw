@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Dialogs 1.3
-import QtGraphicalEffects 1.0
+import QtQuick.Dialogs
+import Qt5Compat.GraphicalEffects
 
 Item {
     id: root
@@ -15,6 +15,7 @@ Item {
     property var activeTemplate: ({})
     property bool previewOpen: false
     property bool uploadBusy: false
+    property var pendingDeleteTemplate: ({})
     property string pendingTemplateFileUrl: ""
     property string pendingTemplateFileName: ""
     property string pendingCoverFileUrl: ""
@@ -37,6 +38,7 @@ Item {
     signal uploadTemplateRequested(string name, string description,
                                    string templateFileUrl, string coverFileUrl)
     signal useTemplateRequested(var template)
+    signal deleteTemplateRequested(var template)
     signal messageRequested(string message)
 
     function normalizedCategory(value) {
@@ -149,6 +151,11 @@ Item {
         previewOpen = false
         activeTemplate = ({})
         templateUseDialog.close()
+    }
+
+    function requestDeleteTemplate(template) {
+        pendingDeleteTemplate = template || ({})
+        deleteConfirmDialog.open()
     }
 
     onVisibleChanged: {
@@ -333,6 +340,7 @@ Item {
                             id: templateCard
                             readonly property bool hovered: cardMouse.containsMouse
                                                              || useTemplateMouse.containsMouse
+                                                             || deleteTemplateMouse.containsMouse
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
@@ -423,7 +431,9 @@ Item {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
-                                height: templateCard.hovered ? 132 : 100
+                                height: templateCard.hovered
+                                        ? (cardCell.modelData.isUserTemplate ? 174 : 132)
+                                        : 100
                                 z: 2
 
                                 Behavior on height {
@@ -502,6 +512,35 @@ Item {
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: root.openTemplate(cardCell.modelData)
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: parent.width
+                                        height: templateCard.hovered && cardCell.modelData.isUserTemplate ? 34 : 0
+                                        radius: 6
+                                        visible: height > 0
+                                        color: deleteTemplateMouse.pressed ? "#B52A31"
+                                              : deleteTemplateMouse.containsMouse ? "#E5484D" : "#D9363E"
+                                        border.width: 1
+                                        border.color: "#D9363E"
+
+                                        Behavior on height {
+                                            NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                        }
+
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: qsTr("删除")
+                                            font.pixelSize: 14
+                                            color: "#FFFFFF"
+                                        }
+                                        MouseArea {
+                                            id: deleteTemplateMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.requestDeleteTemplate(cardCell.modelData)
                                         }
                                     }
                                 }
@@ -766,6 +805,72 @@ Item {
                                 var selected = root.activeTemplate
                                 root.closePreview()
                                 root.useTemplateRequested(selected)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: deleteConfirmDialog
+        parent: Overlay.overlay
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        width: Math.min(380, parent.width - 40)
+        height: 188
+        padding: 0
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        onClosed: root.pendingDeleteTemplate = ({})
+        Overlay.modal: Rectangle { color: "#66000000" }
+        background: Rectangle { color: "#FFFFFF"; radius: 12 }
+        contentItem: Column {
+            anchors.fill: parent
+            anchors.margins: 22
+            spacing: 14
+            Label {
+                text: qsTr("删除模板")
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+                color: "#D9000000"
+            }
+            Label {
+                width: parent.width
+                text: qsTr("确定删除“%1”吗？删除后无法恢复。\n模板文件和封面也会一并删除。")
+                      .arg(root.templateTitle(root.pendingDeleteTemplate))
+                wrapMode: Text.Wrap
+                font.pixelSize: 14
+                color: "#73000000"
+            }
+            Item {
+                width: parent.width
+                height: 34
+                Row {
+                    anchors.right: parent.right
+                    spacing: 10
+                    Rectangle {
+                        width: 78; height: 34; radius: 6
+                        color: cancelDeleteMouse.containsMouse ? "#F3F4F6" : "#FFFFFF"
+                        border.width: 1; border.color: "#1A000000"
+                        Label { anchors.centerIn: parent; text: qsTr("取消"); font.pixelSize: 14; color: "#A6000000" }
+                        MouseArea { id: cancelDeleteMouse; anchors.fill: parent; hoverEnabled: true; onClicked: deleteConfirmDialog.close();cursorShape: Qt.PointingHandCursor }
+                    }
+                    Rectangle {
+                        width: 78; height: 34; radius: 6
+                        color: confirmDeleteMouse.containsMouse ? "#B52A31" : "#D9363E"
+                        Label { anchors.centerIn: parent; text: qsTr("删除"); font.pixelSize: 14; color: "#FFFFFF" }
+                        MouseArea {
+                            id: confirmDeleteMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                var selected = root.pendingDeleteTemplate
+                                deleteConfirmDialog.close()
+                                root.deleteTemplateRequested(selected)
                             }
                         }
                     }
@@ -1193,15 +1298,15 @@ Item {
         id: templateFileDialog
         title: qsTr("选择模板附件")
         nameFilters: [qsTr("支持的模板 (*.doc *.docx *.md *.html *.htm)")]
-        selectMultiple: false
-        onAccepted: root.setTemplateFile(fileUrl)
+        fileMode: FileDialog.OpenFile
+        onAccepted: root.setTemplateFile(selectedFile)
     }
 
     FileDialog {
         id: coverFileDialog
         title: qsTr("选择模板封面")
         nameFilters: [qsTr("支持的图片 (*.jpg *.jpeg *.png)")]
-        selectMultiple: false
-        onAccepted: root.setCoverFile(fileUrl)
+        fileMode: FileDialog.OpenFile
+        onAccepted: root.setCoverFile(selectedFile)
     }
 }

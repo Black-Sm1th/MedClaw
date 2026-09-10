@@ -1,6 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtWebEngine 1.10
+import QtWebEngine
 import MedClaw.Viewer 1.0
 
 // Qt5.15 WebEngine wrapper for the copied Cornerstone3D bundle. Local files
@@ -83,6 +83,8 @@ Item {
         anchors.centerIn: parent
         running: root.viewerSource.length === 0 && root.lastError.length === 0
         visible: running
+        palette.dark: "#006BFF"
+        palette.mid: "#006BFF"
     }
 
     Label {

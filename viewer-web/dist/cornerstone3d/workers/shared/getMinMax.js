@@ -1,0 +1,1 @@
+function getMinMax(t){let n,e=t[0],a=t[0];const M=t.length;for(let i=1;i<M;i++)n=t[i],e=Math.min(e,n),a=Math.max(a,n);return{min:e,max:a}}export default getMinMax;

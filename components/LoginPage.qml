@@ -244,46 +244,6 @@ Item {
             height: 48
             running: loginPage.initializing
             anchors.horizontalCenter: parent.horizontalCenter
-            padding: 0
-
-            contentItem: Item {
-                implicitWidth: 48
-                implicitHeight: 48
-                opacity: initializingIndicator.running ? 1 : 0
-
-                Item {
-                    width: 36
-                    height: 36
-                    anchors.centerIn: parent
-
-                    Canvas {
-                        anchors.fill: parent
-                        antialiasing: true
-                        onPaint: {
-                            var context = getContext("2d")
-                            context.clearRect(0, 0, width, height)
-                            context.beginPath()
-                            context.lineWidth = 3
-                            context.lineCap = "round"
-                            context.strokeStyle = "#006BFF"
-                            context.arc(width / 2, height / 2,
-                                        (Math.min(width, height) - context.lineWidth) / 2,
-                                        -Math.PI / 2, Math.PI * 1.15, false)
-                            context.stroke()
-                        }
-                        onWidthChanged: requestPaint()
-                        onHeightChanged: requestPaint()
-                    }
-
-                    RotationAnimator on rotation {
-                        from: 0
-                        to: 360
-                        duration: 850
-                        loops: Animation.Infinite
-                        running: initializingIndicator.running
-                    }
-                }
-            }
         }
         Label {
             width: parent.width

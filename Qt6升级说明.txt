@@ -1,0 +1,152 @@
+MedClaw / AetherStudy
+Qt 5.15.2 -> Qt 6.8.3 升级说明
+
+本次提交把客户端从 Qt 5.15.2 迁到 Qt 6.8.3，并带上医学影像预览、PPT 编辑资源和若干查看器修复。
+viewer-web/dist.7z 没有上传，运行时仍使用 viewer-web/dist/ 目录。
+
+说明：本地原先落后远程 6 个提交。已先快进合并远程（积分、专家/知识库/模板、项目列表、移除 OnlyOffice），再叠 Qt 6.8.3 改动。没有把 OnlyOffice 加回去。
+
+
+一、工程与运行时
+
+1. MedClaw.pro
+   - QT 模块：webengine -> webenginequick，并加上 widgets、core5compat
+   - C++ 标准：c++11 -> c++17
+   - 继续使用 Qt5Compat.GraphicalEffects，避免阴影/模糊组件在 Qt 6 里直接失效
+
+2. main.cpp
+   - QtWebEngine::initialize() 改为 QtWebEngineQuick::initialize()
+   - WebEngine 进程、resources、locales 优先从 Qt 安装目录解析，避免 6.8 下 QtWebEngineProcess 找不到
+   - 打开 WebGL / WebGL2、GPU 光栅化；Qt 6 下补充跨域相关 Chromium 参数，保证本地 ViewerHost HTTP 能加载 Cornerstone3D 和编辑器资源
+   - 去掉 Qt 5 专用的 AA_UseOpenGLES；保留 AA_ShareOpenGLContexts
+   - QLibraryInfo::location 改为 QLibraryInfo::path
+
+3. 模块 pri
+   - viewer-host-qt.pri、online-office-client.pri：webengine -> webenginequick
+
+
+二、QML / 对话框 API（Qt 6 不兼容项）
+
+1. 文件对话框
+   - QtQuick.Dialogs 1.3 的 FileDialog 换成 Qt 6 FileDialog / FolderDialog
+   - selectExisting / selectMultiple / selectFolder / fileUrl / fileUrls
+     改为 fileMode、selectedFile、selectedFiles、selectedFolder
+   - 影响：附件、工作目录、知识库上传、技能 ZIP/文件夹、模板附件和封面、测试页导出
+
+2. 图形效果
+   - QtGraphicalEffects -> Qt5Compat.GraphicalEffects
+   - 影响：CustomButton、CollaborationPicker、FilePathToolTip、TemplateLibraryPage、主窗口
+
+3. 设置
+   - Qt.labs.settings -> QtCore（Settings 模块位置变化）
+
+4. WebEngine
+   - import QtWebEngine 1.10 改为 import QtWebEngine
+   - onLoadingChanged 参数从 WebEngineLoadRequest 变为 WebEngineLoadingInfo
+   - 导航拦截兼容 WebEngineNavigationRequest
+   - Qt 6.8 不能再把 WebEngineScript 当作 QML 子元素注入；6.8 自带 Object.hasOwn / Array.at，旧 polyfill 已去掉
+   - 影响：ChatWebView、MarkdownWebView、PromptComposer、ViewerWebView、OnlineOfficeView
+
+5. SingleLineTextInput
+   - 删除自定义 signal focusChanged(bool)
+   - 原因：Qt 6 的 Item 已有 focusChanged，重复声明会编译/加载失败
+
+
+三、C++ Qt 6 API
+
+1. ed25519_local.cpp
+   - QCryptographicHash::addData 改为 QByteArrayView，避免 Qt 6 重载不匹配
+
+2. gateway_client.cpp
+   - QWebSocket::error 改为 errorOccurred（Qt 6 信号改名）
+   - QTextStream::setCodec 仅在 Qt 5 调用；Qt 6 默认 UTF-8
+
+3. session_reader.cpp
+   - QRegExp 改为 QRegularExpression（Qt 6 移除 QRegExp，需 core5compat 或直接换 API）
+
+4. mainviewcontroller.cpp
+   - QString::fromUtf16 的 ushort* 改为 char16_t*
+   - 新增/完善 localPathInfo：目录、无扩展名 DICOM 头检测（DICM 前导或常见 group/element）
+
+
+四、功能改动（不仅是编译迁移）
+
+1. 医学影像
+   - 新增 MedicalImageView.qml，办公标签可打开 DICOM / NIfTI / 常见影像
+   - ViewerHost::openMedicalImage：本地文件不走 file://，改为会话级 HTTP
+   - 提供 /api/medical/manifest、/api/medical/file
+   - 无扩展名 DICOM 通过文件头识别，避免被当成普通文件
+   - 登录/会话重连遮罩不再挡住已经打开的文档预览（点击穿透问题）
+
+2. 本地查看器 ViewerHost
+   - Cornerstone 静态资源回退到 viewer-web/dist/cornerstone3d/
+   - 未知前端路由回退到 SPA index.html，修复 PPT 编辑刷新 404
+   - CORS / CORP 头放宽，避免 Qt 6 Chromium 拦截本地资源
+   - HTML 编辑增加 workspaceBaseUrl
+   - 关闭编辑器时先判断页面是否还活着，减少误触发保存
+
+3. HTML 编辑器
+   - GrapesJS 等 iframe 就绪后再灌入组件和样式，避免 Qt WebEngine 首帧空白
+   - 恢复 canvas 事件和页面脚本，并补发 DOMContentLoaded / load
+   - 相对路径 CSS 按 workspaceBaseUrl 解析
+   - 过滤旧 Chromium 解析自定义属性时写出的 invalid `undefined: undefined`
+
+4. PDF
+   - pdf.js 对尚未解析的 shading pattern 不再抛异常，改为安全回退，避免部分 PDF 直接白屏
+
+5. PPT
+   - 补齐 viewer-web/dist/pptist/ 运行资源，供本地 PPT 编辑使用
+
+
+五、修过的问题 / Bug
+
+1. Qt 6.8.3 无法按 5.15 工程编译
+   - webengine 模块更名为 webenginequick
+   - FileDialog、GraphicalEffects、Settings、QRegExp、QTextStream::setCodec、
+     QWebSocket::error、QCryptographicHash::addData、fromUtf16 等 API 均已替换
+
+2. WebEngine 页面加载成功判断失效
+   - LoadSucceededStatus 枚举从 LoadRequest 换到 LoadingInfo，聊天、Markdown、输入框、文档预览会一直转圈或不渲染
+
+3. 文件/文件夹选择框在 Qt 6 打不开或选完路径为空
+   - 旧 selectFolder / fileUrl 已失效
+
+4. SingleLineTextInput 与 Qt 6 内置 focusChanged 冲突，输入框组件加载失败
+
+5. 会话重连时全屏登录遮罩挡住文档，预览区点不动
+   - 已打开文档时不再显示该遮罩，右侧预览保持可交互
+
+6. DICOM 无扩展名、或只有 IMA 等后缀时无法进入医学影像查看器
+   - 增加文件头识别和 medical tab
+
+7. Qt 5 WebEngine 拿不到 WebGL2，Cornerstone3D 的 MPR / 3D 无法创建
+   - 升级到 6.8.3 后 Chromium 更新，并打开 GPU/WebGL2 参数
+
+8. HTML 预览在 Qt WebEngine 里空白、脚本不跑、相对资源 404
+   - 延后初始化 canvas、恢复脚本、补 workspaceBaseUrl
+
+9. 部分 PDF 因 shading pattern 未就绪抛错，页面加载中断
+
+10. 复制/打开本地 HTML 时 GrapesJS 可能写出非法 CSS `undefined: undefined`
+
+11. 办公标签关闭或下载时 officeClient 为空导致 QML 报错
+    - 医学影像 tab 没有 officeClient，访问前增加空判断
+
+12. Qt 6.8 用旧写法注入 userScripts 会报 “Element is not creatable”
+    - 已改为 6.8 兼容的 WebEngineView 用法，并允许预览弹出新窗口
+
+
+六、本次没有上传的内容
+
+- viewer-web/dist.7z（约 5MB 压缩包，与 dist 目录重复）
+- Cornerstone 多次构建留下的旧主包，例如 bundle.a9acc59b.js 等
+  当前页面实际加载的是 cornerstone3d/bundle.6326ff64.js
+
+
+七、使用注意
+
+- 需要安装 Qt 6.8.3（含 Qt WebEngine / WebEngineQuick、Qt5Compat）
+- 部署时请带上 QtWebEngineProcess.exe、resources、qtwebengine_locales
+- 医学影像依赖 viewer-web/dist/cornerstone3d/
+- PPT 编辑依赖 viewer-web/dist/pptist/
+- 本工程不再按 Qt 5.15.2 编译

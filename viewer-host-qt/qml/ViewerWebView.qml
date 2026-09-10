@@ -1,16 +1,14 @@
 import QtQuick 2.15
 import QtQuick.Window 2.15
-import QtWebEngine 1.10
+import QtWebEngine
 
-// Reusable QML wrapper. It only needs a URL returned by ViewerHost, so it can
-// be copied to another Qt Quick project without application-specific types.
+// Qt 6.8: WebEngineScript cannot be declared as a QML child element
+// ("Element is not creatable"). Chromium in 6.8 already provides
+// Object.hasOwn / Array.at / CSS inset, so the Qt 5 injection scripts
+// are not required.
 WebEngineView {
     id: viewer
     property string viewerUrl: ""
-    readonly property string compatibilityScript: "(function(){if(typeof Object.hasOwn!=='function'){Object.hasOwn=function(o,p){return Object.prototype.hasOwnProperty.call(Object(o),p);};}if(typeof Array.prototype.at!=='function'){Object.defineProperty(Array.prototype,'at',{configurable:true,writable:true,value:function(i){var l=this.length>>>0,n=Math.trunc(i)||0,p=n<0?l+n:n;return p<0||p>=l?undefined:this[p];}});}if(typeof String.prototype.at!=='function'){Object.defineProperty(String.prototype,'at',{configurable:true,writable:true,value:function(i){var s=String(this),n=Math.trunc(i)||0,p=n<0?s.length+n:n;return p<0||p>=s.length?undefined:s.charAt(p);}});}if(typeof Array.prototype.findLast!=='function'){Object.defineProperty(Array.prototype,'findLast',{configurable:true,writable:true,value:function(fn,arg){for(var i=this.length-1;i>=0;i--){if(fn.call(arg,this[i],i,this))return this[i];}}});}if(typeof Array.prototype.findLastIndex!=='function'){Object.defineProperty(Array.prototype,'findLastIndex',{configurable:true,writable:true,value:function(fn,arg){for(var i=this.length-1;i>=0;i--){if(fn.call(arg,this[i],i,this))return i;}return -1;}});}})();"
-    readonly property string webgl2CompatScript: "(function(){if(window.__medclawWebGlPatched)return;window.__medclawWebGlPatched=true;var original=HTMLCanvasElement.prototype.getContext;var attempts=[{alpha:true,depth:true,stencil:false,antialias:false,premultipliedAlpha:true,preserveDrawingBuffer:false,failIfMajorPerformanceCaveat:false,powerPreference:'default'},{alpha:true,depth:true,antialias:false,failIfMajorPerformanceCaveat:false,powerPreference:'low-power'},{alpha:true,depth:true,antialias:false,failIfMajorPerformanceCaveat:false,powerPreference:'high-performance'},{failIfMajorPerformanceCaveat:false,antialias:false},{}];function merge(a,b){var o={};if(a)for(var k in a)o[k]=a[k];if(b)for(var k2 in b)o[k2]=b[k2];return o;}HTMLCanvasElement.prototype.getContext=function(type,attrs){var t=String(type||'').toLowerCase();if(t!=='webgl2')return original.call(this,type,attrs);var tries=[attrs||{}];for(var i=0;i<attempts.length;i++){tries.push(merge(attempts[i],attrs));tries.push(attempts[i]);}for(var j=0;j<tries.length;j++){try{var gl=original.call(this,'webgl2',tries[j]);if(gl){window.__medclawWebGl={webgl2:true};return gl;}}catch(e){}}return original.call(this,type,attrs);};})();"
-    readonly property string popupCompatScript: "(function(){if(window.__medclawOpenPatched)return;window.__medclawOpenPatched=true;var orig=window.open;window.open=function(url,name,specs){var opened=null;try{opened=orig.call(window,url,name,specs);}catch(e){}if(opened)return opened;var href=url==null?'':String(url);if(href&&href!=='about:blank'){window.location.assign(href);return window;}return window;};document.addEventListener('click',function(ev){if(ev.defaultPrevented)return;var node=ev.target;while(node&&node.nodeName!=='A')node=node.parentNode;if(!node||!node.getAttribute)return;var target=(node.getAttribute('target')||'').toLowerCase();if(target!=='_blank'&&target!=='_new')return;var href=node.href||node.getAttribute('href')||'';if(!href||href.charAt(0)==='#')return;if(ev.button!==0||ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.altKey)return;ev.preventDefault();var popup=null;try{popup=window.open(href,'_blank');}catch(e){}if(!popup)window.location.assign(href);},true);})();"
-    readonly property string cssCompatScript: "(function(){if(window.__medclawCssPatched)return;window.__medclawCssPatched=true;if(window.CSS&&CSS.supports&&CSS.supports('inset','0px'))return;function expand(css){return String(css).replace(/(^|[{;\\s])inset\\s*:\\s*([^;}{]+)/gi,function(m,pre,val){var imp=/!important/i.test(val)?' !important':'';var raw=String(val).replace(/!important/ig,'').trim();var p=raw.split(/\\s+/).filter(Boolean);if(!p.length)return m;var t=p[0],r=t,b=t,l=t;if(p.length===2){r=l=p[1];}else if(p.length===3){r=l=p[1];b=p[2];}else if(p.length>=4){r=p[1];b=p[2];l=p[3];}return pre+'top:'+t+imp+';right:'+r+imp+';bottom:'+b+imp+';left:'+l+imp;});}function patch(el){if(!el||el.__medclawInset)return;el.__medclawInset=true;var src=el.textContent||'';var next=expand(src);if(next!==src)el.textContent=next;}function run(){var nodes=document.querySelectorAll('style');for(var i=0;i<nodes.length;i++)patch(nodes[i]);}run();if(document.documentElement){try{new MutationObserver(function(ms){for(var i=0;i<ms.length;i++){var add=ms[i].addedNodes;for(var j=0;j<add.length;j++){var n=add[j];if(!n||n.nodeType!==1)continue;if(n.tagName==='STYLE')patch(n);if(n.querySelectorAll){var inner=n.querySelectorAll('style');for(var k=0;k<inner.length;k++)patch(inner[k]);}}}}).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}}})();"
     signal viewerLoadFailed(string message)
     signal viewerLoaded()
     signal saveAsUnavailable()
@@ -38,10 +36,6 @@ WebEngineView {
     }
 
     function openNewView(request) {
-        // WebEngineView is a native child on Qt 5, so an overlay Item inside
-        // the sidebar is covered. A real Window is required for window.open
-        // / target=_blank. Parent it to the application window and show it
-        // before openIn(); a parentless Window often never maps on Windows.
         var host = popupHostWindow()
         var popup = popupWindowComponent.createObject(host)
         if (!popup) {
@@ -82,45 +76,20 @@ WebEngineView {
     settings.javascriptEnabled: true
     settings.localStorageEnabled: true
     settings.javascriptCanOpenWindows: true
-    settings.errorPageEnabled: true
+    settings.errorPageEnabled: false
     settings.fullScreenSupportEnabled: true
     settings.webGLEnabled: true
     settings.accelerated2dCanvasEnabled: true
     settings.localContentCanAccessRemoteUrls: true
     settings.localContentCanAccessFileUrls: true
-    settings.pluginsEnabled: true
+    settings.allowRunningInsecureContent: true
+    settings.javascriptCanAccessClipboard: true
+    settings.pdfViewerEnabled: true
     settings.focusOnNavigationEnabled: true
     settings.allowWindowActivationFromJavaScript: true
     settings.unknownUrlSchemePolicy: WebEngineSettings.AllowAllUnknownUrlSchemes
 
-    userScripts: [
-        WebEngineScript {
-            injectionPoint: WebEngineScript.DocumentCreation
-            worldId: WebEngineScript.MainWorld
-            runOnSubframes: true
-            sourceCode: viewer.compatibilityScript
-        },
-        WebEngineScript {
-            injectionPoint: WebEngineScript.DocumentCreation
-            worldId: WebEngineScript.MainWorld
-            runOnSubframes: true
-            sourceCode: viewer.webgl2CompatScript
-        },
-        WebEngineScript {
-            injectionPoint: WebEngineScript.DocumentCreation
-            worldId: WebEngineScript.MainWorld
-            runOnSubframes: true
-            sourceCode: viewer.popupCompatScript
-        },
-        WebEngineScript {
-            injectionPoint: WebEngineScript.DocumentReady
-            worldId: WebEngineScript.MainWorld
-            runOnSubframes: true
-            sourceUrl: "qrc:/localviewer/html-compat.js"
-        }
-    ]
-
-    onNewViewRequested: function(request) {
+    onNewWindowRequested: function(request) {
         viewer.openNewView(request)
     }
 
@@ -128,10 +97,31 @@ WebEngineView {
         request.accept()
     }
 
-    onLoadingChanged: function(request) {
-        if (request.status === WebEngineView.LoadFailedStatus)
-            viewerLoadFailed(request.errorString)
-        else if (request.status === WebEngineView.LoadSucceededStatus)
+    onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceId) {
+        console.log("[ViewerWeb]", level, sourceId, lineNumber, message)
+    }
+
+    onLoadingChanged: function(info) {
+        console.log("[ViewerWeb] loading", viewer.url, "status", info ? info.status : -1,
+                    "error", info && info.errorString ? info.errorString : "")
+        var status = info ? info.status : -1
+        var failed = status === 3
+        var succeeded = status === 2
+        if (typeof WebEngineLoadingInfo !== "undefined") {
+            failed = status === WebEngineLoadingInfo.LoadFailedStatus
+            succeeded = status === WebEngineLoadingInfo.LoadSucceededStatus
+        } else if (typeof WebEngineView !== "undefined") {
+            if (WebEngineView.LoadFailedStatus !== undefined)
+                failed = status === WebEngineView.LoadFailedStatus
+            if (WebEngineView.LoadSucceededStatus !== undefined)
+                succeeded = status === WebEngineView.LoadSucceededStatus
+        }
+        var aborted = status === 1
+                || String((info && info.errorString) || "").indexOf("ERR_ABORTED") >= 0
+        var pdfPlugin = String(viewer.url).indexOf("/api/document") >= 0
+        if (failed && !(aborted && pdfPlugin))
+            viewerLoadFailed(info.errorString || "")
+        else if (succeeded || (aborted && pdfPlugin))
             viewerLoaded()
     }
 
@@ -160,45 +150,19 @@ WebEngineView {
                 settings.javascriptEnabled: true
                 settings.localStorageEnabled: true
                 settings.javascriptCanOpenWindows: true
-                settings.errorPageEnabled: true
+                settings.errorPageEnabled: false
                 settings.fullScreenSupportEnabled: true
                 settings.webGLEnabled: true
                 settings.accelerated2dCanvasEnabled: true
                 settings.localContentCanAccessRemoteUrls: true
                 settings.localContentCanAccessFileUrls: true
-                settings.pluginsEnabled: true
+                settings.allowRunningInsecureContent: true
+                settings.javascriptCanAccessClipboard: true
                 settings.focusOnNavigationEnabled: true
                 settings.allowWindowActivationFromJavaScript: true
                 settings.unknownUrlSchemePolicy: WebEngineSettings.AllowAllUnknownUrlSchemes
 
-                userScripts: [
-                    WebEngineScript {
-                        injectionPoint: WebEngineScript.DocumentCreation
-                        worldId: WebEngineScript.MainWorld
-                        runOnSubframes: true
-                        sourceCode: viewer.compatibilityScript
-                    },
-                    WebEngineScript {
-                        injectionPoint: WebEngineScript.DocumentCreation
-                        worldId: WebEngineScript.MainWorld
-                        runOnSubframes: true
-                        sourceCode: viewer.webgl2CompatScript
-                    },
-                    WebEngineScript {
-                        injectionPoint: WebEngineScript.DocumentCreation
-                        worldId: WebEngineScript.MainWorld
-                        runOnSubframes: true
-                        sourceCode: viewer.popupCompatScript
-                    },
-                    WebEngineScript {
-                        injectionPoint: WebEngineScript.DocumentReady
-                        worldId: WebEngineScript.MainWorld
-                        runOnSubframes: true
-                        sourceUrl: "qrc:/localviewer/html-compat.js"
-                    }
-                ]
-
-                onNewViewRequested: function(request) {
+                onNewWindowRequested: function(request) {
                     viewer.openNewView(request)
                 }
 

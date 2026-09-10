@@ -30,7 +30,6 @@ Rectangle {
     // 信号
     signal accepted()
     signal editingFinished()
-    signal focusChanged(bool hasFocus)
     
     // 设置尺寸
     width: inputWidth
@@ -60,23 +59,28 @@ Rectangle {
         anchors.left: iconImage.visible ? iconImage.right : parent.left
         anchors.leftMargin: iconImage.visible ? 4 : 0
         anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        anchors.verticalCenter: parent.verticalCenter
+        height: parent.height
         font.pixelSize: fontSize
         font.family: "Alibaba PuHuiTi 3.0"
         color: textColor
         selectByMouse: !readOnly
-        padding: 4
+        // Qt 6 TextField defaults to top alignment, so placeholder and caret
+        // sit in the upper half of a 36px field unless these are set.
+        verticalAlignment: Text.AlignVCenter
+        leftPadding: iconImage.visible ? 0 : 8
+        rightPadding: 8
+        topPadding: 0
+        bottomPadding: 0
+        topInset: 0
+        bottomInset: 0
         placeholderText: !readOnly ? singleLineTextInput.placeholderText : ""
         placeholderTextColor: placeholderColor
         
-        background: Rectangle {
-            color: "transparent"
-        }
+        background: Item {}
         
         onAccepted: singleLineTextInput.accepted()
         onEditingFinished: singleLineTextInput.editingFinished()
-        onActiveFocusChanged: singleLineTextInput.focusChanged(activeFocus)
     }
     
     // 边框颜色动画

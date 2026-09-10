@@ -1,0 +1,1 @@
+export default function(R){return"RGB"===R||"PALETTE COLOR"===R||"YBR_FULL"===R||"YBR_FULL_422"===R||"YBR_PARTIAL_422"===R||"YBR_PARTIAL_420"===R||"YBR_RCT"===R||"YBR_ICT"===R}

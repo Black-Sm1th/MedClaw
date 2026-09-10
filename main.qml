@@ -1,9 +1,9 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Window 2.2
-import QtQuick.Dialogs 1.3
-import Qt.labs.settings 1.1
-import QtGraphicalEffects 1.0
+import QtQuick.Dialogs
+import QtCore
+import Qt5Compat.GraphicalEffects
 import "./components"
 import "data/TemplatePrompts.js" as TemplatePrompts
 ApplicationWindow {
@@ -38,9 +38,12 @@ ApplicationWindow {
     color: "transparent"
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
+    palette.highlight: "#006BFF"
+    palette.accent: "#006BFF"
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
+    property string notifiedUpdateVersion: ""
     property string knowledgeBaseReadyUserId: ""
     property bool userSessionInitializing: authController.loggedIn
     readonly property bool userSessionReady: authController.loggedIn
@@ -63,6 +66,200 @@ ApplicationWindow {
     property string pendingCronTemplateExpr: ""
     property string pendingCronTemplateTz: "Asia/Shanghai"
     property string pendingCronTemplateTrigger: ""
+
+    Connections {
+        target: updateController
+        function onUpdateAvailableChanged() {
+            var version = String(updateController.latestVersion || "")
+            if (updateController.updateAvailable && version
+                    && window.notifiedUpdateVersion !== version) {
+                window.notifiedUpdateVersion = version
+                updateDialog.open()
+            }
+        }
+    }
+
+    Popup {
+        id: updateDialog
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        padding: 0
+        closePolicy: updateController.forceUpdate ? Popup.NoAutoClose
+                                                   : Popup.CloseOnEscape
+        Overlay.modal: Rectangle {
+            color: "#40000000"
+        }
+        background: Rectangle { color: "transparent" }
+        contentItem: Item {
+            anchors.fill: parent
+
+            MouseArea {
+                anchors.fill: parent
+                enabled: !updateController.forceUpdate
+                onClicked: updateDialog.close()
+            }
+
+            Rectangle {
+                width: Math.min(560, parent.width - 32)
+                height: Math.min(320, parent.height - 32)
+                anchors.centerIn: parent
+                radius: 16
+                color: "#FFFFFF"
+
+                MouseArea { anchors.fill: parent; onClicked: {} }
+
+                Item {
+                    id: updateTitleBar
+                    width: parent.width
+                    height: 64
+                    Label {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: updateController.forceUpdate ? "需要更新" : "发现新版本"
+                        color: "#D9000000"
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                    }
+                    ImageButton {
+                        visible: !updateController.forceUpdate
+                        btnHeight: 20
+                        btnWidth: 20
+                        source: "qrc:/images/close.png"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: updateDialog.close()
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.bottom: parent.bottom
+                    }
+                }
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: updateTitleBar.bottom
+                    anchors.bottom: updateFooter.top
+                    padding: 24
+                    spacing: 10
+
+                    Label {
+                        width: parent.width - 48
+                        visible: updateController.latestTitle.length > 0
+                        text: updateController.latestTitle
+                        color: "#D9000000"
+                        font.pixelSize: 24
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.Wrap
+                    }
+                    Label {
+                        width: parent.width - 48
+                        visible: updateController.latestSummary.length > 0
+                        text: updateController.latestSummary
+                        color: "#73000000"
+                        font.pixelSize: 16
+                        wrapMode: Text.Wrap
+                    }
+                    Label {
+                        width: parent.width - 48
+                        visible: updateController.errorMessage.length > 0
+                        text: updateController.errorMessage
+                        color: "#C62828"
+                        font.pixelSize: 14
+                        wrapMode: Text.Wrap
+                    }
+                    Label {
+                        width: parent.width - 48
+                        visible: updateController.checking || updateController.downloading
+                        text: updateController.checking
+                              ? "正在检查更新..."
+                              : (updateController.downloadTotalBytes > 0
+                                 ? "正在下载安装包 " + Math.round(updateController.downloadProgress * 100) + "%"
+                                 : "正在下载安装包...")
+                        color: "#006BFF"
+                        font.pixelSize: 14
+                    }
+                    Rectangle {
+                        width: parent.width - 48
+                        height: 6
+                        radius: 3
+                        visible: updateController.downloading
+                        color: "#E6EAF0"
+                        Rectangle {
+                            width: parent.width * updateController.downloadProgress
+                            height: parent.height
+                            radius: 3
+                            color: "#006BFF"
+                        }
+                    }
+                }
+
+                Item {
+                    id: updateFooter
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 64
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: "#14000000"
+                        anchors.top: parent.top
+                    }
+                    Row {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 12
+                        layoutDirection: Qt.RightToLeft
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            visible: !updateController.forceUpdate
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: updateController.downloading ? "处理中..." : "立即更新"
+                            fontSize: 14
+                            enabled: !updateController.downloading && !updateController.checking
+                            onClicked: updateController.installUpdate()
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            visible: !updateController.forceUpdate
+                            backgroundColor: "#F7F9FA"
+                            textColor: "#A6000000"
+                            borderColor: "#E6E7EB"
+                            borderWidth: 1
+                            text: "稍后提醒"
+                            fontSize: 14
+                            enabled: !updateController.downloading
+                            onClicked: updateDialog.close()
+                        }
+                        CustomButton {
+                            width: 96
+                            height: 40
+                            visible: updateController.forceUpdate
+                            backgroundColor: "#006BFF"
+                            textColor: "#FFFFFF"
+                            borderWidth: 0
+                            text: updateController.downloading ? "处理中..." : "立即更新"
+                            fontSize: 14
+                            enabled: !updateController.downloading && !updateController.checking
+                            onClicked: updateController.installUpdate()
+                        }
+                    }
+                }
+            }
+        }
+    }
     property var cronTemplateCategories: [
         { name: "医疗科研", tasks: [
             { title: "每日文献追踪", expr: "0 8 * * *", prompt: "检索 PubMed上[研究方向]近3天新文献，按IF排序TOP10，标注与课题组方向关联度，摘要中译，附带DOI" },
@@ -2183,7 +2380,7 @@ ApplicationWindow {
         id: accountPopup
         parent: window.contentItem
         width: window.sidebarExpanded ? 248 : 190
-        height: 126
+        height: 166
         padding: 8
         modal: false
         focus: true
@@ -2199,6 +2396,31 @@ ApplicationWindow {
                     anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     Label { text: "账号"; color: "#73000000"; font.pixelSize: 14 }
                     Label { text: authController.phone; color: "#D9000000"; font.pixelSize: 14 }
+                }
+            }
+            Rectangle {
+                width: parent.width
+                height: 34
+                radius: 5
+                color: updateMouse.containsMouse ? "#F2F3F5" : "transparent"
+                Row {
+                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                    Label { text: "版本"; color: "#73000000"; font.pixelSize: 14 }
+                    Label { text: updateController.currentVersion; color: "#D9000000"; font.pixelSize: 14 }
+                    Label { visible: updateController.updateAvailable; text: "有新版本"; color: "#006BFF"; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+                }
+                MouseArea {
+                    id: updateMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        accountPopup.close()
+                        if (updateController.updateAvailable)
+                            updateDialog.open()
+                        else
+                            updateController.checkForUpdates()
+                    }
                 }
             }
             Rectangle {
@@ -2771,12 +2993,11 @@ ApplicationWindow {
                     }
                 }
 
-                FileDialog {
+                FolderDialog {
                     id: officeDownloadFolderDialog
                     title: qsTr("选择下载位置")
-                    selectFolder: true
                     onAccepted: {
-                        var destination = window.localFilePathFromUrl(fileUrl)
+                        var destination = window.localFilePathFromUrl(selectedFolder)
                         var copiedName = $MainViewController.copyFileToWorkspace(
                                     newTaskRec.officeDownloadSourcePath, destination)
                         errorToast.text = copiedName
@@ -2991,7 +3212,7 @@ ApplicationWindow {
                         var host = officeViewsRepeater.itemAt(index)
                         if (!host || index !== activeOfficeTabIndex)
                             return
-                        officeSaveRequested = host.officeClient.saving
+                        officeSaveRequested = !!(host.officeClient && host.officeClient.saving)
                         if (host.officeView && host.officeView.mode === "edit")
                             artifactSidebarMode = "edit"
                     })
@@ -3001,7 +3222,12 @@ ApplicationWindow {
                     if (index < 0 || index >= officeTabs.count)
                         return
                     var host = officeViewsRepeater.itemAt(index)
-                    if (host && host.officeView && host.officeClient.busy) {
+                    if (host && host.closeWhenFinished) {
+                        closeOfficeTabNow(index)
+                        return
+                    }
+                    if (host && host.officeView && host.officeClient && host.officeClient.busy
+                            && host.officeView.mode === "edit") {
                         host.closeWhenFinished = true
                         host.officeView.closeEditor()
                         return
@@ -3079,7 +3305,7 @@ ApplicationWindow {
                         if (String(tab.sessionKey || "") !== owner)
                             continue
                         var host = officeViewsRepeater.itemAt(i)
-                        if (host && host.officeClient.busy)
+                        if (host && host.officeClient && host.officeClient.busy)
                             host.officeClient.cancel()
                         officeTabs.remove(i)
                     }
@@ -3099,7 +3325,7 @@ ApplicationWindow {
                             ? officeViewsRepeater.itemAt(activeOfficeTabIndex) : null
                     if (host && host.officeView && host.officeView.mode === "edit") {
                         host.downloadWhenFinished = true
-                        if (!host.officeClient.saving) {
+                        if (!host.officeClient || !host.officeClient.saving) {
                             officeSaveRequested = true
                             if (!host.officeView.saveEditor()) {
                                 host.downloadWhenFinished = false
@@ -4388,6 +4614,7 @@ ApplicationWindow {
                                              && !newTaskRec.officeEditPending
                                              && !newTaskRec.officePreviewPending
                                              && !newTaskRec.officeSaveRequested
+                                             && officeActionButton.activeHost.officeClient
                                              && !officeActionButton.activeHost.officeClient.saving
                                              && String(officeActionButton.activeHost.officeClient.editorUrl || "").length > 0
                                     onClicked: {
@@ -4537,7 +4764,6 @@ ApplicationWindow {
                                 anchors.top: officeTitleBar.bottom
                                 anchors.bottom: parent.bottom
                                 visible: active
-                                opacity: active && newTaskRec.officePreviewPending ? 0 : 1
 
                                 Loader {
                                     id: tabOfficeLoader
@@ -4631,6 +4857,8 @@ ApplicationWindow {
                             running: newTaskRec.officePreviewPending
                             visible: running
                             z: 30
+                            palette.dark: "#006BFF"
+                            palette.mid: "#006BFF"
                         }
 
                     }
@@ -7344,10 +7572,10 @@ ApplicationWindow {
                                     FileDialog {
                                         id: attachFileDialog
                                         title: qsTr("选择文件")
-                                        selectMultiple: true
+                                        fileMode: FileDialog.OpenFiles
                                         onAccepted: {
-                                            for (var i = 0; i < fileUrls.length; i++) {
-                                                var url = fileUrls[i].toString()
+                                            for (var i = 0; i < selectedFiles.length; i++) {
+                                                var url = selectedFiles[i].toString()
                                                 var path = window.localFilePathFromUrl(url)
                                                 var parts = path.split(/[\\\/]/)
                                                 var name = parts[parts.length - 1] || path
@@ -7355,12 +7583,11 @@ ApplicationWindow {
                                             }
                                         }
                                     }
-                                    FileDialog {
+                                    FolderDialog {
                                         id: attachFolderDialog
                                         title: qsTr("选择文件夹")
-                                        selectFolder: true
                                         onAccepted: {
-                                            var url = fileUrl.toString()
+                                            var url = selectedFolder.toString()
                                             var path = window.localFilePathFromUrl(url).replace(/[\\\/]+$/, "")
                                             var parts = path.split(/[\\\/]/)
                                             var name = parts[parts.length - 1] || path
@@ -8363,12 +8590,11 @@ ApplicationWindow {
                     }
                 }
 
-                FileDialog {
+                FolderDialog {
                     id: folderDialogWorkSpace
                     title: qsTr("选择文件夹")
-                    selectFolder: true
                     onAccepted: {
-                        var url = folderDialogWorkSpace.fileUrl.toString()
+                        var url = folderDialogWorkSpace.selectedFolder.toString()
                         var path = decodeURIComponent(url.replace(/^file:\/{2,3}/, ""))
                         if (Qt.platform.os === "windows") {
                         if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
@@ -10185,6 +10411,23 @@ ApplicationWindow {
                 onUseTemplateRequested: function(template) {
                     newTaskRec.startDocxTemplate(template)
                 }
+                onDeleteTemplateRequested: function(template) {
+                    if (!authController.loggedIn || !authController.userId) {
+                        errorToast.text = qsTr("当前用户未登录")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    var result = $MainViewController.deleteUserTemplate(
+                                String(authController.userId), String(template.id || "")) || ({})
+                    if (!result.success) {
+                        errorToast.text = String(result.error || qsTr("模板删除失败"))
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    window.reloadUploadedDocxTemplates()
+                }
                 onMessageRequested: function(message) {
                     errorToast.text = message
                     errorToast.visible = true
@@ -10735,6 +10978,8 @@ ApplicationWindow {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     running: window.kbLoading
                                     width: 32; height: 32
+                                    palette.dark: "#006BFF"
+                                    palette.mid: "#006BFF"
                                 }
                                 Label {
                                     text: window.kbBusyText
@@ -11933,6 +12178,11 @@ ApplicationWindow {
                     placeholderText: qsTr("请输入项目名称")
                     selectByMouse: true
                     font.pixelSize: 14
+                    verticalAlignment: Text.AlignVCenter
+                    topPadding: 0
+                    bottomPadding: 0
+                    leftPadding: 10
+                    rightPadding: 10
                     background: Rectangle {
                         radius: 6
                         color: "#FFFFFF"
@@ -12023,11 +12273,10 @@ ApplicationWindow {
         }
     }
 
-    FileDialog {
+    FolderDialog {
         id: projectFolderDialog
         title: qsTr("选择项目工作空间")
-        selectFolder: true
-        onAccepted: window.newProjectWorkspace = window.localFilePathFromUrl(fileUrl)
+        onAccepted: window.newProjectWorkspace = window.localFilePathFromUrl(selectedFolder)
     }
 
     Popup {
@@ -12238,6 +12487,11 @@ ApplicationWindow {
                 font.pixelSize: 14
                 selectByMouse: true
                 maximumLength: 200
+                verticalAlignment: Text.AlignVCenter
+                topPadding: 0
+                bottomPadding: 0
+                leftPadding: 10
+                rightPadding: 10
                 background: Rectangle {
                     radius: 6
                     color: "#FFFFFF"
@@ -12645,35 +12899,33 @@ ApplicationWindow {
         id: kbFileDialog
         title: qsTr("选择知识库文件")
         nameFilters: [qsTr("支持的文件 (*.pdf *.doc *.docx *.txt *.md *.xlsx)")]
-        selectMultiple: true
-        onAccepted: window.kbStartUpload(kbFileDialog.fileUrls)
+        fileMode: FileDialog.OpenFiles
+        onAccepted: window.kbStartUpload(kbFileDialog.selectedFiles)
     }
 
     FileDialog {
         id: zipFileDialog
         title: qsTr("选择 ZIP 文件")
         nameFilters: ["ZIP files (*.zip)"]
-        selectMultiple: false
+        fileMode: FileDialog.OpenFile
         onAccepted: {
-            wsClient.addSkillFromZip(window.localFilePathFromUrl(zipFileDialog.fileUrl))
+            wsClient.addSkillFromZip(window.localFilePathFromUrl(zipFileDialog.selectedFile))
         }
     }
 
-    FileDialog {
+    FolderDialog {
         id: folderDialog
         title: qsTr("选择文件夹")
-        selectFolder: true
         onAccepted: {
-            wsClient.addSkillFromFolder(window.localFilePathFromUrl(folderDialog.fileUrl))
+            wsClient.addSkillFromFolder(window.localFilePathFromUrl(folderDialog.selectedFolder))
         }
     }
 
-    FileDialog {
+    FolderDialog {
         id: workDirDialog
         title: qsTr("选择工作目录")
-        selectFolder: true
         onAccepted: {
-            var path = decodeURIComponent(workDirDialog.fileUrl.toString().replace(/^file:\/{2,3}/, ""))
+            var path = decodeURIComponent(workDirDialog.selectedFolder.toString().replace(/^file:\/{2,3}/, ""))
             if (Qt.platform.os === "windows") {
                 if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
                     path = path.substring(1)
@@ -14320,6 +14572,8 @@ ApplicationWindow {
                     height: 28
                     running: window.configurationUpdateActive
                     anchors.verticalCenter: parent.verticalCenter
+                    palette.dark: "#006BFF"
+                    palette.mid: "#006BFF"
                 }
 
                 Label {

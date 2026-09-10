@@ -417,6 +417,62 @@ QVariantMap MainViewController::uploadUserTemplate(const QString &userId,
     return result;
 }
 
+QVariantMap MainViewController::deleteUserTemplate(const QString &userId,
+                                                    const QString &templateId) const
+{
+    QVariantMap result;
+    auto fail = [&result](const QString &message) {
+        result[QStringLiteral("success")] = false;
+        result[QStringLiteral("error")] = message;
+        return result;
+    };
+
+    const QString owner = userId.trimmed();
+    const QString id = templateId.trimmed();
+    if (owner.isEmpty())
+        return fail(QStringLiteral("当前用户未登录"));
+    if (id.isEmpty())
+        return fail(QStringLiteral("无效的模板"));
+
+    const QByteArray userHash = QCryptographicHash::hash(
+        owner.toUtf8(), QCryptographicHash::Sha256).toHex();
+    const QString userRoot = QDir(QStandardPaths::writableLocation(
+        QStandardPaths::AppDataLocation)).filePath(
+        QStringLiteral("template-library/%1").arg(QString::fromLatin1(userHash)));
+    QVariantList templates = loadUserTemplates(owner);
+    int foundIndex = -1;
+    QString templatePath;
+    for (int i = 0; i < templates.size(); ++i) {
+        const QVariantMap entry = templates.at(i).toMap();
+        if (entry.value(QStringLiteral("id")).toString() == id) {
+            foundIndex = i;
+            templatePath = entry.value(QStringLiteral("templatePath")).toString();
+            break;
+        }
+    }
+    if (foundIndex < 0)
+        return fail(QStringLiteral("模板不存在或无权删除"));
+
+    const QString cleanPath = QDir::cleanPath(templatePath);
+    const QString templateDirectory = QFileInfo(cleanPath).absolutePath();
+    const QString expectedDirectory = QDir::cleanPath(
+        QDir(userRoot).filePath(id));
+    if (QDir::cleanPath(templateDirectory).compare(
+            expectedDirectory, Qt::CaseInsensitive) != 0)
+        return fail(QStringLiteral("模板存储路径无效"));
+
+    if (!QDir(templateDirectory).removeRecursively())
+        return fail(QStringLiteral("模板文件删除失败"));
+
+    templates.removeAt(foundIndex);
+    QSettings settings;
+    settings.setValue(QStringLiteral("templateLibrary/%1/uploadedTemplates")
+                          .arg(QString::fromLatin1(userHash)),
+                      QJsonDocument::fromVariant(templates).toJson(QJsonDocument::Compact));
+    result[QStringLiteral("success")] = true;
+    return result;
+}
+
 QString MainViewController::copyFileToWorkspace(const QString &fileUrl,
                                                 const QString &workspace) const
 {
@@ -532,7 +588,7 @@ QVariantList MainViewController::importClipboardFiles() const
             if (format.contains(QStringLiteral("FileNameW"), Qt::CaseInsensitive)) {
                 const int charCount = raw.size() / 2;
                 const QString decoded = QString::fromUtf16(
-                    reinterpret_cast<const ushort *>(raw.constData()), charCount);
+                    reinterpret_cast<const char16_t *>(raw.constData()), charCount);
                 const QStringList paths = decoded.split(QChar('\0'), Qt::SkipEmptyParts);
                 for (const QString &path : paths)
                     appendPath(path);

@@ -1,5 +1,5 @@
 import QtQuick 2.15
-import QtWebEngine 1.10
+import QtWebEngine
 
 Item {
     id: root
@@ -120,8 +120,17 @@ Item {
         url: "qrc:/web/markdown_renderer.html"
         backgroundColor: "transparent"
 
-        onLoadingChanged: function(loadRequest) {
-            if (loadRequest.status === WebEngineLoadRequest.LoadSucceededStatus) {
+        onLoadingChanged: function(info) {
+            var status = info ? info.status : -1
+            var succeeded = status === 2
+            if (typeof WebEngineLoadingInfo !== "undefined")
+                succeeded = status === WebEngineLoadingInfo.LoadSucceededStatus
+            else if (typeof WebEngineLoadRequest !== "undefined")
+                succeeded = status === WebEngineLoadRequest.LoadSucceededStatus
+            else if (typeof WebEngineView !== "undefined"
+                     && WebEngineView.LoadSucceededStatus !== undefined)
+                succeeded = status === WebEngineView.LoadSucceededStatus
+            if (succeeded) {
                 root.webReady = true
                 root.pushText(root.sourceText, !root.streaming)
             }
@@ -129,7 +138,10 @@ Item {
 
         onNavigationRequested: function(request) {
             if (request.url.toString() !== "qrc:/web/markdown_renderer.html") {
-                request.action = WebEngineNavigationRequest.IgnoreRequest
+                if (typeof WebEngineNavigationRequest !== "undefined")
+                    request.action = WebEngineNavigationRequest.IgnoreRequest
+                else
+                    request.action = 1
                 root.linkActivated(request.url.toString())
             }
         }

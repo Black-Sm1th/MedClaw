@@ -1,4 +1,4 @@
-QT += network webengine widgets
+QT += network webenginequick widgets
 
 INCLUDEPATH += $$PWD/include
 

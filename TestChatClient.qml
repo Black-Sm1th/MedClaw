@@ -41,7 +41,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import QtQuick.Dialogs 1.3
+import QtQuick.Dialogs
 
 ApplicationWindow {
     id: testWindow
@@ -2375,9 +2375,8 @@ ApplicationWindow {
             "Knowledge files (*.pdf *.docx *.xlsx *.xls *.pptx *.md *.txt)",
             "All files (*)"
         ]
-        selectExisting: true
-        selectMultiple: false
-        onAccepted: kbTestPathField.text = testWindow.localFilePathFromUrl(fileUrl)
+        fileMode: FileDialog.OpenFile
+        onAccepted: kbTestPathField.text = testWindow.localFilePathFromUrl(selectedFile)
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -2388,10 +2387,9 @@ ApplicationWindow {
         id: skillExportFileDialog
         title: qsTr("\u5bfc\u51fa\u6280\u80fd\u5217\u8868")
         nameFilters: ["Text (*.txt)", "All files (*)"]
-        selectExisting: false
-        selectMultiple: false
+        fileMode: FileDialog.SaveFile
         onAccepted: {
-            var path = testWindow.localFilePathFromUrl(fileUrl)
+            var path = testWindow.localFilePathFromUrl(selectedFile)
             testExportSkillsToTxt(path)
         }
     }

@@ -5,6 +5,7 @@
 #include "ed25519_local.h"
 #include <QCryptographicHash>
 #include <QByteArray>
+#include <QByteArrayView>
 #include <QRandomGenerator>
 #include <cstring>
 
@@ -277,8 +278,8 @@ void ed25519_sign(uint8_t sig[64],
     // r = H(d[32..63] || msg) mod L
     {
         QCryptographicHash h(QCryptographicHash::Sha512);
-        h.addData(reinterpret_cast<const char *>(d + 32), 32);
-        h.addData(reinterpret_cast<const char *>(msg), static_cast<int>(mlen));
+        h.addData(QByteArrayView(reinterpret_cast<const char *>(d + 32), 32));
+        h.addData(QByteArrayView(reinterpret_cast<const char *>(msg), qsizetype(mlen)));
         QByteArray res = h.result();
         memcpy(nonce, res.constData(), 64);
     }
@@ -292,9 +293,9 @@ void ed25519_sign(uint8_t sig[64],
     // hram = H(R || pk || msg) mod L
     {
         QCryptographicHash h(QCryptographicHash::Sha512);
-        h.addData(reinterpret_cast<const char *>(sig), 32);
-        h.addData(reinterpret_cast<const char *>(sk + 32), 32);
-        h.addData(reinterpret_cast<const char *>(msg), static_cast<int>(mlen));
+        h.addData(QByteArrayView(reinterpret_cast<const char *>(sig), 32));
+        h.addData(QByteArrayView(reinterpret_cast<const char *>(sk + 32), 32));
+        h.addData(QByteArrayView(reinterpret_cast<const char *>(msg), qsizetype(mlen)));
         QByteArray res = h.result();
         memcpy(hram, res.constData(), 64);
     }
