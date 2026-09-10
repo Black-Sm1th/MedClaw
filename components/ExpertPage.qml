@@ -31,62 +31,66 @@ Rectangle {
 
     signal summonRequested(string agentId, string promptText)
 
-    readonly property var expertProfiles: [
-        {
-            id: "paper-orchestrator", name: "论文写作专家", domain: "医学研究领域",
-            image: "qrc:/images/expert/paper-orchestrator.png",
+    // Display copy only. The card list itself comes from the gateway; these
+    // entries fill domain/intro when config/agents/<id>/intro.json is absent.
+    readonly property var profileCatalog: ({
+        "paper-orchestrator": {
+            domain: "医学研究领域",
             categories: ["论文撰写", "文献综述", "申报辅助"],
             intro: "围绕研究问题完成文献检索、证据核实、内容合成，输出符合SCI期刊规范的结构化文稿，适配多类科研写作场景",
             ability: "聚焦医学科研写作全流程，围绕研究问题完成定向文献检索、学术声明核实、高质量文献筛选与系统阅读，最终合成符合学术规范的文稿提案，适配SCI论文、综述、基金标书等多类写作场景。",
             questions: ["帮我完成一篇肺癌方向SCI论文的结果与讨论章节", "生成一份肿瘤免疫方向的系统综述框架与参考文献", "辅助撰写国自然青年基金申报书的研究方案部分"],
             promptTemplate: "研究想法（自然语言）：\n  \"我想研究XX药物对YY疾病的疗效\"\n\n期望输出语言：中文/英文\n研究问题类型（可选）：RCT/Meta/队列/病例对照\n目标数据库：PubMed + Embase + WOS + Cochrane"
         },
-        {
-            id: "data-orchestrator", name: "数据分析专家", domain: "医学 / 通用领域",
-            image: "qrc:/images/expert/data-orchestrator.png",
+        "data-orchestrator": {
+            domain: "医学 / 通用领域",
             categories: ["数据清洗", "可视化", "建模评估"],
             intro: "自动完成数据清洗、探索分析、可视化与建模全流程，覆盖医学统计场景，输出可直接引用的分析结论与图表集",
             ability: "支持CSV/Excel/JSON等多格式数据上传，自动化完成从数据清洗、探索性分析、批量可视化到建模评估的全链路分析，覆盖医学统计与通用商业分析场景，输出可直接复用的分析结论与标准化图表集。",
             questions: ["上传这份临床随访数据，帮我做生存分析并输出可视化图表", "分析这份医疗运营数据，找出核心影响因素并给出归因结论", "对患者分组数据做统计检验，生成符合论文规范的统计结果"],
             promptTemplate: "数据文件：[upload .csv / .xlsx]\n分析目标：\"找出XX与YY的关联\"\n变量角色（可选）：\n  - 自变量：col_A, col_B\n  - 因变量：col_C\n  - 分组变量：col_D\n统计方法偏好（可选）：参数/非参数"
         },
-        {
-            id: "omics-orchestrator", name: "精准医学专家", domain: "生信领域",
-            image: "qrc:/images/expert/omics-orchestrator.png",
+        "omics-orchestrator": {
+            domain: "生信领域",
             categories: ["单细胞分析", "通路富集", "多组学整合"],
             intro: "覆盖单细胞、转录组、蛋白组到多组学整合全流程自动化分析，输出可发表级图表、生物学解读与研究假说",
             ability: "覆盖单细胞、转录组、蛋白组、代谢组全组学分析链路，从原始数据质控到多组学整合分析全流程自动化，输出可发表级分析图表、生物学解读与可验证研究假说，支撑基础医学与药物研发场景。",
             questions: ["处理这份scRNA-seq数据，完成细胞分群与注释分析", "做差异基因表达分析并输出GO/KEGG富集结果与火山图", "整合转录组与蛋白组数据，生成潜在靶点研究假说"],
             promptTemplate: "物种：mouse (mm10) / human (hg38)\n数据类型：scRNA-seq / Bulk RNA / 蛋白 / 代谢\n实验设计：\n  - 对照组：sample_1, 2, 3\n  - 处理组：sample_4, 5, 6\n  - 处理条件：药物XX 50mg/kg\n参考基因组：GRCm39 / GRCh38\n比对工具：STAR / HISAT2（可选）"
         },
-        {
-            id: "mi-orchestrator", name: "医学情报专家", domain: "竞争情报领域",
-            image: "qrc:/images/expert/mi-orchestrator.png",
+        "mi-orchestrator": {
+            domain: "竞争情报领域",
             categories: ["竞品监控", "威胁预警", "策略报告"],
             intro: "多源扫描医药情报并交叉验证，完成威胁评级后输出决策级策略简报，支撑医学事务与产品立项决策",
             ability: "支持自定义竞品目标池与监控维度，自动扫描NMPA/FDA获批、临床试验、SCI论文、指南修订等多源医药情报，交叉验证后完成威胁评级，输出决策级策略简报，支撑医学事务与产品立项决策。",
             questions: ["监控某靶点肺癌药物的全球注册与临床进展，输出周报", "对比3款同类医疗器械的技术路径与临床数据，做威胁评级", "汇总本月领域指南更新，生成医学部汇报用简报"],
-            promptTemplate: "竞品名单：\n  · 波科：FARAPULSE / FARAWAVE\n  · 锦江电子：LEAD-PFA / Pulsed FA\n  · 强生：TRUPULSE / VARIPULSE\n\n关键词表：\n  PFA, 脉冲电场消融, 心脏消融,\n  pulsed field ablation\n\n重点临床试验：\n  NCT05501873, NCT07162597,\n  NCT05072964, NCT06431815, NCT06808217\n\n监控维度：\n  · NMPA/FDA 注册获批\n  · 最新 SCI 论文\n  · 指南更新\n  · 临床试验入排标准差异\n\n报告关注字段：\n  发布时间 | 来源 | 竞品型号 |\n  核心结论 | 有效性更新 | 安全性更新 |\n  威胁评级(高/中/低) | 应对建议"
+            promptTemplate: "竞品名单：\n  · 波科：FARAPULSE / FARAWAVE\n  · 锦江电子：LEAD-PFA / Pulsed FA\n  · 强生：TRUPULSE / VARIPULSE"
         },
-        {
-            id: "research-orchestrator", name: "深度研究专家", domain: "通用高频",
-            image: "qrc:/images/expert/research-orchestrator.png",
+        "research-orchestrator": {
+            domain: "通用高频",
             categories: ["行业调研", "可行性分析", "知识沉淀"],
             intro: "完成问题拆解、多源检索、交叉验证到综合报告全流程深度研究，同步结构化知识沉淀，支撑体系化决策",
             ability: "面向复杂调研类问题，完成从问题结构化拆解、多渠道信息检索、多源交叉验证到综合报告输出的全流程深度研究，同步完成结构化知识沉淀，支撑体系化业务决策。",
             questions: ["调研国内医疗AI影像赛道的竞争格局与发展趋势", "分析某创新技术的商业化落地可行性与风险点", "整理医疗大模型政策监管要求，形成合规知识库"],
-            promptTemplate: "研究主题：[自然语言描述]\n\n研究深度：\n  · 快速（3-5分钟，5个子问题）\n  · 标准（10-15分钟，10个子问题）\n  · 深度（30分钟+，20+子问题）\n\n检索范围：\n  [x] Web 搜索\n  [x] 学术文献\n  [x] 新闻资讯\n  [ ] 内部知识库\n\n输出语言：中文\n报告框架（可选）：\n  背景 → 现状 → 关键发现 →\n  争议点 → 趋势预测 → 结论\n\n特别关注（可选）：\n  \"重点关注XX公司的融资情况\"\n  \"注意区分XX和YY的区别\""
+            promptTemplate: "研究主题：[自然语言描述]\n研究深度：快速 / 标准 / 深度"
         },
-        {
-            id: "forensics-orchestrator", name: "事实链法证专家", domain: "通用高频",
-            image: "qrc:/images/expert/forensics-orchestrator.png",
+        "forensics-orchestrator": {
+            domain: "通用高频",
             categories: ["事实核验", "溯源追踪", "可信度评级"],
             intro: "拆解待核验声明，完成信息溯源、原始证据校验与可信度评级，输出完整可追溯的事实核验报告",
             ability: "针对待核验声明进行结构化拆解，完成信息源头追溯、原始证据校验与可信度分级，输出完整可追溯的事实核验报告，精准识别不实信息、证据漏洞与传播偏差。",
             questions: ["核验这篇医学科普文章中的核心结论是否有循证依据", "追踪这个行业数据的原始来源，验证数据真实性", "对这份竞品分析报告做事实核查，输出可信度评级报告"],
-            promptTemplate: "待核验内容：\n  [粘贴一段AI输出/论文段落/新闻文本]\n\n核验范围：\n  · 全量核验（提取所有事实性声明）\n  · 重点核验（仅检查标记为 [?] 的声明）\n  · 单条核验（只验证一句话）\n\n核验深度：\n  · 快速（一级溯源，5分钟）\n  · 标准（二级溯源+原文比对，15分钟）\n  · 深度（完整引用链追溯+语境分析，30分钟+）\n\n检索源偏好：\n  [x] 学术文献\n  [x] Web 搜索\n  [x] 新闻/官方文件\n  [ ] 内部知识库\n\n输出要求：\n  · 可信度评级表\n  · 失真类型标注\n  · 保守版修正表述（用于论文写作）\n  · 引用链全链路展示"
+            promptTemplate: "待核验内容：\n  [粘贴一段AI输出/论文段落/新闻文本]"
+        },
+        "imaging-orchestrator": {
+            image: "qrc:/images/expert/medical-orchestrator.png",
+            domain: "医学影像领域",
+            categories: ["DICOM处理", "NIfTI转换", "影像组学"],
+            intro: "医学影像数据处理专家团：盘点 DICOM/NIfTI/X 线、去标识、转 NIfTI、预处理、配准、掩膜 QC、影像组学与报告结构化。",
+            ability: "医学影像数据处理专家团：盘点 DICOM/NIfTI/X 线、去标识、转 NIfTI、预处理、配准、掩膜 QC、影像组学与报告结构化。",
+            questions: ["帮我盘点这个 DICOM 文件夹有几个序列、有没有缺层", "把这个 CT 序列转成 NIfTI 并做预处理", "对带 ROI 掩膜的影像做组学特征提取"]
         }
-    ]
+    })
 
     readonly property var subagentCatalog: ({
         "question-refiner": { name: "临床问题精炼专员", skills: ["联网检索", "网页抓取", "知识库检索", "文件内容读取"], desc: "联网检索 + 知识库查询，识别问题类型并匹配 PICO/PECO/PICOTS 框架，输出三版本问题陈述", avatar: 1 },
@@ -117,16 +121,71 @@ Rectangle {
         "evidence-examiner": { name: "原始证据检验专员", skills: ["PubMed全文获取", "引用链追溯", "Semantic Scholar检索", "网页抓取"], desc: "获取原始证据全文并逐句比对支持度，识别语境剥离与选择性引用", avatar: 2 },
         "confidence-rater": { name: "可信度评级专员", skills: ["事实核查缓存", "联网检索", "知识库检索"], desc: "综合输出四级可信度评定，并对失真声明生成保守版修正表述", avatar: 3 },
         "verification-reporter": { name: "核验报告专员", skills: ["知识库检索", "网页抓取", "文件内容读取"], desc: "合成核验报告，含声明评定表、证据摘要、引用链全链路展示与修正建议", avatar: 4 },
-        "report-writer": { name: "报告撰写专员", skills: ["整合", "排版", "交付"], desc: "分析产出的\"最后一公里\"整合者。将前面所有专家的产出组装为结构化分析报告，按目标格式排版。确保从数据到结论的逻辑链条连贯、引用规范、表述精准。", avatar: 5 }
+        "report-writer": { name: "报告撰写专员", skills: ["整合", "排版", "交付"], desc: "分析产出的\"最后一公里\"整合者。将前面所有专家的产出组装为结构化分析报告，按目标格式排版。确保从数据到结论的逻辑链条连贯、引用规范、表述精准。", avatar: 5 },
+        "imaging-agent": { name: "影像数据处理专员", skills: ["DICOM盘点", "转NIfTI", "X线导出", "预处理", "配准", "组学"], desc: "处理 NIfTI、DICOM 序列和 X 线：盘点 QC、去标识、单序列转 NIfTI、预处理、配准、掩膜 QC、影像组学、报告结构化。", avatar: 6, image: "qrc:/images/expert/medical-orchestrator.png" }
     })
 
-    function profileForAgent(agent) {
-        var id = String(agent && agent.id || "")
-        for (var i = 0; i < expertProfiles.length; i++) {
-            if (expertProfiles[i].id === id)
-                return expertProfiles[i]
+    function stringList(value) {
+        if (!value)
+            return []
+        if (Array.isArray(value)) {
+            var out = []
+            for (var i = 0; i < value.length; i++) {
+                var item = String(value[i] || "").trim()
+                if (item)
+                    out.push(item)
+            }
+            return out
         }
-        return null
+        var text = String(value).trim()
+        return text ? [text] : []
+    }
+
+    function avatarForId(id) {
+        var value = String(id || "")
+        if (!value)
+            return "qrc:/images/expert/1.png"
+        var hash = 0
+        for (var i = 0; i < value.length; i++)
+            hash = ((hash * 31) + value.charCodeAt(i)) & 0x7fffffff
+        return "qrc:/images/expert/" + ((hash % 8) + 1) + ".png"
+    }
+
+    function profileForAgent(agent) {
+        if (!agent)
+            return null
+        var id = String(agent.id || "")
+        var intro = agent.intro || {}
+        var identity = agent.identity || {}
+        var catalog = profileCatalog[id] || {}
+        var specialist = subagentCatalog[id] || {}
+        var name = String(catalog.name || intro.name || specialist.name || agent.name || identity.name || id)
+        var domain = String(catalog.domain || intro.domain || intro.category || "")
+        var introText = String(catalog.intro || intro.intro || intro.description
+                               || specialist.desc || agent.description || "")
+        var ability = String(catalog.ability || intro.ability || intro.description
+                             || specialist.desc || introText)
+        var image = String(catalog.image || intro.image || "")
+        if (image.indexOf("qrc:") !== 0 && image.indexOf("http") !== 0 && image) {
+            if (image.charAt(0) === "/")
+                image = "qrc:" + image
+            else
+                image = "qrc:/images/expert/" + image
+        }
+        if (!image)
+            image = "qrc:/images/expert/" + id + ".png"
+        return {
+            id: id,
+            name: name,
+            domain: domain,
+            categories: stringList(catalog.categories || intro.categories || intro.tags),
+            intro: introText,
+            ability: ability,
+            questions: stringList(catalog.questions || intro.questions || intro.examples),
+            promptTemplate: String(catalog.promptTemplate || intro.promptTemplate || intro.prompt || ""),
+            image: image,
+            fallbackImage: avatarForId(id)
+        }
     }
 
     function filteredAgents() {
@@ -134,11 +193,16 @@ Rectangle {
         var result = []
         for (var i = 0; i < agentList.length; i++) {
             var agent = agentList[i]
-            var profile = profileForAgent(agent)
-            var subagents = agent.subagents || []
-            if (!profile || subagents.length === 0)
+            if (!agent || !agent.id)
                 continue
-            var haystack = (profile.name + " " + profile.domain + " " + profile.intro + " " + agent.id).toLowerCase()
+            // Homepage shows expert teams (orchestrators with subagents),
+            // not every specialist that the gateway also lists.
+            if (expertSubagents(agent).length === 0)
+                continue
+            var profile = profileForAgent(agent)
+            var haystack = [
+                profile.name, profile.domain, profile.intro, profile.ability, agent.id
+            ].join(" ").toLowerCase()
             if (!kw || haystack.indexOf(kw) >= 0)
                 result.push(agent)
         }
@@ -151,8 +215,15 @@ Rectangle {
         for (var i = 0; i < configured.length; i++) {
             var id = String(configured[i] || "")
             var known = subagentCatalog[id]
-            result.push({ id: id, name: known ? known.name : id, desc: known ? known.desc : "",
-                            skills: known ? known.skills : [], avatar: known ? known.avatar : (i % 8) + 1 })
+            var avatar = known ? known.avatar : (i % 8) + 1
+            result.push({
+                id: id,
+                name: known ? known.name : id,
+                desc: known ? known.desc : "",
+                skills: known ? known.skills : [],
+                avatar: avatar,
+                image: (known && known.image) ? known.image : ("qrc:/images/expert/" + avatar + ".png")
+            })
         }
         return result
     }
@@ -244,6 +315,11 @@ Rectangle {
                         source: expertCard.profile ? expertCard.profile.image : ""
                         fillMode: Image.PreserveAspectCrop
                         sourceSize: Qt.size(348, 348)
+                        onStatusChanged: {
+                            if (status === Image.Error && expertCard.profile
+                                    && source !== expertCard.profile.fallbackImage)
+                                source = expertCard.profile.fallbackImage
+                        }
                     }
 
                     Column {
@@ -387,11 +463,21 @@ Rectangle {
 
                     Row {
                         width: parent.width - 80; height: 62; spacing: 14
-                        Image { width: 62; height: 62; source: root.selectedProfile ? root.selectedProfile.image : ""; fillMode: Image.PreserveAspectCrop }
+                        Image {
+                            width: 62; height: 62
+                            source: root.selectedProfile ? root.selectedProfile.image : ""
+                            fillMode: Image.PreserveAspectCrop
+                            onStatusChanged: {
+                                if (status === Image.Error && root.selectedProfile
+                                        && source !== root.selectedProfile.fallbackImage)
+                                    source = root.selectedProfile.fallbackImage
+                            }
+                        }
                         Column {
                             width: parent.width - 210; anchors.verticalCenter: parent.verticalCenter; spacing: 5
                             Label { width: parent.width; text: root.selectedProfile ? root.selectedProfile.name : ""; font.pixelSize: 21; font.weight: Font.Bold; color: "#D9000000"; elide: Text.ElideRight }
                             Rectangle {
+                                visible: root.selectedProfile && String(root.selectedProfile.domain || "").length > 0
                                 width: expertDomainText.implicitWidth + 14; height: 26; radius: 3; color: "#0F006BFF"
                                 Label { id: expertDomainText; anchors.centerIn: parent; text: root.selectedProfile ? "专家团 · " + root.selectedProfile.domain : ""; font.pixelSize: 12; color: "#006BFF" }
                             }
@@ -410,9 +496,13 @@ Rectangle {
 
                     Label { width: parent.width - 80; text: root.selectedProfile ? root.selectedProfile.ability : ""; font.pixelSize: 14; color: "#A6000000"; wrapMode: Text.Wrap }
                     Item { width: 1; height: 12; }
-                    Label { width: parent.width - 80; text: "子专员团队 · 技能清单"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000" }
+                    Label {
+                        visible: root.expertSubagents(root.selectedAgent).length > 0
+                        width: parent.width - 80; text: "子专员团队 · 技能清单"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000"
+                    }
 
                     Grid {
+                        visible: root.expertSubagents(root.selectedAgent).length > 0
                         width: parent.width - 80
                         columns: width >= 700 ? 2 : 1
                         spacing: 12
@@ -422,7 +512,7 @@ Rectangle {
                             Rectangle {
                                 width: parent.cellWidth; height: 130; radius: 8
                                 color: "#FFFFFF"; border.width: 1; border.color: "#E4E7EC"
-                                Image { anchors.left: parent.left; anchors.leftMargin: 12; anchors.top: parent.top; anchors.topMargin: 12; width: 42; height: 42; source: "qrc:/images/expert/" + modelData.avatar + ".png"; fillMode: Image.PreserveAspectCrop }
+                                Image { anchors.left: parent.left; anchors.leftMargin: 12; anchors.top: parent.top; anchors.topMargin: 12; width: 42; height: 42; source: modelData.image; fillMode: Image.PreserveAspectCrop }
                                 Column {
                                     anchors.left: parent.left; anchors.leftMargin: 66; anchors.right: parent.right; anchors.rightMargin: 12; anchors.top: parent.top; anchors.topMargin: 12; spacing: 4
                                     Label { width: parent.width; text: modelData.name; font.pixelSize: 14; font.weight: Font.Bold; color: "#D9000000"; elide: Text.ElideRight }
@@ -449,9 +539,13 @@ Rectangle {
                         }
                     }
                     Item { width: 1; height: 12; }
-                    Label { width: parent.width - 80; text: "试试这样问我"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000" }
+                    Label {
+                        visible: root.selectedProfile && root.selectedProfile.questions.length > 0
+                        width: parent.width - 80; text: "试试这样问我"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000"
+                    }
                     Item { width: 1; height: 4; }
                     Column {
+                        visible: root.selectedProfile && root.selectedProfile.questions.length > 0
                         width: parent.width - 80; spacing: 12
                         Repeater {
                             model: root.selectedProfile ? root.selectedProfile.questions : []

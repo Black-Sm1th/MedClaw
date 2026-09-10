@@ -170,7 +170,7 @@ QString agentWorkspaceSlug(QString name)
     return out.left(48);
 }
 
-QString loadAgentDescription(const QString &agentId)
+QVariantMap loadAgentIntro(const QString &agentId)
 {
     const QString id = agentId.trimmed();
     if (id.isEmpty()
@@ -178,18 +178,42 @@ QString loadAgentDescription(const QString &agentId)
         || id == QLatin1String("..")
         || id.contains(QLatin1Char('/'))
         || id.contains(QLatin1Char('\\'))) {
-        return QString();
+        return {};
     }
 
-    const QString introPath = QDir(resolvedBackendRoot()).filePath(
-        QStringLiteral("config/agents/%1/intro.json").arg(id));
+    const QDir installRoot = applicationInstallRoot();
+    const QStringList roots{
+        resolvedBackendRoot(),
+        installRoot.absoluteFilePath(QStringLiteral("runtime/backend")),
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("runtime/backend")),
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("../runtime/backend")),
+        QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+            .absoluteFilePath(QStringLiteral("AetherStudy/runtime/backend")),
+        QStringLiteral("D:/workspace/AetherStudy/runtime/backend"),
+        QStringLiteral("C:/workspace/AetherStudy/runtime/backend"),
+    };
+
+    QString introPath;
+    for (const QString &root : roots) {
+        if (root.trimmed().isEmpty())
+            continue;
+        const QString candidate = QDir(root).filePath(
+            QStringLiteral("config/agents/%1/intro.json").arg(id));
+        if (QFileInfo::exists(candidate)) {
+            introPath = candidate;
+            break;
+        }
+    }
+    if (introPath.isEmpty())
+        return {};
+
     QFile introFile(introPath);
-    if (!introFile.exists())
-        return QString();
     if (!introFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qWarning().noquote() << "[Gateway] failed to read agent intro:"
                              << introPath << introFile.errorString();
-        return QString();
+        return {};
     }
 
     QJsonParseError parseError;
@@ -198,11 +222,15 @@ QString loadAgentDescription(const QString &agentId)
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         qWarning().noquote() << "[Gateway] invalid agent intro:"
                              << introPath << parseError.errorString();
-        return QString();
+        return {};
     }
 
-    return document.object()
-        .value(QStringLiteral("description")).toString().trimmed();
+    return document.object().toVariantMap();
+}
+
+QString loadAgentDescription(const QString &agentId)
+{
+    return loadAgentIntro(agentId).value(QStringLiteral("description")).toString().trimmed();
 }
 
 QString normalizedToolName(QString toolName)
@@ -5121,7 +5149,12 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             entry[QStringLiteral("sessionKey")] =
                 QStringLiteral("agent:%1:main").arg(id);
             entry[QStringLiteral("isDefault")]  = (id == m_defaultAgentId);
-            entry[QStringLiteral("description")] = loadAgentDescription(id);
+            const QVariantMap intro = loadAgentIntro(id);
+            entry[QStringLiteral("intro")] = intro;
+            QString description = intro.value(QStringLiteral("description")).toString().trimmed();
+            if (description.isEmpty())
+                description = intro.value(QStringLiteral("intro")).toString().trimmed();
+            entry[QStringLiteral("description")] = description;
             QString workspace = a.value(QStringLiteral("workspace")).toString().trimmed();
             if (workspace.isEmpty()) {
                 const auto workspaceIt = m_agentWorkspaceById.constFind(id);

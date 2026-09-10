@@ -96,6 +96,8 @@ Item {
             "paper-orchestrator", "data-orchestrator", "omics-orchestrator",
             "mi-orchestrator", "research-orchestrator", "forensics-orchestrator"
         ]
+        if (agentId === "imaging-orchestrator" || agentId === "imaging-agent")
+            return "qrc:/images/expert/medical-orchestrator.png"
         if (orchestrators.indexOf(agentId) >= 0)
             return "qrc:/images/expert/" + agentId + ".png"
 
