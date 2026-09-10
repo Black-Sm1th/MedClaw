@@ -28,7 +28,8 @@ HEADERS += \
     ws_tools.h \
     ws_scheduled_task.h \
     session_reader.h \
-    auth_controller.h
+    auth_controller.h \
+    updatecontroller.h
 
 SOURCES += \
     main.cpp \
@@ -42,7 +43,8 @@ SOURCES += \
     ws_tools.cpp \
     ws_scheduled_task.cpp \
     session_reader.cpp \
-    auth_controller.cpp
+    auth_controller.cpp \
+    updatecontroller.cpp
 
 RESOURCES += qml.qrc
 
@@ -64,6 +66,8 @@ win32 {
 QMAKE_POST_LINK += $$QMAKE_COPY_DIR $$shell_quote($$viewer_web_source) $$shell_quote($$viewer_web_target)
 
 RC_ICONS = images/icon.ico
+
+win32:LIBS += -lShell32
 
 # Additional import path used to resolve QML modules in Qt Creator's code model
 QML_IMPORT_PATH =
