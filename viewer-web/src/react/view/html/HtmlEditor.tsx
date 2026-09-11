@@ -29,36 +29,120 @@ function applyDocumentAttributes(document: Document, parts: HtmlDocumentParts) {
     apply(document.body, parts.bodyAttributeMap);
 }
 
-async function activateCanvasRuntime(frameWindow: Window, parts: HtmlDocumentParts) {
-    const document = frameWindow.document;
-    restoreCanvasEventHandlers(document, parts);
+function parseScriptTag(source: string): HTMLScriptElement | null {
+    const parsed = new DOMParser().parseFromString(`<body>${source}</body>`, 'text/html');
+    return parsed.body.querySelector('script');
+}
 
-    for (const source of parts.scripts) {
-        const parsed = new DOMParser().parseFromString(`<body>${source}</body>`, 'text/html');
-        const original = parsed.body.querySelector('script');
+function runInFrame(frameWindow: Window, code: string) {
+    const Fn = frameWindow.Function as new (...args: string[]) => () => unknown;
+    new Fn(code)();
+}
+
+async function injectScripts(frameWindow: Window, sources: string[], baseUrl: string) {
+    for (const source of sources) {
+        const original = parseScriptTag(source);
         if (!original) continue;
-
-        const script = document.createElement('script');
-        Array.from(original.attributes).forEach(attribute => {
-            script.setAttribute(attribute.name, attribute.value);
-        });
-        script.textContent = original.textContent;
-
-        if (script.src) {
-            await new Promise<void>(resolve => {
-                script.addEventListener('load', () => resolve(), { once: true });
-                script.addEventListener('error', () => resolve(), { once: true });
-                document.body.appendChild(script);
-            });
-        } else {
-            document.body.appendChild(script);
+        const srcAttr = original.getAttribute('src');
+        if (srcAttr) {
+            let abs = srcAttr;
+            try {
+                abs = new URL(srcAttr, baseUrl).href;
+            } catch {
+                /* keep srcAttr */
+            }
+            try {
+                const response = await fetch(abs);
+                if (!response.ok) throw new Error(String(response.status));
+                runInFrame(frameWindow, await response.text());
+            } catch (err) {
+                console.warn('HTML editor failed to load script:', abs, err);
+            }
+            continue;
+        }
+        const code = original.textContent || '';
+        if (!code.trim()) continue;
+        try {
+            runInFrame(frameWindow, code);
+        } catch (err) {
+            console.warn('HTML editor script failed:', err);
         }
     }
+}
 
-    // Body scripts are activated after GrapesJS' iframe has loaded, so pages
-    // that initialize through DOMContentLoaded need the lifecycle event again.
-    document.dispatchEvent(new frameWindow.Event('DOMContentLoaded', { bubbles: true }));
-    frameWindow.dispatchEvent(new frameWindow.Event('load'));
+function waitForFrame(frameWindow: Window, frames = 1): Promise<void> {
+    return new Promise(resolve => {
+        const step = () => {
+            frames -= 1;
+            if (frames <= 0) resolve();
+            else frameWindow.requestAnimationFrame(step);
+        };
+        frameWindow.requestAnimationFrame(step);
+    });
+}
+
+async function waitForRuntimeSurface(frameWindow: Window) {
+    const document = frameWindow.document;
+    for (let i = 0; i < 45; i++) {
+        const bodyWidth = document.body?.clientWidth || 0;
+        const canvases = Array.from(document.querySelectorAll('canvas')) as HTMLCanvasElement[];
+        const canvasReady = canvases.length === 0
+            || canvases.some(canvas => canvas.offsetWidth > 8 && canvas.offsetHeight > 8);
+        if (bodyWidth > 64 && canvasReady) return;
+        await waitForFrame(frameWindow);
+    }
+}
+
+function restoreAuthorCanvasIds(liveDocument: Document, bodyHtml: string) {
+    const parsed = new DOMParser().parseFromString(`<body>${bodyHtml}</body>`, 'text/html');
+    const originals = Array.from(parsed.querySelectorAll('canvas'));
+    const live = Array.from(liveDocument.querySelectorAll('canvas'));
+    originals.forEach((original, index) => {
+        const node = live[index] as HTMLCanvasElement | undefined;
+        if (!node) return;
+        if (original.id && node.id !== original.id) node.id = original.id;
+        node.style.display = node.style.display || 'block';
+        if (!node.style.width) node.style.width = '100%';
+        if (!node.style.height) node.style.height = '360px';
+    });
+}
+
+function resizeCanvasCharts(frameWindow: Window) {
+    const echarts = (frameWindow as Window & { echarts?: { getInstanceByDom?: (el: Element) => { resize: () => void } | undefined } }).echarts;
+    if (echarts?.getInstanceByDom) {
+        frameWindow.document.querySelectorAll('div').forEach(element => {
+            try {
+                echarts.getInstanceByDom?.(element)?.resize();
+            } catch {
+                /* ignore */
+            }
+        });
+    }
+    frameWindow.dispatchEvent(new frameWindow.Event('resize'));
+}
+
+async function activateCanvasRuntime(frameWindow: Window, parts: HtmlDocumentParts, baseUrl: string) {
+    const document = frameWindow.document;
+    restoreCanvasEventHandlers(document, parts);
+    restoreAuthorCanvasIds(document, parts.body);
+    await waitForRuntimeSurface(frameWindow);
+
+    const runtimeWindow = frameWindow as Window & { __medclawRuntimeActivated?: boolean };
+    if (!runtimeWindow.__medclawRuntimeActivated) {
+        await injectScripts(frameWindow, parts.headScripts, baseUrl);
+        await waitForRuntimeSurface(frameWindow);
+        restoreAuthorCanvasIds(document, parts.body);
+        await injectScripts(frameWindow, parts.scripts, baseUrl);
+        runtimeWindow.__medclawRuntimeActivated = true;
+        document.dispatchEvent(new frameWindow.Event('DOMContentLoaded', { bubbles: true }));
+        frameWindow.dispatchEvent(new frameWindow.Event('load'));
+    }
+
+    const fit = () => resizeCanvasCharts(frameWindow);
+    fit();
+    frameWindow.requestAnimationFrame(fit);
+    frameWindow.setTimeout(fit, 120);
+    frameWindow.setTimeout(fit, 400);
 }
 
 function HtmlEditorView() {
@@ -171,6 +255,20 @@ function HtmlEditorView() {
                     },
                 });
                 editorRef.current = editor;
+                editor.DomComponents.addType('native-canvas', {
+                    isComponent: (element: HTMLElement) => element.tagName === 'CANVAS',
+                    model: {
+                        defaults: {
+                            tagName: 'canvas',
+                            droppable: false,
+                            void: false,
+                            resizable: true,
+                        },
+                    },
+                    view: {
+                        tagName: 'canvas',
+                    },
+                });
 
                 // Source import/export bypasses preservation of the original document shell.
                 editor.Panels.removeButton('options', 'export-template');
@@ -191,7 +289,8 @@ function HtmlEditorView() {
                         const refresh = (editor as Editor & { refresh?: () => void }).refresh;
                         if (typeof refresh === 'function') refresh.call(editor);
                         applyDocumentAttributes(canvasDocument, parts);
-                        await activateCanvasRuntime(frameWindow, parts);
+                        restoreAuthorCanvasIds(canvasDocument, parts.body);
+                        await activateCanvasRuntime(frameWindow, parts, documentBase);
                         if (disposed || generation !== initGeneration) return false;
                         const hasAuthorContent = Boolean(parts.body.trim());
                         const rendered = Boolean(

@@ -58,7 +58,7 @@ export default defineConfig(({ command, mode }) => ({
   build: {
     outDir: 'dist',
     target: 'chrome83',
-    emptyOutDir: true,
+    emptyOutDir: false,
     chunkSizeWarningLimit: 2048,
   }
 }))

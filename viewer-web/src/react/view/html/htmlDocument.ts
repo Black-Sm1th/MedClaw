@@ -11,6 +11,7 @@ export type HtmlDocumentParts = {
     css: string;
     stylesheetHrefs: string[];
     eventHandlers: PreservedEventHandlers;
+    headScripts: string[];
     scripts: string[];
 };
 
@@ -70,6 +71,12 @@ export function splitHtmlDocument(source: string): HtmlDocumentParts {
         document.head.appendChild(document.createComment('medclaw-editor-overrides'));
     }
 
+    const headScripts: string[] = [];
+    document.head.querySelectorAll('script').forEach(script => {
+        if (script.hasAttribute('data-medclaw-html-compat')) return;
+        headScripts.push(script.outerHTML);
+    });
+
     const scripts: string[] = [];
     document.body.querySelectorAll('script').forEach(script => {
         const slot = document.createElement('span');
@@ -109,6 +116,7 @@ export function splitHtmlDocument(source: string): HtmlDocumentParts {
             .map(link => link.getAttribute('href') ?? '')
             .filter(Boolean),
         eventHandlers,
+        headScripts,
         scripts,
     };
 }

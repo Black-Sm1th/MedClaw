@@ -25,23 +25,36 @@
         var startH = axial ? axial.clientHeight : 0;
         if (grid) void grid.offsetHeight;
         var tries = 0;
+        var stable = 0;
+        var lastW = -1;
+        var lastH = -1;
         function notifyLayout() {
           if (typeof window.__medclawOnLayoutChanged === 'function') {
             window.__medclawOnLayoutChanged(layout);
           }
-          window.dispatchEvent(new Event('resize'));
+          if (typeof window.__medclawFitViewport === 'function') {
+            window.__medclawFitViewport();
+          }
         }
         function waitForSize() {
           tries += 1;
           var w = axial ? axial.clientWidth : 0;
           var h = axial ? axial.clientHeight : 0;
-          var ready = w > 8 && h > 8;
+          if (w === lastW && h === lastH) stable += 1;
+          else { stable = 0; lastW = w; lastH = h; }
+          var ready = w > 64 && h > 64 && stable >= 2;
           if (layout !== 'single')
             ready = ready && (w !== startW || h !== startH || tries > 12);
-          if (ready || tries > 24) {
+          if (ready || tries > 60) {
             notifyLayout();
-            setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 80);
-            setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 220);
+            setTimeout(function () {
+              if (typeof window.__medclawFitViewport === 'function')
+                window.__medclawFitViewport();
+            }, 120);
+            setTimeout(function () {
+              if (typeof window.__medclawFitViewport === 'function')
+                window.__medclawFitViewport();
+            }, 400);
             return;
           }
           requestAnimationFrame(waitForSize);
@@ -140,6 +153,27 @@
 
       window.__medclawLoad = loadFromHost;
       window.addEventListener('load', function () { setTimeout(loadFromHost, 120); });
+
+      (function setupAutoFit() {
+        var el = document.getElementById('container-axial') || document.getElementById('viewport-axial');
+        if (!el) return;
+        var until = Date.now() + 5000;
+        var lastKey = '';
+        function fit() {
+          if (Date.now() > until) return;
+          if (typeof window.__medclawFitViewport !== 'function') return;
+          var w = el.clientWidth;
+          var h = el.clientHeight;
+          if (w < 64 || h < 64) return;
+          var key = w + 'x' + h;
+          if (key === lastKey) return;
+          lastKey = key;
+          window.__medclawFitViewport();
+        }
+        if (typeof ResizeObserver !== 'undefined')
+          new ResizeObserver(fit).observe(el);
+        [200, 500, 1000, 2000, 3500].forEach(function (ms) { setTimeout(fit, ms); });
+      })();
     }());
   </script>
 </body></html>

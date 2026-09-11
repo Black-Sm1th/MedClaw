@@ -73,6 +73,28 @@ Item {
             Qt.callLater(function() {
                 viewer.runJavaScript("window.__medclawLoad && window.__medclawLoad();")
             })
+            function fitViewport() {
+                viewer.runJavaScript(
+                    "window.__medclawFitViewport && window.__medclawFitViewport();")
+            }
+            Qt.callLater(fitViewport)
+            fitTimer.interval = 250
+            fitTimer.restart()
+            fitTimer2.interval = 800
+            fitTimer2.restart()
+        }
+
+        Timer {
+            id: fitTimer
+            repeat: false
+            onTriggered: viewer.runJavaScript(
+                "window.__medclawFitViewport && window.__medclawFitViewport();")
+        }
+        Timer {
+            id: fitTimer2
+            repeat: false
+            onTriggered: viewer.runJavaScript(
+                "window.__medclawFitViewport && window.__medclawFitViewport();")
         }
         onViewerLoadFailed: {
             root.viewerLoadFailed(message)
