@@ -28,7 +28,7 @@ const QUrl latestReleaseUrl(QStringLiteral(
     "https://www.aethermind.cn/aether/api/app/releases/latest?"
     "app_key=aether-study&channel=STABLE&platform=WINDOWS&arch=x64"));
 const QUrl downloadOrigin(QStringLiteral("https://www.aethermind.cn"));
-const QString clientVersion(QStringLiteral("v1.0.1"));
+const QString clientVersion(QStringLiteral("v1.0.0"));
 }
 
 UpdateController::UpdateController(QObject *parent)
