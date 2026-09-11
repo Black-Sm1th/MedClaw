@@ -29,6 +29,13 @@ QString normalizedBaseUrl(QString url)
     return url;
 }
 
+void disableHttp2(QNetworkRequest &request)
+{
+    // Qt logs expected HTTP/2 401 responses as stream errors. Authentication
+    // calls are infrequent, so HTTP/1.1 keeps failures quiet and deterministic.
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+}
+
 QString responseMessage(const QJsonObject &body, const QString &fallback)
 {
     QString message = body.value(QStringLiteral("message")).toString().trimmed();
@@ -309,10 +316,12 @@ void AuthController::fetchAndApplyModelConfig(
         emit modelConfigReadyChanged();
     }
     QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/v1/model-configs")));
+    disableHttp2(request);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
     QNetworkReply *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, token, generation, done]() {
         const QByteArray raw = reply->readAll();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         QJsonParseError parseError;
         const QJsonDocument document = QJsonDocument::fromJson(raw, &parseError);
         const bool current = generation == m_modelConfigGeneration && token == m_accessToken;
@@ -325,9 +334,11 @@ void AuthController::fetchAndApplyModelConfig(
         QString message;
         if (!ok) {
             QJsonObject body = document.isObject() ? document.object() : QJsonObject();
-            message = responseMessage(body, reply->errorString().isEmpty()
-                                      ? QStringLiteral("模型列表获取失败")
-                                      : reply->errorString());
+            message = status == 401
+                ? QStringLiteral("登录已失效，请重新登录")
+                : responseMessage(body, reply->errorString().isEmpty()
+                                  ? QStringLiteral("模型列表获取失败")
+                                  : reply->errorString());
         } else {
             if (current)
                 ok = writeOpenClawModelConfig(modelArray, token, m_apiBaseUrl, &message);
@@ -336,8 +347,11 @@ void AuthController::fetchAndApplyModelConfig(
                 emit modelConfigReadyChanged();
             }
         }
-        if (current)
+        if (current) {
             done(ok, message);
+            if (status == 401)
+                clearSession();
+        }
         reply->deleteLater();
     });
 }
@@ -353,6 +367,7 @@ void AuthController::sendSmsCode(const QString &phone)
     setBusy(true);
     clearError();
     QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/sms/send")));
+    disableHttp2(request);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
@@ -386,6 +401,7 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
     setBusy(true);
     clearError();
     QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/sms/agent-login")));
+    disableHttp2(request);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
@@ -458,6 +474,7 @@ void AuthController::refreshCredits()
     m_creditsRefreshInFlight = true;
     const QString token = m_accessToken;
     QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/credits/me")));
+    disableHttp2(request);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
     QNetworkReply *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, token]() {

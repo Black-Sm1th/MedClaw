@@ -1682,9 +1682,9 @@ ApplicationWindow {
         }
         function onErrorOccurred(message){
             console.warn("[Gateway Error]", message)
-            errorToast.text = message
-            errorToast.visible = true
-            errorToastTimer.restart()
+            // errorToast.text = message
+            // errorToast.visible = true
+            // errorToastTimer.restart()
             // Preflight failures (missing installer/runtime or a disconnected
             // gateway) do not emit agentInstallFinished, so clear the pending
             // chat-install context here when no install process is active.
@@ -14602,7 +14602,7 @@ ApplicationWindow {
         visible: !window.userSessionReady && !newTaskRec.officeDocumentVisible
         enabled: visible
         z: 20000
-        onErrorRequested: {
+        onErrorRequested: function(message) {
             errorToast.text = message
             errorToast.visible = true
             errorToastTimer.restart()
