@@ -20,13 +20,33 @@
         document.querySelectorAll('[data-medclaw-layout]').forEach(function (button) {
           button.classList.toggle('active', button.getAttribute('data-medclaw-layout') === layout);
         });
-        requestAnimationFrame(function () {
-          requestAnimationFrame(function () {
-            if (typeof window.__medclawOnLayoutChanged === 'function') {
-              window.__medclawOnLayoutChanged(layout);
-            }
-          });
-        });
+        var axial = document.getElementById('container-axial') || document.getElementById('viewport-axial');
+        var startW = axial ? axial.clientWidth : 0;
+        var startH = axial ? axial.clientHeight : 0;
+        if (grid) void grid.offsetHeight;
+        var tries = 0;
+        function notifyLayout() {
+          if (typeof window.__medclawOnLayoutChanged === 'function') {
+            window.__medclawOnLayoutChanged(layout);
+          }
+          window.dispatchEvent(new Event('resize'));
+        }
+        function waitForSize() {
+          tries += 1;
+          var w = axial ? axial.clientWidth : 0;
+          var h = axial ? axial.clientHeight : 0;
+          var ready = w > 8 && h > 8;
+          if (layout !== 'single')
+            ready = ready && (w !== startW || h !== startH || tries > 12);
+          if (ready || tries > 24) {
+            notifyLayout();
+            setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 80);
+            setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 220);
+            return;
+          }
+          requestAnimationFrame(waitForSize);
+        }
+        requestAnimationFrame(waitForSize);
         return layout;
       }
 
