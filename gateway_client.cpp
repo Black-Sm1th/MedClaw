@@ -5407,6 +5407,19 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             row[QStringLiteral("description")] =
                 source.value(QStringLiteral("description")).toString();
             row[QStringLiteral("detail")] = row.value(QStringLiteral("description"));
+            row[QStringLiteral("introduction")] = source.value(QStringLiteral("introduction")).toString();
+            if (row.value(QStringLiteral("introduction")).toString().isEmpty())
+                row[QStringLiteral("introduction")] = source.value(QStringLiteral("intro")).toString();
+            row[QStringLiteral("triggerScene")] = source.value(QStringLiteral("triggerScene")).toString();
+            if (row.value(QStringLiteral("triggerScene")).toString().isEmpty())
+                row[QStringLiteral("triggerScene")] = source.value(QStringLiteral("trigger_scene")).toString();
+            row[QStringLiteral("structureFramework")] = source.value(QStringLiteral("structureFramework")).toString();
+            if (row.value(QStringLiteral("structureFramework")).toString().isEmpty())
+                row[QStringLiteral("structureFramework")] = source.value(QStringLiteral("structure_framework")).toString();
+            if (row.value(QStringLiteral("structureFramework")).toString().isEmpty())
+                row[QStringLiteral("structureFramework")] = source.value(QStringLiteral("structure")).toString();
+            if (row.value(QStringLiteral("structureFramework")).toString().isEmpty())
+                row[QStringLiteral("structureFramework")] = source.value(QStringLiteral("framework")).toString();
             row[QStringLiteral("previewUrl")] =
                 source.value(QStringLiteral("previewUrl")).toString();
             templates.append(row);

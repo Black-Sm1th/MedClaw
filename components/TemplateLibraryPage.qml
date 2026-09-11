@@ -50,6 +50,20 @@ Item {
         return String((template && (template.detail || template.description || template.desc)) || "")
     }
 
+    function templateIntroduction(template) {
+        var intro = String(template && (template.introduction || template.intro) || "")
+        var trigger = String(template && (template.triggerScene || template.trigger_scene) || "")
+        if (intro && trigger && intro !== trigger)
+            return intro + "\n" + trigger
+        return intro || trigger || root.templateDetail(template)
+    }
+
+    function templateStructure(template) {
+        return String((template && (template.structureFramework
+                                    || template.structure_framework
+                                    || template.structure || template.framework)) || "")
+    }
+
     function cardImageUrl(template) {
         if (template && template.isUserTemplate)
             return String(template.coverUrl || template.previewUrl || "")
@@ -198,8 +212,8 @@ Item {
                     }
                     Label {
                         text: qsTr("探索真实工作案例，找到模板，一键开始")
-                        font.pixelSize: 13
-                        color: "#80000000"
+                        font.pixelSize: 12
+                        color: "#A6000000"
                     }
                 }
 
@@ -298,7 +312,7 @@ Item {
                             id: categoryLabel
                             anchors.centerIn: parent
                             text: modelData
-                            font.pixelSize: 13
+                            font.pixelSize: 14
                             color: root.selectedCategory === modelData ? "#006BFF" : "#99000000"
                         }
                         MouseArea {
@@ -464,7 +478,7 @@ Item {
                                     Label {
                                         width: parent.width
                                         text: root.templateTitle(cardCell.modelData)
-                                        font.pixelSize: 17
+                                        font.pixelSize: 20
                                         font.weight: Font.DemiBold
                                         color: "#D9000000"
                                         elide: Text.ElideRight
@@ -473,11 +487,11 @@ Item {
                                     Label {
                                         width: parent.width
                                         text: root.templateDetail(cardCell.modelData)
-                                        font.pixelSize: 13
+                                        font.pixelSize: 14
                                         lineHeight: 1.25
                                         color: "#73000000"
                                         wrapMode: Text.Wrap
-                                        maximumLineCount: 2
+                                        maximumLineCount: 1
                                         elide: Text.ElideRight
                                     }
 
@@ -625,8 +639,8 @@ Item {
         parent: Overlay.overlay
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
-        width: Math.min(900, parent.width - 48)
-        height: Math.min(720, parent.height - 48)
+        width: Math.min(980, parent.width - 32)
+        height: Math.min(680, parent.height - 32)
         padding: 0
         modal: true
         focus: true
@@ -648,48 +662,81 @@ Item {
         contentItem: Item {
             Rectangle {
                 id: dialogHeader
-                anchors.left: parent.left
+                anchors.left: dialogPreview.right
+                anchors.leftMargin: 1
                 anchors.right: parent.right
                 anchors.top: parent.top
-                height: 88
+                anchors.bottom: parent.bottom
                 color: "transparent"
+
+                Image {
+                    id: dialogTemplateIcon
+                    source: "qrc:/images/template.png"
+                    width: 24
+                    height: 24
+                    fillMode: Image.PreserveAspectFit
+                    anchors.left: parent.left
+                    anchors.leftMargin: 24
+                    anchors.verticalCenter: dialogCloseButton.verticalCenter
+                }
 
                 Column {
                     anchors.left: parent.left
-                    anchors.leftMargin: 22
-                    anchors.right: dialogCloseButton.left
-                    anchors.rightMargin: 16
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 5
+                    anchors.leftMargin: 24
+                    anchors.right: parent.right
+                    anchors.rightMargin: 24
+                    anchors.top: dialogTemplateIcon.bottom
+                    anchors.topMargin: 20
+                    spacing: 8
                     Label {
                         width: parent.width
                         text: root.templateTitle(root.activeTemplate)
-                        font.pixelSize: 19
+                        font.pixelSize: 20
                         font.weight: Font.DemiBold
                         color: "#D9000000"
-                        elide: Text.ElideRight
+                        wrapMode: Text.Wrap
                     }
                     Label {
                         width: parent.width
-                        text: root.templateDetail(root.activeTemplate)
-                        font.pixelSize: 13
+                        text: qsTr("介绍 / 触发场景：") + root.templateIntroduction(root.activeTemplate)
+                        font.pixelSize: 14
                         color: "#73000000"
-                        elide: Text.ElideRight
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 3
+                        lineHeight: 1.3
                     }
+                    Label {
+                        width: parent.width
+                        visible: root.templateStructure(root.activeTemplate).length > 0
+                        text: qsTr("结构框架：") + root.templateStructure(root.activeTemplate)
+                        font.pixelSize: 14
+                        color: "#73000000"
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 5
+                        lineHeight: 1.3
+                    }
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 1
+                    color: "#EBEDF0"
                 }
 
                 Rectangle {
                     id: dialogCloseButton
                     width: 34; height: 34; radius: 8
                     anchors.right: parent.right
-                    anchors.rightMargin: 16
+                    anchors.rightMargin: 24
                     anchors.top: parent.top
-                    anchors.topMargin: 14
+                    anchors.topMargin: 24
                     color: dialogCloseMouse.containsMouse ? "#F0F1F3" : "transparent"
                     Label {
                         anchors.centerIn: parent
                         text: "×"
-                        font.pixelSize: 22
+                        font.pixelSize: 24
                         color: "#A6000000"
                     }
                     MouseArea {
@@ -705,11 +752,9 @@ Item {
             Rectangle {
                 id: dialogPreview
                 anchors.left: parent.left
-                anchors.leftMargin: 22
-                anchors.right: parent.right
-                anchors.rightMargin: 22
-                anchors.top: dialogHeader.bottom
-                anchors.bottom: dialogFooter.top
+                width: parent.width * 0.66
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 radius: 8
                 color: "#F5F7F9"
                 clip: true
@@ -726,9 +771,9 @@ Item {
 
                     Image {
                         id: largeTemplatePreview
-                        x: 20
-                        y: 20
-                        width: Math.max(1, previewFlick.width - 40)
+                        x: 0
+                        y: 12
+                        width: Math.max(1, previewFlick.width)
                         height: sourceSize.width > 0
                                 ? width * sourceSize.height / sourceSize.width : 0
                         source: root.absolutePreviewUrl(root.activeTemplate)
@@ -753,14 +798,14 @@ Item {
 
             Item {
                 id: dialogFooter
-                anchors.left: parent.left
+                anchors.left: dialogHeader.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 height: 74
 
                 Row {
                     anchors.right: parent.right
-                    anchors.rightMargin: 22
+                    anchors.rightMargin: 24
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 12
 

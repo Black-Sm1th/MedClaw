@@ -251,5 +251,13 @@
         <file>images/missonSuccess.png</file>
         <file>images/toolSuccess.png</file>
         <file>images/loading.gif</file>
+        <file>images/template/38.png</file>
+        <file>images/template/39.png</file>
+        <file>images/template/40.png</file>
+        <file>images/template/41.png</file>
+        <file>images/template/42.png</file>
+        <file>images/template/43.png</file>
+        <file>images/template/44.png</file>
+        <file>images/template/45.png</file>
     </qresource>
 </RCC>
