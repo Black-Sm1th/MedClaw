@@ -855,11 +855,6 @@ ApplicationWindow {
         var nextCollection = chatKnowledgeCollection === collectionId
                 ? "" : collectionId
         chatKnowledgeCollection = nextCollection
-        // A knowledge base selected after the first turn becomes part of the
-        // session contract as well.  Before the first turn it remains
-        // editable so the user can change their mind before sending.
-        if (nextCollection && newTaskRec.chatSelectionsCommitted)
-            newTaskRec.knowledgeSelectionLocked = true
         var metadata = kbMetadata || kbDefaultMetadata()
         metadata.chatSelectedCollection = chatKnowledgeCollection
         kbSaveMetadata(metadata)
@@ -1143,6 +1138,58 @@ ApplicationWindow {
         kbSaveMetadata(metadata)
         if (wsClient.connectionState === 3)
             kbRefreshFiles()
+        return true
+    }
+
+    function kbRenameCollection(collection, name) {
+        collection = String(collection || "")
+        name = String(name || "").trim()
+        if (!wsClient.knowledgeBaseDataDirReady) {
+            kbShowError(wsClient.knowledgeBaseDataDirMessage
+                        || qsTr("当前用户的知识库目录尚未就绪"))
+            return false
+        }
+        if (!name) {
+            kbShowError(qsTr("知识库名称不能为空"))
+            return false
+        }
+        if (name.length > 40) {
+            kbShowError(qsTr("知识库名称不能超过 40 个字符"))
+            return false
+        }
+        if (!kbOwnsCollection(collection) || kbLoading)
+            return false
+        for (var i = 0; i < kbCollections.length; i++) {
+            var item = kbCollections[i] || ({})
+            if (String(item.id || "") !== collection
+                    && String(item.name || "") === name) {
+                kbShowError(qsTr("已存在同名知识库"))
+                return false
+            }
+        }
+        kbLoading = true
+        kbBusyText = qsTr("正在重命名知识库...")
+        kbInvoke("kb_manage", { "collection": collection, "description": name },
+                 "set_description", collection, function(result) {
+            var metadata = kbMetadata || kbDefaultMetadata()
+            var collections = (metadata.collections || []).slice(0)
+            for (var j = 0; j < collections.length; j++) {
+                if (String(collections[j].id || "") === collection) {
+                    collections[j].name = name
+                    break
+                }
+            }
+            metadata.collections = collections
+            kbSaveMetadata(metadata)
+            kbLoading = false
+            kbBusyText = ""
+            if (kbSelectedCollection === collection && wsClient.connectionState === 3)
+                kbRefreshFiles()
+        }, true, function(message) {
+            kbLoading = false
+            kbBusyText = ""
+            kbShowError(message || qsTr("知识库重命名失败"))
+        })
         return true
     }
 
@@ -3545,12 +3592,15 @@ ApplicationWindow {
                 }
 
                 function commitChatSelections() {
-                    if (chatSelectionsCommitted)
-                        return
                     chatSelectionsCommitted = true
                     expertSelectionLocked = true
-                    knowledgeSelectionLocked = String(window.chatKnowledgeCollection || "").length > 0
-                    templateSelectionLocked = hasSelectedDocxTemplate
+                    // A resource becomes immutable only after the turn that
+                    // carries it is submitted. This keeps resources added on
+                    // a later turn cancellable until the user sends that turn.
+                    if (String(window.chatKnowledgeCollection || "").length > 0)
+                        knowledgeSelectionLocked = true
+                    if (hasSelectedDocxTemplate)
+                        templateSelectionLocked = true
                     selectionSessionKey = String(wsClient.currentTaskSessionKey || "")
                 }
 
@@ -3658,8 +3708,6 @@ ApplicationWindow {
                         "isUserTemplate": isUserTemplate,
                         "templatePath": templatePath
                     }
-                    if (chatSelectionsCommitted)
-                        templateSelectionLocked = true
                     // A preset template supplies the same starter prompt as
                     // the template-library flow, but never replaces text the
                     // user has already entered.
@@ -3797,8 +3845,7 @@ ApplicationWindow {
                                 + "\n使用SKILLS：report-from-template"
                                 + "\n</template-parameters>"
                     }
-                    if (!newTaskRec.chatSelectionsCommitted)
-                        newTaskRec.commitChatSelections()
+                    newTaskRec.commitChatSelections()
                     wsClient.setPendingCollaborationAgents(
                         newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
                     textInputArea.text = ""
@@ -10661,9 +10708,9 @@ ApplicationWindow {
                             property real popupY: 0
                             x: popupX
                             y: popupY
-                            width: 76
-                            height: 40
-                            padding: 0
+                            width: 156
+                            height: 88
+                            padding: 8
                             closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                             background: Rectangle {
                                 color: "#FFFFFF"
@@ -10671,33 +10718,74 @@ ApplicationWindow {
                                 border.width: 1
                                 border.color: "#E1E3E8"
                             }
-                            contentItem: Rectangle {
-                                color: kbCollectionActionDeleteMouse.containsMouse ? "#FFF2F2" : "transparent"
-                                radius: 6
-                                Row {
-                                    anchors.centerIn: parent
-                                    spacing: 6
-                                    Image {
-                                        width: 16
-                                        height: 16
+                            contentItem: Column {
+                                Rectangle {
+                                    width: parent.width
+                                    height: 36
+                                    color: kbCollectionActionRenameMouse.containsMouse ? "#F7F8FA" : "transparent"
+                                    radius: 6
+                                    Row {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        source: "qrc:/images/delete.png"
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 12
+                                        spacing: 8
+                                        Image {
+                                            width: 16
+                                            height: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            source: "qrc:/images/edit.png"
+                                        }
+                                        Label {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: qsTr("重命名")
+                                            font.pixelSize: 14
+                                            color: "#D9000000"
+                                        }
                                     }
-                                    Label {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: qsTr("删除")
-                                        font.pixelSize: 14
-                                        color: "#FF3D40"
+                                    MouseArea {
+                                        id: kbCollectionActionRenameMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            kbCollectionActionPopup.close()
+                                            kbRenameCollectionInput.text = knowledgeBaseRec.pendingDeleteCollectionName
+                                            kbRenameCollectionPopup.open()
+                                        }
                                     }
                                 }
-                                MouseArea {
-                                    id: kbCollectionActionDeleteMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        kbCollectionActionPopup.close()
-                                        kbDeleteCollectionConfirm.open()
+                                Rectangle {
+                                    width: parent.width
+                                    height: 36
+                                    color: kbCollectionActionDeleteMouse.containsMouse ? "#FFF2F2" : "transparent"
+                                    radius: 6
+                                    Row {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 12
+                                        spacing: 8
+                                        Image {
+                                            width: 16
+                                            height: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            source: "qrc:/images/delete.png"
+                                        }
+                                        Label {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: qsTr("删除")
+                                            font.pixelSize: 14
+                                            color: "#FF3D40"
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: kbCollectionActionDeleteMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            kbCollectionActionPopup.close()
+                                            kbDeleteCollectionConfirm.open()
+                                        }
                                     }
                                 }
                             }
@@ -11121,6 +11209,120 @@ ApplicationWindow {
                                 onClicked: {
                                     if (window.kbCreateCollection(kbCollectionNameInput.text))
                                         kbCreateCollectionPopup.close()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Popup {
+                    id: kbRenameCollectionPopup
+                    anchors.centerIn: parent
+                    width: Math.min(484, parent.width - 32)
+                    height: 202
+                    modal: true
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    padding: 0
+                    onOpened: {
+                        kbRenameCollectionInput.text = knowledgeBaseRec.pendingDeleteCollectionName
+                        kbRenameCollectionInput.forceActiveFocus()
+                        kbRenameCollectionInput.selectAll()
+                    }
+                    background: Rectangle {
+                        color: "#FFFFFF"; radius: 14
+                        border.width: 1; border.color: "#E1E3E8"
+                    }
+                    contentItem: Item {
+                        anchors.fill: parent
+
+                        Label {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 20
+                            anchors.top: parent.top
+                            anchors.topMargin: 16
+                            text: qsTr("重命名知识库")
+                            font.pixelSize: 17
+                            font.weight: Font.Bold
+                            color: "#D9000000"
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.topMargin: 49
+                            height: 1
+                            color: "#E8E9ED"
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 20
+                            anchors.rightMargin: 20
+                            anchors.top: parent.top
+                            anchors.topMargin: 75
+                            height: 32
+                            radius: 6
+                            color: "#FFFFFF"
+                            border.width: 1
+                            border.color: kbRenameCollectionInput.activeFocus ? "#006BFF" : "#D7D9DE"
+
+                            TextField {
+                                id: kbRenameCollectionInput
+                                anchors.fill: parent
+                                leftPadding: 10
+                                rightPadding: 40
+                                topPadding: 0
+                                bottomPadding: 0
+                                maximumLength: 40
+                                placeholderText: qsTr("请输入知识库名称")
+                                placeholderTextColor: "#40000000"
+                                selectByMouse: true
+                                verticalAlignment: TextInput.AlignVCenter
+                                font.pixelSize: 14
+                                color: "#D9000000"
+                                background: Item {}
+                                onAccepted: {
+                                    if (window.kbRenameCollection(
+                                                knowledgeBaseRec.pendingDeleteCollectionId, text))
+                                        kbRenameCollectionPopup.close()
+                                }
+                            }
+
+                            Label {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: kbRenameCollectionInput.text.length + "/40"
+                                font.pixelSize: 14
+                                color: "#40000000"
+                            }
+                        }
+
+                        Row {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 20
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 18
+                            spacing: 10
+                            CustomButton {
+                                width: 77; height: 33; text: qsTr("取消"); fontSize: 13
+                                buttonRadius: 4
+                                backgroundColor: "#F7F8FA"; textColor: "#73000000"
+                                borderWidth: 1; borderColor: "#E1E3E8"
+                                onClicked: kbRenameCollectionPopup.close()
+                            }
+                            CustomButton {
+                                width: 77; height: 33; text: qsTr("保存"); fontSize: 13
+                                buttonRadius: 4
+                                backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
+                                enabled: kbRenameCollectionInput.text.trim().length > 0
+                                onClicked: {
+                                    if (window.kbRenameCollection(
+                                                knowledgeBaseRec.pendingDeleteCollectionId,
+                                                kbRenameCollectionInput.text))
+                                        kbRenameCollectionPopup.close()
                                 }
                             }
                         }
