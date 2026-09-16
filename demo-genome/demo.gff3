@@ -1,0 +1,8 @@
+##gff-version 3
+chr1	demo	gene	1	80	.	+	.	ID=geneA;Name=demoA
+chr1	demo	mRNA	1	80	.	+	.	ID=rnaA;Parent=geneA;Name=demoA-201
+chr1	demo	exon	1	40	.	+	.	Parent=rnaA
+chr1	demo	CDS	10	40	.	+	0	Parent=rnaA
+chr1	demo	exon	50	80	.	+	.	Parent=rnaA
+chr1	demo	CDS	50	72	.	+	0	Parent=rnaA
+chr2	demo	gene	5	40	.	-	.	ID=geneB;Name=demoB

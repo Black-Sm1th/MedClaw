@@ -1,0 +1,10 @@
+{
+  "name": "medclaw-jbrowse2-embed",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@jbrowse/react-linear-genome-view": "^3.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

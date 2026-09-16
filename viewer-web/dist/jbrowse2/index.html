@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>JBrowse 2</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #fff; font: 13px/1.4 "Segoe UI", sans-serif; }
+    #bar { height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #17202a; color: #e7ecf1; }
+    #bar b { color: #7dd3fc; }
+    #status { opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #root { position: absolute; inset: 32px 0 0 0; }
+  </style>
+</head>
+<body>
+  <div id="bar"><b>JBrowse 2</b><span id="status">正在加载线性基因组视图…</span></div>
+  <div id="root"></div>
+  <script src="react.production.min.js"></script>
+  <script src="react-dom.production.min.js"></script>
+  <script src="jbrowse-lgv.js"></script>
+  <script src="embed.js"></script>
+</body>
+</html>

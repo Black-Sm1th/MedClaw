@@ -37,6 +37,8 @@ public:
     // the session-scoped manifest/file endpoints instead of file:// URLs,
     // which are intentionally blocked by Qt WebEngine.
     Q_INVOKABLE QString openMedicalImage(const QString &localPath);
+    // Append another genome file into the current JBrowse session and reload.
+    Q_INVOKABLE QString addMedicalImage(const QString &localPath);
     Q_INVOKABLE void closeDocument();
     Q_INVOKABLE bool saveAsCurrent();
 
@@ -55,6 +57,10 @@ private:
     void respond(QTcpSocket *socket, int statusCode, const QByteArray &contentType,
                  const QByteArray &body,
                  const QList<QPair<QByteArray, QByteArray>> &headers = {});
+    void respondLocalFile(QTcpSocket *socket, const QByteArray &request,
+                          const QString &localPath, const QByteArray &contentType,
+                          const QList<QPair<QByteArray, QByteArray>> &extraHeaders = {},
+                          bool headOnly = false);
     void respondJson(QTcpSocket *socket, int statusCode, const QJsonObject &object);
     void setLastError(const QString &message);
     QString routeForPath(const QString &path) const;
@@ -62,6 +68,7 @@ private:
     QString viewerRoot() const;
     QJsonObject openPayload() const;
     QJsonObject medicalManifest() const;
+    QString medicalPageUrl(const QString &mode) const;
     bool writeBytes(const QString &path, const QByteArray &bytes);
 
     QTcpServer m_server;
@@ -71,6 +78,7 @@ private:
     QString m_lastError;
     QString m_viewerRootOverride;
     QStringList m_medicalFiles;
+    QString m_medicalViewerMode;
     bool m_readOnly = false;
     bool m_medicalMode = false;
     quint64 m_nonce = 0;

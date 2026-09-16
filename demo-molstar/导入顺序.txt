@@ -1,0 +1,35 @@
+MedClaw Mol* 试看样本（每个文件单独导入）
+目录：demo-molstar
+
+建议顺序（先结构，再小分子，再体积图）
+
+1) 1crn.pdb         真实 PDB，Crambin 小蛋白，应看到完整分子
+2) 1crn.pdb.gz      同上，压缩版（需 WebEngine 支持 gzip）
+3) 1crn.ent         PDB 内容，换了 .ent 后缀
+4) 1crn.ent.gz      压缩 .ent
+5) 1crn.cif         mmCIF 文本
+6) 1crn.cif.gz      压缩 mmCIF
+7) 1crn.mmcif       与 .cif 相同内容
+8) 1crn.mmcif.gz    压缩 mmCIF
+9) 1crn.mcif        与 .cif 相同内容
+10) 1crn.bcif       RCSB BinaryCIF，应看到同一蛋白
+
+11) caffeine.mol    咖啡因 MOL
+12) caffeine.mol2   咖啡因 MOL2
+13) caffeine.sdf    咖啡因 SDF
+14) caffeine.sd     与 SDF 相同
+15) caffeine.sdf.gz 压缩 SDF
+16) caffeine.xyz    咖啡因坐标
+17) water.gro       两个水分子（很小，需要放大）
+
+18) blob.mrc        合成高斯密度球
+19) blob.map        与 mrc 相同
+20) blob.ccp4       与 mrc 相同
+
+21) 1crn.mmtf       自制最小 MMTF。当前嵌入的 Mol* 包未包含 MMTF 解析器，
+                    这条很可能失败；RCSB 已于 2024 停发 MMTF。
+
+失败时注意：
+- .gz 若提示不能解压，改用未压缩文件
+- 体积图走 loadVolumeFromUrl，界面和分子骨架不一样
+- water.gro 只有几个原子，默认视角可能几乎看不见，用滚轮拉近

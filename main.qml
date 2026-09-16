@@ -3412,7 +3412,7 @@ ApplicationWindow {
                                  || file.type === "directory" || file.type === "folder"))
                         return "qrc:/images/doc/document-fold.svg"
                     var ext = String((file && file.extension) || fileExtension(file && file.path)).toLowerCase()
-                    if (/^(dcm|dicom|ima|nii|gz|jpg|jpeg|png|gif|bmp|webp|tif|tiff)$/.test(ext)
+                    if (/^(dcm|dicom|ima|nii|gz|jpg|jpeg|png|gif|bmp|webp|tif|tiff|pdb|cif|mmcif|mol|mol2|sdf|gro|xyz|mmtf|map|mrc|ccp4|fa|fasta|fna|gff|gff3|gtf|bed|vcf|bam|sam)$/.test(ext)
                             || /\.nii(?:\.gz)?$/i.test(String((file && file.path) || "")))
                         return "qrc:/images/knowledge/others.png"
                     if (ext === "doc" || ext === "docx")
@@ -3433,6 +3433,22 @@ ApplicationWindow {
                     return true
                 }
 
+                function isMolstarFile(file) {
+                    var path = String((file && file.path) || "")
+                    var name = path.replace(/\\/g, "/").split("/").pop().toLowerCase()
+                    var ext = String((file && file.extension) || fileExtension(path)).toLowerCase()
+                    return /^(pdb|ent|cif|mmcif|mcif|bcif|mol|mol2|sdf|sd|xyz|gro|mmtf|map|mrc|ccp4)$/.test(ext)
+                            || /\.(pdb|ent|cif|mmcif|sdf)\.gz$/.test(name)
+                }
+
+                function isJbrowseFile(file) {
+                    var path = String((file && file.path) || "")
+                    var name = path.replace(/\\/g, "/").split("/").pop().toLowerCase()
+                    var ext = String((file && file.extension) || fileExtension(path)).toLowerCase()
+                    return /^(fa|fasta|fna|faa|fai|gff|gff3|gtf|bed|bedgraph|vcf|bam|cram|sam|bw|bigwig|bb|bigbed|paf|hic|bai|crai|tbi|csi|2bit)$/.test(ext)
+                            || name.indexOf(".vcf.gz") >= 0
+                }
+
                 function isMedicalImage(file) {
                     if (!file)
                         return false
@@ -3442,6 +3458,8 @@ ApplicationWindow {
                     var path = String(file.path || "")
                     var name = path.replace(/\\/g, "/").split("/").pop().toLowerCase()
                     var ext = String((file.extension || fileExtension(path))).toLowerCase()
+                    if (isMolstarFile(file) || isJbrowseFile(file))
+                        return true
                     if (/\.nii(?:\.gz)?$/.test(name))
                         return true
                     if (/^(dcm|dicom|ima|nii|jpg|jpeg|png|gif|bmp|webp|tif|tiff)$/.test(ext))
@@ -3454,34 +3472,79 @@ ApplicationWindow {
                     return info && info.isDicom === true
                 }
 
+                function medicalViewerFamily(file) {
+                    if (!file || file.folder === true || file.isDirectory === true
+                            || file.type === "directory" || file.type === "folder")
+                        return ""
+                    if (isJbrowseFile(file))
+                        return "jbrowse"
+                    if (isMolstarFile(file))
+                        return "molstar"
+                    return "dicom"
+                }
+
+                function findSessionViewerTab(family) {
+                    if (!family)
+                        return -1
+                    var owner = currentSidebarSessionKey()
+                    for (var i = 0; i < officeTabs.count; i++) {
+                        var tab = officeTabs.get(i)
+                        if (String(tab.sessionKey || "") === owner
+                                && String(tab.kind || "") === "medical"
+                                && String(tab.viewerFamily || "") === family)
+                            return i
+                    }
+                    return -1
+                }
+
                 function openMedicalImageFile(file) {
                     var path = String((file && file.path) || "")
                     if (!path)
                         return
-                    var tabIndex = findOfficeTab(path)
+                    var family = medicalViewerFamily(file)
+                    var tabIndex = family === "jbrowse" ? findSessionViewerTab("jbrowse") : -1
+                    var mergingJbrowse = tabIndex >= 0
                     var reloadExistingPreview = tabIndex >= 0
+                    if (tabIndex < 0)
+                        tabIndex = findOfficeTab(path)
+                    reloadExistingPreview = tabIndex >= 0
                     if (tabIndex < 0) {
                         officeTabs.append({
-                            "name": String(file.name || path.replace(/\\/g, "/").split("/").pop()),
+                            "name": family === "jbrowse"
+                                    ? "JBrowse 2"
+                                    : String(file.name || path.replace(/\\/g, "/").split("/").pop()),
                             "path": path,
                             "extension": String(file.extension || fileExtension(path)),
                             "kind": "medical",
-                            "sessionKey": currentSidebarSessionKey()
+                            "sessionKey": currentSidebarSessionKey(),
+                            "viewerFamily": family
                         })
                         tabIndex = officeTabs.count - 1
+                        reloadExistingPreview = false
+                        mergingJbrowse = false
                     } else if (String(officeTabs.get(tabIndex).kind || "office") !== "medical") {
                         // Keep a path unique per session while allowing a file
                         // previously opened by the office viewer to switch to
                         // the medical viewer.
                         officeTabs.setProperty(tabIndex, "kind", "medical")
                     }
+                    if (mergingJbrowse) {
+                        officeTabs.setProperty(tabIndex, "viewerFamily", "jbrowse")
+                        officeTabs.setProperty(tabIndex, "name", "JBrowse 2")
+                    }
                     activateOfficeTab(tabIndex)
                     if (reloadExistingPreview) {
                         var reloadIndex = tabIndex
+                        var mergeIntoJbrowse = mergingJbrowse
                         Qt.callLater(function() {
                             var host = officeViewsRepeater.itemAt(reloadIndex)
                             if (!host || !host.officeView || reloadIndex !== activeOfficeTabIndex)
                                 return
+                            if (mergeIntoJbrowse && host.officeView.addFile) {
+                                if (host.officeView.addFile(path))
+                                    officePreviewPending = true
+                                return
+                            }
                             officePreviewPending = true
                             if (!host.officeView.open(path, "view"))
                                 officePreviewPending = false
@@ -3531,7 +3594,8 @@ ApplicationWindow {
                             "path": path,
                             "extension": String(file.extension || fileExtension(path)),
                             "kind": "office",
-                            "sessionKey": currentSidebarSessionKey()
+                            "sessionKey": currentSidebarSessionKey(),
+                            "viewerFamily": "office"
                         })
                         tabIndex = officeTabs.count - 1
                     }

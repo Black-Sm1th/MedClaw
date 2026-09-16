@@ -35,6 +35,22 @@ Item {
         return true
     }
 
+    function addFile(path) {
+        var target = String(path || "")
+        if (!target)
+            return false
+        if (!viewerSource)
+            return open(target, "view")
+        var url = viewerHost.addMedicalImage(target)
+        if (!url)
+            return false
+        if (viewerSource === url)
+            return false
+        filePath = target
+        viewerSource = url
+        return true
+    }
+
     function closeEditor() {
         if (!busy)
             return
@@ -73,10 +89,6 @@ Item {
             Qt.callLater(function() {
                 viewer.runJavaScript("window.__medclawLoad && window.__medclawLoad();")
             })
-            function fitViewport() {
-                viewer.runJavaScript(
-                    "window.__medclawFitViewport && window.__medclawFitViewport();")
-            }
             Qt.callLater(fitViewport)
             fitTimer.interval = 250
             fitTimer.restart()
@@ -84,17 +96,37 @@ Item {
             fitTimer2.restart()
         }
 
+        function fitViewport() {
+            if (!root.busy)
+                return
+            viewer.runJavaScript(
+                "window.__medclawFitViewport && window.__medclawFitViewport();")
+        }
+
+        function scheduleFit() {
+            if (!root.busy)
+                return
+            resizeFitTimer.interval = 120
+            resizeFitTimer.restart()
+        }
+
+        onWidthChanged: scheduleFit()
+        onHeightChanged: scheduleFit()
+
         Timer {
             id: fitTimer
             repeat: false
-            onTriggered: viewer.runJavaScript(
-                "window.__medclawFitViewport && window.__medclawFitViewport();")
+            onTriggered: viewer.fitViewport()
         }
         Timer {
             id: fitTimer2
             repeat: false
-            onTriggered: viewer.runJavaScript(
-                "window.__medclawFitViewport && window.__medclawFitViewport();")
+            onTriggered: viewer.fitViewport()
+        }
+        Timer {
+            id: resizeFitTimer
+            repeat: false
+            onTriggered: viewer.fitViewport()
         }
         onViewerLoadFailed: {
             root.viewerLoadFailed(message)

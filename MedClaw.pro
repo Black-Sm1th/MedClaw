@@ -56,14 +56,17 @@ OTHER_FILES += \
 
 # Keep the local viewer assets beside the executable. A post-link directory
 # copy avoids expanding every frontend asset into qmake's source archive rule.
+# Windows xcopy of viewer-web/dist can OOM if jbrowse2/node_modules leaked into
+# dist (hundreds of thousands of files). Use robocopy and skip node_modules.
 viewer_web_source = $$shell_path($$PWD/viewer-web/dist)
 win32 {
     CONFIG(debug, debug|release): viewer_web_target = $$shell_path($$OUT_PWD/debug/viewer-web)
     else: viewer_web_target = $$shell_path($$OUT_PWD/release/viewer-web)
+    QMAKE_POST_LINK += cmd /c \"robocopy $$shell_quote($$viewer_web_source) $$shell_quote($$viewer_web_target) /E /XO /XD node_modules .git /NFL /NDL /NJH /NJS /NC /NS /NP & if errorlevel 8 exit /b 1\"
 } else {
     viewer_web_target = $$shell_path($$OUT_PWD/viewer-web)
+    QMAKE_POST_LINK += $$QMAKE_COPY_DIR $$shell_quote($$viewer_web_source) $$shell_quote($$viewer_web_target)
 }
-QMAKE_POST_LINK += $$QMAKE_COPY_DIR $$shell_quote($$viewer_web_source) $$shell_quote($$viewer_web_target)
 
 RC_ICONS = images/icon.ico
 

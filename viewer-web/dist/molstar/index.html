@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Mol* 分子结构</title>
+  <link rel="stylesheet" href="molstar.css"/>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 13px/1.4 "Segoe UI", sans-serif; }
+    #app { position: absolute; inset: 32px 0 0 0; }
+    #bar { position: absolute; top: 0; left: 0; right: 0; height: 32px; display: flex; align-items: center; gap: 12px; padding: 0 12px; background: #1b1b1b; border-bottom: 1px solid #333; }
+    #bar b { color: #8ec8ff; }
+    #status { opacity: .85; }
+  </style>
+</head>
+<body>
+  <div id="bar"><b>Mol*</b><span id="status">正在加载分子结构…</span></div>
+  <div id="app"></div>
+  <script src="molstar.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var session = params.get("session") || "";
+      var statusEl = document.getElementById("status");
+      function setStatus(text, err) {
+        statusEl.textContent = text;
+        statusEl.style.color = err ? "#f88" : "#ddd";
+      }
+      function formatOf(name) {
+        name = String(name || "").toLowerCase();
+        if (/\.bcif$/.test(name)) return { format: "mmcif", binary: true };
+        if (/\.(cif|mmcif|mcif)(\.gz)?$/.test(name)) return { format: "mmcif", gzip: /\.gz$/.test(name) };
+        if (/\.mol2$/.test(name)) return { format: "mol2", binary: false };
+        if (/\.(sdf|sd|mol)(\.gz)?$/.test(name)) return { format: "sdf", gzip: /\.gz$/.test(name) };
+        if (/\.gro$/.test(name)) return { format: "gro", binary: false };
+        if (/\.xyz$/.test(name)) return { format: "xyz", binary: false };
+        if (/\.mmtf$/.test(name)) return { format: "mmtf", binary: true };
+        if (/\.(map|mrc|ccp4)$/.test(name)) return { format: "ccp4", binary: true, volume: true };
+        if (/\.pdb\.gz$/.test(name)) return { format: "pdb", gzip: true };
+        return { format: "pdb", binary: false };
+      }
+      async function fetchBytes(url, gzip) {
+        var buf = await fetch(url, { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error("下载失败 " + r.status);
+          return r.arrayBuffer();
+        });
+        if (!gzip) return buf;
+        if (typeof DecompressionStream === "undefined")
+          throw new Error("当前 WebEngine 不能解压 .gz，请改下未压缩的 .cif / .pdb");
+        var stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+        return await new Response(stream).arrayBuffer();
+      }
+      async function main() {
+        if (typeof molstar === "undefined" || !molstar.Viewer) {
+          throw new Error("未找到 Mol* 运行时 molstar.js");
+        }
+        var viewer = await molstar.Viewer.create("app", {
+          layoutIsExpanded: false,
+          layoutShowControls: true,
+          layoutShowSequence: true,
+          viewportShowExpand: false,
+        });
+        var response = await fetch("/api/medical/manifest?session=" + encodeURIComponent(session), { cache: "no-store" });
+        if (!response.ok) throw new Error("结构清单读取失败 (" + response.status + ")");
+        var manifest = await response.json();
+        var files = Array.isArray(manifest.files) ? manifest.files : [];
+        if (!files.length) throw new Error("没有可显示的结构文件");
+        for (var i = 0; i < files.length; i += 1) {
+          var file = files[i];
+          var spec = formatOf(file.name);
+          setStatus("正在载入 " + (file.name || "") + " …");
+          var bytes = await fetchBytes(file.url, !!spec.gzip);
+          if (spec.volume && viewer.loadVolumeFromUrl) {
+            var volUrl = URL.createObjectURL(new Blob([bytes]));
+            await viewer.loadVolumeFromUrl({ url: volUrl, isBinary: true }, { source: spec.format });
+          } else if (typeof viewer.loadStructureFromData === "function") {
+            var payload = spec.binary
+              ? new Uint8Array(bytes)
+              : new TextDecoder("utf-8").decode(bytes);
+            await viewer.loadStructureFromData(payload, spec.format);
+          } else {
+            var dataUrl = URL.createObjectURL(new Blob([bytes]));
+            await viewer.loadStructureFromUrl(dataUrl, spec.format, !!spec.binary);
+          }
+        }
+        setStatus("Mol* 已接管 · " + files.map(function (f) { return f.name; }).join(", "));
+      }
+      main().catch(function (error) {
+        setStatus(error && error.message ? error.message : String(error), true);
+      });
+    }());
+  </script>
+</body>
+</html>

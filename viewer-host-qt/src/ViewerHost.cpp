@@ -31,6 +31,7 @@ QByteArray statusText(int status)
     case 403: return "Forbidden";
     case 404: return "Not Found";
     case 405: return "Method Not Allowed";
+    case 416: return "Range Not Satisfiable";
     case 500: return "Internal Server Error";
     default: return "OK";
     }
@@ -244,12 +245,180 @@ void ViewerHost::setViewerRootPath(const QString &path)
 }
 
 namespace {
+bool nameHasAnySuffix(const QString &name, const QStringList &suffixes)
+{
+    for (const QString &suffix : suffixes) {
+        if (name.endsWith(suffix, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
+bool isMolstarName(const QString &name)
+{
+    return nameHasAnySuffix(name, {
+            QStringLiteral(".pdb"), QStringLiteral(".pdb.gz"), QStringLiteral(".ent"),
+            QStringLiteral(".ent.gz"), QStringLiteral(".cif"), QStringLiteral(".cif.gz"),
+            QStringLiteral(".mmcif"), QStringLiteral(".mmcif.gz"), QStringLiteral(".mcif"),
+            QStringLiteral(".bcif"), QStringLiteral(".mol"), QStringLiteral(".mol2"),
+            QStringLiteral(".sdf"), QStringLiteral(".sdf.gz"), QStringLiteral(".sd"),
+            QStringLiteral(".xyz"), QStringLiteral(".gro"), QStringLiteral(".mmtf"),
+            QStringLiteral(".map"), QStringLiteral(".mrc"), QStringLiteral(".ccp4")
+        });
+}
+
+bool isJbrowseName(const QString &name)
+{
+    return nameHasAnySuffix(name, {
+            QStringLiteral(".fa"), QStringLiteral(".fasta"), QStringLiteral(".fna"),
+            QStringLiteral(".faa"), QStringLiteral(".fai"), QStringLiteral(".gff"),
+            QStringLiteral(".gff3"), QStringLiteral(".gtf"), QStringLiteral(".bed"),
+            QStringLiteral(".bedgraph"), QStringLiteral(".vcf"), QStringLiteral(".vcf.gz"),
+            QStringLiteral(".bam"), QStringLiteral(".cram"), QStringLiteral(".sam"),
+            QStringLiteral(".bw"), QStringLiteral(".bigwig"), QStringLiteral(".bb"),
+            QStringLiteral(".bigbed"), QStringLiteral(".2bit"), QStringLiteral(".paf"),
+            QStringLiteral(".hic"), QStringLiteral(".bai"), QStringLiteral(".crai"),
+            QStringLiteral(".tbi"), QStringLiteral(".csi")
+        });
+}
+
+struct ByteRange {
+    bool specified = false;
+    qint64 start = 0;
+    qint64 end = -1; // inclusive; -1 means through EOF
+};
+
+ByteRange parseByteRange(const QByteArray &requestHeaders)
+{
+    ByteRange result;
+    for (QByteArray header : requestHeaders.split('\n')) {
+        header = header.trimmed();
+        if (!header.toLower().startsWith("range:"))
+            continue;
+        const QByteArray value = header.mid(header.indexOf(':') + 1).trimmed();
+        if (!value.startsWith("bytes="))
+            break;
+        const QByteArray range = value.mid(6).split(',').first().trimmed();
+        const int dash = range.indexOf('-');
+        if (dash < 0)
+            break;
+        bool valid = true;
+        qint64 start = 0;
+        qint64 end = -1;
+        if (dash > 0)
+            start = range.left(dash).toLongLong(&valid);
+        if (valid && dash + 1 < range.size())
+            end = range.mid(dash + 1).toLongLong(&valid);
+        if (!valid || start < 0)
+            break;
+        result.specified = true;
+        result.start = start;
+        result.end = end;
+        break;
+    }
+    return result;
+}
+
+QStringList genomeCompanionPaths(const QFileInfo &info)
+{
+    QStringList extras;
+    const QDir dir = info.absoluteDir();
+    const QString name = info.fileName();
+    const QStringList candidates = {
+        name + QStringLiteral(".fai"),
+        name + QStringLiteral(".gzi"),
+        name + QStringLiteral(".bai"),
+        name + QStringLiteral(".crai"),
+        name + QStringLiteral(".tbi"),
+        name + QStringLiteral(".csi"),
+        info.completeBaseName() + QStringLiteral(".bai"),
+        info.completeBaseName() + QStringLiteral(".crai"),
+        info.completeBaseName() + QStringLiteral(".fai"),
+    };
+    for (const QString &candidate : candidates) {
+        const QString path = dir.filePath(candidate);
+        if (QFileInfo::exists(path) && !extras.contains(path) && path != info.absoluteFilePath())
+            extras.append(path);
+    }
+    return extras;
+}
+
+QString normalizedMedicalPath(const QString &path)
+{
+    const QFileInfo info(path);
+    const QString canonical = info.canonicalFilePath();
+    const QString absolute = canonical.isEmpty() ? info.absoluteFilePath() : canonical;
+    return QDir::fromNativeSeparators(absolute);
+}
+
+bool sameMedicalPath(const QString &left, const QString &right)
+{
+    return QString::compare(normalizedMedicalPath(left),
+                            normalizedMedicalPath(right), Qt::CaseInsensitive) == 0;
+}
+
+QStringList collectMedicalFiles(const QFileInfo &info)
+{
+    QStringList files;
+    if (info.isDir()) {
+        QDirIterator iterator(info.absoluteFilePath(), QDir::Files,
+                              QDirIterator::Subdirectories);
+        while (iterator.hasNext()) {
+            const QString path = normalizedMedicalPath(iterator.next());
+            if (!path.isEmpty() && !files.contains(path, Qt::CaseInsensitive))
+                files.append(path);
+        }
+        files.sort(Qt::CaseInsensitive);
+    } else {
+        const QString path = normalizedMedicalPath(info.absoluteFilePath());
+        files.append(path);
+        if (isJbrowseName(info.fileName().toLower())) {
+            for (const QString &companion : genomeCompanionPaths(info)) {
+                const QString extra = normalizedMedicalPath(companion);
+                if (!extra.isEmpty() && !files.contains(extra, Qt::CaseInsensitive))
+                    files.append(extra);
+            }
+        }
+    }
+    return files;
+}
+
+QString directoryViewerMode(const QFileInfo &info)
+{
+    int dicom = 0, molstar = 0, jbrowse = 0;
+    QDirIterator iterator(info.absoluteFilePath(), QDir::Files, QDirIterator::Subdirectories);
+    int seen = 0;
+    while (iterator.hasNext() && seen < 400) {
+        const QString name = QFileInfo(iterator.next()).fileName().toLower();
+        ++seen;
+        if (nameHasAnySuffix(name, {QStringLiteral(".dcm"), QStringLiteral(".dicom"),
+                                    QStringLiteral(".ima"), QStringLiteral(".nii"),
+                                    QStringLiteral(".nii.gz")}))
+            ++dicom;
+        else if (isMolstarName(name))
+            ++molstar;
+        else if (isJbrowseName(name))
+            ++jbrowse;
+    }
+    if (jbrowse > 0 && jbrowse >= dicom && jbrowse >= molstar)
+        return QStringLiteral("jbrowse");
+    if (molstar > 0 && molstar >= dicom)
+        return QStringLiteral("molstar");
+    return QStringLiteral("series");
+}
+
 QString medicalViewerMode(const QFileInfo &info)
 {
     if (info.isDir())
-        return QStringLiteral("series");
+        return directoryViewerMode(info);
 
     const QString name = info.fileName().toLower();
+    if (isMolstarName(name))
+        return QStringLiteral("molstar");
+
+    if (isJbrowseName(name))
+        return QStringLiteral("jbrowse");
+
     if (name.endsWith(QStringLiteral(".nii"))
         || name.endsWith(QStringLiteral(".nii.gz")))
         return QStringLiteral("volume");
@@ -339,22 +508,26 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
         return {};
     }
     const QDir viewerDirectory(viewerRoot());
-    if (!QFileInfo::exists(viewerDirectory.filePath(QStringLiteral("cornerstone3d/index.html")))
-        || !QFileInfo::exists(viewerDirectory.filePath(QStringLiteral("cornerstone3d/raster.html")))) {
-        setLastError(QStringLiteral("找不到 Cornerstone3D 资源，请先构建或部署 viewer-web/cornerstone3d"));
+    const QString mode = medicalViewerMode(info);
+    QString pagePrefix = QStringLiteral("cornerstone3d");
+    QString page = QStringLiteral("index.html");
+    if (mode == QStringLiteral("molstar")) {
+        pagePrefix = QStringLiteral("molstar");
+        page = QStringLiteral("index.html");
+    } else if (mode == QStringLiteral("jbrowse")) {
+        pagePrefix = QStringLiteral("jbrowse2");
+        page = QStringLiteral("index.html");
+    } else if (mode == QStringLiteral("raster")) {
+        page = QStringLiteral("raster.html");
+    }
+
+    const QString requiredPage = viewerDirectory.filePath(pagePrefix + QLatin1Char('/') + page);
+    if (!QFileInfo::exists(requiredPage)) {
+        setLastError(QStringLiteral("找不到查看器资源：%1").arg(pagePrefix + QLatin1Char('/') + page));
         return {};
     }
 
-    QStringList files;
-    if (info.isDir()) {
-        QDirIterator iterator(info.absoluteFilePath(), QDir::Files,
-                              QDirIterator::Subdirectories);
-        while (iterator.hasNext())
-            files.append(QFileInfo(iterator.next()).absoluteFilePath());
-        files.sort(Qt::CaseInsensitive);
-    } else {
-        files.append(info.absoluteFilePath());
-    }
+    const QStringList files = collectMedicalFiles(info);
     if (files.isEmpty()) {
         setLastError(QStringLiteral("影像文件夹为空：%1").arg(info.absoluteFilePath()));
         return {};
@@ -362,18 +535,76 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
 
     m_currentPath = info.absoluteFilePath();
     m_medicalFiles = files;
+    m_medicalViewerMode = mode;
     m_medicalMode = true;
     m_readOnly = true;
     m_language = QStringLiteral("zh-CN");
     m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     ++m_nonce;
     setLastError({});
+    return medicalPageUrl(mode);
+}
 
-    const QString mode = medicalViewerMode(info);
-    const QString page = mode == QStringLiteral("raster")
-        ? QStringLiteral("raster.html") : QStringLiteral("index.html");
-    QUrl url(QStringLiteral("http://127.0.0.1:%1/cornerstone3d/%2")
-                 .arg(port()).arg(page));
+QString ViewerHost::addMedicalImage(const QString &localPath)
+{
+    if (!m_medicalMode || m_sessionId.isEmpty()
+        || m_medicalViewerMode != QStringLiteral("jbrowse"))
+        return openMedicalImage(localPath);
+
+    const QFileInfo info(localPath);
+    if (!info.exists() || (!info.isFile() && !info.isDir())) {
+        setLastError(QStringLiteral("影像文件或文件夹不存在：%1").arg(localPath));
+        return {};
+    }
+
+    QStringList extra = collectMedicalFiles(info);
+    if (info.isDir()) {
+        QStringList genomeOnly;
+        for (const QString &path : extra) {
+            if (isJbrowseName(QFileInfo(path).fileName().toLower()))
+                genomeOnly.append(path);
+        }
+        extra = genomeOnly;
+    }
+    if (extra.isEmpty())
+        return medicalPageUrl(m_medicalViewerMode);
+
+    bool added = false;
+    for (const QString &path : extra) {
+        const QString normalized = normalizedMedicalPath(path);
+        bool exists = false;
+        for (const QString &current : m_medicalFiles) {
+            if (sameMedicalPath(current, normalized)) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) {
+            m_medicalFiles.append(normalized);
+            added = true;
+        }
+    }
+    if (added)
+        ++m_nonce;
+    setLastError({});
+    return medicalPageUrl(m_medicalViewerMode);
+}
+
+QString ViewerHost::medicalPageUrl(const QString &mode) const
+{
+    QString pagePrefix = QStringLiteral("cornerstone3d");
+    QString page = QStringLiteral("index.html");
+    if (mode == QStringLiteral("molstar")) {
+        pagePrefix = QStringLiteral("molstar");
+    } else if (mode == QStringLiteral("jbrowse")) {
+        pagePrefix = QStringLiteral("jbrowse2");
+    } else if (mode == QStringLiteral("raster")) {
+        page = QStringLiteral("raster.html");
+    }
+    QUrl url(QStringLiteral("http://127.0.0.1:%1/%2/%3")
+                 .arg(port())
+                 .arg(pagePrefix)
+                 .arg(page));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("session"), m_sessionId);
     query.addQueryItem(QStringLiteral("mode"), mode);
@@ -387,6 +618,7 @@ void ViewerHost::closeDocument()
     m_currentPath.clear();
     m_sessionId.clear();
     m_medicalFiles.clear();
+    m_medicalViewerMode.clear();
     m_medicalMode = false;
     m_readOnly = false;
 }
@@ -519,7 +751,8 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           respondJson(socket, 200, medicalManifest());
           return;
       }
-      if (method == "GET" && url.path() == QStringLiteral("/api/medical/file")) {
+      if ((method == "GET" || method == "HEAD")
+          && url.path() == QStringLiteral("/api/medical/file")) {
           const QUrlQuery query(url);
           bool validIndex = false;
           const int index = query.queryItemValue(QStringLiteral("index")).toInt(&validIndex);
@@ -531,73 +764,25 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           }
 
           const QString localPath = m_medicalFiles.at(index);
-          QFile file(localPath);
-          if (!file.open(QIODevice::ReadOnly)) {
-              respond(socket, 404, "text/plain", "File not found");
-              return;
-          }
           const QFileInfo info(localPath);
           const QByteArray disposition = "inline; filename*=UTF-8''"
               + QUrl::toPercentEncoding(info.fileName());
-          respond(socket, 200, "application/octet-stream",
-                  file.readAll(), {{"Cache-Control", "no-store"},
-                                   {"Content-Disposition", disposition}});
+          respondLocalFile(socket, request, localPath, "application/octet-stream",
+                           {{"Content-Disposition", disposition}},
+                           method == "HEAD");
           return;
       }
-      if (method == "GET" && url.path().startsWith(QStringLiteral("/api/document"))) {
+      if ((method == "GET" || method == "HEAD")
+          && url.path().startsWith(QStringLiteral("/api/document"))) {
         const QUrlQuery query(url);
         if (m_currentPath.isEmpty() || query.queryItemValue(QStringLiteral("session")) != m_sessionId) {
             respond(socket, 403, "text/plain", "Forbidden");
             return;
         }
-        QFile file(m_currentPath);
-        if (!file.open(QIODevice::ReadOnly)) {
-            respond(socket, 404, "text/plain", "File not found");
-            return;
-        }
-        const qint64 fileSize = file.size();
-        const QByteArray requestHeaders = request.left(headerEnd);
-        QByteArray rangeValue;
-        for (QByteArray header : requestHeaders.split('\n')) {
-            header = header.trimmed();
-            if (header.toLower().startsWith("range:")) {
-                rangeValue = header.mid(header.indexOf(':') + 1).trimmed();
-                break;
-            }
-        }
-        const QByteArray disposition = "inline";
-        if (rangeValue.startsWith("bytes=")) {
-            const QByteArray range = rangeValue.mid(6).split(',').first().trimmed();
-            const int dash = range.indexOf('-');
-            bool valid = dash >= 0;
-            qint64 start = 0;
-            qint64 end = fileSize - 1;
-            if (valid && dash > 0)
-                start = range.left(dash).toLongLong(&valid);
-            if (valid && dash + 1 < range.size())
-                end = range.mid(dash + 1).toLongLong(&valid);
-            if (valid && start >= 0 && start < fileSize && end >= start) {
-                end = qMin(end, fileSize - 1);
-                if (!file.seek(start)) {
-                    respond(socket, 500, "text/plain", "Unable to seek document");
-                    return;
-                }
-                const QByteArray body = file.read(end - start + 1);
-                respond(socket, 206, contentTypeForPath(m_currentPath).toLatin1(), body, {
-                    {"Accept-Ranges", "bytes"},
-                    {"Content-Range", "bytes " + QByteArray::number(start) + "-"
-                        + QByteArray::number(end) + "/" + QByteArray::number(fileSize)},
-                    {"Cache-Control", "no-store"},
-                    {"Content-Disposition", disposition}
-                });
-                return;
-            }
-        }
-        respond(socket, 200, contentTypeForPath(m_currentPath).toLatin1(), file.readAll(), {
-            {"Accept-Ranges", "bytes"},
-            {"Cache-Control", "no-store"},
-            {"Content-Disposition", disposition}
-        });
+        respondLocalFile(socket, request, m_currentPath,
+                         contentTypeForPath(m_currentPath).toLatin1(),
+                         {{"Content-Disposition", "inline"}},
+                         method == "HEAD");
         return;
     }
     if (method == "POST" && url.path() == QStringLiteral("/api/events")) {
@@ -780,10 +965,17 @@ void ViewerHost::respond(QTcpSocket *socket, int statusCode, const QByteArray &c
 {
     QByteArray response = "HTTP/1.1 " + QByteArray::number(statusCode) + ' ' + statusText(statusCode) + "\r\n";
     response += "Content-Type: " + contentType + "\r\n";
-    response += "Content-Length: " + QByteArray::number(body.size()) + "\r\n";
+    bool hasContentLength = false;
+    for (const auto &header : headers) {
+        if (header.first.compare("Content-Length", Qt::CaseInsensitive) == 0)
+            hasContentLength = true;
+    }
+    if (!hasContentLength)
+        response += "Content-Length: " + QByteArray::number(body.size()) + "\r\n";
     response += "Access-Control-Allow-Origin: *\r\n";
     response += "Access-Control-Allow-Headers: *\r\n";
-    response += "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
+    response += "Access-Control-Allow-Methods: GET, HEAD, POST, OPTIONS\r\n";
+    response += "Access-Control-Expose-Headers: Accept-Ranges, Content-Range, Content-Length, Content-Disposition\r\n";
     response += "Cross-Origin-Resource-Policy: cross-origin\r\n";
     response += "Cross-Origin-Embedder-Policy: unsafe-none\r\n";
     response += "Connection: close\r\n";
@@ -793,6 +985,59 @@ void ViewerHost::respond(QTcpSocket *socket, int statusCode, const QByteArray &c
     response += body;
     socket->write(response);
     socket->disconnectFromHost();
+}
+
+void ViewerHost::respondLocalFile(QTcpSocket *socket, const QByteArray &request,
+                                 const QString &localPath, const QByteArray &contentType,
+                                 const QList<QPair<QByteArray, QByteArray>> &extraHeaders,
+                                 bool headOnly)
+{
+    QFile file(localPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        respond(socket, 404, "text/plain", "File not found");
+        return;
+    }
+    const qint64 fileSize = file.size();
+    const int headerEnd = request.indexOf("\r\n\r\n");
+    const ByteRange range = parseByteRange(headerEnd >= 0 ? request.left(headerEnd) : request);
+
+    QList<QPair<QByteArray, QByteArray>> headers = extraHeaders;
+    headers.append({QByteArrayLiteral("Accept-Ranges"), QByteArrayLiteral("bytes")});
+    headers.append({QByteArrayLiteral("Cache-Control"), QByteArrayLiteral("no-store")});
+
+    if (range.specified) {
+        const qint64 start = range.start;
+        qint64 end = range.end < 0 ? fileSize - 1 : range.end;
+        if (start >= fileSize || fileSize <= 0 || end < start) {
+            headers.append({QByteArrayLiteral("Content-Range"),
+                            QByteArrayLiteral("bytes */") + QByteArray::number(fileSize)});
+            respond(socket, 416, "text/plain", "Range Not Satisfiable", headers);
+            return;
+        }
+        end = qMin(end, fileSize - 1);
+        const qint64 length = end - start + 1;
+        headers.append({QByteArrayLiteral("Content-Range"),
+                        QByteArrayLiteral("bytes ") + QByteArray::number(start) + '-'
+                            + QByteArray::number(end) + '/' + QByteArray::number(fileSize)});
+        if (headOnly) {
+            headers.append({QByteArrayLiteral("Content-Length"), QByteArray::number(length)});
+            respond(socket, 206, contentType, {}, headers);
+            return;
+        }
+        if (!file.seek(start)) {
+            respond(socket, 500, "text/plain", "Unable to seek file");
+            return;
+        }
+        respond(socket, 206, contentType, file.read(length), headers);
+        return;
+    }
+
+    if (headOnly) {
+        headers.append({QByteArrayLiteral("Content-Length"), QByteArray::number(fileSize)});
+        respond(socket, 200, contentType, {}, headers);
+        return;
+    }
+    respond(socket, 200, contentType, file.readAll(), headers);
 }
 
 void ViewerHost::respondJson(QTcpSocket *socket, int statusCode, const QJsonObject &object)
@@ -825,8 +1070,7 @@ QString ViewerHost::routeForPath(const QString &path) const
     if (suffix == QStringLiteral("xmind")) return QStringLiteral("xmind");
     if (suffix == QStringLiteral("parquet")) return QStringLiteral("parquet");
     if (QStringList{QStringLiteral("log"), QStringLiteral("json"), QStringLiteral("dat"),
-                    QStringLiteral("xml"), QStringLiteral("hl7"), QStringLiteral("fasta"),
-                    QStringLiteral("fastq"), QStringLiteral("vcf"), QStringLiteral("sam")}.contains(suffix))
+                    QStringLiteral("xml"), QStringLiteral("hl7"), QStringLiteral("fastq")}.contains(suffix))
         return QStringLiteral("textData");
     return QStringLiteral("webUnsupported");
 }
@@ -843,6 +1087,16 @@ QString ViewerHost::contentTypeForPath(const QString &path) const
     if (QStringList{QStringLiteral("jpg"), QStringLiteral("jpeg")}.contains(suffix)) return QStringLiteral("image/jpeg");
     if (suffix == QStringLiteral("gif")) return QStringLiteral("image/gif");
     if (suffix == QStringLiteral("wasm")) return QStringLiteral("application/wasm");
+    if (QStringList{QStringLiteral("pdb"), QStringLiteral("ent"), QStringLiteral("cif"),
+                    QStringLiteral("mmcif"), QStringLiteral("mol"), QStringLiteral("mol2"),
+                    QStringLiteral("sdf"), QStringLiteral("xyz"), QStringLiteral("gro")}
+            .contains(suffix))
+        return QStringLiteral("chemical/x-pdb");
+    if (QStringList{QStringLiteral("fa"), QStringLiteral("fasta"), QStringLiteral("fna"),
+                    QStringLiteral("faa"), QStringLiteral("gff"), QStringLiteral("gff3"),
+                    QStringLiteral("gtf"), QStringLiteral("bed"), QStringLiteral("vcf"),
+                    QStringLiteral("sam")}.contains(suffix))
+        return QStringLiteral("text/plain; charset=utf-8");
     if (suffix == QStringLiteral("woff2")) return QStringLiteral("font/woff2");
     if (suffix == QStringLiteral("pdf")) return QStringLiteral("application/pdf");
     if (QStringList{QStringLiteral("dcm"), QStringLiteral("dicom"), QStringLiteral("ima")}

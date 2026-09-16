@@ -109,8 +109,27 @@ QString resolvedBackendRoot()
     if (!configured.isEmpty())
         return QDir(configured).absolutePath();
 
-    return applicationInstallRoot().absoluteFilePath(
-        QStringLiteral("runtime/backend"));
+    const QDir installRoot = applicationInstallRoot();
+    const QStringList roots{
+        installRoot.absoluteFilePath(QStringLiteral("runtime/backend")),
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("runtime/backend")),
+        QDir(QCoreApplication::applicationDirPath())
+            .absoluteFilePath(QStringLiteral("../runtime/backend")),
+        QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+            .absoluteFilePath(QStringLiteral("AetherStudy/runtime/backend")),
+        QStringLiteral("D:/workspace/AetherStudy/runtime/backend"),
+        QStringLiteral("C:/workspace/AetherStudy/runtime/backend"),
+    };
+    for (const QString &root : roots) {
+        if (root.trimmed().isEmpty())
+            continue;
+        const QString script = QDir(root).filePath(
+            QStringLiteral("scripts/medclaw-agent-install.mjs"));
+        if (QFileInfo::exists(script))
+            return QDir(root).absolutePath();
+    }
+    return installRoot.absoluteFilePath(QStringLiteral("runtime/backend"));
 }
 
 QString escapePowerShellSingleQuoted(const QString &s)
