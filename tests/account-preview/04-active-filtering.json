@@ -1,0 +1,30 @@
+{
+  "preview_phone": "18800006666",
+  "wallet": { "available_balance": "2120.00" },
+  "packages": [
+    { "subscription_id": "budget-active", "plan_code": "budget-yearly", "plan_name": "Budget Yearly", "status": "ACTIVE" },
+    { "subscription_id": "flagship-expired", "plan_code": "flagship-monthly", "plan_name": "Flagship", "status": "EXPIRED" }
+  ],
+  "credit_lots": [
+    {
+      "subscription_id": "budget-active", "plan_code": "budget-yearly", "source_type": "PAID",
+      "credits_total": "2500.00", "credits_remaining": "1620.00",
+      "expires_at": "2027-09-15T16:00:00Z", "status": "ACTIVE"
+    },
+    {
+      "subscription_id": "flagship-expired", "plan_code": "flagship-monthly", "source_type": "PAID",
+      "credits_total": "10000.00", "credits_remaining": "9999.00",
+      "expires_at": "2026-09-01T16:00:00Z", "status": "ACTIVE"
+    },
+    {
+      "subscription_id": null, "plan_code": "addon-1000", "source_type": "PAID",
+      "credits_total": "1000.00", "credits_remaining": "500.00",
+      "expires_at": "2026-10-16T16:00:00Z", "status": "ACTIVE"
+    },
+    {
+      "subscription_id": null, "plan_code": "addon-2000", "source_type": "PAID",
+      "credits_total": "2000.00", "credits_remaining": "2000.00",
+      "expires_at": "2026-08-16T16:00:00Z", "status": "EXPIRED"
+    }
+  ]
+}

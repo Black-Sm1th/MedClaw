@@ -19,16 +19,19 @@ ApplicationWindow {
                                                   ? Screen.desktopAvailableWidth : 1440
     readonly property real availableScreenHeight: Screen.desktopAvailableHeight > 0
                                                    ? Screen.desktopAvailableHeight : 800
+    readonly property bool accountPreviewMode: Qt.application.arguments.indexOf("--account-preview") >= 0
     readonly property bool compactLayout: width < 1100
     readonly property bool sidebarExpanded: !sidebarCollapsed && !compactLayout
     readonly property int windowCornerRadius: 12
-    minimumWidth: Math.min(1024, Math.max(560, availableScreenWidth - 96), availableScreenWidth)
-    minimumHeight: Math.min(640, Math.max(420, availableScreenHeight - 120), availableScreenHeight)
-    width: Math.min(availableScreenWidth,
+    minimumWidth: accountPreviewMode ? 420
+                                     : Math.min(1024, Math.max(560, availableScreenWidth - 96), availableScreenWidth)
+    minimumHeight: accountPreviewMode ? 560
+                                      : Math.min(640, Math.max(420, availableScreenHeight - 120), availableScreenHeight)
+    width: accountPreviewMode ? 420 : Math.min(availableScreenWidth,
                     Math.max(minimumWidth,
                              initialWindowWidth > 0 ? initialWindowWidth
                                                     : Math.min(1440, Math.max(640, availableScreenWidth - 48))))
-    height: Math.min(availableScreenHeight,
+    height: accountPreviewMode ? 560 : Math.min(availableScreenHeight,
                      Math.max(minimumHeight,
                               initialWindowHeight > 0 ? initialWindowHeight
                                                      : Math.min(800, Math.max(480, availableScreenHeight - 80))))
@@ -46,11 +49,11 @@ ApplicationWindow {
     property string notifiedUpdateVersion: ""
     property string knowledgeBaseReadyUserId: ""
     property bool userSessionInitializing: authController.loggedIn
-    readonly property bool userSessionReady: authController.loggedIn
+    readonly property bool userSessionReady: accountPreviewMode || (authController.loggedIn
                                              && authController.modelConfigReady
                                              && String(authController.userId || "").length > 0
                                              && knowledgeBaseReadyUserId === String(authController.userId || "")
-                                             && !userSessionInitializing
+                                             && !userSessionInitializing)
     readonly property bool configurationUpdateActive: userSessionReady
                                                        && (wsClient.connectionState !== 3
                                                            || !wsClient.knowledgeBaseDataDirReady)
@@ -66,6 +69,165 @@ ApplicationWindow {
     property string pendingCronTemplateExpr: ""
     property string pendingCronTemplateTz: "Asia/Shanghai"
     property string pendingCronTemplateTrigger: ""
+    readonly property string accountWebsiteUrl: "https://www.aethermind.cn/aether/#/profile"
+
+    function accountPlanName(planCode, fallbackName) {
+        var names = {
+            "addon-1000": "加量包 1000 积分",
+            "addon-2000": "加量包 2000 积分",
+            "budget-monthly": "平民版",
+            "budget-yearly": "平民版（年付）",
+            "flagship-monthly": "旗舰版",
+            "flagship-yearly": "旗舰版（年付）",
+            "monthly-free-500": "免费版",
+            "premium-monthly": "高级版",
+            "premium-yearly": "高级版（年付）",
+            "standard-monthly": "普通版",
+            "standard-yearly": "普通版（年付）",
+            "test-beggar-1000": "体验包 1000 积分"
+        }
+        var code = String(planCode || "").trim()
+        return names[code] || String(fallbackName || "").trim() || code || "套餐"
+    }
+
+    function accountIsAddon(planCode, subscriptionId) {
+        var code = String(planCode || "").toLowerCase()
+        return code.indexOf("addon-") === 0
+                || code.indexOf("test-beggar-") === 0
+                || !String(subscriptionId || "").trim()
+    }
+
+    function accountCreditGroups(lots, packages) {
+        var packageStates = ({})
+        var packageNames = ({})
+        var packageCodes = ({})
+        var packageList = packages || []
+        for (var p = 0; p < packageList.length; ++p) {
+            var pack = packageList[p] || ({})
+            var subscriptionId = String(pack.subscription_id || "")
+            if (!subscriptionId)
+                continue
+            packageStates[subscriptionId] = String(pack.status || "").toUpperCase()
+            packageNames[subscriptionId] = String(pack.plan_name || "")
+            packageCodes[subscriptionId] = String(pack.plan_code || "")
+        }
+
+        var buckets = {
+            "free": { "kind": "free", "label": "免费积分", "total": 0,
+                      "remaining": 0, "names": [], "codes": [], "expiresAt": "" },
+            "package": { "kind": "package", "label": "套餐积分", "total": 0,
+                         "remaining": 0, "names": [], "codes": [], "expiresAt": "" },
+            "addon": { "kind": "addon", "label": "加量包积分", "total": 0,
+                       "remaining": 0, "names": [], "codes": [], "expiresAt": "" }
+        }
+        var order = ["free", "package", "addon"]
+        var creditLots = lots || []
+        for (var i = 0; i < creditLots.length; ++i) {
+            var lot = creditLots[i] || ({})
+            if (String(lot.status || "").toUpperCase() !== "ACTIVE")
+                continue
+            var lotSubscriptionId = String(lot.subscription_id || "")
+            if (lotSubscriptionId && packageStates[lotSubscriptionId]
+                    && packageStates[lotSubscriptionId] !== "ACTIVE")
+                continue
+
+            var code = String(lot.plan_code || packageCodes[lotSubscriptionId] || "")
+            var sourceType = String(lot.source_type || "").toUpperCase()
+            var kind = sourceType === "FREE" || code === "monthly-free-500"
+                    ? "free" : (accountIsAddon(code, lotSubscriptionId) ? "addon" : "package")
+            var bucket = buckets[kind]
+            var total = Number(lot.credits_total || 0)
+            var remaining = Number(lot.credits_remaining || 0)
+            if (!isFinite(total) || total < 0)
+                total = 0
+            if (!isFinite(remaining) || remaining < 0)
+                remaining = 0
+            bucket.total += total
+            bucket.remaining += remaining
+
+            var name = accountPlanName(code, packageNames[lotSubscriptionId])
+            if (bucket.names.indexOf(name) < 0)
+                bucket.names.push(name)
+            if (code && bucket.codes.indexOf(code) < 0)
+                bucket.codes.push(code)
+            var expiresAt = String(lot.expires_at || "")
+            if (expiresAt && (!bucket.expiresAt
+                    || new Date(expiresAt).getTime() < new Date(bucket.expiresAt).getTime()))
+                bucket.expiresAt = expiresAt
+        }
+
+        var result = []
+        for (var j = 0; j < order.length; ++j) {
+            var candidate = buckets[order[j]]
+            if (candidate.total > 0 || candidate.remaining > 0)
+                result.push(candidate)
+        }
+        return result
+    }
+
+    function accountPlanTitle(groups) {
+        var preferredKinds = ["package", "free", "addon"]
+        for (var k = 0; k < preferredKinds.length; ++k) {
+            for (var i = 0; i < groups.length; ++i) {
+                if (groups[i].kind === preferredKinds[k] && groups[i].names.length)
+                    return groups[i].names.join(" / ")
+            }
+        }
+        return "暂无有效套餐"
+    }
+
+    function accountPlanBackground(groups) {
+        for (var i = 0; i < groups.length; ++i) {
+            if (groups[i].kind !== "package")
+                continue
+            var planCodes = groups[i].codes || []
+            for (var j = 0; j < planCodes.length; ++j) {
+                if (String(planCodes[j]).toLowerCase().indexOf("-yearly") >= 0)
+                    return "qrc:/images/user/yearly.png"
+            }
+            return "qrc:/images/user/commom.png"
+        }
+        return "qrc:/images/user/free.png"
+    }
+
+    function accountExpiry(groups) {
+        var earliest = ""
+        for (var i = 0; i < groups.length; ++i) {
+            var value = String(groups[i].expiresAt || "")
+            if (value && (!earliest
+                    || new Date(value).getTime() < new Date(earliest).getTime()))
+                earliest = value
+        }
+        return earliest
+    }
+
+    function accountFormatCredits(value) {
+        var number = Number(value || 0)
+        if (!isFinite(number))
+            return "0"
+        return Math.abs(number - Math.round(number)) < 0.005
+                ? String(Math.round(number)) : number.toFixed(2)
+    }
+
+    function accountMaskedPhone(value) {
+        var phone = String(value || "").trim()
+        return phone.length > 7
+                ? phone.slice(0, 3) + "****" + phone.slice(phone.length - 4)
+                : phone
+    }
+
+    function accountOpenWebsite() {
+        Qt.openUrlExternally(accountWebsiteUrl)
+    }
+
+    function openAccountPopup() {
+        var pt = accountEntry.mapToItem(window.contentItem,
+                                        window.sidebarExpanded ? 0 : accountEntry.width + 6,
+                                        -accountPopup.height - 6)
+        accountPopup.x = pt.x
+        accountPopup.y = Math.max(8, pt.y)
+        accountPopup.open()
+    }
 
     Connections {
         target: updateController
@@ -1530,10 +1692,21 @@ ApplicationWindow {
 
     // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
-        if (authController.loggedIn && authController.modelConfigReady) {
+        if (accountPreviewMode) {
+            accountPreviewOpenTimer.start()
+        } else if (authController.loggedIn && authController.modelConfigReady) {
             reloadUploadedDocxTemplates()
             kbLoadMetadata()
             wsClient.connectToServer(wsClient.serverUrl)
+        }
+    }
+
+    Timer {
+        id: accountPreviewOpenTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            window.openAccountPopup()
         }
     }
     Connections {
@@ -2374,37 +2547,29 @@ ApplicationWindow {
             anchors.rightMargin: 16
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 12
-            height: 48
+            height: 44
             radius: 6
             color: accountMouse.containsMouse || accountPopup.visible ? "#E6E7EB" : "transparent"
-            Image {
-                width: 28
-                height: 28
-                source: "qrc:/images/logoImage.png"
+            Label {
+                id: accountPhone
                 anchors.left: parent.left
-                anchors.leftMargin: window.sidebarExpanded ? 8 : 4
-                anchors.verticalCenter: parent.verticalCenter
-            }
-            Column {
-                visible: window.sidebarExpanded
-                anchors.left: parent.left
-                anchors.leftMargin: 46
+                anchors.leftMargin: 8
                 anchors.right: accountArrow.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 1
-                Label { text: "用户管理"; color: "#D9000000"; font.pixelSize: 14 }
-                Label { width: parent.width; text: authController.phone; color: "#73000000"; font.pixelSize: 14; elide: Text.ElideMiddle }
+                text: window.accountMaskedPhone(authController.phone)
+                color: "#D9000000"
+                font.pixelSize: 14
+                elide: Text.ElideMiddle
             }
             Label {
                 id: accountArrow
-                visible: window.sidebarExpanded
                 anchors.right: parent.right
-                anchors.rightMargin: 10
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: "›"
                 color: "#73000000"
-                font.pixelSize: 18
+                font.pixelSize: 24
             }
             MouseArea {
                 id: accountMouse
@@ -2412,12 +2577,8 @@ ApplicationWindow {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    var pt = accountEntry.mapToItem(window.contentItem,
-                                                    window.sidebarExpanded ? 0 : accountEntry.width + 6,
-                                                    -accountPopup.height - 6)
-                    accountPopup.x = pt.x
-                    accountPopup.y = Math.max(8, pt.y)
-                    accountPopup.open()
+                    authController.refreshCredits()
+                    window.openAccountPopup()
                 }
             }
         }
@@ -2426,41 +2587,237 @@ ApplicationWindow {
     Popup {
         id: accountPopup
         parent: window.contentItem
-        width: window.sidebarExpanded ? 248 : 190
-        height: 166
+        readonly property var creditGroups: window.accountCreditGroups(
+                                                       authController.creditLots,
+                                                       authController.creditPackages)
+        readonly property string planTitle: window.accountPlanTitle(creditGroups)
+        readonly property string planBackground: window.accountPlanBackground(creditGroups)
+        readonly property string earliestExpiry: window.accountExpiry(creditGroups)
+        readonly property bool hasPaidPlan: {
+            for (var i = 0; i < creditGroups.length; ++i) {
+                if (creditGroups[i].kind === "package")
+                    return true
+            }
+            return false
+        }
+        width: 272
+        height: 158 + creditGroups.length * 43 + (creditGroups.length + 1) * 8
         padding: 8
         modal: false
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { color: "#FFFFFF"; radius: 6; border.width: 1; border.color: "#1F000000" }
+        background: Rectangle {
+            color: "#FFFFFF"
+            radius: 7
+            border.width: 1
+            border.color: "#16000000"
+        }
         contentItem: Column {
-            spacing: 2
+            spacing: 4
             Rectangle {
                 width: parent.width
-                height: 34
+                height: 62 + accountPopup.creditGroups.length * 43 + (accountPopup.creditGroups.length + 1) * 8
+                radius: 5
                 color: "transparent"
-                Row {
-                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                    Label { text: "账号"; color: "#73000000"; font.pixelSize: 14 }
-                    Label { text: authController.phone; color: "#D9000000"; font.pixelSize: 14 }
+
+                Image {
+                    anchors.fill: parent
+                    source: accountPopup.planBackground
+                    fillMode: Image.Stretch
+                    smooth: true
+                }
+
+                Column {
+                    z: 1
+                    anchors.fill: parent
+                    spacing: 8
+                    topPadding: 12
+                    Item {
+                        width: parent.width
+                        height: 22
+
+                        Label {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.right: purchaseButton.left
+                            anchors.rightMargin: 8
+                            text: accountPopup.planTitle
+                            color: "#D9000000"
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+
+                        Rectangle {
+                            id: purchaseButton
+                            width: accountPopup.hasPaidPlan ? 84 : 48
+                            height: 22
+                            radius: 14
+                            anchors.right: parent.right
+                            anchors.rightMargin: 12
+                            color: purchaseMouse.containsMouse
+                                   ? (accountPopup.hasPaidPlan ? "#343A40" : "#005EDB")
+                                   : (accountPopup.hasPaidPlan ? "#20252B" : "#006BFF")
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: accountPopup.hasPaidPlan ? "购买加量包" : "升级"
+                                color: "#FFFFFF"
+                                font.pixelSize: 12
+                            }
+                            MouseArea {
+                                id: purchaseMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    accountPopup.close()
+                                    window.accountOpenWebsite()
+                                }
+                            }
+                        }
+                    }
+
+                    Repeater {
+                        model: accountPopup.creditGroups
+                        delegate: Item {
+                            required property var modelData
+                            width: parent.width
+                            height: 43
+
+                            Label {
+                                id: remainingCredits
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
+                                anchors.top: parent.top
+                                text: window.accountFormatCredits(modelData.remaining)
+                                color: "#D9000000"
+                                font.pixelSize: 20
+                                font.weight: Font.Bold
+                            }
+                            Label {
+                                anchors.left: remainingCredits.right
+                                anchors.leftMargin: 2
+                                anchors.baseline: remainingCredits.baseline
+                                text: "/" + window.accountFormatCredits(modelData.total)
+                                color: "#73000000"
+                                font.pixelSize: 12
+                            }
+                            Label {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.baseline: remainingCredits.baseline
+                                text: modelData.label
+                                color: "#73000000"
+                                font.pixelSize: 12
+                            }
+                            Rectangle {
+                                id: progressTrack
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.bottom: parent.bottom
+                                anchors.bottomMargin: 5
+                                height: 4
+                                radius: 111
+                                color: "#0F000000"
+
+                                Rectangle {
+                                    width: parent.width * Math.max(0, Math.min(1,
+                                                Number(modelData.total) > 0
+                                                ? Number(modelData.remaining) / Number(modelData.total) : 0))
+                                    height: parent.height
+                                    radius: parent.radius
+                                    color: accountPopup.planBackground === "qrc:/images/user/yearly.png"
+                                            ? "#6B3FFF" : "#006BFF"
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 18
+                        color: "transparent"
+
+                        Label {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: accountPopup.earliestExpiry
+                                  ? Qt.formatDateTime(new Date(accountPopup.earliestExpiry),
+                                                      "yyyy-MM-dd hh:mm:ss")
+                                  : "暂无有效套餐"
+                            color: "#40000000"
+                            font.pixelSize: 12
+                        }
+                        Label {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 13
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "›"
+                            color: "#73000000"
+                            font.pixelSize: 18
+                        }
+                        MouseArea {
+                            id: expiryMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                accountPopup.close()
+                                window.accountOpenWebsite()
+                            }
+                        }
+                    }
                 }
             }
             Rectangle {
                 width: parent.width
-                height: 34
+                height: 36
                 radius: 5
                 color: updateMouse.containsMouse ? "#F2F3F5" : "transparent"
-                Row {
-                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                    Label { text: "版本"; color: "#73000000"; font.pixelSize: 14 }
-                    Label { text: updateController.currentVersion; color: "#D9000000"; font.pixelSize: 14 }
-                    Label { visible: updateController.updateAvailable; text: "有新版本"; color: "#006BFF"; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+                Image {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16
+                    height: 16
+                    source: "qrc:/images/infoCircle.png"
+                }
+                Label {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 36
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: updateController.checking ? "正在检查..." : "检查更新"
+                    color: "#D9000000"
+                    font.pixelSize: 14
+                }
+                Label {
+                    anchors.right: updateAvailableDot.left
+                    anchors.rightMargin: updateAvailableDot.visible ? 4 : 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: updateController.currentVersion
+                    color: "#40000000"
+                    font.pixelSize: 14
+                }
+                Rectangle {
+                    id: updateAvailableDot
+                    visible: updateController.updateAvailable
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: "#FF3D40"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
                 }
                 MouseArea {
                     id: updateMouse
                     anchors.fill: parent
+                    enabled: !updateController.checking && !updateController.downloading
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: {
                         accountPopup.close()
                         if (updateController.updateAvailable)
@@ -2472,34 +2829,21 @@ ApplicationWindow {
             }
             Rectangle {
                 width: parent.width
-                height: 34
+                height: 36
                 radius: 5
-                color: creditsMouse.containsMouse ? "#F2F3F5" : "transparent"
+                color: logoutMouse.containsMouse ? "#FFF0F0" : "transparent"
                 Row {
-                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                    Label { text: "积分"; color: "#73000000"; font.pixelSize: 14 }
-                    Label { text: authController.creditsBalance || "-"; color: "#D9000000"; font.pixelSize: 14 }
-                }
-                MouseArea {
-                    id: creditsMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        accountPopup.close()
-                        Qt.openUrlExternally("https://www.aethermind.cn/aether/#/profile")
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Image {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16
+                        height: 16
+                        source: logoutMouse.containsMouse ? "qrc:/images/logoutHover.png" : "qrc:/images/logout.png"
                     }
-                }
-            }
-            Rectangle {
-                width: parent.width
-                height: 40
-                radius: 5
-                color: logoutMouse.containsMouse ? "#F2F3F5" : "transparent"
-                Row {
-                    anchors.left: parent.left; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                    Label { text: "↪"; color: "#D9000000"; font.pixelSize: 16 }
-                    Label { text: authController.busy ? "正在退出..." : "退出登录"; color: "#D9000000"; font.pixelSize: 14 }
+                    Label { text: authController.busy ? "正在退出..." : "退出登录"; color: logoutMouse.containsMouse ? "#FF4D4F" : "#D9000000"; font.pixelSize: 14 }
                 }
                 MouseArea {
                     id: logoutMouse

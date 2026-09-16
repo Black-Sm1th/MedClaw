@@ -259,5 +259,11 @@
         <file>images/template/43.png</file>
         <file>images/template/44.png</file>
         <file>images/template/45.png</file>
+        <file>images/infoCircle.png</file>
+        <file>images/logout.png</file>
+        <file>images/logoutHover.png</file>
+        <file>images/user/commom.png</file>
+        <file>images/user/free.png</file>
+        <file>images/user/yearly.png</file>
     </qresource>
 </RCC>

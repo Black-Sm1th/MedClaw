@@ -1,0 +1,31 @@
+{
+  "preview_phone": "18624681357",
+  "wallet": { "available_balance": "5427.70" },
+  "packages": [
+    { "subscription_id": "free-2026-09", "plan_code": "monthly-free-500", "plan_name": "Free", "status": "ACTIVE" },
+    { "subscription_id": "premium-current", "plan_code": "premium-monthly", "plan_name": "Premium", "status": "ACTIVE" },
+    { "subscription_id": "flagship-history", "plan_code": "flagship-yearly", "plan_name": "Flagship Yearly", "status": "EXPIRED" }
+  ],
+  "credit_lots": [
+    {
+      "subscription_id": "free-2026-09", "plan_code": "monthly-free-500", "source_type": "FREE",
+      "credits_total": "500.00", "credits_remaining": "327.70",
+      "expires_at": "2026-09-30T16:00:00Z", "status": "ACTIVE"
+    },
+    {
+      "subscription_id": "premium-current", "plan_code": "premium-monthly", "source_type": "PAID",
+      "credits_total": "5000.00", "credits_remaining": "4100.00",
+      "expires_at": "2026-10-08T16:00:00Z", "status": "ACTIVE"
+    },
+    {
+      "subscription_id": "flagship-history", "plan_code": "flagship-yearly", "source_type": "PAID",
+      "credits_total": "10000.00", "credits_remaining": "9400.00",
+      "expires_at": "2027-08-31T16:00:00Z", "status": "ACTIVE"
+    },
+    {
+      "subscription_id": null, "plan_code": "test-beggar-1000", "source_type": "PAID",
+      "credits_total": "1000.00", "credits_remaining": "1000.00",
+      "expires_at": "2026-10-20T16:00:00Z", "status": "ACTIVE"
+    }
+  ]
+}

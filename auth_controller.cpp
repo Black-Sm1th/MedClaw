@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -247,6 +248,40 @@ AuthController::AuthController(QObject *parent)
     m_userId = settings.value(QStringLiteral("auth/userId")).toString().trimmed();
     m_phone = settings.value(QStringLiteral("auth/phone")).toString();
     m_creditsBalance = settings.value(QStringLiteral("auth/creditsBalance")).toString();
+
+    const QString previewPath = qEnvironmentVariable("MEDCLAW_ACCOUNT_PREVIEW_FILE").trimmed();
+    if (!previewPath.isEmpty()) {
+        QFile previewFile(previewPath);
+        if (previewFile.open(QIODevice::ReadOnly)) {
+            const QJsonDocument previewDocument = QJsonDocument::fromJson(previewFile.readAll());
+            const QJsonObject previewRoot = previewDocument.object();
+            const QJsonObject previewData = previewRoot.value(QStringLiteral("data")).toObject();
+            const QJsonObject credits = previewData.isEmpty() ? previewRoot : previewData;
+            if (!credits.isEmpty()) {
+                const QJsonObject wallet = credits.value(QStringLiteral("wallet")).toObject();
+                m_creditsBalance = wallet.value(QStringLiteral("available_balance"))
+                                       .toVariant().toString().trimmed();
+                if (m_creditsBalance.isEmpty())
+                    m_creditsBalance = wallet.value(QStringLiteral("balance"))
+                                           .toVariant().toString().trimmed();
+                m_creditLots = credits.value(QStringLiteral("credit_lots"))
+                                   .toArray().toVariantList();
+                m_creditPackages = credits.value(QStringLiteral("packages"))
+                                       .toArray().toVariantList();
+                m_userId = QStringLiteral("account-preview");
+                m_phone = credits.value(QStringLiteral("preview_phone"))
+                              .toString(QStringLiteral("13812348888"));
+                m_accessToken.clear();
+                m_refreshToken.clear();
+                m_loggedIn = true;
+                m_modelConfigReady = true;
+                m_creditPreviewMode = true;
+                return;
+            }
+        }
+        qWarning() << "Unable to load account preview data:" << previewPath;
+    }
+
     m_loggedIn = !m_accessToken.isEmpty() && !m_userId.isEmpty();
     if (m_loggedIn) {
         QTimer::singleShot(0, this, [this]() {
@@ -274,6 +309,8 @@ QString AuthController::phone() const { return m_phone; }
 QString AuthController::errorMessage() const { return m_errorMessage; }
 QString AuthController::apiBaseUrl() const { return m_apiBaseUrl; }
 QString AuthController::creditsBalance() const { return m_creditsBalance; }
+QVariantList AuthController::creditLots() const { return m_creditLots; }
+QVariantList AuthController::creditPackages() const { return m_creditPackages; }
 bool AuthController::modelConfigReady() const { return m_modelConfigReady; }
 
 void AuthController::setApiBaseUrl(const QString &url)
@@ -468,7 +505,7 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
 
 void AuthController::refreshCredits()
 {
-    if (m_accessToken.isEmpty() || m_creditsRefreshInFlight)
+    if (m_creditPreviewMode || m_accessToken.isEmpty() || m_creditsRefreshInFlight)
         return;
 
     m_creditsRefreshInFlight = true;
@@ -499,16 +536,26 @@ void AuthController::refreshCredits()
         }
 
         const QJsonObject body = document.object();
-        const QJsonObject wallet = body.value(QStringLiteral("wallet")).toObject();
+        const QJsonObject wrappedData = body.value(QStringLiteral("data")).toObject();
+        const QJsonObject credits = wrappedData.isEmpty() ? body : wrappedData;
+        const QJsonObject wallet = credits.value(QStringLiteral("wallet")).toObject();
         QString balance = wallet.value(QStringLiteral("available_balance")).toVariant().toString().trimmed();
         if (balance.isEmpty())
             balance = wallet.value(QStringLiteral("balance")).toVariant().toString().trimmed();
         if (balance.isEmpty())
-            balance = body.value(QStringLiteral("credits_balance")).toVariant().toString().trimmed();
+            balance = credits.value(QStringLiteral("credits_balance")).toVariant().toString().trimmed();
         if (!balance.isEmpty() && balance != m_creditsBalance) {
             m_creditsBalance = balance;
             QSettings().setValue(QStringLiteral("auth/creditsBalance"), m_creditsBalance);
             emit creditsBalanceChanged();
+        }
+
+        const QVariantList creditLots = credits.value(QStringLiteral("credit_lots")).toArray().toVariantList();
+        const QVariantList creditPackages = credits.value(QStringLiteral("packages")).toArray().toVariantList();
+        if (creditLots != m_creditLots || creditPackages != m_creditPackages) {
+            m_creditLots = creditLots;
+            m_creditPackages = creditPackages;
+            emit creditDetailsChanged();
         }
         reply->deleteLater();
     });
@@ -528,6 +575,11 @@ void AuthController::clearSession()
     if (!m_creditsBalance.isEmpty()) {
         m_creditsBalance.clear();
         emit creditsBalanceChanged();
+    }
+    if (!m_creditLots.isEmpty() || !m_creditPackages.isEmpty()) {
+        m_creditLots.clear();
+        m_creditPackages.clear();
+        emit creditDetailsChanged();
     }
     if (m_modelConfigReady) {
         m_modelConfigReady = false;

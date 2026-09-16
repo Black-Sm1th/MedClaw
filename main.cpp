@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QStringList>
 #include <QPainterPath>
+#include <QQuickWindow>
 #include <QRegion>
 #include <QSettings>
 #include <QStandardPaths>
@@ -336,13 +337,22 @@ int main(int argc, char *argv[])
 
     // --test 启动 WebSocket 测试页。
     const bool testMode = app.arguments().contains(QStringLiteral("--test"));
+    const bool accountPreviewMode = app.arguments().contains(QStringLiteral("--account-preview"));
+    QString accountPreviewOutput;
+    const QString accountPreviewOutputPrefix = QStringLiteral("--account-preview-output=");
+    for (const QString &argument : app.arguments()) {
+        if (argument.startsWith(accountPreviewOutputPrefix)) {
+            accountPreviewOutput = argument.mid(accountPreviewOutputPrefix.size());
+            break;
+        }
+    }
     const QUrl url(testMode ? QStringLiteral("qrc:/TestChatClient.qml")
                             : QStringLiteral("qrc:/main.qml"));
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreated,
         &app,
-        [url, testMode](QObject *obj, const QUrl &objUrl) {
+        [url, testMode, accountPreviewMode, accountPreviewOutput](QObject *obj, const QUrl &objUrl) {
             if (!obj && url == objUrl)
                 QCoreApplication::exit(-1);
 
@@ -350,7 +360,7 @@ int main(int argc, char *argv[])
             if (!window || url != objUrl)
                 return;
 
-            if (!testMode) {
+            if (!testMode && !accountPreviewMode) {
                 auto *saveWindowSizeTimer = new QTimer(window);
                 saveWindowSizeTimer->setSingleShot(true);
                 saveWindowSizeTimer->setInterval(250);
@@ -402,6 +412,14 @@ int main(int argc, char *argv[])
                              [window]() { updateRoundedWindowMask(window); });
             QTimer::singleShot(0, window,
                                [window]() { updateRoundedWindowMask(window); });
+            if (accountPreviewMode && !accountPreviewOutput.isEmpty()) {
+                QQuickWindow *quickWindow = qobject_cast<QQuickWindow *>(window);
+                QTimer::singleShot(1200, window, [quickWindow, accountPreviewOutput]() {
+                    const bool saved = quickWindow
+                        && quickWindow->grabWindow().save(accountPreviewOutput);
+                    QCoreApplication::exit(saved ? 0 : 2);
+                });
+            }
         },
         Qt::QueuedConnection);
     engine.load(url);
