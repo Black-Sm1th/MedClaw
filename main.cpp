@@ -19,6 +19,10 @@
 #include <QSurfaceFormat>
 #include <QLibraryInfo>
 #include <QtWebEngineQuick>
+#include <QWebEngineProfile>
+#include <QWebEngineScript>
+#include <QWebEngineScriptCollection>
+#include <QFile>
 #include <QQuickStyle>
 #include "CommonFunc.h"
 #include "mainviewcontroller.h"
@@ -86,11 +90,16 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     if (qEnvironmentVariableIsEmpty("QTWEBENGINE_DISABLE_SANDBOX"))
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    // Qt Quick (RHI) and Chromium (ANGLE) must both sit on D3D11. Otherwise
+    // WebEngine falls back to D3D9 / a blocked GPU process and getContext()
+    // returns null — Mol*, MPR and volume 3D all fail on other PCs.
     if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
         qputenv("QT_OPENGL", "angle");
     if (qEnvironmentVariableIsEmpty("QT_ANGLE_PLATFORM"))
         qputenv("QT_ANGLE_PLATFORM", "d3d11");
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND"))
+        qputenv("QSG_RHI_BACKEND", "d3d11");
 #endif
 
     QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
@@ -98,21 +107,24 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     appendChromiumFlag(flags, "--disable-gpu-sandbox");
     appendChromiumFlag(flags, "--ignore-gpu-blacklist");
     appendChromiumFlag(flags, "--ignore-gpu-blocklist");
-    appendChromiumFlag(flags, "--enable-gpu");
+    appendChromiumFlag(flags, "--disable-gpu-process-crash-limit");
     appendChromiumFlag(flags, "--enable-webgl");
     appendChromiumFlag(flags, "--enable-webgl2");
     appendChromiumFlag(flags, "--enable-accelerated-2d-canvas");
     appendChromiumFlag(flags, "--enable-gpu-rasterization");
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     appendChromiumFlag(flags, "--use-gl=angle");
     appendChromiumFlag(flags, "--use-angle=d3d11");
-#else
+    // Chrome uses an out-of-process GPU. Sharing one GPU process with Qt Quick
+    // (--in-process-gpu) is why Mol*/MPR/3D die here while Edge still works.
+    // SwiftShader is the last-resort WebGL path when the hardware GPU process
+    // fails; Chrome 123+ hides it unless this flag is set.
+    appendChromiumFlag(flags, "--enable-unsafe-swiftshader");
+    appendChromiumFlag(flags, "--enable-webgl-software-rendering");
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     appendChromiumFlag(flags, "--disable-web-security");
     appendChromiumFlag(flags, "--allow-running-insecure-content");
-    appendChromiumFlag(flags, "--disable-features=LocalNetworkAccess,BlockInsecurePrivateNetworkRequests,RendererCodeIntegrity");
-#endif
-    appendChromiumFlag(flags, "--disable-gpu-driver-bug-workarounds");
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    appendChromiumFlag(flags, "--disable-features=LocalNetworkAccess,BlockInsecurePrivateNetworkRequests,RendererCodeIntegrity,CalculateNativeWinOcclusion");
+#else
     appendChromiumFlag(flags, "--disable-features=RendererCodeIntegrity");
 #endif
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
@@ -131,7 +143,47 @@ static void configureQtWebEngineRuntime(const char *executablePath)
 
     qDebug().noquote() << "[WebEngine] QT_OPENGL=" << qgetenv("QT_OPENGL")
                        << "QT_ANGLE_PLATFORM=" << qgetenv("QT_ANGLE_PLATFORM")
+                       << "QSG_RHI_BACKEND=" << qgetenv("QSG_RHI_BACKEND")
                        << "CHROMIUM_FLAGS=" << qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+}
+
+static void insertWebGlScript(QWebEngineScriptCollection *scripts, const QWebEngineScript &script)
+{
+    if (!scripts)
+        return;
+    const QList<QWebEngineScript> existing =
+        scripts->find(QStringLiteral("medclaw-webgl-compat"));
+    for (const QWebEngineScript &old : existing)
+        scripts->remove(old);
+    scripts->insert(script);
+}
+
+static void insertWebGlScript(QWebEngineScriptCollection &scripts, const QWebEngineScript &script)
+{
+    insertWebGlScript(&scripts, script);
+}
+
+static void installWebGlUserScript()
+{
+    QFile file(QStringLiteral(":/web/webgl-compat.js"));
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "[WebEngine] missing :/web/webgl-compat.js";
+        return;
+    }
+
+    QWebEngineScript script;
+    script.setName(QStringLiteral("medclaw-webgl-compat"));
+    script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+    script.setWorldId(QWebEngineScript::MainWorld);
+    script.setRunsOnSubFrames(true);
+    script.setSourceCode(QString::fromUtf8(file.readAll()));
+
+    QWebEngineProfile *profile = QWebEngineProfile::defaultProfile();
+    if (!profile)
+        return;
+    // Qt 5 / some 6.8 kits: scripts() returns a pointer.
+    // Later 6.x: it returns a reference. Overload both.
+    insertWebGlScript(profile->scripts(), script);
 }
 
 static void updateRoundedWindowMask(QWindow *window)
@@ -170,6 +222,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
     QCoreApplication::setApplicationName(QStringLiteral("Aether study"));
+    installWebGlUserScript();
 
     // Keep relative runtime data paths stable and carry existing installs forward.
     const QString genericDataRoot =

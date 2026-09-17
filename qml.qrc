@@ -24,6 +24,7 @@
         <file>web/chat_view.html</file>
         <file>web/prompt_composer.html</file>
         <file>web/markdown_renderer.html</file>
+        <file>web/webgl-compat.js</file>
         <file>images/sidebarMinimalistic.png</file>
         <file>fonts/AlimamaShuHeiTi-Bold.ttf</file>
         <file>components/MultiLineTextInput.qml</file>

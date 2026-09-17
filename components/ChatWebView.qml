@@ -113,6 +113,8 @@ Item {
         anchors.fill: parent
         url: "qrc:/web/chat_view.html"
         backgroundColor: "transparent"
+        settings.webGLEnabled: true
+        settings.accelerated2dCanvasEnabled: true
 
         onLoadingChanged: function(info) {
             var status = info ? info.status : -1

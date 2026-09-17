@@ -119,6 +119,8 @@ Item {
         anchors.fill: parent
         url: "qrc:/web/markdown_renderer.html"
         backgroundColor: "transparent"
+        settings.webGLEnabled: true
+        settings.accelerated2dCanvasEnabled: true
 
         onLoadingChanged: function(info) {
             var status = info ? info.status : -1

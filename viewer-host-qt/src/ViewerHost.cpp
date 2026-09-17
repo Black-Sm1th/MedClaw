@@ -865,6 +865,7 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           responseBody.replace("{{baseUrl}}", "/markdown");
       const bool isMutableViewerResource = relative == QStringLiteral("index.html")
           || relative == QStringLiteral("cornerstone3d/index.html")
+          || relative == QStringLiteral("webgl-compat.js")
           || relative == QStringLiteral("webgl2-compat.js")
           || relative == QStringLiteral("cornerstone3d/webgl2-compat.js")
           || relative.startsWith(QStringLiteral("markdown/"))

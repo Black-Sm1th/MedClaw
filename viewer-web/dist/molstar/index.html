@@ -16,6 +16,7 @@
 <body>
   <div id="bar"><b>Mol*</b><span id="status">正在加载分子结构…</span></div>
   <div id="app"></div>
+  <script src="/webgl-compat.js"></script>
   <script src="molstar.js"></script>
   <script>
     (function () {
@@ -50,15 +51,33 @@
         var stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
         return await new Response(stream).arrayBuffer();
       }
+      function webglAvailable() {
+        try {
+          var canvas = document.createElement("canvas");
+          var opts = { failIfMajorPerformanceCaveat: false, antialias: false };
+          return !!(
+            canvas.getContext("webgl2", opts)
+            || canvas.getContext("webgl", opts)
+            || canvas.getContext("experimental-webgl", opts)
+          );
+        } catch (error) {
+          return false;
+        }
+      }
       async function main() {
         if (typeof molstar === "undefined" || !molstar.Viewer) {
           throw new Error("未找到 Mol* 运行时 molstar.js");
+        }
+        if (!webglAvailable()) {
+          throw new Error("当前电脑无法创建 WebGL（显卡驱动过旧、远程桌面或硬件加速被关闭）。蛋白质 3D 与影像 MPR/3D 都需要 GPU，请更新显卡驱动后完全退出再打开客户端。");
         }
         var viewer = await molstar.Viewer.create("app", {
           layoutIsExpanded: false,
           layoutShowControls: true,
           layoutShowSequence: true,
           viewportShowExpand: false,
+          preferWebgl1: true,
+          failIfMajorPerformanceCaveat: false,
         });
         var response = await fetch("/api/medical/manifest?session=" + encodeURIComponent(session), { cache: "no-store" });
         if (!response.ok) throw new Error("结构清单读取失败 (" + response.status + ")");
