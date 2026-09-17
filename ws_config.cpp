@@ -3,7 +3,6 @@
  * @brief WebSocket 连接配置类 —— 实现
  */
 #include "ws_config.h"
-#include "ed25519_local.h"
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
@@ -11,6 +10,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include "ed25519_local.h"
 #include <cstring>
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -20,8 +20,7 @@
 WsConfig::WsConfig()
     // ── 占位；loadOrCreatePersistentConfig() 从 AppData/config.json 覆盖 ──
     : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
-    , m_token(QStringLiteral(
-          "faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe"))
+    , m_token(QStringLiteral("faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe"))
     , m_skillsStoragePath(QStringLiteral("~/AetherStudy/skills"))
     , m_clientId(QStringLiteral("openclaw-control-ui"))
     , m_clientVersion(QStringLiteral("dev"))
@@ -45,11 +44,9 @@ WsConfig::WsConfig()
     , m_minProtocol(3)
     , m_maxProtocol(3)
     , m_role(QStringLiteral("operator"))
-    , m_scopes(QJsonArray({
-          QStringLiteral("operator.admin"),
-          QStringLiteral("operator.approvals"),
-          QStringLiteral("operator.pairing")
-      }))
+    , m_scopes(QJsonArray({QStringLiteral("operator.admin"),
+                           QStringLiteral("operator.approvals"),
+                           QStringLiteral("operator.pairing")}))
     // ── Ed25519 密钥初始值 ──
     , m_hasKeys(false)
 {
@@ -64,14 +61,11 @@ WsConfig::WsConfig()
 
 void WsConfig::loadOrCreatePersistentConfig()
 {
-    static const QString kDefaultServer =
-        QStringLiteral("ws://127.0.0.1:18789");
+    static const QString kDefaultServer = QStringLiteral("ws://127.0.0.1:18789");
     static const QString kDefaultToken = QStringLiteral(
         "faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe");
-    static const QString kDefaultClientId =
-        QStringLiteral("openclaw-control-ui");
-    static const QString kDefaultSkillsStoragePath =
-        QStringLiteral("~/AetherStudy/skills");
+    static const QString kDefaultClientId = QStringLiteral("openclaw-control-ui");
+    static const QString kDefaultSkillsStoragePath = QStringLiteral("~/AetherStudy/skills");
     const QString base = QStringLiteral("AppData/config/");
     QDir().mkpath(base);
     const QString path = base + QStringLiteral("config.json");
@@ -90,12 +84,12 @@ void WsConfig::loadOrCreatePersistentConfig()
     QFile f(path);
     if (!f.exists()) {
         m_serverUrl = kDefaultServer;
-        m_token     = kDefaultToken;
-        m_clientId  = kDefaultClientId;
+        m_token = kDefaultToken;
+        m_clientId = kDefaultClientId;
         QJsonObject o;
-        o[QStringLiteral("serverUrl")]        = m_serverUrl;
-        o[QStringLiteral("token")]            = m_token;
-        o[QStringLiteral("clientId")]         = m_clientId;
+        o[QStringLiteral("serverUrl")] = m_serverUrl;
+        o[QStringLiteral("token")] = m_token;
+        o[QStringLiteral("clientId")] = m_clientId;
         o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
         writeDefaults(o);
         return;
@@ -164,17 +158,38 @@ void WsConfig::loadOrCreatePersistentConfig()
 //  Getter / Setter
 // ═══════════════════════════════════════════════════════════════════════
 
-QString WsConfig::serverUrl()     const { return m_serverUrl; }
-void    WsConfig::setServerUrl(const QString &url) { m_serverUrl = url; }
+QString WsConfig::serverUrl() const
+{
+    return m_serverUrl;
+}
+void WsConfig::setServerUrl(const QString &url)
+{
+    m_serverUrl = url;
+}
 
-QString WsConfig::token()         const { return m_token; }
-void    WsConfig::setToken(const QString &token) { m_token = token; }
+QString WsConfig::token() const
+{
+    return m_token;
+}
+void WsConfig::setToken(const QString &token)
+{
+    m_token = token;
+}
 
-QString WsConfig::skillsStoragePath() const { return m_skillsStoragePath; }
-void    WsConfig::setSkillsStoragePath(const QString &path) { m_skillsStoragePath = path; }
+QString WsConfig::skillsStoragePath() const
+{
+    return m_skillsStoragePath;
+}
+void WsConfig::setSkillsStoragePath(const QString &path)
+{
+    m_skillsStoragePath = path;
+}
 
-bool    WsConfig::llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }
-void    WsConfig::setLlmJudgmentEnabled(bool enabled)
+bool WsConfig::llmJudgmentEnabled() const
+{
+    return m_llmJudgmentEnabled;
+}
+void WsConfig::setLlmJudgmentEnabled(bool enabled)
 {
     m_llmJudgmentEnabled = enabled;
     const QString path = QStringLiteral("AppData/config/config.json");
@@ -192,8 +207,14 @@ void    WsConfig::setLlmJudgmentEnabled(bool enabled)
         out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
 }
 
-QString WsConfig::deviceId()      const { return m_deviceId; }
-bool    WsConfig::hasDeviceKeys() const { return m_hasKeys; }
+QString WsConfig::deviceId() const
+{
+    return m_deviceId;
+}
+bool WsConfig::hasDeviceKeys() const
+{
+    return m_hasKeys;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Ed25519 设备密钥生成
@@ -220,7 +241,7 @@ void WsConfig::initDeviceKeys()
 QJsonObject WsConfig::buildSignedDevice(const QString &challengeNonce) const
 {
     QJsonObject dev;
-    dev[QStringLiteral("id")]    = m_deviceId;
+    dev[QStringLiteral("id")] = m_deviceId;
     dev[QStringLiteral("nonce")] = challengeNonce;
 
     // 如果密钥不可用，返回不含签名的 device（Gateway 可能拒绝）
@@ -271,29 +292,27 @@ QJsonObject WsConfig::buildConnectParams(const QString &challengeNonce) const
 
     // ── client 客户端身份块 ──
     QJsonObject client;
-    client[QStringLiteral("id")]       = m_clientId;
-    client[QStringLiteral("version")]  = m_clientVersion;
+    client[QStringLiteral("id")] = m_clientId;
+    client[QStringLiteral("version")] = m_clientVersion;
     client[QStringLiteral("platform")] = m_clientPlatform;
-    client[QStringLiteral("mode")]     = m_clientMode;
+    client[QStringLiteral("mode")] = m_clientMode;
 
     // ── 组装顶层 params ──
     QJsonObject params;
     params[QStringLiteral("minProtocol")] = m_minProtocol;
     params[QStringLiteral("maxProtocol")] = m_maxProtocol;
-    params[QStringLiteral("client")]      = client;
-    params[QStringLiteral("role")]        = m_role;
-    params[QStringLiteral("scopes")]      = m_scopes;
+    params[QStringLiteral("client")] = client;
+    params[QStringLiteral("role")] = m_role;
+    params[QStringLiteral("scopes")] = m_scopes;
     // 与 OpenClaw GATEWAY_CLIENT_CAPS.TOOL_EVENTS 一致；无此项时 chat.send 不会
     // registerToolEventRecipient，agent 流中的 tool start/result 不会推送到本连接。
     QJsonArray caps;
     caps.append(QStringLiteral("tool-events"));
-    params[QStringLiteral("caps")]        = caps;
-    params[QStringLiteral("auth")]        = auth;
-    params[QStringLiteral("locale")]      = QStringLiteral("zh-CN");
-    params[QStringLiteral("userAgent")]   = QStringLiteral("AetherStudy-Qt/1.0");
-    params[QStringLiteral("device")]      = buildSignedDevice(challengeNonce);
+    params[QStringLiteral("caps")] = caps;
+    params[QStringLiteral("auth")] = auth;
+    params[QStringLiteral("locale")] = QStringLiteral("zh-CN");
+    params[QStringLiteral("userAgent")] = QStringLiteral("AetherStudy-Qt/1.0");
+    params[QStringLiteral("device")] = buildSignedDevice(challengeNonce);
 
     return params;
 }
-
-

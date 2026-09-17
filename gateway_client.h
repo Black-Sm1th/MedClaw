@@ -42,117 +42,91 @@
 #ifndef GATEWAY_CLIENT_H
 #define GATEWAY_CLIENT_H
 
-#include <QObject>
-#include <QTimer>
-#include <QWebSocket>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QDateTime>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMap>
+#include <QObject>
 #include <QSet>
 #include <QSqlDatabase>
+#include <QTimer>
+#include <QWebSocket>
 
 #include "ws_config.h"
+#include "ws_scheduled_task.h"
 #include "ws_session.h"
 #include "ws_skill.h"
 #include "ws_tools.h"
-#include "ws_scheduled_task.h"
 
 class GatewayClient : public QObject
 {
     Q_OBJECT
 
     // ── QML 可绑定属性 ──
-    Q_PROPERTY(int connectionState READ connectionState
-               NOTIFY connectionStateChanged)
+    Q_PROPERTY(int connectionState READ connectionState NOTIFY connectionStateChanged)
     Q_PROPERTY(bool chatRunning READ chatRunning NOTIFY chatRunningChanged)
-    Q_PROPERTY(QString statusText READ statusText
-               NOTIFY connectionStateChanged)
-    Q_PROPERTY(QVariantList sessions READ sessions
-               NOTIFY sessionsChanged)
-    Q_PROPERTY(QString currentSessionKey READ currentSessionKey
-               WRITE setCurrentSessionKey NOTIFY currentSessionChanged)
-    Q_PROPERTY(QString currentTaskSessionKey READ currentTaskSessionKey
-               NOTIFY currentTaskSessionChanged)
-    Q_PROPERTY(QString currentTaskWorkspace READ currentTaskWorkspace
-               NOTIFY currentTaskWorkspaceChanged)
-    Q_PROPERTY(QString currentViewSessionKey READ currentViewSessionKey
-               NOTIFY currentViewSessionChanged)
-    Q_PROPERTY(QVariantList collaborationParticipants READ collaborationParticipants
-               NOTIFY collaborationParticipantsChanged)
-    Q_PROPERTY(QVariantList skillList READ skillList
-               NOTIFY skillListChanged)
-    Q_PROPERTY(QVariantList cronJobs READ cronJobs
-               NOTIFY cronJobsChanged)
-    Q_PROPERTY(QVariantMap cronServiceStatus READ cronServiceStatus
-               NOTIFY cronStatusChanged)
-    Q_PROPERTY(QVariantMap agentIdentity READ agentIdentity
-               NOTIFY agentIdentityChanged)
-    Q_PROPERTY(QVariantList agentList READ agentList
-               NOTIFY agentListChanged)
-    Q_PROPERTY(QVariantList taskSessionList READ taskSessionList
-               NOTIFY taskSessionListChanged)
-    Q_PROPERTY(QVariantList projectList READ projectList
-               NOTIFY projectListChanged)
-    Q_PROPERTY(QString currentProjectId READ currentProjectId
-               NOTIFY currentProjectChanged)
-    Q_PROPERTY(QString currentProjectTitle READ currentProjectTitle
-               NOTIFY currentProjectChanged)
-    Q_PROPERTY(QString currentProjectWorkspace READ currentProjectWorkspace
-               NOTIFY currentProjectChanged)
-    Q_PROPERTY(QString defaultAgentId READ defaultAgentId
-               NOTIFY agentListChanged)
-    Q_PROPERTY(QVariantList modelList READ modelList
-               NOTIFY modelListChanged)
-    Q_PROPERTY(QVariantMap currentModel READ currentModel
-               NOTIFY currentModelChanged)
+    Q_PROPERTY(QString statusText READ statusText NOTIFY connectionStateChanged)
+    Q_PROPERTY(QVariantList sessions READ sessions NOTIFY sessionsChanged)
+    Q_PROPERTY(QString currentSessionKey READ currentSessionKey WRITE setCurrentSessionKey NOTIFY
+                   currentSessionChanged)
+    Q_PROPERTY(
+        QString currentTaskSessionKey READ currentTaskSessionKey NOTIFY currentTaskSessionChanged)
+    Q_PROPERTY(
+        QString currentTaskWorkspace READ currentTaskWorkspace NOTIFY currentTaskWorkspaceChanged)
+    Q_PROPERTY(
+        QString currentViewSessionKey READ currentViewSessionKey NOTIFY currentViewSessionChanged)
+    Q_PROPERTY(QVariantList collaborationParticipants READ collaborationParticipants NOTIFY
+                   collaborationParticipantsChanged)
+    Q_PROPERTY(QVariantList skillList READ skillList NOTIFY skillListChanged)
+    Q_PROPERTY(QVariantList cronJobs READ cronJobs NOTIFY cronJobsChanged)
+    Q_PROPERTY(QVariantMap cronServiceStatus READ cronServiceStatus NOTIFY cronStatusChanged)
+    Q_PROPERTY(QVariantMap agentIdentity READ agentIdentity NOTIFY agentIdentityChanged)
+    Q_PROPERTY(QVariantList agentList READ agentList NOTIFY agentListChanged)
+    Q_PROPERTY(QVariantList taskSessionList READ taskSessionList NOTIFY taskSessionListChanged)
+    Q_PROPERTY(QVariantList projectList READ projectList NOTIFY projectListChanged)
+    Q_PROPERTY(QString currentProjectId READ currentProjectId NOTIFY currentProjectChanged)
+    Q_PROPERTY(QString currentProjectTitle READ currentProjectTitle NOTIFY currentProjectChanged)
+    Q_PROPERTY(
+        QString currentProjectWorkspace READ currentProjectWorkspace NOTIFY currentProjectChanged)
+    Q_PROPERTY(QString defaultAgentId READ defaultAgentId NOTIFY agentListChanged)
+    Q_PROPERTY(QVariantList modelList READ modelList NOTIFY modelListChanged)
+    Q_PROPERTY(QVariantMap currentModel READ currentModel NOTIFY currentModelChanged)
     /// 无会话时用户选择的模型 id，首条消息创建会话后会通过 sessions.patch 应用
-    Q_PROPERTY(QString pendingSessionModelId READ pendingSessionModelId
-               NOTIFY pendingSessionModelIdChanged)
+    Q_PROPERTY(QString pendingSessionModelId READ pendingSessionModelId NOTIFY
+                   pendingSessionModelIdChanged)
     /// OpenClaw 配置中的 mcp.servers（来自 config.get）
-    Q_PROPERTY(QVariantList mcpList READ mcpList
-               NOTIFY mcpListChanged)
+    Q_PROPERTY(QVariantList mcpList READ mcpList NOTIFY mcpListChanged)
     /// tools.catalog 展平后的工具列表（含 enabled，与 config 中 deny 对齐）
-    Q_PROPERTY(QVariantList toolList READ toolList
-               NOTIFY toolListChanged)
-    Q_PROPERTY(QVariantList docxTemplates READ docxTemplates
-               NOTIFY docxTemplatesChanged)
-    Q_PROPERTY(bool docxTemplatesLoading READ docxTemplatesLoading
-               NOTIFY docxTemplatesLoadStateChanged)
-    Q_PROPERTY(bool toolInstallBusy READ toolInstallBusy
-               NOTIFY toolInstallStateChanged)
-    Q_PROPERTY(int toolInstallProgress READ toolInstallProgress
-               NOTIFY toolInstallStateChanged)
-    Q_PROPERTY(QString toolInstallMessage READ toolInstallMessage
-               NOTIFY toolInstallStateChanged)
-    Q_PROPERTY(QString toolInstallingId READ toolInstallingId
-               NOTIFY toolInstallStateChanged)
-    Q_PROPERTY(bool agentInstallBusy READ agentInstallBusy
-               NOTIFY agentInstallStateChanged)
-    Q_PROPERTY(int agentInstallProgress READ agentInstallProgress
-               NOTIFY agentInstallStateChanged)
-    Q_PROPERTY(QString agentInstallMessage READ agentInstallMessage
-               NOTIFY agentInstallStateChanged)
-    Q_PROPERTY(QString agentInstallingId READ agentInstallingId
-               NOTIFY agentInstallStateChanged)
+    Q_PROPERTY(QVariantList toolList READ toolList NOTIFY toolListChanged)
+    Q_PROPERTY(QVariantList docxTemplates READ docxTemplates NOTIFY docxTemplatesChanged)
+    Q_PROPERTY(
+        bool docxTemplatesLoading READ docxTemplatesLoading NOTIFY docxTemplatesLoadStateChanged)
+    Q_PROPERTY(bool toolInstallBusy READ toolInstallBusy NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(int toolInstallProgress READ toolInstallProgress NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(QString toolInstallMessage READ toolInstallMessage NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(QString toolInstallingId READ toolInstallingId NOTIFY toolInstallStateChanged)
+    Q_PROPERTY(bool agentInstallBusy READ agentInstallBusy NOTIFY agentInstallStateChanged)
+    Q_PROPERTY(int agentInstallProgress READ agentInstallProgress NOTIFY agentInstallStateChanged)
+    Q_PROPERTY(QString agentInstallMessage READ agentInstallMessage NOTIFY agentInstallStateChanged)
+    Q_PROPERTY(QString agentInstallingId READ agentInstallingId NOTIFY agentInstallStateChanged)
     /// 尚无侧栏 agent 时用户在聊天栏勾选技能后的暂存（待新建 agent 后写入 config）
-    Q_PROPERTY(bool pendingNewAgentSkillPolicySet READ pendingNewAgentSkillPolicySet
-               NOTIFY pendingNewAgentSkillPolicyChanged)
+    Q_PROPERTY(bool pendingNewAgentSkillPolicySet READ pendingNewAgentSkillPolicySet NOTIFY
+                   pendingNewAgentSkillPolicyChanged)
     /// 与 AppData/config.json 中 serverUrl 一致（握手 token/clientId 亦来自该文件）
     Q_PROPERTY(QString serverUrl READ serverUrl CONSTANT)
     /// 将 serverUrl 的 ws/wss 转为 http/https、去掉 path，用于 POST /tools/invoke 等 Gateway HTTP API
     Q_PROPERTY(QString gatewayHttpBaseUrl READ gatewayHttpBaseUrl CONSTANT)
     /// config.json 中的 gateway 认证 token（与 WebSocket 握手一致）
     Q_PROPERTY(QString gatewayAuthToken READ gatewayAuthToken CONSTANT)
-    Q_PROPERTY(bool knowledgeBaseDataDirReady READ knowledgeBaseDataDirReady
-               NOTIFY knowledgeBaseDataDirStateChanged)
-    Q_PROPERTY(QString knowledgeBaseDataDirMessage READ knowledgeBaseDataDirMessage
-               NOTIFY knowledgeBaseDataDirStateChanged)
+    Q_PROPERTY(bool knowledgeBaseDataDirReady READ knowledgeBaseDataDirReady NOTIFY
+                   knowledgeBaseDataDirStateChanged)
+    Q_PROPERTY(QString knowledgeBaseDataDirMessage READ knowledgeBaseDataDirMessage NOTIFY
+                   knowledgeBaseDataDirStateChanged)
     /// 技能市场列表；新数据源接入前保持为空
-    Q_PROPERTY(QVariantList skillMarketFolders READ skillMarketFolders
-               NOTIFY skillMarketFoldersChanged)
+    Q_PROPERTY(
+        QVariantList skillMarketFolders READ skillMarketFolders NOTIFY skillMarketFoldersChanged)
     /// 正在安装技能（复制 + 请求网关重启）
     Q_PROPERTY(bool skillInstallBusy READ skillInstallBusy NOTIFY skillInstallBusyChanged)
 
@@ -176,10 +150,10 @@ public:
      *   任意状态 ──断开/错误──→ Disconnected
      */
     enum ConnectionState {
-        Disconnected = 0,   ///< 未连接（初始状态 / 断开后）
-        Connecting,         ///< TCP 连接中（WebSocket 升级尚未完成）
-        Handshaking,        ///< 协议握手中（等待 challenge / 等待 hello-ok）
-        Connected           ///< 已连接且握手成功，可正常通信
+        Disconnected = 0, ///< 未连接（初始状态 / 断开后）
+        Connecting,       ///< TCP 连接中（WebSocket 升级尚未完成）
+        Handshaking,      ///< 协议握手中（等待 challenge / 等待 hello-ok）
+        Connected         ///< 已连接且握手成功，可正常通信
     };
     Q_ENUM(ConnectionState)
 
@@ -275,8 +249,7 @@ public:
      *   3. 切换到 Connecting 状态
      *   4. 调用 QWebSocket::open() 发起连接
      */
-    Q_INVOKABLE void connectToServer(
-        const QString &url = QStringLiteral("ws://127.0.0.1:18789"));
+    Q_INVOKABLE void connectToServer(const QString &url = QStringLiteral("ws://127.0.0.1:18789"));
 
     /// 主动断开 WebSocket 连接
     Q_INVOKABLE void disconnectFromServer();
@@ -302,12 +275,9 @@ public:
     Q_INVOKABLE QVariantList currentSessionInputFiles();
     void rememberInputFilesFromHistory(const QVariantList &history);
 
-    void persistSessionArtifacts(const QString &sessionKey,
-                                 const QVariantList &messages);
-    void persistDetectedArtifacts(const QString &sessionKey,
-                                  const QVariantList &artifacts);
-    QVariantList restoreSessionArtifacts(const QString &sessionKey,
-                                          const QVariantList &history);
+    void persistSessionArtifacts(const QString &sessionKey, const QVariantList &messages);
+    void persistDetectedArtifacts(const QString &sessionKey, const QVariantList &artifacts);
+    QVariantList restoreSessionArtifacts(const QString &sessionKey, const QVariantList &history);
     /// True when artifact results for artifactSessionKey should be shown on
     /// the currently viewed Q&A session (same task, including a switched
     /// collaboration expert).
@@ -331,8 +301,7 @@ public:
     /// 在系统文件管理器中打开任务会话的工作空间。
     Q_INVOKABLE bool openTaskSessionFolder(const QString &sessionKey) const;
     /// 创建项目；workspace 为空时在默认项目目录中创建独立工作空间。
-    Q_INVOKABLE QString createProject(const QString &title,
-                                      const QString &workspace = QString());
+    Q_INVOKABLE QString createProject(const QString &title, const QString &workspace = QString());
     /// 软删除项目及其本地会话记录，不删除磁盘中的项目文件。
     Q_INVOKABLE void deleteProject(const QString &projectId);
     Q_INVOKABLE bool openProjectFolder(const QString &projectId) const;
@@ -363,9 +332,9 @@ public:
      * @param workspace 工作空间路径
      */
     Q_INVOKABLE void createAgent(const QString &name,
-                                  const QString &workspace,
-                                  bool applyPendingToolSelection = true,
-                                  const QString &identityMarkdown = QString());
+                                 const QString &workspace,
+                                 bool applyPendingToolSelection = true,
+                                 const QString &identityMarkdown = QString());
 
     /**
      * @brief 更新 Agent 基本信息（agents.update RPC）
@@ -375,17 +344,16 @@ public:
      * @param model 新模型，空则不修改
      */
     Q_INVOKABLE void updateAgent(const QString &agentId,
-                                  const QString &name = QString(),
-                                  const QString &workspace = QString(),
-                                  const QString &model = QString());
+                                 const QString &name = QString(),
+                                 const QString &workspace = QString(),
+                                 const QString &model = QString());
 
     /**
      * @brief 更新 Agent 固定身份目录中的 IDENTITY.md（本地文件写入）
      * @param agentId 要更新的 agent ID
      * @param identityMarkdown 新的 IDENTITY.md 内容
      */
-    Q_INVOKABLE void updateAgentIdentity(const QString &agentId,
-                                          const QString &identityMarkdown);
+    Q_INVOKABLE void updateAgentIdentity(const QString &agentId, const QString &identityMarkdown);
 
     /**
      * @brief 尚无 agent 时用户在工具弹窗点「保存」：记录将启用的 toolId，待首个 agent 创建后与 profile=full 一并写入 config
@@ -404,8 +372,7 @@ public:
      * @param agentId    要删除的 agent ID
      * @param deleteFiles 是否同时删除 workspace/sessions 文件，默认 true
      */
-    Q_INVOKABLE void deleteAgent(const QString &agentId,
-                                  bool deleteFiles = true);
+    Q_INVOKABLE void deleteAgent(const QString &agentId, bool deleteFiles = true);
 
     /// 获取所有技能状态（发送 skills.status RPC）
     Q_INVOKABLE void refreshSkills();
@@ -418,7 +385,8 @@ public:
      *
      * 与聊天输入栏技能开关、工具批量保存、OpenClaw Web「Agents → Skills」一致；agentId 为空时用 defaultAgentId。
      */
-    Q_INVOKABLE void setAgentSkillEnabled(const QString &agentId, const QString &skillName,
+    Q_INVOKABLE void setAgentSkillEnabled(const QString &agentId,
+                                          const QString &skillName,
                                           bool enabled);
     /// 配置中该 Agent 已选技能名；无 skills 键时返回 skills.status 中的全部技能名
     Q_INVOKABLE QStringList selectedSkillNamesForAgent(const QString &agentId) const;
@@ -456,13 +424,13 @@ public:
      * @param scheduleKind 1=cron 表达式 2=固定间隔(秒) 3=一次性 ISO 时间
      */
     Q_INVOKABLE void prepareCronJobWithDedicatedAgent(int scheduleKind,
-                                                       const QString &jobName,
-                                                       const QString &message,
-                                                       const QString &cronExpr,
-                                                       const QString &tz,
-                                                       int intervalSec,
-                                                       const QString &isoDateTime,
-                                                       const QString &workspace = QString());
+                                                      const QString &jobName,
+                                                      const QString &message,
+                                                      const QString &cronExpr,
+                                                      const QString &tz,
+                                                      int intervalSec,
+                                                      const QString &isoDateTime,
+                                                      const QString &workspace = QString());
 
     /**
      * @brief 添加 cron 表达式定时任务
@@ -482,9 +450,7 @@ public:
      * @param intervalSec 执行间隔（秒）
      * @param message   触发时发送给 agent 的消息
      */
-    Q_INVOKABLE void addIntervalJob(const QString &name,
-                                    int intervalSec,
-                                    const QString &message);
+    Q_INVOKABLE void addIntervalJob(const QString &name, int intervalSec, const QString &message);
 
     /**
      * @brief 添加一次性定时任务
@@ -547,8 +513,7 @@ public:
     Q_INVOKABLE void getAgentIdentity(const QString &sessionKey = QString());
 
     /// 加载指定会话的聊天历史（发送 chat.history RPC）
-    Q_INVOKABLE void loadChatHistory(const QString &sessionKey = QString(),
-                                      int limit = 200);
+    Q_INVOKABLE void loadChatHistory(const QString &sessionKey = QString(), int limit = 200);
 
     /// 获取可用模型列表（发送 models.list RPC）
     Q_INVOKABLE void refreshModels();
@@ -577,7 +542,8 @@ public:
     /**
      * @brief 通过 agents.list[].tools.deny 启用/禁用工具（config.set，不重启 Gateway）
      */
-    Q_INVOKABLE void setAgentToolEnabled(const QString &agentId, const QString &toolId,
+    Q_INVOKABLE void setAgentToolEnabled(const QString &agentId,
+                                         const QString &toolId,
                                          bool enabled,
                                          const QString &pluginId = QString());
 
@@ -585,7 +551,7 @@ public:
      * @brief 批量设置工具启用状态，单次 config.set 写入完整配置
      */
     Q_INVOKABLE void batchSetAgentToolsEnabled(const QString &agentId,
-                                                const QVariantList &enabledToolIds);
+                                               const QVariantList &enabledToolIds);
 
     /**
      * @brief 通过 config.patch 写入 mcp.servers 条目
@@ -594,14 +560,14 @@ public:
      * @param useHttp true=HTTP/SSE（用 httpUrl），false=stdio（command + 参数行）
      */
     Q_INVOKABLE void applyMcpServer(bool isEdit,
-                                     const QString &originalServerName,
-                                     const QString &serverName,
-                                     bool useHttp,
-                                     const QString &stdioCommand,
-                                     const QString &stdioArgsMultiline,
-                                     const QString &httpUrl,
-                                     const QString &description,
-                                     const QString &envJson = QString());
+                                    const QString &originalServerName,
+                                    const QString &serverName,
+                                    bool useHttp,
+                                    const QString &stdioCommand,
+                                    const QString &stdioArgsMultiline,
+                                    const QString &httpUrl,
+                                    const QString &description,
+                                    const QString &envJson = QString());
 
     /// 从配置中删除 mcp.servers 某键（merge patch null）
     Q_INVOKABLE void removeMcpServer(const QString &serverName);
@@ -612,7 +578,7 @@ public:
     // ── 设置：记忆 / 沙箱 ──
     bool memoryEnabled() const { return m_memoryEnabled; }
     bool llmJudgmentEnabled() const { return m_llmJudgmentEnabled; }
-    int  sandboxMode() const { return m_sandboxMode; }
+    int sandboxMode() const { return m_sandboxMode; }
     QVariantList memoryEntries() const { return m_memoryEntries; }
 
     /// 保存通用设置（记忆开关 + LLM 判定 + 沙箱模式）→ config.patch
@@ -620,61 +586,62 @@ public:
     /// 刷新本地记忆条目列表
     Q_INVOKABLE void loadMemoryEntries();
     Q_INVOKABLE void addMemoryEntry(const QString &title, const QString &content);
-    Q_INVOKABLE void updateMemoryEntry(const QString &id, const QString &title, const QString &content);
+    Q_INVOKABLE void updateMemoryEntry(const QString &id,
+                                       const QString &title,
+                                       const QString &content);
     Q_INVOKABLE void deleteMemoryEntry(const QString &id);
 
 signals:
     // ── 连接状态 ──
-    void connectionStateChanged();  ///< 连接状态发生变化
+    void connectionStateChanged(); ///< 连接状态发生变化
     void knowledgeBaseDataDirStateChanged();
 
     // ── 聊天消息 ──
     void chatMessageReceived(const QString &role,
                              const QString &content,
-                             bool isDelta);      ///< 收到聊天消息（完整或增量）
-    void streamingStarted();                     ///< 流式输出开始
-    void streamingFinished();                    ///< 流式输出结束
-    void chatRunningChanged();                   ///< 当前聊天运行状态变化
+                             bool isDelta); ///< 收到聊天消息（完整或增量）
+    void streamingStarted();                ///< 流式输出开始
+    void streamingFinished();               ///< 流式输出结束
+    void chatRunningChanged();              ///< 当前聊天运行状态变化
 
     // ── 工具调用 ──
-    void artifactsDetected(const QString &sessionKey,
-                           const QVariantList &artifacts);
+    void artifactsDetected(const QString &sessionKey, const QVariantList &artifacts);
     void toolCallReceived(const QString &toolName,
                           const QString &toolArgs,
-                          const QString &toolCallId);    ///< Agent 发起工具调用
+                          const QString &toolCallId); ///< Agent 发起工具调用
     void toolUpdateReceived(const QString &toolName,
                             const QString &content,
-                            const QString &toolCallId);  ///< 工具执行中的增量输出
+                            const QString &toolCallId); ///< 工具执行中的增量输出
     void toolResultReceived(const QString &toolName,
                             const QString &content,
                             const QString &toolCallId,
-                            bool isError);               ///< 工具执行结果返回
+                            bool isError); ///< 工具执行结果返回
 
     // ── 错误 ──
-    void errorOccurred(const QString &message);  ///< 发生错误
+    void errorOccurred(const QString &message); ///< 发生错误
 
     // ── 会话管理 ──
-    void sessionsChanged();          ///< 会话列表更新
-    void currentSessionChanged();    ///< 当前活跃会话切换
-    void currentTaskSessionChanged(); ///< 当前任务主控会话切换
-    void currentTaskWorkspaceChanged(); ///< 当前任务 workspace 变化
-    void currentViewSessionChanged(); ///< 当前查看会话切换
-    void collaborationParticipantsChanged(); ///< 协作参与者列表更新
-    void sessionCreated();           ///< 新会话创建成功
-    void historyLoaded(const QVariantList &messages); ///< 历史消息加载完成
+    void sessionsChanged();                                  ///< 会话列表更新
+    void currentSessionChanged();                            ///< 当前活跃会话切换
+    void currentTaskSessionChanged();                        ///< 当前任务主控会话切换
+    void currentTaskWorkspaceChanged();                      ///< 当前任务 workspace 变化
+    void currentViewSessionChanged();                        ///< 当前查看会话切换
+    void collaborationParticipantsChanged();                 ///< 协作参与者列表更新
+    void sessionCreated();                                   ///< 新会话创建成功
+    void historyLoaded(const QVariantList &messages);        ///< 历史消息加载完成
     void toolResultsRefreshed(const QVariantList &messages); ///< 工具结果补拉完成（原地合并）
 
     // ── 技能管理 ──
-    void skillListChanged();         ///< 技能列表更新
+    void skillListChanged();                                  ///< 技能列表更新
     void skillUpdated(const QString &skillKey, bool enabled); ///< 技能状态变更
 
     // ── 定时任务管理 ──
-    void cronJobsChanged();          ///< 任务列表更新
-    void cronStatusChanged();        ///< cron 服务状态更新
-    void cronJobAdded(const QString &jobId);   ///< 新任务添加成功
-    void cronJobRemoved(const QString &jobId); ///< 任务删除成功
-    void cronJobUpdated(const QString &jobId); ///< 任务更新成功
-    void cronRunTriggered(const QString &jobId); ///< 手动触发成功
+    void cronJobsChanged();                        ///< 任务列表更新
+    void cronStatusChanged();                      ///< cron 服务状态更新
+    void cronJobAdded(const QString &jobId);       ///< 新任务添加成功
+    void cronJobRemoved(const QString &jobId);     ///< 任务删除成功
+    void cronJobUpdated(const QString &jobId);     ///< 任务更新成功
+    void cronRunTriggered(const QString &jobId);   ///< 手动触发成功
     void cronRunsLoaded(const QVariantList &runs); ///< 执行记录加载完成
 
     // ── 设置 ──
@@ -685,31 +652,32 @@ signals:
     void settingsSaved();
 
     // ── Agent 管理 ──
-    void agentIdentityChanged();     ///< Agent 身份信息更新
-    void agentListChanged();         ///< Agent 列表更新
-    void taskSessionListChanged();   ///< 本地任务会话列表更新
-    void projectListChanged();       ///< 本地项目及其会话列表更新
-    void currentProjectChanged();    ///< 当前/待创建会话所属项目变化
-    void agentCreated(const QString &agentId, bool success,
+    void agentIdentityChanged();   ///< Agent 身份信息更新
+    void agentListChanged();       ///< Agent 列表更新
+    void taskSessionListChanged(); ///< 本地任务会话列表更新
+    void projectListChanged();     ///< 本地项目及其会话列表更新
+    void currentProjectChanged();  ///< 当前/待创建会话所属项目变化
+    void agentCreated(const QString &agentId,
+                      bool success,
                       const QString &message,
                       bool forChat); ///< 新 Agent 创建结果
-    void agentDeleted(const QString &agentId, bool success,
+    void agentDeleted(const QString &agentId,
+                      bool success,
                       const QString &message); ///< Agent 删除结果
     void agentInstallStateChanged();
-    void agentInstallFinished(const QString &agentId, bool success,
-                              const QString &message);
+    void agentInstallFinished(const QString &agentId, bool success, const QString &message);
 
     // ── 模型管理 ──
-    void modelListChanged();              ///< 可用模型列表更新
-    void currentModelChanged();           ///< 当前会话模型信息变更
-    void pendingSessionModelIdChanged();  ///< 无会话时待选模型变更
-    void skillMarketFoldersChanged();     ///< 技能市场目录列表更新
-    void skillInstallBusyChanged();       ///< 技能安装进行中状态变更
-    void mcpListChanged();                ///< MCP 服务器列表更新
-    void toolListChanged();               ///< 工具目录列表更新
-    void docxTemplatesChanged();          ///< DOCX 预设模板目录更新
-    void docxTemplatesLoadStateChanged(); ///< DOCX 模板目录加载状态更新
-    void toolInstallStateChanged();       ///< 工具安装进度或状态更新
+    void modelListChanged();                  ///< 可用模型列表更新
+    void currentModelChanged();               ///< 当前会话模型信息变更
+    void pendingSessionModelIdChanged();      ///< 无会话时待选模型变更
+    void skillMarketFoldersChanged();         ///< 技能市场目录列表更新
+    void skillInstallBusyChanged();           ///< 技能安装进行中状态变更
+    void mcpListChanged();                    ///< MCP 服务器列表更新
+    void toolListChanged();                   ///< 工具目录列表更新
+    void docxTemplatesChanged();              ///< DOCX 预设模板目录更新
+    void docxTemplatesLoadStateChanged();     ///< DOCX 模板目录加载状态更新
+    void toolInstallStateChanged();           ///< 工具安装进度或状态更新
     void pendingNewAgentSkillPolicyChanged(); ///< 新建 agent 前技能暂存变更
 
 private slots:
@@ -816,7 +784,7 @@ private:
     QString normalizeWorkspacePath(const QString &workspace) const;
     QString prepareCronWorkspace(const QString &workspace);
     QString buildCollaborationPrompt(const QString &userMessage,
-                                      const QStringList &participantAgentIds) const;
+                                     const QStringList &participantAgentIds) const;
     QJsonObject buildConfigWithSubagentAllowAgents(const QJsonObject &fullConfig,
                                                    const QString &controllerAgentId,
                                                    const QStringList &participantAgentIds,
@@ -834,22 +802,23 @@ private:
                                            const QString &businessWorkspace = QString());
     void sendPendingCollaborationChatNow();
     QJsonObject buildSessionsCreateParams(const QString &sessionKey,
-                                           const QString &agentId,
-                                           const QString &label,
-                                           const QString &task = QString(),
-                                           const QString &model = QString()) const;
+                                          const QString &agentId,
+                                          const QString &label,
+                                          const QString &task = QString(),
+                                          const QString &model = QString()) const;
     void patchSessionOutputDirBeforeSend(const QString &sessionKey,
                                          const QString &sessionOutputDir,
                                          const QString &message);
-    void sendChatMessageNow(const QString &sessionKey,
-                            const QString &message);
-    struct WorkspaceFileState {
+    void sendChatMessageNow(const QString &sessionKey, const QString &message);
+    struct WorkspaceFileState
+    {
         qint64 size = 0;
         qint64 modifiedMs = 0;
         QString absolutePath;
     };
     typedef QHash<QString, WorkspaceFileState> WorkspaceSnapshot;
-    struct ArtifactTrackingState {
+    struct ArtifactTrackingState
+    {
         QString workspace;
         WorkspaceSnapshot before;
         quint64 generation = 0;
@@ -884,8 +853,7 @@ private:
     void softDeleteCronTaskSessionsForJob(const QString &jobId);
     void reconcileCronTaskSessionsWithJobs();
     void loadCronJobOwnershipFromDb();
-    void upsertCronJobOwnershipLocal(const QString &jobId,
-                                     const QString &userId = QString());
+    void upsertCronJobOwnershipLocal(const QString &jobId, const QString &userId = QString());
     void setCronJobPinnedLocal(const QString &jobId, bool pinned);
     void softDeleteCronJobOwnershipLocal(const QString &jobId);
     bool isCronJobOwnedByCurrentUser(const QString &jobId) const;
@@ -908,8 +876,7 @@ private:
     void applyMcpListFromConfigGetPayload(const QJsonObject &payload);
     void applyPendingKnowledgeBaseDataDir();
     void setKnowledgeBaseDataDirState(bool ready, const QString &message);
-    static QString knowledgeBaseDataDirForUser(const QString &userId,
-                                                const QString &baseDataDir);
+    static QString knowledgeBaseDataDirForUser(const QString &userId, const QString &baseDataDir);
     /// 从完整 config 对象填充 m_mcpList（按名称排序）
     void rebuildMcpListFromConfigObject(const QJsonObject &config);
     /// 从 config 根对象重建 agentId → workspace（及 agents.defaults.workspace）
@@ -956,86 +923,86 @@ private:
     void applyPendingInstalledToolPolicy();
     void finishToolInstall(const QString &errorMessage = QString());
     void consumeToolInstallOutput(const QByteArray &bytes, bool flush = false);
-    bool pluginNeedsProvisioning(const QString &pluginId,
-                                 const QString &backendRoot) const;
+    bool pluginNeedsProvisioning(const QString &pluginId, const QString &backendRoot) const;
     void consumeAgentInstallOutput(const QByteArray &bytes, bool flush = false);
     void finishAgentInstall(bool success, const QString &message);
 
     /// 从事件 payload 提取 sessionKey（兼容 data / agentId）
     QString extractPayloadSessionKey(const QJsonObject &payload) const;
     void rememberCollaborationChildSessionHint(const QJsonObject &payload);
-    void refreshCollaborationSessionsAfterSpawn(const QString &toolName,
-                                                const QString &toolResult);
-    QVariantMap collaborationChildHintForAgent(const QString &agentId,
-                                               const QString &taskKey) const;
+    void refreshCollaborationSessionsAfterSpawn(const QString &toolName, const QString &toolResult);
+    QVariantMap collaborationChildHintForAgent(const QString &agentId, const QString &taskKey) const;
     /// 当前 UI 是否应展示该会话的推送
     /// @param allowIfKeyMissing  若 payload 中无 sessionKey，是否默认允许
-    bool eventAppliesToCurrentUiSession(
-        const QJsonObject &payload,
-        bool allowIfKeyMissing = false) const;
+    bool eventAppliesToCurrentUiSession(const QJsonObject &payload,
+                                        bool allowIfKeyMissing = false) const;
 
     // ═══════════════════════════════════════════════════════════════
     //  成员变量
     // ═══════════════════════════════════════════════════════════════
 
     // ── WebSocket 实例 ──
-    QWebSocket     *m_socket;           ///< Qt WebSocket 客户端实例
+    QWebSocket *m_socket; ///< Qt WebSocket 客户端实例
 
     // ── 连接状态 ──
-    ConnectionState m_state;            ///< 当前连接状态
-    bool            m_chatRunning = false; ///< 当前聊天运行是否仍在服务端执行
-    QSet<QString>   m_chatRunningSessionKeys; ///< 服务端仍在执行的聊天会话
-    QString         m_connectRequestId; ///< connect 握手请求的 ID（用于匹配响应）
-    QString         m_challengeNonce;   ///< 服务器下发的 challenge nonce
+    ConnectionState m_state;                ///< 当前连接状态
+    bool m_chatRunning = false;             ///< 当前聊天运行是否仍在服务端执行
+    QSet<QString> m_chatRunningSessionKeys; ///< 服务端仍在执行的聊天会话
+    QString m_connectRequestId;             ///< connect 握手请求的 ID（用于匹配响应）
+    QString m_challengeNonce;               ///< 服务器下发的 challenge nonce
 
     // ── 请求追踪 ──
     QMap<QString, QString> m_pendingRequests; ///< 待处理请求映射（requestId → 方法名）
 
     // ── 子类实例 ──
-    WsConfig         m_config;          ///< 配置类：连接参数、设备密钥
-    WsSession        m_session;         ///< 会话类：会话管理、消息收发
-    WsSkill          m_skill;           ///< 技能类
-    WsScheduledTask  m_scheduledTask;   ///< 定时任务类：预留
-    QVariantMap      m_agentIdentity;   ///< 当前 agent 身份缓存
-    QVariantList     m_agentList;       ///< agents.list 缓存
-    QVariantList     m_taskSessionList; ///< SQLite 任务会话缓存
-    QVariantList     m_projectList;     ///< SQLite 项目缓存（含项目会话）
-    QSqlDatabase     m_taskSessionDb;   ///< 本地任务会话 SQLite
-    bool             m_taskSessionDbReady = false;
-    QSet<QString>    m_runningTaskSessionKeys;
-    QString          m_taskSessionUserId;
-    QSet<QString>    m_currentUserCronJobIds; ///< 当前登录用户拥有的 cron job ID
-    QSet<QString>    m_currentUserPinnedCronJobIds; ///< 当前用户置顶的 cron job ID
-    QString          m_defaultAgentId;  ///< 默认 agent ID
-    QString          m_currentTaskSessionKey; ///< 主控任务 sessionKey
-    QString          m_currentViewSessionKey; ///< 聊天区当前查看 sessionKey
-    QString          m_currentProjectId; ///< 当前任务或待新建会话所属项目
-    QVariantList     m_collaborationChildSessionHints; ///< 实时发现的子 agent 会话（等待 sessions.list 落盘前）
-    QStringList      m_pendingCollaborationAgentIds; ///< 新建任务前选择的协作 agent
-    QString          m_pendingCollabControllerSessionKey;
-    QString          m_pendingCollabControllerAgentId;
-    QStringList      m_pendingCollabParticipantAgentIds;
-    QString          m_pendingCollabUserMessage;
-    QString          m_pendingCollabBusinessWorkspace;
-    bool             m_pendingCollabAwaitingConfigGet = false;
-    QSet<QString>    m_collabAllowConfigSetReqIds;
-    QSet<QString>    m_localOnlyTaskSessionKeys; ///< 已入本地库但尚未 sessions.create 的任务
+    WsConfig m_config;               ///< 配置类：连接参数、设备密钥
+    WsSession m_session;             ///< 会话类：会话管理、消息收发
+    WsSkill m_skill;                 ///< 技能类
+    WsScheduledTask m_scheduledTask; ///< 定时任务类：预留
+    QVariantMap m_agentIdentity;     ///< 当前 agent 身份缓存
+    QVariantList m_agentList;        ///< agents.list 缓存
+    QVariantList m_taskSessionList;  ///< SQLite 任务会话缓存
+    QVariantList m_projectList;      ///< SQLite 项目缓存（含项目会话）
+    QSqlDatabase m_taskSessionDb;    ///< 本地任务会话 SQLite
+    bool m_taskSessionDbReady = false;
+    QSet<QString> m_runningTaskSessionKeys;
+    QString m_taskSessionUserId;
+    QSet<QString> m_currentUserCronJobIds;       ///< 当前登录用户拥有的 cron job ID
+    QSet<QString> m_currentUserPinnedCronJobIds; ///< 当前用户置顶的 cron job ID
+    QString m_defaultAgentId;                    ///< 默认 agent ID
+    QString m_currentTaskSessionKey;             ///< 主控任务 sessionKey
+    QString m_currentViewSessionKey;             ///< 聊天区当前查看 sessionKey
+    QString m_currentProjectId;                  ///< 当前任务或待新建会话所属项目
+    QVariantList
+        m_collaborationChildSessionHints; ///< 实时发现的子 agent 会话（等待 sessions.list 落盘前）
+    QStringList m_pendingCollaborationAgentIds; ///< 新建任务前选择的协作 agent
+    QString m_pendingCollabControllerSessionKey;
+    QString m_pendingCollabControllerAgentId;
+    QStringList m_pendingCollabParticipantAgentIds;
+    QString m_pendingCollabUserMessage;
+    QString m_pendingCollabBusinessWorkspace;
+    bool m_pendingCollabAwaitingConfigGet = false;
+    QSet<QString> m_collabAllowConfigSetReqIds;
+    QSet<QString> m_localOnlyTaskSessionKeys; ///< 已入本地库但尚未 sessions.create 的任务
     QMap<QString, QString> m_pendingSessionsCreateReqSession; ///< reqId -> sessionKey
-    QMap<QString, QString> m_pendingCreatedSessionMessages; ///< sessionKey -> create 后待发送消息
-    struct PendingSessionOutputPatch {
+    QMap<QString, QString> m_pendingCreatedSessionMessages;   ///< sessionKey -> create 后待发送消息
+    struct PendingSessionOutputPatch
+    {
         QString sessionKey;
         QString message;
     };
     QMap<QString, PendingSessionOutputPatch> m_pendingSessionOutputPatches; ///< patch reqId -> 后续发送
 
-    QString m_pendingCreateName;       ///< agents.create 待确认名称
-    QString m_pendingCreateWorkspace;  ///< agents.create 使用的 workspace 路径
+    QString m_pendingCreateName;             ///< agents.create 待确认名称
+    QString m_pendingCreateWorkspace;        ///< agents.create 使用的 workspace 路径
     QString m_pendingCreateIdentityMarkdown; ///< agents.create 成功后写入 workspace/IDENTITY.md
-    QString m_pendingDeleteId;         ///< agents.delete 待确认 ID
+    QString m_pendingDeleteId;               ///< agents.delete 待确认 ID
     QString m_pendingProfileFullAgentId; ///< agents.create 后待设置 tools.profile=full + deny 的 agentId
-    QStringList m_pendingNewAgentEnabledToolIds; ///< 新建 agent 前用户在弹窗中选中的工具（空且未 set 表示用「全选」）
+    QStringList
+        m_pendingNewAgentEnabledToolIds; ///< 新建 agent 前用户在弹窗中选中的工具（空且未 set 表示用「全选」）
     bool m_pendingNewAgentToolPolicySet = false; ///< 用户是否已点过保存（无 agent 时）
-    QStringList m_pendingNewAgentSkillNames;     ///< 新建 agent 前聊天栏选中的技能名（agents.list[].skills）
+    QStringList
+        m_pendingNewAgentSkillNames; ///< 新建 agent 前聊天栏选中的技能名（agents.list[].skills）
     bool m_pendingNewAgentSkillPolicySet = false; ///< 用户是否在无 agent 时改过技能勾选
     /// 刚创建完 agent、config.get 尚未写入 deny 前，切到该 agent 时不要清空待应用的 tool 选择
     QString m_expectingToolPolicyApplyForAgentId;
@@ -1051,7 +1018,7 @@ private:
     /// 新建 agent 时暂存首句 + 时间，agents.list 回来后注入侧栏
     QString m_newAgentSidebarId;
     QString m_newAgentSidebarTitle;
-    qint64  m_newAgentSidebarTs = 0;
+    qint64 m_newAgentSidebarTs = 0;
 
     /// 创建定时任务时先建专用 agent：1=cron 2=interval 3=oneTime
     bool m_cronAwaitingDedicatedAgent = false;
@@ -1064,14 +1031,17 @@ private:
     int m_cronPendingEveryMs = 0;
     QDateTime m_cronPendingAt;
     bool m_cronPendingDeleteAfterRun = false;
-    struct PendingCronTaskSession {
+    struct PendingCronTaskSession
+    {
         QString agentId;
         QString jobName;
         QString workspace;
         QString userId;
     };
-    QMap<QString, PendingCronTaskSession> m_pendingCronTaskSessions; ///< cron.add reqId -> task row info
-    struct PendingCronToolCall {
+    QMap<QString, PendingCronTaskSession>
+        m_pendingCronTaskSessions; ///< cron.add reqId -> task row info
+    struct PendingCronToolCall
+    {
         QString toolName;
         QString userId;
         QString sessionKey;
@@ -1102,21 +1072,21 @@ private:
     QMap<QString, QString> m_toolResultRefreshReqSessions; ///< requestId -> view sessionKey
 
     // ── 模型管理 ──
-    QVariantList m_modelList;          ///< 可用模型列表缓存（models.list 响应）
-    QVariantMap  m_currentModel;       ///< 当前会话模型信息（sessions.patch 响应）
-    QString m_pendingSessionModelId;   ///< 尚无 session 时用户选择的模型，有 session 后 patch
-    QVariantList m_docxTemplates;      ///< docxTemplates.list 响应
+    QVariantList m_modelList;        ///< 可用模型列表缓存（models.list 响应）
+    QVariantMap m_currentModel;      ///< 当前会话模型信息（sessions.patch 响应）
+    QString m_pendingSessionModelId; ///< 尚无 session 时用户选择的模型，有 session 后 patch
+    QVariantList m_docxTemplates;    ///< docxTemplates.list 响应
     bool m_docxTemplatesLoading = false;
 
-    QString m_lastConnectedWsUrl;      ///< 最近一次 connectToServer 的 URL（自动重连用）
+    QString m_lastConnectedWsUrl; ///< 最近一次 connectToServer 的 URL（自动重连用）
     /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费
     int m_pendingReconnectDelayMs = 0;
     /// 自动重连：非用户主动断开时持续尝试恢复，退避间隔最大 5 秒
-    bool m_userRequestedDisconnect = false;         ///< disconnectFromServer() 触发的断开，不自动重连
+    bool m_userRequestedDisconnect = false; ///< disconnectFromServer() 触发的断开，不自动重连
     bool m_skipAutoReconnectOnNextDisconnect = false; ///< connectToServer 为换新连接而 close 旧 socket
-    bool m_connectFromAutoReconnect = false;        ///< 当前 connectToServer 由自动重连定时器发起
-    int m_autoReconnectFailureCount = 0;            ///< 本轮自动重连已连续失败次数（成功或手动连接时清零）
-    bool m_skillInstallBusy = false; ///< 技能安装流程进行中
+    bool m_connectFromAutoReconnect = false;          ///< 当前 connectToServer 由自动重连定时器发起
+    int m_autoReconnectFailureCount = 0; ///< 本轮自动重连已连续失败次数（成功或手动连接时清零）
+    bool m_skillInstallBusy = false;     ///< 技能安装流程进行中
     bool m_toolInstallBusy = false;
     int m_toolInstallProgress = 0;
     QString m_toolInstallMessage;
@@ -1136,32 +1106,32 @@ private:
     // ── 设置状态 ──
     bool m_memoryEnabled = true;
     bool m_llmJudgmentEnabled = false;
-    int  m_sandboxMode = 0;
+    int m_sandboxMode = 0;
     QVariantList m_memoryEntries;
     void parseSettingsFromConfig();
     void saveMemoryEntriesToDisk();
 
-    QString        m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
+    QString m_configSnapshotHash; ///< config.get / config.patch 乐观锁 baseHash
     /// baseHash 不匹配时：暂存最后一次 config.set/patch 参数，先 refresh(config.get) 再重发一次
-    QString        m_stashedConfigMutationMethod;
-    QJsonObject    m_stashedConfigMutationParams;
-    bool           m_configHashRetryAfterGet = false;
-    bool           m_configHashRetryInFlight = false;
-    QString        m_knowledgeBaseDataDirUserId;
-    QString        m_knowledgeBaseDesiredDataDir;
-    QString        m_pendingKnowledgeBaseConfigMutationReqId;
-    bool           m_knowledgeBaseConfigMutationAwaitingRetry = false;
-    bool           m_knowledgeBaseAwaitingRestart = false;
-    bool           m_knowledgeBaseRestartObserved = false;
-    bool           m_knowledgeBaseDataDirReady = false;
-    QString        m_knowledgeBaseDataDirMessage;
-    QVariantList   m_mcpList;          ///< mcp.servers 展示列表
+    QString m_stashedConfigMutationMethod;
+    QJsonObject m_stashedConfigMutationParams;
+    bool m_configHashRetryAfterGet = false;
+    bool m_configHashRetryInFlight = false;
+    QString m_knowledgeBaseDataDirUserId;
+    QString m_knowledgeBaseDesiredDataDir;
+    QString m_pendingKnowledgeBaseConfigMutationReqId;
+    bool m_knowledgeBaseConfigMutationAwaitingRetry = false;
+    bool m_knowledgeBaseAwaitingRestart = false;
+    bool m_knowledgeBaseRestartObserved = false;
+    bool m_knowledgeBaseDataDirReady = false;
+    QString m_knowledgeBaseDataDirMessage;
+    QVariantList m_mcpList; ///< mcp.servers 展示列表
 
-    WsTools        m_tools;            ///< tools.catalog 与 tools 策略展平
-    QJsonObject    m_lastConfigSnapshot; ///< config.get 解析出的配置根对象（供 tools / patch）
+    WsTools m_tools;                  ///< tools.catalog 与 tools 策略展平
+    QJsonObject m_lastConfigSnapshot; ///< config.get 解析出的配置根对象（供 tools / patch）
 
     QHash<QString, QString> m_agentWorkspaceById; ///< agents.list[].id → workspace
-    QString                 m_agentsDefaultWorkspace; ///< agents.defaults.workspace
+    QString m_agentsDefaultWorkspace;             ///< agents.defaults.workspace
 
     QHash<QString, QStringList> m_agentSubagentsById;
 

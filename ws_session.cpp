@@ -3,9 +3,9 @@
  * @brief WebSocket 会话管理类 —— 实现
  */
 #include "ws_session.h"
-#include <QUuid>
 #include <QDebug>
 #include <QJsonDocument>
+#include <QUuid>
 
 namespace {
 
@@ -31,9 +31,10 @@ QString userVisibleText(const QString &text)
         return text;
 
     const QString prefix = text.left(markerIndex);
-    const bool isInjectedPrompt =
-        prefix.contains(QStringLiteral("本任务的工作目录（也是输出文件目录）："))
-        || prefix.startsWith(QStringLiteral("你是这个协作任务的主控 agent。"));
+    const bool isInjectedPrompt = prefix.contains(
+                                      QStringLiteral("本任务的工作目录（也是输出文件目录）："))
+                                  || prefix.startsWith(
+                                      QStringLiteral("你是这个协作任务的主控 agent。"));
     if (!isInjectedPrompt)
         return text;
 
@@ -73,7 +74,8 @@ QString extractToolOutputFromDataObject(const QJsonObject &data)
                 return fromArr;
         }
         if (outputVal.isObject())
-            return QString::fromUtf8(QJsonDocument(outputVal.toObject()).toJson(QJsonDocument::Compact));
+            return QString::fromUtf8(
+                QJsonDocument(outputVal.toObject()).toJson(QJsonDocument::Compact));
     }
 
     const QJsonValue resultVal = data.value(QStringLiteral("result"));
@@ -82,7 +84,8 @@ QString extractToolOutputFromDataObject(const QJsonObject &data)
             return resultVal.toString();
         if (resultVal.isObject()) {
             const QJsonObject ro = resultVal.toObject();
-            const QString fromRc = textFromContentArray(ro.value(QStringLiteral("content")).toArray());
+            const QString fromRc = textFromContentArray(
+                ro.value(QStringLiteral("content")).toArray());
             if (!fromRc.isEmpty())
                 return fromRc;
             return QString::fromUtf8(QJsonDocument(ro).toJson(QJsonDocument::Compact));
@@ -95,7 +98,8 @@ QString extractToolOutputFromDataObject(const QJsonObject &data)
             return partialVal.toString();
         if (partialVal.isObject()) {
             const QJsonObject ro = partialVal.toObject();
-            const QString fromRc = textFromContentArray(ro.value(QStringLiteral("content")).toArray());
+            const QString fromRc = textFromContentArray(
+                ro.value(QStringLiteral("content")).toArray());
             if (!fromRc.isEmpty())
                 return fromRc;
         }
@@ -119,8 +123,7 @@ QString extractToolOutputFromDataObject(const QJsonObject &data)
 WsSession::WsSession()
     : m_currentSessionKey(QString())
     , m_isStreaming(false)
-{
-}
+{}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  当前会话管理
@@ -161,15 +164,16 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
         const QJsonObject s = v.toObject();
 
         // 会话标识：优先 "key"，兼容 "sessionKey"
-        const QString key = s.value(QStringLiteral("key")).toString(
-            s.value(QStringLiteral("sessionKey")).toString());
-        if (key.isEmpty()) continue;
+        const QString key = s.value(QStringLiteral("key"))
+                                .toString(s.value(QStringLiteral("sessionKey")).toString());
+        if (key.isEmpty())
+            continue;
 
         // 网关返回的 displayName 优先（与 sessions.list 一致）
         QString name = s.value(QStringLiteral("displayName")).toString();
         if (name.isEmpty()) {
-            name = s.value(QStringLiteral("title")).toString(
-                s.value(QStringLiteral("name")).toString());
+            name = s.value(QStringLiteral("title"))
+                       .toString(s.value(QStringLiteral("name")).toString());
         }
         if (name.isEmpty()) {
             const QStringList parts = key.split(QLatin1Char(':'));
@@ -178,8 +182,7 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
 
         // 模型名单独存放；侧栏标题用 derivedTitle/label/displayName，不再把模型拼进 displayName
         const QString model = s.value(QStringLiteral("model")).toString();
-        const QString modelProvider =
-            s.value(QStringLiteral("modelProvider")).toString();
+        const QString modelProvider = s.value(QStringLiteral("modelProvider")).toString();
 
         qint64 updatedAt = 0;
         const QJsonValue uVal = s.value(QStringLiteral("updatedAt"));
@@ -202,21 +205,19 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
         const QString derivedTitle = s.value(QStringLiteral("derivedTitle")).toString();
         const QString label = s.value(QStringLiteral("label")).toString();
         const QString spawnedBy = s.value(QStringLiteral("spawnedBy")).toString();
-        const QString parentSessionKey =
-            s.value(QStringLiteral("parentSessionKey")).toString();
+        const QString parentSessionKey = s.value(QStringLiteral("parentSessionKey")).toString();
         const QString subagentRole = s.value(QStringLiteral("subagentRole")).toString();
         const QString kind = s.value(QStringLiteral("kind")).toString();
         const QString agentId = s.value(QStringLiteral("agentId")).toString();
         const QString status = s.value(QStringLiteral("status")).toString();
         const QString state = s.value(QStringLiteral("state")).toString();
-        const QString sessionOutputDir =
-            s.value(QStringLiteral("sessionOutputDir")).toString();
+        const QString sessionOutputDir = s.value(QStringLiteral("sessionOutputDir")).toString();
 
         QVariantMap entry;
-        entry[QStringLiteral("sessionKey")]   = key;
-        entry[QStringLiteral("displayName")]  = name;
-        entry[QStringLiteral("updatedAt")]    = QVariant(static_cast<qlonglong>(updatedAt));
-        entry[QStringLiteral("startedAt")]    = QVariant(static_cast<qlonglong>(startedAt));
+        entry[QStringLiteral("sessionKey")] = key;
+        entry[QStringLiteral("displayName")] = name;
+        entry[QStringLiteral("updatedAt")] = QVariant(static_cast<qlonglong>(updatedAt));
+        entry[QStringLiteral("startedAt")] = QVariant(static_cast<qlonglong>(startedAt));
         if (!derivedTitle.isEmpty())
             entry[QStringLiteral("derivedTitle")] = derivedTitle;
         if (!label.isEmpty())
@@ -249,8 +250,7 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
             if (s.contains(field))
                 entry[field] = s.value(field).toVariant();
         }
-        for (const QString &field : {QStringLiteral("completedAt"),
-                                     QStringLiteral("endedAt")}) {
+        for (const QString &field : {QStringLiteral("completedAt"), QStringLiteral("endedAt")}) {
             if (s.contains(field))
                 entry[field] = s.value(field).toVariant();
         }
@@ -271,10 +271,10 @@ int WsSession::parseSessionsResponse(const QJsonObject &payload)
     // 保底：如果服务器返回空列表，插入默认会话
     if (m_sessions.isEmpty()) {
         QVariantMap def;
-        def[QStringLiteral("sessionKey")]  = QStringLiteral("agent:main:main");
+        def[QStringLiteral("sessionKey")] = QStringLiteral("agent:main:main");
         def[QStringLiteral("displayName")] = QStringLiteral("Main Agent");
-        def[QStringLiteral("updatedAt")]   = QVariant(static_cast<qlonglong>(0));
-        def[QStringLiteral("startedAt")]  = QVariant(static_cast<qlonglong>(0));
+        def[QStringLiteral("updatedAt")] = QVariant(static_cast<qlonglong>(0));
+        def[QStringLiteral("startedAt")] = QVariant(static_cast<qlonglong>(0));
         m_sessions.append(def);
     }
 
@@ -299,7 +299,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
     for (const QJsonValue &v : arr) {
         const QJsonObject m = v.toObject();
         const QString role = m.value(QStringLiteral("role")).toString();
-        if (role.isEmpty()) continue;
+        if (role.isEmpty())
+            continue;
 
         // Gateway abort handling persists a synthetic assistant transcript
         // entry (model=gateway-injected) so the parent chain remains valid.
@@ -317,9 +318,9 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
 
         // ── toolResult 消息 → 独立条目 ──
         if (role == QLatin1String("toolResult")) {
-            const QString tcId  = m.value(QStringLiteral("toolCallId")).toString();
+            const QString tcId = m.value(QStringLiteral("toolCallId")).toString();
             const QString tName = m.value(QStringLiteral("toolName")).toString();
-            const bool isErr    = m.value(QStringLiteral("isError")).toBool(false);
+            const bool isErr = m.value(QStringLiteral("isError")).toBool(false);
 
             QString resultText;
             const QJsonArray cArr = m.value(QStringLiteral("content")).toArray();
@@ -327,7 +328,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                 for (const QJsonValue &cv : cArr) {
                     const QJsonObject co = cv.toObject();
                     if (co.value(QStringLiteral("type")).toString() == QLatin1String("text")) {
-                        if (!resultText.isEmpty()) resultText += QLatin1Char('\n');
+                        if (!resultText.isEmpty())
+                            resultText += QLatin1Char('\n');
                         resultText += co.value(QStringLiteral("text")).toString();
                     }
                 }
@@ -338,12 +340,12 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                 resultText = resultText.left(50000) + QStringLiteral("\n... (truncated)");
 
             QVariantMap entry;
-            entry[QStringLiteral("role")]       = QStringLiteral("tool");
-            entry[QStringLiteral("content")]    = resultText;
-            entry[QStringLiteral("msgType")]    = QStringLiteral("toolResult");
-            entry[QStringLiteral("toolName")]   = tName;
+            entry[QStringLiteral("role")] = QStringLiteral("tool");
+            entry[QStringLiteral("content")] = resultText;
+            entry[QStringLiteral("msgType")] = QStringLiteral("toolResult");
+            entry[QStringLiteral("toolName")] = tName;
             entry[QStringLiteral("toolCallId")] = tcId;
-            entry[QStringLiteral("isError")]    = isErr;
+            entry[QStringLiteral("isError")] = isErr;
             history.append(entry);
             continue;
         }
@@ -363,7 +365,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                     QString t = co.value(QStringLiteral("text")).toString();
                     // 清理系统注入的 message_id 尾缀
                     int midx = t.indexOf(QStringLiteral("\n[message_id:"));
-                    if (midx >= 0) t = t.left(midx).trimmed();
+                    if (midx >= 0)
+                        t = t.left(midx).trimmed();
                     // 清理用户消息的时间戳前缀
                     if (role == QLatin1String("user") && t.startsWith(QLatin1Char('['))) {
                         int rBracket = t.indexOf(QLatin1String("] "));
@@ -372,16 +375,17 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                     }
                     if (role == QLatin1String("user"))
                         t = userVisibleText(t);
-                    if (t.isEmpty()) continue;
+                    if (t.isEmpty())
+                        continue;
 
                     QVariantMap entry;
-                    entry[QStringLiteral("role")]    = role;
+                    entry[QStringLiteral("role")] = role;
                     entry[QStringLiteral("content")] = t;
                     entry[QStringLiteral("msgType")] = QStringLiteral("text");
                     history.append(entry);
 
                 } else if (ctype == QLatin1String("toolCall")) {
-                    const QString tcId  = co.value(QStringLiteral("id")).toString();
+                    const QString tcId = co.value(QStringLiteral("id")).toString();
                     const QString tName = co.value(QStringLiteral("name")).toString();
                     const QJsonObject args = co.value(QStringLiteral("arguments")).toObject();
                     QString argsStr = QString::fromUtf8(
@@ -390,11 +394,11 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                         argsStr = argsStr.left(1000) + QStringLiteral("...");
 
                     QVariantMap entry;
-                    entry[QStringLiteral("role")]       = QStringLiteral("assistant");
-                    entry[QStringLiteral("content")]    = QString();
-                    entry[QStringLiteral("msgType")]    = QStringLiteral("toolCall");
-                    entry[QStringLiteral("toolName")]   = tName;
-                    entry[QStringLiteral("toolArgs")]   = argsStr;
+                    entry[QStringLiteral("role")] = QStringLiteral("assistant");
+                    entry[QStringLiteral("content")] = QString();
+                    entry[QStringLiteral("msgType")] = QStringLiteral("toolCall");
+                    entry[QStringLiteral("toolName")] = tName;
+                    entry[QStringLiteral("toolArgs")] = argsStr;
                     entry[QStringLiteral("toolCallId")] = tcId;
                     history.append(entry);
                 }
@@ -408,10 +412,11 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
                 text = m.value(QStringLiteral("message")).toString();
             if (role == QLatin1String("user"))
                 text = userVisibleText(text);
-            if (text.isEmpty()) continue;
+            if (text.isEmpty())
+                continue;
 
             QVariantMap entry;
-            entry[QStringLiteral("role")]    = role;
+            entry[QStringLiteral("role")] = role;
             entry[QStringLiteral("content")] = text;
             entry[QStringLiteral("msgType")] = QStringLiteral("text");
             history.append(entry);
@@ -426,52 +431,64 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
 //  流式响应状态
 // ═══════════════════════════════════════════════════════════════════════
 
-bool WsSession::isStreaming() const       { return m_isStreaming; }
-void WsSession::setStreaming(bool s)      { m_isStreaming = s; }
+bool WsSession::isStreaming() const
+{
+    return m_isStreaming;
+}
+void WsSession::setStreaming(bool s)
+{
+    m_isStreaming = s;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  新会话请求跟踪
 // ═══════════════════════════════════════════════════════════════════════
 
-QString WsSession::newSessionReqId() const   { return m_newSessionReqId; }
-void    WsSession::setNewSessionReqId(const QString &id) { m_newSessionReqId = id; }
-void    WsSession::clearNewSessionReqId()    { m_newSessionReqId.clear(); }
+QString WsSession::newSessionReqId() const
+{
+    return m_newSessionReqId;
+}
+void WsSession::setNewSessionReqId(const QString &id)
+{
+    m_newSessionReqId = id;
+}
+void WsSession::clearNewSessionReqId()
+{
+    m_newSessionReqId.clear();
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  构建 RPC 请求参数
 // ═══════════════════════════════════════════════════════════════════════
 
-QJsonObject WsSession::buildChatSendParams(const QString &message,
-                                            const QString &sessionKey) const
+QJsonObject WsSession::buildChatSendParams(const QString &message, const QString &sessionKey) const
 {
     const QString key = sessionKey.isEmpty() ? m_currentSessionKey : sessionKey;
 
     QJsonObject params;
-    params[QStringLiteral("sessionKey")]     = key;
-    params[QStringLiteral("message")]        = message;
-    params[QStringLiteral("deliver")]        = false;
-    params[QStringLiteral("idempotencyKey")] =
-        QUuid::createUuid().toString(QUuid::WithoutBraces);
+    params[QStringLiteral("sessionKey")] = key;
+    params[QStringLiteral("message")] = message;
+    params[QStringLiteral("deliver")] = false;
+    params[QStringLiteral("idempotencyKey")] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     return params;
 }
 
 QJsonObject WsSession::buildNewSessionParams() const
 {
     QJsonObject params;
-    params[QStringLiteral("sessionKey")]     = m_currentSessionKey;
-    params[QStringLiteral("message")]        = QStringLiteral("/new");
-    params[QStringLiteral("deliver")]        = false;
-    params[QStringLiteral("idempotencyKey")] =
-        QUuid::createUuid().toString(QUuid::WithoutBraces);
+    params[QStringLiteral("sessionKey")] = m_currentSessionKey;
+    params[QStringLiteral("message")] = QStringLiteral("/new");
+    params[QStringLiteral("deliver")] = false;
+    params[QStringLiteral("idempotencyKey")] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     return params;
 }
 
 QJsonObject WsSession::buildListSessionsParams() const
 {
     QJsonObject params;
-    params[QStringLiteral("includeGlobal")]  = true;
+    params[QStringLiteral("includeGlobal")] = true;
     params[QStringLiteral("includeUnknown")] = false;
-    params[QStringLiteral("limit")]          = 120;
+    params[QStringLiteral("limit")] = 120;
     // 便于侧栏显示最近会话标题（服务端会从 transcript 推导）
     params[QStringLiteral("includeDerivedTitles")] = true;
     return params;
@@ -488,17 +505,16 @@ QJsonObject WsSession::buildLoadHistoryParams() const
 {
     QJsonObject params;
     params[QStringLiteral("sessionKey")] = m_currentSessionKey;
-    params[QStringLiteral("limit")]      = 500;
+    params[QStringLiteral("limit")] = 500;
     return params;
 }
 
-QJsonObject WsSession::buildChatHistoryParams(const QString &sessionKey,
-                                               int limit) const
+QJsonObject WsSession::buildChatHistoryParams(const QString &sessionKey, int limit) const
 {
     const QString key = sessionKey.isEmpty() ? m_currentSessionKey : sessionKey;
     QJsonObject params;
     params[QStringLiteral("sessionKey")] = key;
-    params[QStringLiteral("limit")]      = limit;
+    params[QStringLiteral("limit")] = limit;
     return params;
 }
 
@@ -529,8 +545,7 @@ QVariantMap WsSession::parseAgentIdentityResponse(const QJsonObject &payload) co
     extract(QStringLiteral("agentId"));
     extract(QStringLiteral("workspace"));
 
-    qDebug() << "[WsSession] agent identity:"
-             << identity.value(QStringLiteral("name")).toString()
+    qDebug() << "[WsSession] agent identity:" << identity.value(QStringLiteral("name")).toString()
              << identity.value(QStringLiteral("emoji")).toString();
     return identity;
 }
@@ -539,128 +554,118 @@ QVariantMap WsSession::parseAgentIdentityResponse(const QJsonObject &payload) co
 //  服务器推送事件解析
 // ═══════════════════════════════════════════════════════════════════════
 
-WsEventResult WsSession::parseEvent(const QString &event,
-                                     const QJsonObject &payload) const
+WsEventResult WsSession::parseEvent(const QString &event, const QJsonObject &payload) const
 {
     WsEventResult result;
-    result.isStart      = false;
-    result.isDelta      = false;
-    result.isComplete   = false;
-    result.ignore       = false;
-    result.isToolCall   = false;
+    result.isStart = false;
+    result.isDelta = false;
+    result.isComplete = false;
+    result.ignore = false;
+    result.isToolCall = false;
     result.isToolUpdate = false;
     result.isToolResult = false;
-    result.toolIsError  = false;
+    result.toolIsError = false;
 
     // ── 解构 payload 二级结构 ──
-    const QString     subEvent = payload.value(QStringLiteral("event")).toString();
-    const QJsonObject data     = payload.value(QStringLiteral("data")).toObject();
+    const QString subEvent = payload.value(QStringLiteral("event")).toString();
+    const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
 
     // ── 工具调用检测 ──
     // 兼容两种格式：
     //  1) data.type = tool_use / toolCall / toolResult
     //  2) payload.stream = tool + data.phase = start/result/update
     const QString dataType = data.value(QStringLiteral("type")).toString();
-    const QString stream   = payload.value(QStringLiteral("stream")).toString();
-    const QString phase    = data.value(QStringLiteral("phase")).toString();
+    const QString stream = payload.value(QStringLiteral("stream")).toString();
+    const QString phase = data.value(QStringLiteral("phase")).toString();
     const bool isToolStream = (stream == QLatin1String("tool"));
 
     if (isToolStream && phase == QLatin1String("start")) {
         result.isToolCall = true;
-        result.toolName   = data.value(QStringLiteral("name")).toString(
-            data.value(QStringLiteral("toolName")).toString());
-        result.toolCallId = data.value(QStringLiteral("toolCallId")).toString(
-            data.value(QStringLiteral("id")).toString());
+        result.toolName = data.value(QStringLiteral("name"))
+                              .toString(data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId = data.value(QStringLiteral("toolCallId"))
+                                .toString(data.value(QStringLiteral("id")).toString());
         QJsonObject args = data.value(QStringLiteral("args")).toObject();
         if (args.isEmpty())
             args = data.value(QStringLiteral("input")).toObject();
         if (args.isEmpty())
             args = data.value(QStringLiteral("arguments")).toObject();
-        result.toolArgs = QString::fromUtf8(
-            QJsonDocument(args).toJson(QJsonDocument::Compact));
+        result.toolArgs = QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
         return result;
     }
 
     if (isToolStream
-        && (phase == QLatin1String("update")
-            || phase == QLatin1String("progress")
+        && (phase == QLatin1String("update") || phase == QLatin1String("progress")
             || phase == QLatin1String("delta"))) {
         result.isToolUpdate = true;
-        result.toolName     = data.value(QStringLiteral("name")).toString(
-            data.value(QStringLiteral("toolName")).toString());
-        result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
-            data.value(QStringLiteral("id")).toString());
-        result.content      = extractToolOutputFromDataObject(data);
+        result.toolName = data.value(QStringLiteral("name"))
+                              .toString(data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId = data.value(QStringLiteral("toolCallId"))
+                                .toString(data.value(QStringLiteral("id")).toString());
+        result.content = extractToolOutputFromDataObject(data);
         return result;
     }
 
     if (isToolStream
-        && (phase == QLatin1String("result")
-            || phase == QLatin1String("done")
+        && (phase == QLatin1String("result") || phase == QLatin1String("done")
             || phase == QLatin1String("complete"))) {
         result.isToolResult = true;
-        result.toolName     = data.value(QStringLiteral("name")).toString(
-            data.value(QStringLiteral("toolName")).toString());
-        result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
-            data.value(QStringLiteral("id")).toString());
-        result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
-        result.content      = extractToolOutputFromDataObject(data);
+        result.toolName = data.value(QStringLiteral("name"))
+                              .toString(data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId = data.value(QStringLiteral("toolCallId"))
+                                .toString(data.value(QStringLiteral("id")).toString());
+        result.toolIsError = data.value(QStringLiteral("isError")).toBool(false);
+        result.content = extractToolOutputFromDataObject(data);
         return result;
     }
 
-    if (dataType == QLatin1String("tool_use")
-        || dataType == QLatin1String("toolCall")
+    if (dataType == QLatin1String("tool_use") || dataType == QLatin1String("toolCall")
         || subEvent.contains(QLatin1String("tool-call"))
         || subEvent.contains(QLatin1String("tool_call"))
         || subEvent.contains(QLatin1String("tool-use"))) {
         result.isToolCall = true;
-        result.toolName   = data.value(QStringLiteral("name")).toString(
-            data.value(QStringLiteral("toolName")).toString());
-        result.toolCallId = data.value(QStringLiteral("id")).toString(
-            data.value(QStringLiteral("toolCallId")).toString());
+        result.toolName = data.value(QStringLiteral("name"))
+                              .toString(data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId = data.value(QStringLiteral("id"))
+                                .toString(data.value(QStringLiteral("toolCallId")).toString());
         // 参数可能在 args / input / arguments 字段
         QJsonObject args = data.value(QStringLiteral("args")).toObject();
         if (args.isEmpty())
             args = data.value(QStringLiteral("input")).toObject();
         if (args.isEmpty())
             args = data.value(QStringLiteral("arguments")).toObject();
-        result.toolArgs = QString::fromUtf8(
-            QJsonDocument(args).toJson(QJsonDocument::Compact));
+        result.toolArgs = QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
         return result;
     }
 
-    if (dataType == QLatin1String("tool_result")
-        || dataType == QLatin1String("toolResult")
+    if (dataType == QLatin1String("tool_result") || dataType == QLatin1String("toolResult")
         || subEvent.contains(QLatin1String("tool-result"))
         || subEvent.contains(QLatin1String("tool_result"))) {
         result.isToolResult = true;
-        result.toolName     = data.value(QStringLiteral("name")).toString(
-            data.value(QStringLiteral("toolName")).toString());
-        result.toolCallId   = data.value(QStringLiteral("toolCallId")).toString(
-            data.value(QStringLiteral("id")).toString());
-        result.toolIsError  = data.value(QStringLiteral("isError")).toBool(false);
-        result.content      = extractToolOutputFromDataObject(data);
+        result.toolName = data.value(QStringLiteral("name"))
+                              .toString(data.value(QStringLiteral("toolName")).toString());
+        result.toolCallId = data.value(QStringLiteral("toolCallId"))
+                                .toString(data.value(QStringLiteral("id")).toString());
+        result.toolIsError = data.value(QStringLiteral("isError")).toBool(false);
+        result.content = extractToolOutputFromDataObject(data);
         return result;
     }
 
     // ── 从 data 字段检测事件语义 ──
-    const bool    hasDelta = data.contains(QStringLiteral("delta"));
-    const QString delta    = data.value(QStringLiteral("delta")).toString();
+    const bool hasDelta = data.contains(QStringLiteral("delta"));
+    const QString delta = data.value(QStringLiteral("delta")).toString();
 
-    result.isDelta = hasDelta
-                  || subEvent.contains(QLatin1String("delta"))
-                  || subEvent.contains(QLatin1String("chunk"));
+    result.isDelta = hasDelta || subEvent.contains(QLatin1String("delta"))
+                     || subEvent.contains(QLatin1String("chunk"));
 
-    result.isStart = (phase == QLatin1String("start"))
-                  || subEvent.contains(QLatin1String("start"));
+    result.isStart = (phase == QLatin1String("start")) || subEvent.contains(QLatin1String("start"));
 
-    result.isComplete = (phase == QLatin1String("complete"))
-                     || (phase == QLatin1String("done"))
-                     || (phase == QLatin1String("end"))
-                     || subEvent.contains(QLatin1String("complete"))
-                     || subEvent.contains(QLatin1String("done"))
-                     || subEvent.contains(QLatin1String("finish"))
-                     || subEvent.contains(QLatin1String("end"));
+    result.isComplete = (phase == QLatin1String("complete")) || (phase == QLatin1String("done"))
+                        || (phase == QLatin1String("end"))
+                        || subEvent.contains(QLatin1String("complete"))
+                        || subEvent.contains(QLatin1String("done"))
+                        || subEvent.contains(QLatin1String("finish"))
+                        || subEvent.contains(QLatin1String("end"));
 
     // ── 提取文本内容（优先级：delta > content > text） ──
     result.content = delta;
@@ -672,12 +677,12 @@ WsEventResult WsSession::parseEvent(const QString &event,
         result.content = payload.value(QStringLiteral("content")).toString();
 
     // ── 提取消息角色 ──
-    result.role = data.value(QStringLiteral("role")).toString(
-        payload.value(QStringLiteral("role")).toString(QStringLiteral("assistant")));
+    result.role = data.value(QStringLiteral("role"))
+                      .toString(payload.value(QStringLiteral("role"))
+                                    .toString(QStringLiteral("assistant")));
 
     // ── 空的 chat 状态更新事件应忽略 ──
-    if (event == QLatin1String("chat")
-        && !result.isDelta && !result.isStart && !result.isComplete
+    if (event == QLatin1String("chat") && !result.isDelta && !result.isStart && !result.isComplete
         && result.content.isEmpty()) {
         result.ignore = true;
     }

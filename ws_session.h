@@ -20,9 +20,9 @@
 #ifndef WS_SESSION_H
 #define WS_SESSION_H
 
-#include <QString>
-#include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QString>
 #include <QVariantList>
 
 /**
@@ -33,20 +33,20 @@
  */
 struct WsEventResult
 {
-    QString content;      ///< 提取到的文本内容（delta 增量或完整内容）
-    QString role;         ///< 消息角色（user / assistant / system）
-    bool isStart;         ///< 是否为流式输出的「开始」事件
-    bool isDelta;         ///< 是否为流式输出的「增量内容」事件
-    bool isComplete;      ///< 是否为流式输出的「完成」事件
-    bool ignore;          ///< 是否应忽略此事件（如空的 chat 状态更新）
+    QString content; ///< 提取到的文本内容（delta 增量或完整内容）
+    QString role;    ///< 消息角色（user / assistant / system）
+    bool isStart;    ///< 是否为流式输出的「开始」事件
+    bool isDelta;    ///< 是否为流式输出的「增量内容」事件
+    bool isComplete; ///< 是否为流式输出的「完成」事件
+    bool ignore;     ///< 是否应忽略此事件（如空的 chat 状态更新）
     // ── 工具调用相关 ──
-    bool isToolCall;      ///< 事件中包含工具调用
-    bool isToolUpdate;    ///< 工具执行中的增量输出
-    bool isToolResult;    ///< 事件中包含工具结果
-    QString toolName;     ///< 工具名称
-    QString toolArgs;     ///< 工具参数（JSON 字符串）
-    QString toolCallId;   ///< 工具调用 ID
-    bool toolIsError;     ///< 工具结果是否为错误
+    bool isToolCall;    ///< 事件中包含工具调用
+    bool isToolUpdate;  ///< 工具执行中的增量输出
+    bool isToolResult;  ///< 事件中包含工具结果
+    QString toolName;   ///< 工具名称
+    QString toolArgs;   ///< 工具参数（JSON 字符串）
+    QString toolCallId; ///< 工具调用 ID
+    bool toolIsError;   ///< 工具结果是否为错误
 };
 
 class WsSession
@@ -130,8 +130,7 @@ public:
     QJsonObject buildLoadHistoryParams() const;
 
     /// 构建 chat.history 请求参数（切换 agent 时加载历史）
-    QJsonObject buildChatHistoryParams(const QString &sessionKey,
-                                        int limit = 200) const;
+    QJsonObject buildChatHistoryParams(const QString &sessionKey, int limit = 200) const;
     /// 构建 agent.identity.get 请求参数
     QJsonObject buildAgentIdentityParams(const QString &sessionKey) const;
 
@@ -158,14 +157,13 @@ public:
      *   3. 从 payload.event（子事件名）中辅助判断语义
      *   4. 优先使用 delta，回退到 content → text
      */
-    WsEventResult parseEvent(const QString &event,
-                             const QJsonObject &payload) const;
+    WsEventResult parseEvent(const QString &event, const QJsonObject &payload) const;
 
 private:
-    QString      m_currentSessionKey;   ///< 当前活跃会话的 key
-    QVariantList m_sessions;            ///< 缓存的会话列表
-    bool         m_isStreaming;         ///< 是否正在接收流式响应
-    QString      m_newSessionReqId;     ///< /new 命令对应的 requestId
+    QString m_currentSessionKey; ///< 当前活跃会话的 key
+    QVariantList m_sessions;     ///< 缓存的会话列表
+    bool m_isStreaming;          ///< 是否正在接收流式响应
+    QString m_newSessionReqId;   ///< /new 命令对应的 requestId
 };
 
 #endif // WS_SESSION_H

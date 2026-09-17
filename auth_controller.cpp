@@ -1,18 +1,18 @@
 #include "auth_controller.h"
 
-#include <QJsonDocument>
-#include <QJsonArray>
-#include <QJsonObject>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRegularExpression>
-#include <QSettings>
 #include <QSaveFile>
 #include <QSet>
+#include <QSettings>
 #include <QStringList>
 #include <QTimer>
 #include <QUrl>
@@ -51,7 +51,7 @@ bool responseSucceeded(const QJsonObject &body)
         return true;
     const QJsonValue code = body.value(QStringLiteral("code"));
     return (code.isDouble() && code.toInt() == 200)
-        || (code.isString() && code.toString() == QStringLiteral("200"));
+           || (code.isString() && code.toString() == QStringLiteral("200"));
 }
 
 QString userIdFromLoginData(const QJsonObject &data, const QString &phone)
@@ -65,8 +65,12 @@ QString userIdFromLoginData(const QJsonObject &data, const QString &phone)
     if (userId.isEmpty() && !user.isEmpty())
         userId = user.value(QStringLiteral("id")).toVariant().toString().trimmed();
     if (userId.isEmpty())
-        userId = data.value(QStringLiteral("userInfo")).toObject()
-                     .value(QStringLiteral("id")).toVariant().toString().trimmed();
+        userId = data.value(QStringLiteral("userInfo"))
+                     .toObject()
+                     .value(QStringLiteral("id"))
+                     .toVariant()
+                     .toString()
+                     .trimmed();
     return userId.isEmpty() ? QStringLiteral("phone:%1").arg(phone) : userId;
 }
 
@@ -123,7 +127,8 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
         input.close();
         if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
             if (errorMessage)
-                *errorMessage = QStringLiteral("OpenClaw 配置格式无效：%1").arg(parseError.errorString());
+                *errorMessage = QStringLiteral("OpenClaw 配置格式无效：%1")
+                                    .arg(parseError.errorString());
             return false;
         }
         config = document.object();
@@ -169,8 +174,8 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     defaults[QStringLiteral("models")] = defaultModels;
     if (!firstImageModelId.isEmpty()) {
         QJsonObject imageModel = defaults.value(QStringLiteral("imageModel")).toObject();
-        imageModel[QStringLiteral("primary")] =
-            QStringLiteral("medclaw-primary/%1").arg(firstImageModelId);
+        imageModel[QStringLiteral("primary")] = QStringLiteral("medclaw-primary/%1")
+                                                    .arg(firstImageModelId);
         defaults[QStringLiteral("imageModel")] = imageModel;
     } else {
         defaults.remove(QStringLiteral("imageModel"));
@@ -189,33 +194,30 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     }
     return true;
 }
-}
+} // namespace
 
 AuthController::AuthController(QObject *parent)
     : QObject(parent)
     , m_network(new QNetworkAccessManager(this))
 {
     m_creditsRefreshTimer.setInterval(15000);
-    connect(&m_creditsRefreshTimer, &QTimer::timeout,
-            this, &AuthController::refreshCredits);
+    connect(&m_creditsRefreshTimer, &QTimer::timeout, this, &AuthController::refreshCredits);
     QSettings settings;
     // Import credentials from an earlier product name once. Without the marker,
     // a later logout could be undone by importing the stale token on next launch.
     const QString migrationKey = QStringLiteral("auth/legacyMigrationCompleted");
     if (!settings.value(migrationKey, false).toBool()
         && settings.value(QStringLiteral("auth/accessToken")).toString().isEmpty()) {
-        const QStringList legacyApplicationNames = {
-            QStringLiteral("Aether_ClawDESK"),
-            QStringLiteral("ClawDESK")
-        };
+        const QStringList legacyApplicationNames = {QStringLiteral("Aether_ClawDESK"),
+                                                    QStringLiteral("ClawDESK")};
         for (const QString &applicationName : legacyApplicationNames) {
             QSettings legacySettings(QStringLiteral("AetherMED"), applicationName);
-            const QString legacyToken =
-                legacySettings.value(QStringLiteral("auth/accessToken")).toString();
-            const QString legacyPhone =
-                legacySettings.value(QStringLiteral("auth/phone")).toString().trimmed();
-            QString legacyUserId =
-                legacySettings.value(QStringLiteral("auth/userId")).toString().trimmed();
+            const QString legacyToken = legacySettings.value(QStringLiteral("auth/accessToken"))
+                                            .toString();
+            const QString legacyPhone
+                = legacySettings.value(QStringLiteral("auth/phone")).toString().trimmed();
+            QString legacyUserId
+                = legacySettings.value(QStringLiteral("auth/userId")).toString().trimmed();
             if (legacyUserId.isEmpty() && !legacyPhone.isEmpty())
                 legacyUserId = QStringLiteral("phone:%1").arg(legacyPhone);
             if (!legacyToken.isEmpty() && !legacyUserId.isEmpty()) {
@@ -235,8 +237,9 @@ AuthController::AuthController(QObject *parent)
         settings.setValue(migrationKey, true);
         settings.sync();
     }
-    m_apiBaseUrl = normalizedBaseUrl(settings.value(QStringLiteral("auth/apiBaseUrl"),
-                                                    QString::fromLatin1(kDefaultApiBaseUrl)).toString());
+    m_apiBaseUrl = normalizedBaseUrl(
+        settings.value(QStringLiteral("auth/apiBaseUrl"), QString::fromLatin1(kDefaultApiBaseUrl))
+            .toString());
     if (m_apiBaseUrl == QString::fromLatin1(kLegacyApiBaseUrl)
         || m_apiBaseUrl == QString::fromLatin1(kPreviousLegacyApiBaseUrl)
         || m_apiBaseUrl == QStringLiteral("http://192.168.0.36:8080")) {
@@ -260,14 +263,15 @@ AuthController::AuthController(QObject *parent)
             if (!credits.isEmpty()) {
                 const QJsonObject wallet = credits.value(QStringLiteral("wallet")).toObject();
                 m_creditsBalance = wallet.value(QStringLiteral("available_balance"))
-                                       .toVariant().toString().trimmed();
+                                       .toVariant()
+                                       .toString()
+                                       .trimmed();
                 if (m_creditsBalance.isEmpty())
-                    m_creditsBalance = wallet.value(QStringLiteral("balance"))
-                                           .toVariant().toString().trimmed();
-                m_creditLots = credits.value(QStringLiteral("credit_lots"))
-                                   .toArray().toVariantList();
-                m_creditPackages = credits.value(QStringLiteral("packages"))
-                                       .toArray().toVariantList();
+                    m_creditsBalance
+                        = wallet.value(QStringLiteral("balance")).toVariant().toString().trimmed();
+                m_creditLots = credits.value(QStringLiteral("credit_lots")).toArray().toVariantList();
+                m_creditPackages
+                    = credits.value(QStringLiteral("packages")).toArray().toVariantList();
                 m_userId = QStringLiteral("account-preview");
                 m_phone = credits.value(QStringLiteral("preview_phone"))
                               .toString(QStringLiteral("13812348888"));
@@ -285,8 +289,7 @@ AuthController::AuthController(QObject *parent)
     m_loggedIn = !m_accessToken.isEmpty() && !m_userId.isEmpty();
     if (m_loggedIn) {
         QTimer::singleShot(0, this, [this]() {
-            fetchAndApplyModelConfig(m_accessToken,
-                                     [this](bool ok, const QString &message) {
+            fetchAndApplyModelConfig(m_accessToken, [this](bool ok, const QString &message) {
                 if (!ok) {
                     setErrorMessage(message);
                     const bool wasLoggedIn = m_loggedIn;
@@ -302,16 +305,46 @@ AuthController::AuthController(QObject *parent)
     }
 }
 
-bool AuthController::loggedIn() const { return m_loggedIn; }
-bool AuthController::busy() const { return m_busy; }
-QString AuthController::userId() const { return m_userId; }
-QString AuthController::phone() const { return m_phone; }
-QString AuthController::errorMessage() const { return m_errorMessage; }
-QString AuthController::apiBaseUrl() const { return m_apiBaseUrl; }
-QString AuthController::creditsBalance() const { return m_creditsBalance; }
-QVariantList AuthController::creditLots() const { return m_creditLots; }
-QVariantList AuthController::creditPackages() const { return m_creditPackages; }
-bool AuthController::modelConfigReady() const { return m_modelConfigReady; }
+bool AuthController::loggedIn() const
+{
+    return m_loggedIn;
+}
+bool AuthController::busy() const
+{
+    return m_busy;
+}
+QString AuthController::userId() const
+{
+    return m_userId;
+}
+QString AuthController::phone() const
+{
+    return m_phone;
+}
+QString AuthController::errorMessage() const
+{
+    return m_errorMessage;
+}
+QString AuthController::apiBaseUrl() const
+{
+    return m_apiBaseUrl;
+}
+QString AuthController::creditsBalance() const
+{
+    return m_creditsBalance;
+}
+QVariantList AuthController::creditLots() const
+{
+    return m_creditLots;
+}
+QVariantList AuthController::creditPackages() const
+{
+    return m_creditPackages;
+}
+bool AuthController::modelConfigReady() const
+{
+    return m_modelConfigReady;
+}
 
 void AuthController::setApiBaseUrl(const QString &url)
 {
@@ -344,8 +377,8 @@ void AuthController::clearError()
     setErrorMessage(QString());
 }
 
-void AuthController::fetchAndApplyModelConfig(
-    const QString &token, const std::function<void(bool, const QString &)> &done)
+void AuthController::fetchAndApplyModelConfig(const QString &token,
+                                              const std::function<void(bool, const QString &)> &done)
 {
     const quint64 generation = ++m_modelConfigGeneration;
     if (m_modelConfigReady) {
@@ -371,11 +404,11 @@ void AuthController::fetchAndApplyModelConfig(
         QString message;
         if (!ok) {
             QJsonObject body = document.isObject() ? document.object() : QJsonObject();
-            message = status == 401
-                ? QStringLiteral("登录已失效，请重新登录")
-                : responseMessage(body, reply->errorString().isEmpty()
-                                  ? QStringLiteral("模型列表获取失败")
-                                  : reply->errorString());
+            message = status == 401 ? QStringLiteral("登录已失效，请重新登录")
+                                    : responseMessage(body,
+                                                      reply->errorString().isEmpty()
+                                                          ? QStringLiteral("模型列表获取失败")
+                                                          : reply->errorString());
         } else {
             if (current)
                 ok = writeOpenClawModelConfig(modelArray, token, m_apiBaseUrl, &message);
@@ -408,7 +441,8 @@ void AuthController::sendSmsCode(const QString &phone)
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
-    QNetworkReply *reply = m_network->post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    QNetworkReply *reply = m_network->post(request,
+                                           QJsonDocument(payload).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         setBusy(false);
         const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
@@ -416,8 +450,10 @@ void AuthController::sendSmsCode(const QString &phone)
         if (ok)
             emit smsCodeSent();
         else
-            setErrorMessage(responseMessage(body, reply->errorString().isEmpty()
-                                             ? QStringLiteral("验证码发送失败") : reply->errorString()));
+            setErrorMessage(responseMessage(body,
+                                            reply->errorString().isEmpty()
+                                                ? QStringLiteral("验证码发送失败")
+                                                : reply->errorString()));
         reply->deleteLater();
     });
 }
@@ -443,7 +479,8 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
     payload.insert(QStringLiteral("code"), normalizedCode);
-    QNetworkReply *reply = m_network->post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    QNetworkReply *reply = m_network->post(request,
+                                           QJsonDocument(payload).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply, normalizedPhone]() {
         const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
         QJsonObject data = body.value(QStringLiteral("data")).toObject();
@@ -455,8 +492,10 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
         const bool ok = reply->error() == QNetworkReply::NoError && accessToken.size() > 0;
         if (!ok) {
             setBusy(false);
-            setErrorMessage(responseMessage(body, reply->errorString().isEmpty()
-                                             ? QStringLiteral("登录失败，请检查验证码") : reply->errorString()));
+            setErrorMessage(responseMessage(body,
+                                            reply->errorString().isEmpty()
+                                                ? QStringLiteral("登录失败，请检查验证码")
+                                                : reply->errorString()));
             reply->deleteLater();
             return;
         }
@@ -480,8 +519,7 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
         settings.setValue(QStringLiteral("auth/creditsBalance"), m_creditsBalance);
         m_modelConfigReady = false;
         emit modelConfigReadyChanged();
-        fetchAndApplyModelConfig(m_accessToken,
-                                 [this](bool configOk, const QString &message) {
+        fetchAndApplyModelConfig(m_accessToken, [this](bool configOk, const QString &message) {
             setBusy(false);
             if (!configOk) {
                 setErrorMessage(message);
@@ -539,19 +577,23 @@ void AuthController::refreshCredits()
         const QJsonObject wrappedData = body.value(QStringLiteral("data")).toObject();
         const QJsonObject credits = wrappedData.isEmpty() ? body : wrappedData;
         const QJsonObject wallet = credits.value(QStringLiteral("wallet")).toObject();
-        QString balance = wallet.value(QStringLiteral("available_balance")).toVariant().toString().trimmed();
+        QString balance
+            = wallet.value(QStringLiteral("available_balance")).toVariant().toString().trimmed();
         if (balance.isEmpty())
             balance = wallet.value(QStringLiteral("balance")).toVariant().toString().trimmed();
         if (balance.isEmpty())
-            balance = credits.value(QStringLiteral("credits_balance")).toVariant().toString().trimmed();
+            balance
+                = credits.value(QStringLiteral("credits_balance")).toVariant().toString().trimmed();
         if (!balance.isEmpty() && balance != m_creditsBalance) {
             m_creditsBalance = balance;
             QSettings().setValue(QStringLiteral("auth/creditsBalance"), m_creditsBalance);
             emit creditsBalanceChanged();
         }
 
-        const QVariantList creditLots = credits.value(QStringLiteral("credit_lots")).toArray().toVariantList();
-        const QVariantList creditPackages = credits.value(QStringLiteral("packages")).toArray().toVariantList();
+        const QVariantList creditLots
+            = credits.value(QStringLiteral("credit_lots")).toArray().toVariantList();
+        const QVariantList creditPackages
+            = credits.value(QStringLiteral("packages")).toArray().toVariantList();
         if (creditLots != m_creditLots || creditPackages != m_creditPackages) {
             m_creditLots = creditLots;
             m_creditPackages = creditPackages;
@@ -593,10 +635,8 @@ void AuthController::clearSession()
     settings.remove(QStringLiteral("auth/creditsBalance"));
     settings.setValue(QStringLiteral("auth/legacyMigrationCompleted"), true);
 
-    const QStringList legacyApplicationNames = {
-        QStringLiteral("Aether_ClawDESK"),
-        QStringLiteral("ClawDESK")
-    };
+    const QStringList legacyApplicationNames = {QStringLiteral("Aether_ClawDESK"),
+                                                QStringLiteral("ClawDESK")};
     for (const QString &applicationName : legacyApplicationNames) {
         QSettings legacySettings(QStringLiteral("AetherMED"), applicationName);
         legacySettings.remove(QStringLiteral("auth/accessToken"));

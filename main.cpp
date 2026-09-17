@@ -1,35 +1,36 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QFontDatabase>
+#include <QLibraryInfo>
+#include <QPainterPath>
+#include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QFontDatabase>
-#include <QDir>
-#include <QFileInfo>
-#include <QStringList>
-#include <QPainterPath>
+#include <QQuickStyle>
 #include <QQuickWindow>
 #include <QRegion>
+#include <QScreen>
 #include <QSettings>
 #include <QStandardPaths>
-#include <QTimer>
-#include "updatecontroller.h"
-#include <QWindow>
-#include <QScreen>
-#include <QDebug>
+#include <QStringList>
 #include <QSurfaceFormat>
-#include <QLibraryInfo>
-#include <QtWebEngineQuick>
+#include <QTimer>
 #include <QWebEngineProfile>
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
-#include <QFile>
-#include <QQuickStyle>
+#include <QWindow>
+#include <QtWebEngineQuick>
 #include "CommonFunc.h"
-#include "mainviewcontroller.h"
-#include "gateway_client.h"
-#include "chatmodel.h"
-#include "session_reader.h"
 #include "auth_controller.h"
+#include "chatmodel.h"
+#include "gateway_client.h"
+#include "mainviewcontroller.h"
+#include "session_reader.h"
+#include "updatecontroller.h"
 #include "viewer-host-qt/include/ViewerHost.h"
 
 static void appendChromiumFlag(QByteArray &flags, const char *flag)
@@ -90,40 +91,45 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     if (qEnvironmentVariableIsEmpty("QTWEBENGINE_DISABLE_SANDBOX"))
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
 
-    // Qt Quick (RHI) and Chromium (ANGLE) must both sit on D3D11. Otherwise
-    // WebEngine falls back to D3D9 / a blocked GPU process and getContext()
-    // returns null — Mol*, MPR and volume 3D all fail on other PCs.
-    if (qEnvironmentVariableIsEmpty("QT_OPENGL"))
-        qputenv("QT_OPENGL", "angle");
-    if (qEnvironmentVariableIsEmpty("QT_ANGLE_PLATFORM"))
-        qputenv("QT_ANGLE_PLATFORM", "d3d11");
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND"))
-        qputenv("QSG_RHI_BACKEND", "d3d11");
+    // Keep Qt Quick and WebEngine on the same desktop OpenGL implementation.
+    // The Windows compatibility path uses Qt's bundled Mesa software renderer:
+    // Qt 6.8 builds disable SwiftShader, so --use-angle=swiftshader cannot work.
+#ifdef Q_OS_WIN
+    const bool hardwareGpu = qEnvironmentVariableIntValue("MEDCLAW_SOFTWARE_OPENGL") != 1;
+    qputenv("QT_OPENGL", hardwareGpu ? "desktop" : "software");
+    qputenv("QSG_RHI_BACKEND", "opengl");
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 #endif
 
     QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
-    appendChromiumFlag(flags, "--no-sandbox");
-    appendChromiumFlag(flags, "--disable-gpu-sandbox");
-    appendChromiumFlag(flags, "--ignore-gpu-blacklist");
-    appendChromiumFlag(flags, "--ignore-gpu-blocklist");
-    appendChromiumFlag(flags, "--disable-gpu-process-crash-limit");
+    // Remove obsolete GPU overrides, including inherited flags from older launches.
+    const QStringList args = QProcess::splitCommand(QString::fromLocal8Bit(flags));
+    flags.clear();
+    for (const QString &arg : args) {
+        if (arg.startsWith("--use-gl=") || arg.startsWith("--use-angle=")
+            || arg == "--disable-gpu" || arg == "--disable-webgl"
+            || arg == "--disable-gpu-process-crash-limit"
+            || arg == "--ignore-gpu-blacklist" || arg == "--ignore-gpu-blocklist"
+            || arg == "--enable-gpu-rasterization" || arg == "--enable-accelerated-2d-canvas"
+            || arg == "--enable-unsafe-swiftshader" || arg == "--in-process-gpu")
+            continue;
+        QByteArray token = arg.toLocal8Bit();
+        if (token.contains(' '))
+            token = '"' + token + '"';
+        appendChromiumFlag(flags, token.constData());
+    }
     appendChromiumFlag(flags, "--enable-webgl");
-    appendChromiumFlag(flags, "--enable-webgl2");
-    appendChromiumFlag(flags, "--enable-accelerated-2d-canvas");
-    appendChromiumFlag(flags, "--enable-gpu-rasterization");
-    appendChromiumFlag(flags, "--use-gl=angle");
-    appendChromiumFlag(flags, "--use-angle=d3d11");
-    // Chrome uses an out-of-process GPU. Sharing one GPU process with Qt Quick
-    // (--in-process-gpu) is why Mol*/MPR/3D die here while Edge still works.
-    // SwiftShader is the last-resort WebGL path when the hardware GPU process
-    // fails; Chrome 123+ hides it unless this flag is set.
-    appendChromiumFlag(flags, "--enable-unsafe-swiftshader");
-    appendChromiumFlag(flags, "--enable-webgl-software-rendering");
+#ifdef Q_OS_WIN
+    appendChromiumFlag(flags, "--use-gl=desktop");
+    if (!hardwareGpu)
+        appendChromiumFlag(flags, "--enable-webgl-software-rendering");
+#endif
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     appendChromiumFlag(flags, "--disable-web-security");
     appendChromiumFlag(flags, "--allow-running-insecure-content");
-    appendChromiumFlag(flags, "--disable-features=LocalNetworkAccess,BlockInsecurePrivateNetworkRequests,RendererCodeIntegrity,CalculateNativeWinOcclusion");
+    appendChromiumFlag(flags,
+                       "--disable-features=LocalNetworkAccess,BlockInsecurePrivateNetworkRequests,"
+                       "RendererCodeIntegrity,CalculateNativeWinOcclusion");
 #else
     appendChromiumFlag(flags, "--disable-features=RendererCodeIntegrity");
 #endif
@@ -151,8 +157,7 @@ static void insertWebGlScript(QWebEngineScriptCollection *scripts, const QWebEng
 {
     if (!scripts)
         return;
-    const QList<QWebEngineScript> existing =
-        scripts->find(QStringLiteral("medclaw-webgl-compat"));
+    const QList<QWebEngineScript> existing = scripts->find(QStringLiteral("medclaw-webgl-compat"));
     for (const QWebEngineScript &old : existing)
         scripts->remove(old);
     scripts->insert(script);
@@ -199,8 +204,7 @@ static void updateRoundedWindowMask(QWindow *window)
 
     constexpr qreal cornerRadius = 12.0;
     QPainterPath path;
-    path.addRoundedRect(QRectF(0, 0, window->width(), window->height()),
-                        cornerRadius, cornerRadius);
+    path.addRoundedRect(QRectF(0, 0, window->width(), window->height()), cornerRadius, cornerRadius);
     window->setMask(QRegion(path.toFillPolygon().toPolygon()));
 }
 
@@ -225,16 +229,14 @@ int main(int argc, char *argv[])
     installWebGlUserScript();
 
     // Keep relative runtime data paths stable and carry existing installs forward.
-    const QString genericDataRoot =
-        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
-    const QString preferredDataRoot =
-        QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy"));
-    const QString legacyDataRoot =
-        QDir(genericDataRoot).filePath(QStringLiteral("Aether_ClawDESK"));
+    const QString genericDataRoot = QStandardPaths::writableLocation(
+        QStandardPaths::GenericDataLocation);
+    const QString preferredDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy"));
+    const QString legacyDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("Aether_ClawDESK"));
     QString dataRoot = preferredDataRoot;
     if (!QFileInfo::exists(preferredDataRoot) && QFileInfo::exists(legacyDataRoot)
-        && !QDir(genericDataRoot).rename(QStringLiteral("Aether_ClawDESK"),
-                                         QStringLiteral("AetherStudy"))) {
+        && !QDir(genericDataRoot)
+                .rename(QStringLiteral("Aether_ClawDESK"), QStringLiteral("AetherStudy"))) {
         dataRoot = legacyDataRoot;
     }
     if (!QDir().mkpath(dataRoot) || !QDir::setCurrent(dataRoot))
@@ -245,115 +247,120 @@ int main(int argc, char *argv[])
     ChatModel chatModel;
 
     // 收到聊天消息：完整消息直接添加，增量消息追加到流式缓冲
-    QObject::connect(&wsClient, &GatewayClient::chatMessageReceived,
+    QObject::connect(&wsClient,
+                     &GatewayClient::chatMessageReceived,
                      [&chatModel](const QString &role, const QString &content, bool isDelta) {
-        if (isDelta) {
-            chatModel.appendStreamChunk(content);
-        } else if (!content.isEmpty()) {
-            chatModel.addMessage(role, content);
-        }
-    });
+                         if (isDelta) {
+                             chatModel.appendStreamChunk(content);
+                         } else if (!content.isEmpty()) {
+                             chatModel.addMessage(role, content);
+                         }
+                     });
 
     // 流式输出开始：在 ChatModel 中创建空的 assistant 消息占位
-    QObject::connect(&wsClient, &GatewayClient::streamingStarted,
-                     [&chatModel]() { chatModel.beginStreaming(); });
+    QObject::connect(&wsClient, &GatewayClient::streamingStarted, [&chatModel]() {
+        chatModel.beginStreaming();
+    });
 
     // 流式输出结束：标记流式状态完成
-    QObject::connect(&wsClient, &GatewayClient::streamingFinished,
-                     [&chatModel]() { chatModel.endStreaming(); });
+    QObject::connect(&wsClient, &GatewayClient::streamingFinished, [&chatModel]() {
+        chatModel.endStreaming();
+    });
 
-    QObject::connect(&wsClient, &GatewayClient::artifactsDetected,
+    QObject::connect(&wsClient,
+                     &GatewayClient::artifactsDetected,
                      [&chatModel, &wsClient](const QString &sessionKey,
                                              const QVariantList &artifacts) {
-        QString visibleSession = wsClient.currentViewSessionKey().trimmed();
-        if (visibleSession.isEmpty())
-            visibleSession = wsClient.currentTaskSessionKey().trimmed();
-        const QString trackingKey = sessionKey.trimmed();
-        if (wsClient.artifactResultsBelongToView(trackingKey, visibleSession)) {
-            if (chatModel.setArtifactsForLastAssistant(artifacts))
-                wsClient.persistSessionArtifacts(visibleSession, chatModel.messages());
-            wsClient.persistDetectedArtifacts(visibleSession, artifacts);
-            if (!trackingKey.isEmpty() && trackingKey != visibleSession)
-                wsClient.persistDetectedArtifacts(trackingKey, artifacts);
-        } else {
-            wsClient.persistDetectedArtifacts(trackingKey, artifacts);
-        }
-    });
+                         QString visibleSession = wsClient.currentViewSessionKey().trimmed();
+                         if (visibleSession.isEmpty())
+                             visibleSession = wsClient.currentTaskSessionKey().trimmed();
+                         const QString trackingKey = sessionKey.trimmed();
+                         if (wsClient.artifactResultsBelongToView(trackingKey, visibleSession)) {
+                             if (chatModel.setArtifactsForLastAssistant(artifacts))
+                                 wsClient.persistSessionArtifacts(visibleSession,
+                                                                  chatModel.messages());
+                             wsClient.persistDetectedArtifacts(visibleSession, artifacts);
+                             if (!trackingKey.isEmpty() && trackingKey != visibleSession)
+                                 wsClient.persistDetectedArtifacts(trackingKey, artifacts);
+                         } else {
+                             wsClient.persistDetectedArtifacts(trackingKey, artifacts);
+                         }
+                     });
 
     // 工具调用：在 ChatModel 中插入工具卡片
-    QObject::connect(&wsClient, &GatewayClient::toolCallReceived,
-                     [&chatModel](const QString &name, const QString &args,
-                                  const QString &id) {
-        chatModel.addToolCall(name, args, id);
-    });
+    QObject::connect(&wsClient,
+                     &GatewayClient::toolCallReceived,
+                     [&chatModel](const QString &name, const QString &args, const QString &id) {
+                         chatModel.addToolCall(name, args, id);
+                     });
 
     // 工具增量：在执行中的卡片内持续追加输出
-    QObject::connect(&wsClient, &GatewayClient::toolUpdateReceived,
-                     [&chatModel](const QString &name, const QString &content,
-                                  const QString &id) {
-        chatModel.appendToolResult(name, content, id);
-    });
+    QObject::connect(&wsClient,
+                     &GatewayClient::toolUpdateReceived,
+                     [&chatModel](const QString &name, const QString &content, const QString &id) {
+                         chatModel.appendToolResult(name, content, id);
+                     });
 
     // 工具结果：在 ChatModel 中插入工具结果块
-    QObject::connect(&wsClient, &GatewayClient::toolResultReceived,
-                     [&chatModel](const QString &name, const QString &content,
-                                  const QString &id, bool isError) {
-        chatModel.addToolResult(name, content, id, isError);
-    });
+    QObject::connect(&wsClient,
+                     &GatewayClient::toolResultReceived,
+                     [&chatModel](const QString &name,
+                                  const QString &content,
+                                  const QString &id,
+                                  bool isError) {
+                         chatModel.addToolResult(name, content, id, isError);
+                     });
 
     // 工具结果补拉完成：原地合并完整文本（不清空聊天模型，避免闪烁）
     // 同时补插实时事件中漏掉的 toolCall 条目
-    QObject::connect(&wsClient, &GatewayClient::toolResultsRefreshed,
-                     [&chatModel](const QVariantList &messages) {
-        for (const QVariant &v : messages) {
-            const QVariantMap m = v.toMap();
-            const QString mtype = m.value(QStringLiteral("msgType")).toString();
-            const QString tcId  = m.value(QStringLiteral("toolCallId")).toString();
-            if (tcId.isEmpty())
-                continue;
+    QObject::connect(
+        &wsClient, &GatewayClient::toolResultsRefreshed, [&chatModel](const QVariantList &messages) {
+            for (const QVariant &v : messages) {
+                const QVariantMap m = v.toMap();
+                const QString mtype = m.value(QStringLiteral("msgType")).toString();
+                const QString tcId = m.value(QStringLiteral("toolCallId")).toString();
+                if (tcId.isEmpty())
+                    continue;
 
-            if (mtype == QLatin1String("toolCall")) {
-                if (!chatModel.hasToolCallId(tcId))
-                    chatModel.addToolCall(
-                        m.value(QStringLiteral("toolName")).toString(),
-                        m.value(QStringLiteral("toolArgs")).toString(),
-                        tcId);
-            } else if (mtype == QLatin1String("toolResult")) {
-                if (!chatModel.hasToolCallId(tcId))
-                    chatModel.addToolCall(
-                        m.value(QStringLiteral("toolName")).toString(),
-                        QString(), tcId);
-                chatModel.addToolResult(
-                    m.value(QStringLiteral("toolName")).toString(),
-                    m.value(QStringLiteral("content")).toString(),
-                    tcId,
-                    m.value(QStringLiteral("isError")).toBool());
+                if (mtype == QLatin1String("toolCall")) {
+                    if (!chatModel.hasToolCallId(tcId))
+                        chatModel.addToolCall(m.value(QStringLiteral("toolName")).toString(),
+                                              m.value(QStringLiteral("toolArgs")).toString(),
+                                              tcId);
+                } else if (mtype == QLatin1String("toolResult")) {
+                    if (!chatModel.hasToolCallId(tcId))
+                        chatModel.addToolCall(m.value(QStringLiteral("toolName")).toString(),
+                                              QString(),
+                                              tcId);
+                    chatModel.addToolResult(m.value(QStringLiteral("toolName")).toString(),
+                                            m.value(QStringLiteral("content")).toString(),
+                                            tcId,
+                                            m.value(QStringLiteral("isError")).toBool());
+                }
             }
-        }
-    });
+        });
 
     // 新会话创建成功：聊天区保留本地已追加的首条用户消息。
-    QObject::connect(&wsClient, &GatewayClient::sessionCreated,
-                     []() {});
+    QObject::connect(&wsClient, &GatewayClient::sessionCreated, []() {});
 
     // 历史消息加载完成：清空当前显示并填充历史记录
-    QObject::connect(&wsClient, &GatewayClient::historyLoaded,
+    QObject::connect(&wsClient,
+                     &GatewayClient::historyLoaded,
                      [&chatModel, &wsClient](const QVariantList &messages) {
-        QString sessionKey = wsClient.currentViewSessionKey().trimmed();
-        if (sessionKey.isEmpty())
-            sessionKey = wsClient.currentTaskSessionKey().trimmed();
-        wsClient.rememberInputFilesFromHistory(messages);
-        chatModel.loadHistory(
-            wsClient.restoreSessionArtifacts(sessionKey, messages));
-    });
+                         QString sessionKey = wsClient.currentViewSessionKey().trimmed();
+                         if (sessionKey.isEmpty())
+                             sessionKey = wsClient.currentTaskSessionKey().trimmed();
+                         wsClient.rememberInputFilesFromHistory(messages);
+                         chatModel.loadHistory(
+                             wsClient.restoreSessionArtifacts(sessionKey, messages));
+                     });
 
     // ── 本地会话历史读取器 ──
     SessionReader sessionReader;
     AuthController authController;
     UpdateController updateController;
     wsClient.setTaskSessionUserId(authController.userId());
-    QObject::connect(&authController, &AuthController::userChanged,
-                     [&wsClient, &authController]() {
+    QObject::connect(&authController, &AuthController::userChanged, [&wsClient, &authController]() {
         wsClient.setTaskSessionUserId(authController.userId());
     });
 
@@ -361,8 +368,7 @@ int main(int argc, char *argv[])
 
     QQmlApplicationEngine engine;
     qmlRegisterType<ViewerHost>("MedClaw.Viewer", 1, 0, "ViewerHost");
-    QSize savedWindowSize = QSettings().value(
-        QStringLiteral("ui/windowSize")).toSize();
+    QSize savedWindowSize = QSettings().value(QStringLiteral("ui/windowSize")).toSize();
     // Older versions could persist the screen-sized geometry while maximizing.
     // Treat that value as stale so it cannot make a windowed launch look full-screen.
     if (QScreen *screen = QGuiApplication::primaryScreen()) {
@@ -372,11 +378,12 @@ int main(int argc, char *argv[])
             savedWindowSize = QSize();
         }
     }
-    engine.rootContext()->setContextProperty(
-        QStringLiteral("initialWindowWidth"), savedWindowSize.width());
-    engine.rootContext()->setContextProperty(
-        QStringLiteral("initialWindowHeight"), savedWindowSize.height());
-    engine.rootContext()->setContextProperty("$MainViewController", GET_SINGLETON(MainViewController));
+    engine.rootContext()->setContextProperty(QStringLiteral("initialWindowWidth"),
+                                             savedWindowSize.width());
+    engine.rootContext()->setContextProperty(QStringLiteral("initialWindowHeight"),
+                                             savedWindowSize.height());
+    engine.rootContext()->setContextProperty("$MainViewController",
+                                             GET_SINGLETON(MainViewController));
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);
     engine.rootContext()->setContextProperty(QStringLiteral("chatModel"), &chatModel);
     engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
@@ -424,17 +431,15 @@ int main(int argc, char *argv[])
                     // persisted write until the final state is known.
                     saveWindowSizeTimer->start();
                 };
-                QObject::connect(window, &QWindow::widthChanged, window,
+                QObject::connect(window, &QWindow::widthChanged, window, scheduleWindowSizeSave);
+                QObject::connect(window, &QWindow::heightChanged, window, scheduleWindowSizeSave);
+                QObject::connect(window,
+                                 &QWindow::windowStateChanged,
+                                 window,
                                  scheduleWindowSizeSave);
-                QObject::connect(window, &QWindow::heightChanged, window,
-                                 scheduleWindowSizeSave);
-                QObject::connect(window, &QWindow::windowStateChanged, window,
-                                 scheduleWindowSizeSave);
-                QObject::connect(saveWindowSizeTimer, &QTimer::timeout, window,
-                                 [window]() {
+                QObject::connect(saveWindowSizeTimer, &QTimer::timeout, window, [window]() {
                     const Qt::WindowStates states = window->windowStates();
-                    if (states.testFlag(Qt::WindowMinimized)
-                        || states.testFlag(Qt::WindowMaximized)
+                    if (states.testFlag(Qt::WindowMinimized) || states.testFlag(Qt::WindowMaximized)
                         || states.testFlag(Qt::WindowFullScreen)) {
                         return;
                     }
@@ -446,8 +451,7 @@ int main(int argc, char *argv[])
                 });
                 window->setProperty("normalWindowSize", window->size());
 
-                QObject::connect(qApp, &QCoreApplication::aboutToQuit, window,
-                                 [window]() {
+                QObject::connect(qApp, &QCoreApplication::aboutToQuit, window, [window]() {
                     const QSize size = window->property("normalWindowSize").toSize();
                     if (!size.isValid())
                         return;
@@ -457,19 +461,21 @@ int main(int argc, char *argv[])
                 });
             }
 
-            QObject::connect(window, &QWindow::widthChanged, window,
-                             [window]() { updateRoundedWindowMask(window); });
-            QObject::connect(window, &QWindow::heightChanged, window,
-                             [window]() { updateRoundedWindowMask(window); });
-            QObject::connect(window, &QWindow::windowStateChanged, window,
-                             [window]() { updateRoundedWindowMask(window); });
-            QTimer::singleShot(0, window,
-                               [window]() { updateRoundedWindowMask(window); });
+            QObject::connect(window, &QWindow::widthChanged, window, [window]() {
+                updateRoundedWindowMask(window);
+            });
+            QObject::connect(window, &QWindow::heightChanged, window, [window]() {
+                updateRoundedWindowMask(window);
+            });
+            QObject::connect(window, &QWindow::windowStateChanged, window, [window]() {
+                updateRoundedWindowMask(window);
+            });
+            QTimer::singleShot(0, window, [window]() { updateRoundedWindowMask(window); });
             if (accountPreviewMode && !accountPreviewOutput.isEmpty()) {
                 QQuickWindow *quickWindow = qobject_cast<QQuickWindow *>(window);
                 QTimer::singleShot(1200, window, [quickWindow, accountPreviewOutput]() {
                     const bool saved = quickWindow
-                        && quickWindow->grabWindow().save(accountPreviewOutput);
+                                       && quickWindow->grabWindow().save(accountPreviewOutput);
                     QCoreApplication::exit(saved ? 0 : 2);
                 });
             }

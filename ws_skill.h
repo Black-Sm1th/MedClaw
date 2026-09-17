@@ -22,9 +22,9 @@
 #ifndef WS_SKILL_H
 #define WS_SKILL_H
 
-#include <QString>
-#include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QString>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -66,13 +66,12 @@ public:
     QJsonObject buildSkillsStatusParams() const;
 
     /// 构建 skills.update 请求参数
-    QJsonObject buildSkillUpdateParams(const QString &skillKey,
-                                        bool enabled) const;
+    QJsonObject buildSkillUpdateParams(const QString &skillKey, bool enabled) const;
 
 private:
-    QVariantList m_skills;          ///< 缓存的技能列表
-    QString      m_workspaceDir;    ///< 工作空间目录
-    QString      m_managedSkillsDir;///< 托管技能目录
+    QVariantList m_skills;      ///< 缓存的技能列表
+    QString m_workspaceDir;     ///< 工作空间目录
+    QString m_managedSkillsDir; ///< 托管技能目录
 };
 
 #endif // WS_SKILL_H

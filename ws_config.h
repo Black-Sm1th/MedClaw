@@ -16,9 +16,9 @@
 #ifndef WS_CONFIG_H
 #define WS_CONFIG_H
 
-#include <QString>
-#include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QString>
 #include <QVariantList>
 #include <cstdint>
 
@@ -116,29 +116,29 @@ private:
     QJsonObject buildSignedDevice(const QString &challengeNonce) const;
 
     // ── 服务器与认证 ──
-    QString m_serverUrl;        ///< WebSocket 服务器地址
-    QString m_token;            ///< 身份认证 Token
+    QString m_serverUrl; ///< WebSocket 服务器地址
+    QString m_token;     ///< 身份认证 Token
 
     QString m_skillsStoragePath; ///< 存放技能路径
-    bool    m_llmJudgmentEnabled = false;
+    bool m_llmJudgmentEnabled = false;
 
     // ── 客户端身份标识（需与 Gateway 白名单匹配） ──
-    QString m_clientId;         ///< 客户端标识符（如 clawdbot-control-ui）
-    QString m_clientVersion;    ///< 客户端版本号（如 dev）
-    QString m_clientPlatform;   ///< 运行平台标识（如 Win32）
-    QString m_clientMode;       ///< 客户端模式（桌面控制端为 ui）
+    QString m_clientId;       ///< 客户端标识符（如 clawdbot-control-ui）
+    QString m_clientVersion;  ///< 客户端版本号（如 dev）
+    QString m_clientPlatform; ///< 运行平台标识（如 Win32）
+    QString m_clientMode;     ///< 客户端模式（桌面控制端为 ui）
 
     // ── 协议参数 ──
-    int     m_minProtocol;      ///< 最低支持协议版本
-    int     m_maxProtocol;      ///< 最高支持协议版本
-    QString m_role;             ///< 连接角色（如 operator）
-    QJsonArray m_scopes;        ///< 权限范围列表
+    int m_minProtocol;   ///< 最低支持协议版本
+    int m_maxProtocol;   ///< 最高支持协议版本
+    QString m_role;      ///< 连接角色（如 operator）
+    QJsonArray m_scopes; ///< 权限范围列表
 
     // ── Ed25519 设备密钥 ──
-    uint8_t m_ed25519Pk[32];    ///< Ed25519 公钥（32 字节原始数据）
-    uint8_t m_ed25519Sk[64];    ///< Ed25519 私钥（64 字节 = 种子 + 公钥）
-    bool    m_hasKeys;          ///< 密钥对是否生成成功
-    QString m_deviceId;         ///< 设备 ID（公钥 SHA-256 哈希）
+    uint8_t m_ed25519Pk[32]; ///< Ed25519 公钥（32 字节原始数据）
+    uint8_t m_ed25519Sk[64]; ///< Ed25519 私钥（64 字节 = 种子 + 公钥）
+    bool m_hasKeys;          ///< 密钥对是否生成成功
+    QString m_deviceId;      ///< 设备 ID（公钥 SHA-256 哈希）
 };
 
 #endif // WS_CONFIG_H

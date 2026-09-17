@@ -153,7 +153,7 @@ private:
     QVariantMap quickParseSummary(const QString &filePath);
 
     QString m_sessionsDir;
-    QString m_openclawDir;      ///< ~/.openclaw 目录路径
+    QString m_openclawDir; ///< ~/.openclaw 目录路径
     QVariantList m_sessionList;
 };
 

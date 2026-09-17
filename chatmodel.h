@@ -3,10 +3,10 @@
 
 #include <QAbstractListModel>
 #include <QDateTime>
-#include <QVector>
 #include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QVector>
 
 /**
  * 聊天消息数据结构
@@ -16,23 +16,24 @@
  *   "toolCall"   — 工具调用（助手发起的 function call）
  *   "toolResult" — 工具执行结果
  */
-struct ChatMessage {
-    QString role;         // "user" | "assistant" | "system" | "tool"
-    QString content;      // 文本内容 或 工具结果文本
+struct ChatMessage
+{
+    QString role;    // "user" | "assistant" | "system" | "tool"
+    QString content; // 文本内容 或 工具结果文本
     QDateTime timestamp;
-    QString msgType;      // "text" | "toolCall" | "toolResult"
-    QString toolName;     // 工具名称
-    QString toolArgs;     // 工具参数（JSON 字符串）
-    QString toolCallId;   // 工具调用 ID（关联 call 和 result）
-    bool    isError;      // 工具结果是否为错误（独立 toolResult 行或合并后）
+    QString msgType;    // "text" | "toolCall" | "toolResult"
+    QString toolName;   // 工具名称
+    QString toolArgs;   // 工具参数（JSON 字符串）
+    QString toolCallId; // 工具调用 ID（关联 call 和 result）
+    bool isError;       // 工具结果是否为错误（独立 toolResult 行或合并后）
     /// 合并到 toolCall 行：收到 toolResult 后写入，不再单独插入一行
     QString toolResultText;
-    bool    hasToolResult = false;
+    bool hasToolResult = false;
     /// 当前消息是否处于流式接收态（用于 QML 切换 textFormat / 走增量追加路径）
-    bool    isStreaming = false;
+    bool isStreaming = false;
     /// 工具调用之间的中间助手文本（区别于最终回答）：QML 用斜体渲染。
     /// 在新增 toolCall 时把紧邻之前的助手文本消息标记为中间态。
-    bool    isIntermediate = false;
+    bool isIntermediate = false;
     QVariantList artifacts; ///< Files created or modified during this turn.
 };
 
@@ -68,15 +69,15 @@ public:
 
     Q_INVOKABLE void addMessage(const QString &role, const QString &content);
     Q_INVOKABLE void addToolCall(const QString &toolName,
-                                  const QString &toolArgs,
-                                  const QString &toolCallId);
+                                 const QString &toolArgs,
+                                 const QString &toolCallId);
     Q_INVOKABLE void appendToolResult(const QString &toolName,
                                       const QString &content,
                                       const QString &toolCallId);
     Q_INVOKABLE void addToolResult(const QString &toolName,
-                                    const QString &content,
-                                    const QString &toolCallId,
-                                    bool isError = false);
+                                   const QString &content,
+                                   const QString &toolCallId,
+                                   bool isError = false);
     Q_INVOKABLE void appendToLastMessage(const QString &text);
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
@@ -114,9 +115,9 @@ private:
     QVector<ChatMessage> m_messages;
     bool m_streaming = false;
 
-    QTimer m_streamFlushTimer;      ///< 流式节流定时器（单次触发，到点后 flushStream）
-    int    m_streamFlushRow = -1;   ///< 当前正在被节流刷新的行号
-    bool   m_streamDirty    = false;///< 自上次 flush 后是否有新 chunk 累积
+    QTimer m_streamFlushTimer;  ///< 流式节流定时器（单次触发，到点后 flushStream）
+    int m_streamFlushRow = -1;  ///< 当前正在被节流刷新的行号
+    bool m_streamDirty = false; ///< 自上次 flush 后是否有新 chunk 累积
     /// 自上次 streamFlushed() 之后累积的「新增片段」。flushStream() 把它整段发出去并清空。
     /// 注意：m_messages[m_streamFlushRow].content 仍持有完整累积内容，供 delegate 重建 /
     /// 历史加载 / 最终 Markdown 精排时一次性读取。

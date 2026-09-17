@@ -3,13 +3,19 @@
  * @brief WebSocket 技能管理类 —— 实现
  */
 #include "ws_skill.h"
-#include <QJsonDocument>
 #include <QDebug>
+#include <QJsonDocument>
 
 WsSkill::WsSkill() {}
 
-QVariantList WsSkill::skillList() const { return m_skills; }
-int WsSkill::skillCount() const { return m_skills.count(); }
+QVariantList WsSkill::skillList() const
+{
+    return m_skills;
+}
+int WsSkill::skillCount() const
+{
+    return m_skills.count();
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  解析 skills.status 响应
@@ -18,7 +24,7 @@ int WsSkill::skillCount() const { return m_skills.count(); }
 int WsSkill::parseSkillsStatusResponse(const QJsonObject &payload)
 {
     m_skills.clear();
-    m_workspaceDir    = payload.value(QStringLiteral("workspaceDir")).toString();
+    m_workspaceDir = payload.value(QStringLiteral("workspaceDir")).toString();
     m_managedSkillsDir = payload.value(QStringLiteral("managedSkillsDir")).toString();
 
     const QJsonArray arr = payload.value(QStringLiteral("skills")).toArray();
@@ -26,26 +32,27 @@ int WsSkill::parseSkillsStatusResponse(const QJsonObject &payload)
     for (const QJsonValue &v : arr) {
         const QJsonObject s = v.toObject();
 
-        const QString skillKey = s.value(QStringLiteral("skillKey")).toString(
-            s.value(QStringLiteral("name")).toString());
-        if (skillKey.isEmpty()) continue;
+        const QString skillKey = s.value(QStringLiteral("skillKey"))
+                                     .toString(s.value(QStringLiteral("name")).toString());
+        if (skillKey.isEmpty())
+            continue;
 
         const bool disabled = s.value(QStringLiteral("disabled")).toBool(false);
-        const bool always   = s.value(QStringLiteral("always")).toBool(false);
+        const bool always = s.value(QStringLiteral("always")).toBool(false);
 
         QVariantMap entry;
-        entry[QStringLiteral("name")]        = s.value(QStringLiteral("name")).toString();
+        entry[QStringLiteral("name")] = s.value(QStringLiteral("name")).toString();
         entry[QStringLiteral("description")] = s.value(QStringLiteral("description")).toString();
-        entry[QStringLiteral("skillKey")]    = skillKey;
-        entry[QStringLiteral("source")]      = s.value(QStringLiteral("source")).toString();
-        entry[QStringLiteral("bundled")]     = s.value(QStringLiteral("bundled")).toBool(false);
-        entry[QStringLiteral("homepage")]    = s.value(QStringLiteral("homepage")).toString();
-        entry[QStringLiteral("emoji")]       = s.value(QStringLiteral("emoji")).toString();
-        entry[QStringLiteral("always")]      = always;
-        entry[QStringLiteral("disabled")]    = disabled;
-        entry[QStringLiteral("enabled")]     = !disabled;
-        entry[QStringLiteral("eligible")]    = s.value(QStringLiteral("eligible")).toBool(true);
-        entry[QStringLiteral("filePath")]    = s.value(QStringLiteral("filePath")).toString();
+        entry[QStringLiteral("skillKey")] = skillKey;
+        entry[QStringLiteral("source")] = s.value(QStringLiteral("source")).toString();
+        entry[QStringLiteral("bundled")] = s.value(QStringLiteral("bundled")).toBool(false);
+        entry[QStringLiteral("homepage")] = s.value(QStringLiteral("homepage")).toString();
+        entry[QStringLiteral("emoji")] = s.value(QStringLiteral("emoji")).toString();
+        entry[QStringLiteral("always")] = always;
+        entry[QStringLiteral("disabled")] = disabled;
+        entry[QStringLiteral("enabled")] = !disabled;
+        entry[QStringLiteral("eligible")] = s.value(QStringLiteral("eligible")).toBool(true);
+        entry[QStringLiteral("filePath")] = s.value(QStringLiteral("filePath")).toString();
 
         m_skills.append(entry);
     }
@@ -64,12 +71,11 @@ QString WsSkill::parseSkillUpdateResponse(const QJsonObject &payload)
     if (!payload.value(QStringLiteral("ok")).toBool(false))
         return QString();
 
-    const QString skillKey =
-        payload.value(QStringLiteral("skillKey")).toString();
-    if (skillKey.isEmpty()) return QString();
+    const QString skillKey = payload.value(QStringLiteral("skillKey")).toString();
+    if (skillKey.isEmpty())
+        return QString();
 
-    const QJsonObject config =
-        payload.value(QStringLiteral("config")).toObject();
+    const QJsonObject config = payload.value(QStringLiteral("config")).toObject();
     // config.enabled 可能是 true/false；如果 config 里没有 enabled 字段，
     // 也可能有 disabled 字段（取反即可）
     bool nowEnabled = true;
@@ -82,7 +88,7 @@ QString WsSkill::parseSkillUpdateResponse(const QJsonObject &payload)
     for (int i = 0; i < m_skills.count(); ++i) {
         QVariantMap entry = m_skills[i].toMap();
         if (entry.value(QStringLiteral("skillKey")).toString() == skillKey) {
-            entry[QStringLiteral("enabled")]  = nowEnabled;
+            entry[QStringLiteral("enabled")] = nowEnabled;
             entry[QStringLiteral("disabled")] = !nowEnabled;
             m_skills[i] = entry;
             break;
@@ -102,11 +108,10 @@ QJsonObject WsSkill::buildSkillsStatusParams() const
     return QJsonObject(); // skills.status 无需参数
 }
 
-QJsonObject WsSkill::buildSkillUpdateParams(const QString &skillKey,
-                                             bool enabled) const
+QJsonObject WsSkill::buildSkillUpdateParams(const QString &skillKey, bool enabled) const
 {
     QJsonObject params;
     params[QStringLiteral("skillKey")] = skillKey;
-    params[QStringLiteral("enabled")]  = enabled;
+    params[QStringLiteral("enabled")] = enabled;
     return params;
 }

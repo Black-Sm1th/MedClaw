@@ -5,9 +5,9 @@
 #ifndef WS_TOOLS_H
 #define WS_TOOLS_H
 
-#include <QString>
-#include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QString>
 #include <QVariantList>
 
 class WsTools
@@ -15,8 +15,7 @@ class WsTools
 public:
     WsTools() = default;
 
-    QJsonObject buildToolsCatalogParams(const QString &agentId,
-                                        bool includePlugins = true) const;
+    QJsonObject buildToolsCatalogParams(const QString &agentId, bool includePlugins = true) const;
 
     /// 解析 tools.catalog 成功响应，展平为 toolList
     void parseToolsCatalogResponse(const QJsonObject &payload);
@@ -66,8 +65,8 @@ public:
      * 用于 config.set 全量写入（与 Web UI 行为一致，不触发网关重启）。
      */
     QJsonObject buildFullConfigWithBatchToolPolicy(const QJsonObject &fullConfig,
-                                                    const QString &agentId,
-                                                    const QStringList &enabledToolIds) const;
+                                                   const QString &agentId,
+                                                   const QStringList &enabledToolIds) const;
 
     void batchSetLocalToolEnabled(const QStringList &enabledToolIds);
 

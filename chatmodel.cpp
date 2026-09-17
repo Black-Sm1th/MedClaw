@@ -3,20 +3,17 @@
 static QString chatDisplayContent(const QString &content)
 {
     QString display = content;
-    const QStringList tags{
-        QStringLiteral("knowledge-base-policy"),
-        QStringLiteral("workspace-policy"),
-        QStringLiteral("template-parameters")
-    };
+    const QStringList tags{QStringLiteral("knowledge-base-policy"),
+                           QStringLiteral("workspace-policy"),
+                           QStringLiteral("template-parameters")};
     for (const QString &tag : tags) {
         const QString begin = QStringLiteral("<%1>").arg(tag);
         const QString end = QStringLiteral("</%1>").arg(tag);
         int beginPos = display.indexOf(begin);
         while (beginPos >= 0) {
             const int endPos = display.indexOf(end, beginPos + begin.size());
-            display = endPos >= 0
-                ? display.left(beginPos) + display.mid(endPos + end.size())
-                : display.left(beginPos);
+            display = endPos >= 0 ? display.left(beginPos) + display.mid(endPos + end.size())
+                                  : display.left(beginPos);
             beginPos = display.indexOf(begin);
         }
     }
@@ -33,9 +30,11 @@ ChatModel::ChatModel(QObject *parent)
     //                若空闲 → 定时器停掉，等下一个 chunk 触发立刻 flush。
     m_streamFlushTimer.setSingleShot(true);
     connect(&m_streamFlushTimer, &QTimer::timeout, this, [this]() {
-        if (!m_streamDirty) return;
+        if (!m_streamDirty)
+            return;
         flushStream();
-        if (m_streamFlushRow < 0 || m_streamFlushRow >= m_messages.count()) return;
+        if (m_streamFlushRow < 0 || m_streamFlushRow >= m_messages.count())
+            return;
         // flushStream 已把 pending 合并进 content，长度即为「QML 端当前总文本长度」
         const int len = m_messages[m_streamFlushRow].content.length();
         m_streamFlushTimer.setInterval(streamFlushIntervalMsFor(len));
@@ -56,40 +55,51 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
 
     const ChatMessage &msg = m_messages[index.row()];
     switch (role) {
-    case RoleRole:       return msg.role;
-    case ContentRole:    return msg.content;
-    case TimestampRole:  return msg.timestamp.toString(QStringLiteral("hh:mm:ss"));
-    case MsgTypeRole:    return msg.msgType;
-    case ToolNameRole:   return msg.toolName;
-    case ToolArgsRole:   return msg.toolArgs;
-    case ToolCallIdRole: return msg.toolCallId;
-    case IsErrorRole:    return msg.isError;
-    case ToolResultTextRole: return msg.toolResultText;
-    case HasToolResultRole:  return msg.hasToolResult;
-    case IsStreamingRole:    return msg.isStreaming;
-    case IsIntermediateRole: return msg.isIntermediate;
-    case ArtifactsRole:      return msg.artifacts;
+    case RoleRole:
+        return msg.role;
+    case ContentRole:
+        return msg.content;
+    case TimestampRole:
+        return msg.timestamp.toString(QStringLiteral("hh:mm:ss"));
+    case MsgTypeRole:
+        return msg.msgType;
+    case ToolNameRole:
+        return msg.toolName;
+    case ToolArgsRole:
+        return msg.toolArgs;
+    case ToolCallIdRole:
+        return msg.toolCallId;
+    case IsErrorRole:
+        return msg.isError;
+    case ToolResultTextRole:
+        return msg.toolResultText;
+    case HasToolResultRole:
+        return msg.hasToolResult;
+    case IsStreamingRole:
+        return msg.isStreaming;
+    case IsIntermediateRole:
+        return msg.isIntermediate;
+    case ArtifactsRole:
+        return msg.artifacts;
     }
     return QVariant();
 }
 
 QHash<int, QByteArray> ChatModel::roleNames() const
 {
-    return {
-        { RoleRole,       "msgRole"    },
-        { ContentRole,    "content"    },
-        { TimestampRole,  "timestamp"  },
-        { MsgTypeRole,    "msgType"    },
-        { ToolNameRole,   "toolName"   },
-        { ToolArgsRole,   "toolArgs"   },
-        { ToolCallIdRole, "toolCallId" },
-        { IsErrorRole,    "isError"    },
-        { ToolResultTextRole, "toolResultText" },
-        { HasToolResultRole,  "hasToolResult"  },
-        { IsStreamingRole,    "isStreaming"    },
-        { IsIntermediateRole, "isIntermediate" },
-        { ArtifactsRole,      "artifacts"      }
-    };
+    return {{RoleRole, "msgRole"},
+            {ContentRole, "content"},
+            {TimestampRole, "timestamp"},
+            {MsgTypeRole, "msgType"},
+            {ToolNameRole, "toolName"},
+            {ToolArgsRole, "toolArgs"},
+            {ToolCallIdRole, "toolCallId"},
+            {IsErrorRole, "isError"},
+            {ToolResultTextRole, "toolResultText"},
+            {HasToolResultRole, "hasToolResult"},
+            {IsStreamingRole, "isStreaming"},
+            {IsIntermediateRole, "isIntermediate"},
+            {ArtifactsRole, "artifacts"}};
 }
 
 // ── 文本消息 ─────────────────────────────────────────────────────────
@@ -99,11 +109,9 @@ void ChatModel::addMessage(const QString &role, const QString &content)
     // A stop can be followed by the gateway's final full snapshot. If that
     // snapshot is already the last assistant row, it must not create a
     // second visually identical message.
-    if (role == QLatin1String("assistant") && !content.isEmpty()
-        && !m_messages.isEmpty()) {
+    if (role == QLatin1String("assistant") && !content.isEmpty() && !m_messages.isEmpty()) {
         const ChatMessage &last = m_messages.constLast();
-        if (last.msgType == QLatin1String("text")
-            && last.role == QLatin1String("assistant")
+        if (last.msgType == QLatin1String("text") && last.role == QLatin1String("assistant")
             && !last.isStreaming && last.content == content)
             return;
     }
@@ -111,12 +119,11 @@ void ChatModel::addMessage(const QString &role, const QString &content)
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
-    msg.role      = role;
-    msg.content   = role == QLatin1String("user")
-        ? chatDisplayContent(content) : content;
+    msg.role = role;
+    msg.content = role == QLatin1String("user") ? chatDisplayContent(content) : content;
     msg.timestamp = QDateTime::currentDateTime();
-    msg.msgType   = QStringLiteral("text");
-    msg.isError   = false;
+    msg.msgType = QStringLiteral("text");
+    msg.isError = false;
     m_messages.append(msg);
     endInsertRows();
     emit countChanged();
@@ -125,23 +132,21 @@ void ChatModel::addMessage(const QString &role, const QString &content)
 // ── 工具调用 ─────────────────────────────────────────────────────────
 
 void ChatModel::addToolCall(const QString &toolName,
-                             const QString &toolArgs,
-                             const QString &toolCallId)
+                            const QString &toolArgs,
+                            const QString &toolCallId)
 {
     // 工具调用之前的助手文本属于「工具间中间输出」，标记为斜体显示。
     // 跳过相邻的 toolCall / toolResult 行（并行工具调用），只标记紧邻的那条助手文本。
     for (int i = m_messages.count() - 1; i >= 0; --i) {
         const ChatMessage &m = m_messages[i];
-        if (m.msgType == QStringLiteral("toolCall")
-            || m.msgType == QStringLiteral("toolResult")) {
+        if (m.msgType == QStringLiteral("toolCall") || m.msgType == QStringLiteral("toolResult")) {
             continue;
         }
-        if (m.msgType == QStringLiteral("text")
-            && m.role == QStringLiteral("assistant")
+        if (m.msgType == QStringLiteral("text") && m.role == QStringLiteral("assistant")
             && !m.isIntermediate) {
             m_messages[i].isIntermediate = true;
             const QModelIndex midx = index(i);
-            emit dataChanged(midx, midx, { IsIntermediateRole });
+            emit dataChanged(midx, midx, {IsIntermediateRole});
         }
         break;
     }
@@ -149,14 +154,14 @@ void ChatModel::addToolCall(const QString &toolName,
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
-    msg.role       = QStringLiteral("assistant");
-    msg.content    = QString();
-    msg.timestamp  = QDateTime::currentDateTime();
-    msg.msgType    = QStringLiteral("toolCall");
-    msg.toolName   = toolName;
-    msg.toolArgs   = toolArgs;
+    msg.role = QStringLiteral("assistant");
+    msg.content = QString();
+    msg.timestamp = QDateTime::currentDateTime();
+    msg.msgType = QStringLiteral("toolCall");
+    msg.toolName = toolName;
+    msg.toolArgs = toolArgs;
     msg.toolCallId = toolCallId;
-    msg.isError    = false;
+    msg.isError = false;
     msg.hasToolResult = false;
     msg.toolResultText.clear();
     m_messages.append(msg);
@@ -167,21 +172,18 @@ void ChatModel::addToolCall(const QString &toolName,
 // ── 工具结果 ─────────────────────────────────────────────────────────
 
 void ChatModel::appendToolResult(const QString &toolName,
-                                  const QString &content,
-                                  const QString &toolCallId)
+                                 const QString &content,
+                                 const QString &toolCallId)
 {
-    if (content.isEmpty()) return;
+    if (content.isEmpty())
+        return;
 
     for (int i = m_messages.count() - 1; i >= 0; --i) {
         ChatMessage &msg = m_messages[i];
-        const bool idMatches = !toolCallId.isEmpty()
-            && msg.toolCallId == toolCallId;
-        const bool fallbackMatches = toolCallId.isEmpty()
-            && !toolName.isEmpty()
-            && msg.toolName == toolName
-            && !msg.hasToolResult;
-        if (msg.msgType != QStringLiteral("toolCall")
-            || (!idMatches && !fallbackMatches)) {
+        const bool idMatches = !toolCallId.isEmpty() && msg.toolCallId == toolCallId;
+        const bool fallbackMatches = toolCallId.isEmpty() && !toolName.isEmpty()
+                                     && msg.toolName == toolName && !msg.hasToolResult;
+        if (msg.msgType != QStringLiteral("toolCall") || (!idMatches && !fallbackMatches)) {
             continue;
         }
 
@@ -210,23 +212,19 @@ void ChatModel::appendToolResult(const QString &toolName,
 }
 
 void ChatModel::addToolResult(const QString &toolName,
-                               const QString &content,
-                               const QString &toolCallId,
-                               bool isError)
+                              const QString &content,
+                              const QString &toolCallId,
+                              bool isError)
 {
     for (int i = m_messages.count() - 1; i >= 0; --i) {
-        if (m_messages[i].msgType == QStringLiteral("toolCall")
-            && !toolCallId.isEmpty()
+        if (m_messages[i].msgType == QStringLiteral("toolCall") && !toolCallId.isEmpty()
             && m_messages[i].toolCallId == toolCallId) {
             if (!content.isEmpty())
                 m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
             m_messages[i].isError = isError;
             const QModelIndex idx = index(i);
-            emit dataChanged(
-                idx,
-                idx,
-                { IsErrorRole, ToolResultTextRole, HasToolResultRole });
+            emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
             emit messagePayloadChanged();
             return;
         }
@@ -236,8 +234,7 @@ void ChatModel::addToolResult(const QString &toolName,
     // 最近一个同名且尚未完成的调用，避免原卡片永久停留在“执行中”。
     if (toolCallId.isEmpty() && !toolName.isEmpty()) {
         for (int i = m_messages.count() - 1; i >= 0; --i) {
-            if (m_messages[i].msgType != QStringLiteral("toolCall")
-                || m_messages[i].hasToolResult
+            if (m_messages[i].msgType != QStringLiteral("toolCall") || m_messages[i].hasToolResult
                 || m_messages[i].toolName != toolName) {
                 continue;
             }
@@ -246,10 +243,7 @@ void ChatModel::addToolResult(const QString &toolName,
             m_messages[i].hasToolResult = true;
             m_messages[i].isError = isError;
             const QModelIndex idx = index(i);
-            emit dataChanged(
-                idx,
-                idx,
-                { IsErrorRole, ToolResultTextRole, HasToolResultRole });
+            emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
             emit messagePayloadChanged();
             return;
         }
@@ -258,13 +252,13 @@ void ChatModel::addToolResult(const QString &toolName,
     const int idx = m_messages.count();
     beginInsertRows(QModelIndex(), idx, idx);
     ChatMessage msg;
-    msg.role       = QStringLiteral("tool");
-    msg.content    = content;
-    msg.timestamp  = QDateTime::currentDateTime();
-    msg.msgType    = QStringLiteral("toolResult");
-    msg.toolName   = toolName;
+    msg.role = QStringLiteral("tool");
+    msg.content = content;
+    msg.timestamp = QDateTime::currentDateTime();
+    msg.msgType = QStringLiteral("toolResult");
+    msg.toolName = toolName;
     msg.toolCallId = toolCallId;
-    msg.isError    = isError;
+    msg.isError = isError;
     m_messages.append(msg);
     endInsertRows();
     emit countChanged();
@@ -274,11 +268,12 @@ void ChatModel::addToolResult(const QString &toolName,
 
 void ChatModel::appendToLastMessage(const QString &text)
 {
-    if (m_messages.isEmpty()) return;
+    if (m_messages.isEmpty())
+        return;
     const int last = m_messages.count() - 1;
     m_messages[last].content += text;
     const QModelIndex idx = index(last);
-    emit dataChanged(idx, idx, { ContentRole });
+    emit dataChanged(idx, idx, {ContentRole});
     emit messagePayloadChanged();
 }
 
@@ -341,8 +336,7 @@ bool ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
     int fallback = -1;
     for (int i = m_messages.count() - 1; i >= 0; --i) {
         ChatMessage &msg = m_messages[i];
-        if (msg.role != QLatin1String("assistant")
-            || msg.msgType != QLatin1String("text")) {
+        if (msg.role != QLatin1String("assistant") || msg.msgType != QLatin1String("text")) {
             continue;
         }
         if (fallback < 0)
@@ -351,7 +345,7 @@ bool ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
             continue;
         msg.artifacts = artifacts;
         const QModelIndex idx = index(i);
-        emit dataChanged(idx, idx, { ArtifactsRole });
+        emit dataChanged(idx, idx, {ArtifactsRole});
         emit messagePayloadChanged();
         return true;
     }
@@ -360,7 +354,7 @@ bool ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
 
     m_messages[fallback].artifacts = artifacts;
     const QModelIndex idx = index(fallback);
-    emit dataChanged(idx, idx, { ArtifactsRole });
+    emit dataChanged(idx, idx, {ArtifactsRole});
     emit messagePayloadChanged();
     return true;
 }
@@ -390,8 +384,7 @@ void ChatModel::loadHistory(const QVariantList &messages)
                     continue;
                 }
                 if (prev.msgType == QStringLiteral("text")
-                    && prev.role == QStringLiteral("assistant")
-                    && !prev.isIntermediate) {
+                    && prev.role == QStringLiteral("assistant") && !prev.isIntermediate) {
                     m_messages[i].isIntermediate = true;
                 }
                 break;
@@ -441,18 +434,17 @@ void ChatModel::loadHistory(const QVariantList &messages)
         ChatMessage msg;
         msg.role = m.value(QStringLiteral("role")).toString();
         msg.content = msg.role == QLatin1String("user")
-            ? chatDisplayContent(m.value(QStringLiteral("content")).toString())
-            : m.value(QStringLiteral("content")).toString();
+                          ? chatDisplayContent(m.value(QStringLiteral("content")).toString())
+                          : m.value(QStringLiteral("content")).toString();
 
         // An aborted run can be represented once by the live stream and once
         // by its persisted final assistant record. Keep one visible copy when
         // history contains the same adjacent assistant message twice.
-        if (msg.role == QLatin1String("assistant")
-            && !msg.content.isEmpty() && !m_messages.isEmpty()) {
+        if (msg.role == QLatin1String("assistant") && !msg.content.isEmpty()
+            && !m_messages.isEmpty()) {
             const ChatMessage &previous = m_messages.constLast();
             if (previous.msgType == QLatin1String("text")
-                && previous.role == QLatin1String("assistant")
-                && previous.content == msg.content)
+                && previous.role == QLatin1String("assistant") && previous.content == msg.content)
                 continue;
         }
         msg.timestamp = QDateTime::currentDateTime();
@@ -495,8 +487,10 @@ int ChatModel::streamFlushIntervalMsFor(int contentLen)
     //   7.5KB ~ 250KB   → 线性放宽
     //   ≥ 250KB         → 1000ms （封顶，避免超长文本度量吃掉整帧）
     const int v = contentLen / 250;
-    if (v < 30)   return 30;
-    if (v > 1000) return 1000;
+    if (v < 30)
+        return 30;
+    if (v > 1000)
+        return 1000;
     return v;
 }
 
@@ -508,11 +502,11 @@ void ChatModel::beginStreaming()
         const int idx = m_messages.count();
         beginInsertRows(QModelIndex(), idx, idx);
         ChatMessage msg;
-        msg.role        = QStringLiteral("assistant");
-        msg.content     = QString();
-        msg.timestamp   = QDateTime::currentDateTime();
-        msg.msgType     = QStringLiteral("text");
-        msg.isError     = false;
+        msg.role = QStringLiteral("assistant");
+        msg.content = QString();
+        msg.timestamp = QDateTime::currentDateTime();
+        msg.msgType = QStringLiteral("text");
+        msg.isError = false;
         msg.isStreaming = true;
         m_messages.append(msg);
         endInsertRows();
@@ -545,20 +539,20 @@ void ChatModel::flushStream()
 
 void ChatModel::appendStreamChunk(const QString &chunk)
 {
-    if (chunk.isEmpty()) return;
+    if (chunk.isEmpty())
+        return;
     if (!m_streaming)
         beginStreaming();
-    if (m_messages.isEmpty()
-        || m_messages.last().role != QLatin1String("assistant")
+    if (m_messages.isEmpty() || m_messages.last().role != QLatin1String("assistant")
         || m_messages.last().msgType != QLatin1String("text")) {
         const int idx = m_messages.count();
         beginInsertRows(QModelIndex(), idx, idx);
         ChatMessage msg;
-        msg.role        = QStringLiteral("assistant");
-        msg.content     = QString();
-        msg.timestamp   = QDateTime::currentDateTime();
-        msg.msgType     = QStringLiteral("text");
-        msg.isError     = false;
+        msg.role = QStringLiteral("assistant");
+        msg.content = QString();
+        msg.timestamp = QDateTime::currentDateTime();
+        msg.msgType = QStringLiteral("text");
+        msg.isError = false;
         msg.isStreaming = true;
         m_messages.append(msg);
         endInsertRows();
@@ -566,7 +560,7 @@ void ChatModel::appendStreamChunk(const QString &chunk)
     } else if (!m_messages.last().isStreaming) {
         m_messages.last().isStreaming = true;
         const QModelIndex idx = index(m_messages.count() - 1);
-        emit dataChanged(idx, idx, { IsStreamingRole });
+        emit dataChanged(idx, idx, {IsStreamingRole});
     }
 
     const int last = m_messages.count() - 1;
@@ -586,16 +580,14 @@ void ChatModel::appendStreamChunk(const QString &chunk)
     }
     if (normalizedChunk.isEmpty())
         return;
-    if (m_streamFlushRow >= 0
-        && m_streamFlushRow != last
-        && m_streamFlushRow < m_messages.count()
+    if (m_streamFlushRow >= 0 && m_streamFlushRow != last && m_streamFlushRow < m_messages.count()
         && !m_streamPending.isEmpty()) {
         // 切到新一行（如 toolCall 后又开始流式）：先把上一行尚未 emit 的残余 delta
         // 合并进上一行 content 并推送出去，否则 QML 端那一行末尾会缺最后一小段文字。
         m_messages[m_streamFlushRow].content += m_streamPending;
         emit streamFlushed(m_streamFlushRow, m_streamPending);
         const QModelIndex prevIdx = index(m_streamFlushRow);
-        emit dataChanged(prevIdx, prevIdx, { ContentRole });
+        emit dataChanged(prevIdx, prevIdx, {ContentRole});
     }
     if (m_streamFlushRow != last) {
         m_streamPending.clear();
@@ -620,7 +612,8 @@ void ChatModel::appendStreamChunk(const QString &chunk)
 
 void ChatModel::endStreaming()
 {
-    if (!m_streaming) return;
+    if (!m_streaming)
+        return;
     m_streaming = false;
     emit isStreamingChanged();
     m_streamFlushTimer.stop();
@@ -642,7 +635,7 @@ void ChatModel::endStreaming()
     if (m_messages[last].isStreaming)
         m_messages[last].isStreaming = false;
     const QModelIndex idx = index(last);
-    emit dataChanged(idx, idx, { ContentRole, IsStreamingRole });
+    emit dataChanged(idx, idx, {ContentRole, IsStreamingRole});
     emit messagePayloadChanged();
     m_streamFlushRow = -1;
     m_streamPending.clear();

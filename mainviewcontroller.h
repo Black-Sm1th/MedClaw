@@ -1,10 +1,10 @@
 #ifndef MAINVIEWCONTROLLER_H
 #define MAINVIEWCONTROLLER_H
 
-#include "CommonFunc.h"
 #include <QObject>
 #include <QVariantList>
 #include <QVariantMap>
+#include "CommonFunc.h"
 
 class ChatModel;
 class GatewayClient;
@@ -50,8 +50,7 @@ public:
     Q_INVOKABLE QVariantMap deleteUserTemplate(const QString &userId,
                                                const QString &templateId) const;
 
-    Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl,
-                                            const QString &workspace) const;
+    Q_INVOKABLE QString copyFileToWorkspace(const QString &fileUrl, const QString &workspace) const;
 
     Q_INVOKABLE bool openContainingFolder(const QString &fileUrl) const;
 
@@ -60,18 +59,16 @@ public:
     /// Import local files or an image from the native clipboard.
     Q_INVOKABLE QVariantList importClipboardFiles() const;
 
-    Q_INVOKABLE QString resolveLocalFileLink(const QString &link,
-                                             const QString &workspace) const;
+    Q_INVOKABLE QString resolveLocalFileLink(const QString &link, const QString &workspace) const;
 
 private:
-    static QString withKnowledgeScope(const QString &text,
-                                      const QString &knowledgeCollection);
+    static QString withKnowledgeScope(const QString &text, const QString &knowledgeCollection);
     static QString resolveWorkspacePath(const QString &ws);
     static QString fileSizeHumanBytes(qint64 bytes);
     static QString normalizeLocalFileCandidate(const QString &link);
 
-    ChatModel      *m_chatModel  = nullptr;
-    GatewayClient  *m_wsClient   = nullptr;
+    ChatModel *m_chatModel = nullptr;
+    GatewayClient *m_wsClient = nullptr;
 };
 
 #endif // MAINVIEWCONTROLLER_H

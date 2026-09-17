@@ -22,12 +22,12 @@
 #ifndef WS_SCHEDULED_TASK_H
 #define WS_SCHEDULED_TASK_H
 
-#include <QString>
-#include <QJsonObject>
+#include <QDateTime>
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QString>
 #include <QVariantList>
 #include <QVariantMap>
-#include <QDateTime>
 
 class WsScheduledTask
 {
@@ -39,9 +39,9 @@ public:
     // ═══════════════════════════════════════════════════════════════
 
     enum ScheduleKind {
-        Cron,       ///< cron 表达式（如 "0 9 * * 1-5"）
-        Every,      ///< 固定间隔（毫秒）
-        At          ///< 一次性定时（ISO 8601 时间）
+        Cron,  ///< cron 表达式（如 "0 9 * * 1-5"）
+        Every, ///< 固定间隔（毫秒）
+        At     ///< 一次性定时（ISO 8601 时间）
     };
 
     // ═══════════════════════════════════════════════════════════════
@@ -105,8 +105,7 @@ public:
      * @param payload 响应 payload
      * @return true 表示移除成功
      */
-    bool parseJobRemoveResponse(const QString &jobId,
-                                const QJsonObject &payload);
+    bool parseJobRemoveResponse(const QString &jobId, const QJsonObject &payload);
 
     /**
      * @brief 解析 cron.runs 响应
@@ -130,9 +129,7 @@ public:
     // ═══════════════════════════════════════════════════════════════
 
     /// 构建 cron.list 请求参数
-    QJsonObject buildListParams(bool includeDisabled = false,
-                                int limit = 100,
-                                int offset = 0) const;
+    QJsonObject buildListParams(bool includeDisabled = false, int limit = 100, int offset = 0) const;
 
     /// 构建 cron.status 请求参数
     QJsonObject buildStatusParams() const;
@@ -146,14 +143,13 @@ public:
      * @param sessionTarget  会话目标：main / isolated / current
      * @param deliver   是否投递到通道
      */
-    QJsonObject buildAddCronJobParams(
-        const QString &name,
-        const QString &cronExpr,
-        const QString &message,
-        const QString &tz = QStringLiteral("Asia/Shanghai"),
-        const QString &sessionTarget = QStringLiteral("main"),
-        bool deliver = false,
-        const QString &agentId = QString()) const;
+    QJsonObject buildAddCronJobParams(const QString &name,
+                                      const QString &cronExpr,
+                                      const QString &message,
+                                      const QString &tz = QStringLiteral("Asia/Shanghai"),
+                                      const QString &sessionTarget = QStringLiteral("main"),
+                                      bool deliver = false,
+                                      const QString &agentId = QString()) const;
 
     /**
      * @brief 构建 cron.add 请求参数 —— 固定间隔调度
@@ -161,13 +157,12 @@ public:
      * @param everyMs   执行间隔（毫秒）
      * @param message   触发时发送给 agent 的消息
      */
-    QJsonObject buildAddIntervalJobParams(
-        const QString &name,
-        int everyMs,
-        const QString &message,
-        const QString &sessionTarget = QStringLiteral("main"),
-        bool deliver = false,
-        const QString &agentId = QString()) const;
+    QJsonObject buildAddIntervalJobParams(const QString &name,
+                                          int everyMs,
+                                          const QString &message,
+                                          const QString &sessionTarget = QStringLiteral("main"),
+                                          bool deliver = false,
+                                          const QString &agentId = QString()) const;
 
     /**
      * @brief 构建 cron.add 请求参数 —— 一次性定时
@@ -176,13 +171,12 @@ public:
      * @param message   触发时发送给 agent 的消息
      * @param deleteAfterRun  执行后自动删除
      */
-    QJsonObject buildAddOneTimeJobParams(
-        const QString &name,
-        const QDateTime &at,
-        const QString &message,
-        bool deleteAfterRun = true,
-        const QString &sessionTarget = QStringLiteral("isolated"),
-        const QString &agentId = QString()) const;
+    QJsonObject buildAddOneTimeJobParams(const QString &name,
+                                         const QDateTime &at,
+                                         const QString &message,
+                                         bool deleteAfterRun = true,
+                                         const QString &sessionTarget = QStringLiteral("isolated"),
+                                         const QString &agentId = QString()) const;
 
     /**
      * @brief 构建 cron.add 请求参数 —— 系统事件（非 agent 对话）
@@ -197,12 +191,10 @@ public:
         const QString &tz = QStringLiteral("Asia/Shanghai")) const;
 
     /// 构建 cron.update 请求参数
-    QJsonObject buildUpdateParams(const QString &jobId,
-                                  const QJsonObject &patch) const;
+    QJsonObject buildUpdateParams(const QString &jobId, const QJsonObject &patch) const;
 
     /// 构建 cron.update 请求参数 —— 仅切换启用/禁用
-    QJsonObject buildToggleEnabledParams(const QString &jobId,
-                                         bool enabled) const;
+    QJsonObject buildToggleEnabledParams(const QString &jobId, bool enabled) const;
 
     /// 构建 cron.remove 请求参数
     QJsonObject buildRemoveParams(const QString &jobId) const;
@@ -228,10 +220,10 @@ private:
     /// 从 JSON 对象中提取标准化的任务 QVariantMap
     QVariantMap jobFromJson(const QJsonObject &obj) const;
 
-    QVariantList m_jobs;              ///< 缓存的任务列表
-    QVariantList m_runs;              ///< 缓存的执行记录
-    QVariantMap  m_status;            ///< cron 服务状态快照
-    QString      m_lastOperatedJobId; ///< 最近操作的任务 ID
+    QVariantList m_jobs;         ///< 缓存的任务列表
+    QVariantList m_runs;         ///< 缓存的执行记录
+    QVariantMap m_status;        ///< cron 服务状态快照
+    QString m_lastOperatedJobId; ///< 最近操作的任务 ID
 };
 
 #endif // WS_SCHEDULED_TASK_H

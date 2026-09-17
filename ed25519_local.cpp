@@ -3,9 +3,9 @@
 // SHA-512 provided by Qt's QCryptographicHash.
 
 #include "ed25519_local.h"
-#include <QCryptographicHash>
 #include <QByteArray>
 #include <QByteArrayView>
+#include <QCryptographicHash>
 #include <QRandomGenerator>
 #include <cstring>
 
@@ -14,29 +14,67 @@ namespace {
 typedef int64_t i64;
 typedef i64 gf[16];
 
-static const gf
-    gf0 = {0},
-    gf1 = {1},
-    D2  = {0xf159,0x26b2,0x9b94,0xebd6,0xb156,0x8283,0x149a,0x00e0,
-            0xd130,0xeef3,0x80f2,0x198e,0xfce7,0x56df,0xd9dc,0x2406},
-    X   = {0xd51a,0x8f25,0x2d60,0xc956,0xa7b2,0x9525,0xc760,0x692c,
-            0xdc5c,0xfdd6,0xe231,0xc0a4,0x53fe,0xcd6e,0x36d3,0x2169},
-    Y   = {0x6658,0x6666,0x6666,0x6666,0x6666,0x6666,0x6666,0x6666,
-            0x6666,0x6666,0x6666,0x6666,0x6666,0x6666,0x6666,0x6666};
+static const gf gf0 = {0}, gf1 = {1},
+                D2 = {0xf159,
+                      0x26b2,
+                      0x9b94,
+                      0xebd6,
+                      0xb156,
+                      0x8283,
+                      0x149a,
+                      0x00e0,
+                      0xd130,
+                      0xeef3,
+                      0x80f2,
+                      0x198e,
+                      0xfce7,
+                      0x56df,
+                      0xd9dc,
+                      0x2406},
+                X = {0xd51a,
+                     0x8f25,
+                     0x2d60,
+                     0xc956,
+                     0xa7b2,
+                     0x9525,
+                     0xc760,
+                     0x692c,
+                     0xdc5c,
+                     0xfdd6,
+                     0xe231,
+                     0xc0a4,
+                     0x53fe,
+                     0xcd6e,
+                     0x36d3,
+                     0x2169},
+                Y = {0x6658,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666,
+                     0x6666};
 
-static const uint8_t L_[32] = {
-    0xed,0xd3,0xf5,0x5c,0x1a,0x63,0x12,0x58,
-    0xd6,0x9c,0xf7,0xa2,0xde,0xf9,0xde,0x14,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x10
-};
+static const uint8_t L_[32] = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7,
+                               0xa2, 0xde, 0xf9, 0xde, 0x14, 0,    0,    0,    0,    0,    0,
+                               0,    0,    0,    0,    0,    0,    0,    0,    0,    0x10};
 
 // ── SHA-512 via Qt ──────────────────────────────────────────────────────
 
 static void sha512(uint8_t out[64], const uint8_t *m, int n)
 {
-    QByteArray h = QCryptographicHash::hash(
-        QByteArray::fromRawData(reinterpret_cast<const char *>(m), n),
-        QCryptographicHash::Sha512);
+    QByteArray h
+        = QCryptographicHash::hash(QByteArray::fromRawData(reinterpret_cast<const char *>(m), n),
+                                   QCryptographicHash::Sha512);
     memcpy(out, h.constData(), 64);
 }
 
@@ -44,7 +82,8 @@ static void sha512(uint8_t out[64], const uint8_t *m, int n)
 
 static void set25519(gf r, const gf a)
 {
-    for (int i = 0; i < 16; i++) r[i] = a[i];
+    for (int i = 0; i < 16; i++)
+        r[i] = a[i];
 }
 
 static void car25519(gf o)
@@ -60,7 +99,7 @@ static void car25519(gf o)
 
 static void sel25519(gf p, gf q, int b)
 {
-    i64 t, c = ~(i64)(b - 1);
+    i64 t, c = ~(i64) (b - 1);
     for (int i = 0; i < 16; i++) {
         t = c & (p[i] ^ q[i]);
         p[i] ^= t;
@@ -88,36 +127,43 @@ static void pack25519(uint8_t o[32], const gf n)
         sel25519(t, m, 1 - static_cast<int>(b));
     }
     for (i = 0; i < 16; i++) {
-        o[2 * i]     = static_cast<uint8_t>(t[i] & 0xff);
+        o[2 * i] = static_cast<uint8_t>(t[i] & 0xff);
         o[2 * i + 1] = static_cast<uint8_t>(t[i] >> 8);
     }
 }
 
 static void A(gf o, const gf a, const gf b)
 {
-    for (int i = 0; i < 16; i++) o[i] = a[i] + b[i];
+    for (int i = 0; i < 16; i++)
+        o[i] = a[i] + b[i];
 }
 
 static void Z(gf o, const gf a, const gf b)
 {
-    for (int i = 0; i < 16; i++) o[i] = a[i] - b[i];
+    for (int i = 0; i < 16; i++)
+        o[i] = a[i] - b[i];
 }
 
 static void M(gf o, const gf a, const gf b)
 {
     i64 t[31];
-    for (int i = 0; i < 31; i++) t[i] = 0;
+    for (int i = 0; i < 31; i++)
+        t[i] = 0;
     for (int i = 0; i < 16; i++)
         for (int j = 0; j < 16; j++)
             t[i + j] += a[i] * b[j];
     for (int i = 0; i < 15; i++)
         t[i] += 38 * t[i + 16];
-    for (int i = 0; i < 16; i++) o[i] = t[i];
+    for (int i = 0; i < 16; i++)
+        o[i] = t[i];
     car25519(o);
     car25519(o);
 }
 
-static void S(gf o, const gf a) { M(o, a, a); }
+static void S(gf o, const gf a)
+{
+    M(o, a, a);
+}
 
 static void inv25519(gf o, const gf a)
 {
@@ -125,7 +171,8 @@ static void inv25519(gf o, const gf a)
     set25519(c, a);
     for (int i = 253; i >= 0; i--) {
         S(c, c);
-        if (i != 2 && i != 4) M(c, c, a);
+        if (i != 2 && i != 4)
+            M(c, c, a);
     }
     set25519(o, c);
 }
@@ -225,14 +272,17 @@ static void modL(uint8_t *r, i64 x[64])
         carry = x[j] >> 8;
         x[j] &= 255;
     }
-    for (j = 0; j < 32; j++) x[j] -= carry * static_cast<i64>(L_[j]);
-    for (i = 0; i < 32; i++) r[i] = static_cast<uint8_t>(x[i]);
+    for (j = 0; j < 32; j++)
+        x[j] -= carry * static_cast<i64>(L_[j]);
+    for (i = 0; i < 32; i++)
+        r[i] = static_cast<uint8_t>(x[i]);
 }
 
 static void reduce(uint8_t r[64])
 {
     i64 x[64];
-    for (int i = 0; i < 64; i++) x[i] = static_cast<i64>(r[i]);
+    for (int i = 0; i < 64; i++)
+        x[i] = static_cast<i64>(r[i]);
     memset(r, 0, 64);
     modL(r, x);
 }
@@ -252,7 +302,7 @@ void ed25519_create_keypair(uint8_t pk[32], uint8_t sk[64])
 
     uint8_t d[64];
     sha512(d, sk, 32);
-    d[0]  &= 248;
+    d[0] &= 248;
     d[31] &= 127;
     d[31] |= 64;
 
@@ -263,15 +313,13 @@ void ed25519_create_keypair(uint8_t pk[32], uint8_t sk[64])
     memcpy(sk + 32, pk, 32);
 }
 
-void ed25519_sign(uint8_t sig[64],
-                  const uint8_t *msg, size_t mlen,
-                  const uint8_t sk[64])
+void ed25519_sign(uint8_t sig[64], const uint8_t *msg, size_t mlen, const uint8_t sk[64])
 {
     uint8_t d[64], nonce[64], hram[64];
     i64 x[64];
 
     sha512(d, sk, 32);
-    d[0]  &= 248;
+    d[0] &= 248;
     d[31] &= 127;
     d[31] |= 64;
 
@@ -288,7 +336,7 @@ void ed25519_sign(uint8_t sig[64],
     // R = r * B
     gf p[4];
     scalarbase(p, nonce);
-    pack_point(sig, p);  // sig[0..31] = encode(R)
+    pack_point(sig, p); // sig[0..31] = encode(R)
 
     // hram = H(R || pk || msg) mod L
     {
@@ -302,10 +350,12 @@ void ed25519_sign(uint8_t sig[64],
     reduce(hram);
 
     // S = (r + hram * a) mod L
-    for (int i = 0; i < 64; i++) x[i] = 0;
-    for (int i = 0; i < 32; i++) x[i] = static_cast<i64>(nonce[i]);
+    for (int i = 0; i < 64; i++)
+        x[i] = 0;
+    for (int i = 0; i < 32; i++)
+        x[i] = static_cast<i64>(nonce[i]);
     for (int i = 0; i < 32; i++)
         for (int j = 0; j < 32; j++)
             x[i + j] += static_cast<i64>(hram[i]) * static_cast<i64>(d[j]);
-    modL(sig + 32, x);  // sig[32..63] = S
+    modL(sig + 32, x); // sig[32..63] = S
 }
