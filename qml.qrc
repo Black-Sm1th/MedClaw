@@ -66,7 +66,7 @@
         <file>images/upload-white.png</file>
         <file>images/icon.ico</file>
         <file>images/logoImage.png</file>
-        <file>images/mainTitle.png</file>
+        <file>images/star.png</file>
         <file>images/shortcut/1.png</file>
         <file>images/shortcut/2.png</file>
         <file>images/shortcut/2-1.png</file>
@@ -96,7 +96,6 @@
         <file>images/login/loginShortcut2.png</file>
         <file>images/login/loginShortcut3.png</file>
         <file>images/login/loginShortcut4.png</file>
-        <file>images/login/loginTitle.png</file>
         <file>images/knowledgeSelected.png</file>
         <file>images/alarm.png</file>
         <file>images/category.png</file>
@@ -266,5 +265,7 @@
         <file>images/user/commom.png</file>
         <file>images/user/free.png</file>
         <file>images/user/yearly.png</file>
+        <file>images/login/loginShortcut3-sp.png</file>
+        <file>images/login/loginShortcut6-sp.png</file>
     </qresource>
 </RCC>

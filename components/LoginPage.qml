@@ -4,6 +4,7 @@ import QtQuick.Controls 2.15
 Item {
     id: loginPage
     signal errorRequested(string message)
+    property bool governmentEdition: false
     property bool showPhoneForm: false
     property int resendSeconds: 0
     property bool initializing: false
@@ -11,6 +12,13 @@ Item {
     readonly property real contentWidth: Math.min(709, Math.max(280, width - 48))
     readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
     readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
+    readonly property string welcomeTitle: governmentEdition
+                                         ? qsTr("你好，欢迎来到 政务智能体")
+                                         : qsTr("你好，欢迎来到 汇小智 Aether study")
+    readonly property var shortcutImages: governmentEdition
+                                          ? ["loginShortcut1.png", "loginShortcut3-sp.png", "loginShortcut6-sp.png"]
+                                          : ["loginShortcut1.png", "loginShortcut2.png", "loginShortcut3.png",
+                                             "loginShortcut4.png", "loginShortcut5.png", "loginShortcut6.png"]
 
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
     function submitLogin() { authController.loginWithPhone(phoneInput.text, codeInput.text) }
@@ -29,12 +37,36 @@ Item {
         anchors.verticalCenterOffset: -56
         spacing: 0
         visible: !loginPage.initializing
-        Image {
-            source: "qrc:/images/login/loginTitle.png"
-            width: Math.min(709, parent.width)
-            height: width * 110 / 709
-            fillMode: Image.PreserveAspectFit
-            anchors.horizontalCenter: parent.horizontalCenter
+        Column {
+            width: parent.width
+            spacing: 16
+            Row {
+                height: 40
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 8
+                Image {
+                    width: 36
+                    height: 36
+                    source: "qrc:/images/star.png"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: loginPage.welcomeTitle
+                    color: "#D9000000"
+                    font.family: "Alibaba PuHuiTi 3.0"
+                    font.pixelSize: 40
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("开启你的智能探索之旅")
+                color: "#A6000000"
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 28
+                wrapMode: Text.Wrap
+            }
         }
         Item { width: 1; height: showPhoneForm ? 80 : 68 }
         Item {
@@ -43,7 +75,8 @@ Item {
             readonly property real shortcutSpacing: Math.min(32, Math.max(8, width * 0.055))
             readonly property real shortcutWidth: Math.min(202,
                                                             Math.max(1, (width - shortcutSpacing * 4) / 5))
-            readonly property real cycleWidth: 6 * (shortcutWidth + shortcutSpacing)
+            readonly property real cycleWidth: loginPage.shortcutImages.length
+                                                  * (shortcutWidth + shortcutSpacing)
             height: shortcutWidth * 175 / 202
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !loginPage.showPhoneForm
@@ -62,11 +95,11 @@ Item {
                     spacing: shortcutCarousel.shortcutSpacing
 
                     Repeater {
-                        model: 12
+                        model: loginPage.shortcutImages.length * 2
                         Image {
                             width: shortcutCarousel.shortcutWidth
                             height: shortcutCarousel.height
-                            source: "qrc:/images/login/loginShortcut" + (index % 6 + 1) + ".png"
+                            source: "qrc:/images/login/" + loginPage.shortcutImages[index % loginPage.shortcutImages.length]
                             fillMode: Image.PreserveAspectFit
                         }
                     }
@@ -231,12 +264,36 @@ Item {
         spacing: 32
         visible: loginPage.initializing
 
-        Image {
-            source: "qrc:/images/login/loginTitle.png"
+        Column {
             width: parent.width
-            height: width * 110 / 577
-            fillMode: Image.PreserveAspectFit
-            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: 16
+            Row {
+                height: 40
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 8
+                Image {
+                    width: 36
+                    height: 36
+                    source: "qrc:/images/star.png"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: loginPage.welcomeTitle
+                    color: "#D9000000"
+                    font.family: "Alibaba PuHuiTi 3.0"
+                    font.pixelSize: 40
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("开启你的智能探索之旅")
+                color: "#A6000000"
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 28
+                wrapMode: Text.Wrap
+            }
         }
         BusyIndicator {
             id: initializingIndicator

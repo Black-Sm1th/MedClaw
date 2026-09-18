@@ -449,7 +449,7 @@ ApplicationWindow {
             { title: "DDI高危处方筛查", expr: "0 10 * * *", prompt: "对昨日全量住院医嘱运行 DDI筛查：X级(禁止合用)和D级(考虑调整)的DDI清单、涉及药品/科室/潜在后果、替代方案建议，X级DDI标记[药师须立即介入]" },
             { title: "集采药品达标监控", expr: "0 9 1 * *", prompt: "统计上月各批次集采中选品种约定采购量完成进度：品种/中选企业/约定量/完成量/完成率(%)，完成率<时间进度80%标记[预警]，分析原因并给处方引导建议" }
         ] },
-        { name: "政务助手", imageCategory: 2, tasks: [
+        { name: window.governmentEdition ? "政务智能体" : "政务助手", imageCategory: 2, tasks: [
             { title: "每日舆情早报", expr: "0 7 * * *", prompt: "搜索过去 24h关于[地市/部门名称]新闻和社交媒体讨论：正/中/负面新闻各TOP5(标题/来源/转载量)、敏感舆情事件(热度+情感倾向)、负面事件附回应口径建议" },
             { title: "公文流转超期预警", expr: "0 9 * * *", prompt: "检查 OA系统中在办公文状态：超期1-3天(提醒)/3-7天(催办)/>7天(通报)，按紧急程度和部门分组列出文号/标题/当前环节/停留天数/办理人" },
             { title: "12345热线工单日报", expr: "0 8 * * *", prompt: "统计昨日 12345热线和市长信箱数据：受理总量/按时办结率/满意率/热点诉求TOP5/办结率最低部门TOP5/超期未办结工单清单" },
@@ -470,7 +470,7 @@ ApplicationWindow {
             { title: "计量校准到期提醒", expr: "0 8 * * 1", prompt: "提取所有计量设备校准证书有效期，筛选未来30天到期设备：设备名称/型号/序列号/上次校准日期/到期日/是否强检，到期≤14天标记[紧急停用风险]" },
             { title: "医疗器械不良事件", expr: "0 10 * * 1", prompt: "汇总上周所有科室上报的医疗器械不良事件：事件类型/设备型号/严重程度分级/根因分析完成情况/是否上报MDR系统，严重事件标记[立即关注]" }
         ] },
-        { name: "投行助手", imageCategory: 5, tasks: [
+        { name: window.governmentEdition ? "投研智能体" : "投行助手", imageCategory: 5, tasks: [
             { title: "盘前市场简报", expr: "0 8 * * 1-5", prompt: "生成今日盘前简报：隔夜美股涨跌/A50期货/中概股表现、人民币汇率/美债收益率/原油黄金走势、今日重点财经事件、盘前异动个股和大宗交易提示" },
             { title: "重点持仓异动监控", expr: "*/15 9-15 * * 1-5", prompt: "扫描持仓占比 >3%股票：涨跌幅超±3%/成交量超20日均量2倍/大单净流入流出/盘口异动/突发新闻，异动项推送即时警报" },
             { title: "宏观数据日历提醒", expr: "0 8 * * 1", prompt: "生成本周宏观事件日历：中国(CPI/PPI/PMI/社融)、美国(非农/CPI/FOMC)、欧洲(ECB/PMI)，标注市场预期值/前值/对A股利率汇率潜在影响方向" },
@@ -479,7 +479,7 @@ ApplicationWindow {
         ] }
     ]
     readonly property var cronTemplateCategories: governmentEdition
-                                                  ? [allCronTemplateCategories[1]]
+                                                  ? [allCronTemplateCategories[1], allCronTemplateCategories[4]]
                                                   : allCronTemplateCategories
 
     function openCronTemplate(template) {
@@ -1711,6 +1711,9 @@ ApplicationWindow {
             var list = rows || []
             for (var i = 0; i < list.length; i++) {
                 var source = list[i] || ({})
+                if (governmentEdition && !userTemplate
+                        && String(source.category || "").replace(/\s/g, "") !== "政务类")
+                    continue
                 var id = String(source.id || "").trim()
                 if (!id)
                     continue
@@ -2082,7 +2085,7 @@ ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Label{
-                    text: "Aether study"
+                    text: window.governmentEdition ? "政务智能体" : "Aether study"
                     font.family: "Alimama ShuHeiTi"
                     font.pixelSize: 18
                     anchors.left: logoImage.right
@@ -3917,7 +3920,7 @@ ApplicationWindow {
                         ]
                     },
                     {
-                        title: "政务助手",
+                        title: window.governmentEdition ? "政务智能体" : "政务助手",
                         icon: "qrc:/images/shortcut/3.png",
                         selectedIcon: "qrc:/images/shortcut/3-selected.png",
                         cards: [
@@ -3957,7 +3960,7 @@ ApplicationWindow {
                         ]
                     },
                     {
-                        title: "投行助手",
+                        title: window.governmentEdition ? "投研智能体" : "投行助手",
                         icon: "qrc:/images/shortcut/6.png",
                         selectedIcon: "qrc:/images/shortcut/6-selected.png",
                         cards: [
@@ -3970,7 +3973,7 @@ ApplicationWindow {
                     }
                 ]
                 readonly property var shortcutGroups: window.governmentEdition
-                                                      ? [allShortcutGroups[2]]
+                                                      ? [allShortcutGroups[1], allShortcutGroups[2], allShortcutGroups[5]]
                                                       : allShortcutGroups
 
                 readonly property var selectedShortcut: selectedShortcutGroup >= 0
@@ -4371,15 +4374,42 @@ ApplicationWindow {
                     id: titleCol
                     visible: newTaskRec.isNewTaskWelcome
                     width: Math.min(840, Math.max(320, parent.width - 48))
-                    spacing: 11
+                    spacing: 12
                     anchors.topMargin: 80
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
-                    Image{
-                        source: "qrc:/images/mainTitle.png"
-                        width: Math.min(implicitWidth, parent.width)
-                        height: width * 89 / 431
-                        fillMode: Image.PreserveAspectFit
+                    Row {
+                        width: Math.min(390, parent.width)
+                        spacing: 8
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        Image {
+                            width: 36
+                            height: 36
+                            source: "qrc:/images/star.png"
+                            fillMode: Image.PreserveAspectFit
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text {
+                            width: parent.width - 46
+                            text: qsTr("今天想完成什么？")
+                            color: "#D9000000"
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 40
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                    Text {
+                        width: Math.min(840, parent.width)
+                        text: qsTr(window.governmentEdition
+                                   ? "请描述目标，政务智能体会为您调用合适的专家、工具、模板与知识库"
+                                   : "请描述目标，汇小智Aether study 会为您调用合适的专家、工具、模板与知识库")
+                        color: "#73000000"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 16
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
@@ -15273,6 +15303,7 @@ ApplicationWindow {
     }
 
     LoginPage {
+        governmentEdition: window.governmentEdition
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
