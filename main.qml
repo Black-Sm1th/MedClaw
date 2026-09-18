@@ -20,6 +20,7 @@ ApplicationWindow {
     readonly property real availableScreenHeight: Screen.desktopAvailableHeight > 0
                                                    ? Screen.desktopAvailableHeight : 800
     readonly property bool accountPreviewMode: Qt.application.arguments.indexOf("--account-preview") >= 0
+    readonly property bool governmentEdition: buildGovernmentEdition
     readonly property bool compactLayout: width < 1100
     readonly property bool sidebarExpanded: !sidebarCollapsed && !compactLayout
     readonly property int windowCornerRadius: 12
@@ -70,6 +71,14 @@ ApplicationWindow {
     property string pendingCronTemplateTz: "Asia/Shanghai"
     property string pendingCronTemplateTrigger: ""
     readonly property string accountWebsiteUrl: "https://www.aethermind.cn/aether/#/profile"
+    readonly property string governmentAnnotationInstruction:
+        "\n\n【批注】正文完成后通读全文，动态生成分类批注（不设固定类别），交付两份 .docx：①干净正文版；②标注版＝在正文上挂 Word 原生批注（锚定到对应段落，显示在审阅窗格）。不要 HTML、不要批注清单、不要图例。\n\n每条批注两段：第一段 【类别】（加粗、彩色、14pt）；第二段正文（同色、加粗、11pt，先指问题再依据/建议）。\n\n配色用色相环等分：统计类别数 N，第 i 类取 HSL(round(i×360/N),70%,45%)，同类同色、异类色相均分，禁止落入同一色相族。"
+
+    function editionPrompt(mainPrompt, governmentPrompt) {
+        return governmentEdition
+                ? governmentPrompt + governmentAnnotationInstruction
+                : mainPrompt
+    }
 
     function accountPlanName(planCode, fallbackName) {
         var names = {
@@ -422,8 +431,8 @@ ApplicationWindow {
             }
         }
     }
-    property var cronTemplateCategories: [
-        { name: "医疗科研", tasks: [
+    readonly property var allCronTemplateCategories: [
+        { name: "医疗科研", imageCategory: 1, tasks: [
             { title: "每日文献追踪", expr: "0 8 * * *", prompt: "检索 PubMed上[研究方向]近3天新文献，按IF排序TOP10，标注与课题组方向关联度，摘要中译，附带DOI" },
             { title: "临床试验入组日报", expr: "0 9 * * *", prompt: "汇总昨日各中心筛选、入组、随机、完成、脱落数据，对比入组计划曲线，落后 >20%标记[加速]，SAE单独列出" },
             { title: "科研基金申报预警", expr: "0 9 * * 1", prompt: "搜索未来 90天截止的科研基金(国自然/省自然/科技部重点研发)，标注匹配度、金额、截止日，≤30天标记[赶]，≤7天标记[急]" },
@@ -440,28 +449,28 @@ ApplicationWindow {
             { title: "DDI高危处方筛查", expr: "0 10 * * *", prompt: "对昨日全量住院医嘱运行 DDI筛查：X级(禁止合用)和D级(考虑调整)的DDI清单、涉及药品/科室/潜在后果、替代方案建议，X级DDI标记[药师须立即介入]" },
             { title: "集采药品达标监控", expr: "0 9 1 * *", prompt: "统计上月各批次集采中选品种约定采购量完成进度：品种/中选企业/约定量/完成量/完成率(%)，完成率<时间进度80%标记[预警]，分析原因并给处方引导建议" }
         ] },
-        { name: "政务助手", tasks: [
+        { name: "政务助手", imageCategory: 2, tasks: [
             { title: "每日舆情早报", expr: "0 7 * * *", prompt: "搜索过去 24h关于[地市/部门名称]新闻和社交媒体讨论：正/中/负面新闻各TOP5(标题/来源/转载量)、敏感舆情事件(热度+情感倾向)、负面事件附回应口径建议" },
             { title: "公文流转超期预警", expr: "0 9 * * *", prompt: "检查 OA系统中在办公文状态：超期1-3天(提醒)/3-7天(催办)/>7天(通报)，按紧急程度和部门分组列出文号/标题/当前环节/停留天数/办理人" },
             { title: "12345热线工单日报", expr: "0 8 * * *", prompt: "统计昨日 12345热线和市长信箱数据：受理总量/按时办结率/满意率/热点诉求TOP5/办结率最低部门TOP5/超期未办结工单清单" },
             { title: "重点工作督办跟踪", expr: "0 10 * * 1", prompt: "对年度重点工作任务清单逐一核查：任务/牵头单位/年度目标/完成率(%)/时间进度对比(正常/滞后/严重滞后)，按完成率排序标注红黄绿灯" },
             { title: "网站错敏词巡检", expr: "0 3 * * *", prompt: "对政府门户网站和各部门子站全站巡检：错别字、领导人姓名职务表述不规范、涉政敏感词、失效链接、隐私信息泄露，生成问题清单和修改建议" }
         ] },
-        { name: "情报研究", tasks: [
+        { name: "情报研究", imageCategory: 3, tasks: [
             { title: "全球管线动态日报", expr: "0 7 * * *", prompt: "搜索过去 24h全球药物研发重大新闻：III期数据读出/FDA审批/突破性疗法认定/NDA提交/License-in-out，按影响等级排序" },
             { title: "竞品临床试验里程碑", expr: "0 8 * * 1", prompt: "更新竞品品种试验里程碑：品种/申办方/靶点/适应症/当前阶段/预期下一里程碑日期，≤30天标记[即将]，≤7天标记[临近]" },
             { title: "PDUFA审批日期监控", expr: "0 8 * * *", prompt: "查询未来 90天主要监管机构审批决定日期：FDA PDUFA/AdCom、EMA CHMP opinion、NMPA CDE审批，附关键临床数据摘要和分析师预期" },
             { title: "专利到期预警", expr: "0 10 1 * *", prompt: "更新重点品种全球专利到期日历：化合物专利/制剂/用途专利到期日(各国)、专利挑战、儿科/孤儿药exclusivity到期，≤24月标记[关注窗口]" },
             { title: "药物安全信号检测", expr: "0 9 * * 1", prompt: "对目标品种进行安全性数据库信号检测：PRR/ROR/EBGM算法、新安全信号(IC025>0)、信号强度趋势、同类药物class effect对比" }
         ] },
-        { name: "设备管理", tasks: [
+        { name: "设备管理", imageCategory: 4, tasks: [
             { title: "每日设备巡检派单", expr: "0 7 * * *", prompt: "从设备管理系统中提取今日需巡检设备清单(按科室分组)，生成巡检工单：设备编码/名称/科室/巡检项目/上次巡检日期/指派工程师，急救类优先标注" },
             { title: "预防性维护到期预警", expr: "0 8 * * *", prompt: "扫描所有设备 PM计划，筛选未来7天到期的PM任务：≤3天标记[紧急]，≤7天标记[预警]，列出设备名称/科室/PM内容/计划日期/负责工程师" },
             { title: "设备维修工单闭环追踪", expr: "0 8,16 * * *", prompt: "查询设备管理系统的报修工单状态：待派单/维修中/待验收/已完成/超时未关闭，按工程师统计完成数和平均响应时间，超48h未关闭工单标记[升级]，生成周度故障类型分析" },
             { title: "计量校准到期提醒", expr: "0 8 * * 1", prompt: "提取所有计量设备校准证书有效期，筛选未来30天到期设备：设备名称/型号/序列号/上次校准日期/到期日/是否强检，到期≤14天标记[紧急停用风险]" },
             { title: "医疗器械不良事件", expr: "0 10 * * 1", prompt: "汇总上周所有科室上报的医疗器械不良事件：事件类型/设备型号/严重程度分级/根因分析完成情况/是否上报MDR系统，严重事件标记[立即关注]" }
         ] },
-        { name: "投行助手", tasks: [
+        { name: "投行助手", imageCategory: 5, tasks: [
             { title: "盘前市场简报", expr: "0 8 * * 1-5", prompt: "生成今日盘前简报：隔夜美股涨跌/A50期货/中概股表现、人民币汇率/美债收益率/原油黄金走势、今日重点财经事件、盘前异动个股和大宗交易提示" },
             { title: "重点持仓异动监控", expr: "*/15 9-15 * * 1-5", prompt: "扫描持仓占比 >3%股票：涨跌幅超±3%/成交量超20日均量2倍/大单净流入流出/盘口异动/突发新闻，异动项推送即时警报" },
             { title: "宏观数据日历提醒", expr: "0 8 * * 1", prompt: "生成本周宏观事件日历：中国(CPI/PPI/PMI/社融)、美国(非农/CPI/FOMC)、欧洲(ECB/PMI)，标注市场预期值/前值/对A股利率汇率潜在影响方向" },
@@ -469,6 +478,9 @@ ApplicationWindow {
             { title: "舆情/ESG风险扫描", expr: "0 7,13,19 * * *", prompt: "搜索持仓标的负面舆情：产品安全/环境处罚/劳动纠纷/监管调查/财务造假嫌疑/高管负面，按事件严重程度1-5分评级，4分及以上立即推送预警" }
         ] }
     ]
+    readonly property var cronTemplateCategories: governmentEdition
+                                                  ? [allCronTemplateCategories[1]]
+                                                  : allCronTemplateCategories
 
     function openCronTemplate(template) {
         window.editingCronJobId = ""
@@ -693,11 +705,41 @@ ApplicationWindow {
         return String(agentId || "").trim().toLowerCase() === "main"
     }
 
+    readonly property var governmentHiddenExpertIds: [
+        "paper-orchestrator", "omics-orchestrator", "mi-orchestrator", "imaging-orchestrator"
+    ]
+
+    function isGovernmentHiddenExpert(agent) {
+        if (!governmentEdition || !agent)
+            return false
+
+        var id = String(agent.id || "").trim().toLowerCase()
+        if (governmentHiddenExpertIds.indexOf(id) >= 0)
+            return true
+
+        var names = [
+            agent.name,
+            agent.identity && agent.identity.name,
+            agent.intro && agent.intro.name
+        ]
+        var hiddenNames = ["论文写作专家", "精准医学专家", "医学情报专家", "影像数据处理专家"]
+        for (var i = 0; i < names.length; i++) {
+            var name = String(names[i] || "").trim()
+            for (var j = 0; j < hiddenNames.length; j++) {
+                if (name === hiddenNames[j] || name.indexOf(hiddenNames[j]) >= 0)
+                    return true
+            }
+        }
+        return false
+    }
+
     function isSelectableExpertAgent(agent) {
         if (!agent)
             return false
         var id = String(agent.id || "").trim()
         if (!id || window.isMainAgentId(id))
+            return false
+        if (window.isGovernmentHiddenExpert(agent))
             return false
 
         // Expert teams expose their roster through subagents.allowAgents;
@@ -3824,7 +3866,7 @@ ApplicationWindow {
                 property int selectedShortcutTab: 0
                 property int shortcutCardOffset: 0
                 readonly property int shortcutCardsPerPage: 4
-                readonly property var shortcutGroups: [
+                readonly property var allShortcutGroups: [
                     {
                         title: "医疗科研",
                         icon: "qrc:/images/shortcut/1.png",
@@ -3879,13 +3921,13 @@ ApplicationWindow {
                         icon: "qrc:/images/shortcut/3.png",
                         selectedIcon: "qrc:/images/shortcut/3-selected.png",
                         cards: [
-                            { title: "智能公文起草", detail: "起草通知/通报/报告/请示/批复/函/纪要", image: "qrc:/images/shortcut/3-1.png", prompt: "帮我起草一份关于[事项]的通知：按GB/T 9704-2012版式，包含发文机关/文号/标题/主送/正文(缘由+事项+要求)/落款，输出规范.docx" },
-                            { title: "舆情监测与研判", detail: "重大事件/政策发布后舆情分析", image: "qrc:/images/shortcut/3-2.png", prompt: "帮我看下[XXX事件]现在的舆情怎么样：多平台舆情趋势/热词/情感倾向/意见领袖观点，生成舆情分析报告和回应口径建议" },
-                            { title: "政策文件智能解读", detail: "对上级政策文件进行结构化解读", image: "qrc:/images/shortcut/3-3.png", prompt: "帮我解读国务院刚出的[文件名]：按出台背景/核心要点/适用范围/影响分析/执行口径五维度输出解读报告，对照本地现行政策标注需调整条款" },
-                            { title: "会议全流程管理", detail: "政府会议从筹备到纪要整理", image: "qrc:/images/shortcut/3-4.png", prompt: "帮我准备[常务会议]：收集各部门上会议题→材料完整性预审→生成议题汇总表→会后整理会议纪要(决议事项+责任部门+完成时限)→生成督查清单.docx" },
-                            { title: "综合研判决策辅助", detail: "复杂议题多角度研判支持领导决策", image: "qrc:/images/shortcut/3-5.png", prompt: "帮我就[XXX问题]做综合研判：陈述已确认事实、各方观点和立场、风险评估(政治/经济/社会/法律)、提供2-3套方案比选(含利弊+推荐意见)" },
-                            { title: "政策匹配", detail: "请根据个人基本情况，匹配可能享受的相关政策与申报条件（如残疾）。", image: "qrc:/images/shortcut/3-6.png", prompt: "用户信息摘要：\n项目        内容\n家庭类型：非低保收入家庭\n子女情况：有子女\n户籍情况：本镇户籍（松江区）\n年龄：69周岁\n残疾情况：下肢残疾，二级残疾证\n交通工具：有电动残疾车\n疾病情况：患有尿毒症\n\n1、从知识库中检索：残疾人政策（含干扰项）政策\n2、根据用户信息，自动匹配可以享受的政策，并以EXCEL格式直接呈现，不需要EXCEL文件；\n3、用角标的形式标注引用政策来源，点击角标可以自动在右侧查看政策对应原文；\n4、结果输出：根据知识库的：“政策匹配模板”政策匹配模板输出结果" },
-                            { title: "12345分析月报", detail: "请根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件。", image: "qrc:/images/shortcut/3-7.png", prompt: "1、分析原始数据；\n2、根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件；\n3、检查报告格式：专报要保留模板的格式。包括红头文件格式，字体大小、行间距等全文本格式" }
+                            { title: "智能公文起草", detail: "起草通知/通报/报告/请示/批复/函/纪要", image: "qrc:/images/shortcut/3-1.png", prompt: window.editionPrompt("帮我起草一份关于[事项]的通知：按GB/T 9704-2012版式，包含发文机关/文号/标题/主送/正文(缘由+事项+要求)/落款，输出规范.docx", "请起草一份关于[事项]的通知。依据我提供的事实和材料，按GB/T 9704-2012版式组织发文机关、文号、标题、主送机关、正文（缘由、事项、要求）和落款等要素；缺失信息保留[待补]并列出需确认项，不得擅自编造。输出规范.docx。") },
+                            { title: "舆情监测与研判", detail: "重大事件/政策发布后舆情分析", image: "qrc:/images/shortcut/3-2.png", prompt: window.editionPrompt("帮我看下[XXX事件]现在的舆情怎么样：多平台舆情趋势/热词/情感倾向/意见领袖观点，生成舆情分析报告和回应口径建议", "请对[XXX事件]开展舆情监测与研判：明确监测时间范围和平台，分析多平台舆情趋势、热词、情感倾向、意见领袖观点、传播风险，并提出回应口径建议；区分已核实信息、媒体或网民观点与AI研判，标明数据和结论来源，对无法核实的内容说明限制。生成舆情分析报告。") },
+                            { title: "政策文件智能解读", detail: "对上级政策文件进行结构化解读", image: "qrc:/images/shortcut/3-3.png", prompt: window.editionPrompt("帮我解读国务院刚出的[文件名]：按出台背景/核心要点/适用范围/影响分析/执行口径五维度输出解读报告，对照本地现行政策标注需调整条款", "请解读国务院发布的[文件名]：依据政策原文，按出台背景、核心要点、适用范围、影响分析、执行口径五个维度输出解读报告；对照本地现行政策，标注可能需要调整的条款，并明确区分原文事实、分析判断和待核实事项，引用来源和文件时点。") },
+                            { title: "会议全流程管理", detail: "政府会议从筹备到纪要整理", image: "qrc:/images/shortcut/3-4.png", prompt: window.editionPrompt("帮我准备[常务会议]：收集各部门上会议题→材料完整性预审→生成议题汇总表→会后整理会议纪要(决议事项+责任部门+完成时限)→生成督查清单.docx", "请完成[常务会议]全流程材料：收集各部门上会议题，预审材料完整性，生成议题汇总表；会后仅依据会议记录整理会议纪要（决议事项、责任部门、完成时限），再生成督查清单.docx。未在材料或记录中确认的信息标为[待确认]，不得补写为既定决议。") },
+                            { title: "综合研判决策辅助", detail: "复杂议题多角度研判支持领导决策", image: "qrc:/images/shortcut/3-5.png", prompt: window.editionPrompt("帮我就[XXX问题]做综合研判：陈述已确认事实、各方观点和立场、风险评估(政治/经济/社会/法律)、提供2-3套方案比选(含利弊+推荐意见)", "请就[XXX问题]形成综合研判报告：分别陈述已确认事实、各方观点和立场、必要的假设与待核实信息；从政治、经济、社会、法律维度评估风险，提出2-3套方案并比较利弊、资源需求、实施时限和风险缓释措施，给出有依据的推荐意见。注明信息来源和时间，不确定内容不得写成事实。") },
+                            { title: "政策匹配", detail: "请根据个人基本情况，匹配可能享受的相关政策与申报条件（如残疾）。", image: "qrc:/images/shortcut/3-6.png", prompt: window.editionPrompt("用户信息摘要：\n项目        内容\n家庭类型：非低保收入家庭\n子女情况：有子女\n户籍情况：本镇户籍（松江区）\n年龄：69周岁\n残疾情况：下肢残疾，二级残疾证\n交通工具：有电动残疾车\n疾病情况：患有尿毒症\n\n1、从知识库中检索：残疾人政策（含干扰项）政策\n2、根据用户信息，自动匹配可以享受的政策，并以EXCEL格式直接呈现，不需要EXCEL文件；\n3、用角标的形式标注引用政策来源，点击角标可以自动在右侧查看政策对应原文；\n4、结果输出：根据知识库的：“政策匹配模板”政策匹配模板输出结果", "用户信息摘要：\n项目        内容\n家庭类型：非低保收入家庭\n子女情况：有子女\n户籍情况：本镇户籍（松江区）\n年龄：69周岁\n残疾情况：下肢残疾，二级残疾证\n交通工具：有电动残疾车\n疾病情况：患有尿毒症\n\n请从知识库检索残疾人相关政策（保留并识别干扰项），依据用户信息逐项匹配可享受、暂不匹配和需要进一步核实的政策，列出适用条件、办理部门、所需材料、办理时限及依据。以EXCEL样式直接呈现，不生成Excel文件；用角标引用政策来源，点击角标可在右侧查看对应原文；严格区分政策原文、匹配判断和推测，不把推测当作资格结论。根据知识库中的“政策匹配模板”输出。") },
+                            { title: "12345分析月报", detail: "请根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件。", image: "qrc:/images/shortcut/3-7.png", prompt: window.editionPrompt("1、分析原始数据；\n2、根据《12345市民服务热线情况专报》模板，生成专报，输出PDF文件；\n3、检查报告格式：专报要保留模板的格式。包括红头文件格式，字体大小、行间距等全文本格式", "请先检查并分析原始数据，再严格按照《12345市民服务热线情况专报》模板生成专报PDF：保留红头文件格式、字体大小、行间距及其他全文本格式；在报告中区分数据事实、统计结果和分析判断，注明数据口径、时间范围及异常或缺失项。") }
                         ]
                     },
                     {
@@ -3927,6 +3969,9 @@ ApplicationWindow {
                         ]
                     }
                 ]
+                readonly property var shortcutGroups: window.governmentEdition
+                                                      ? [allShortcutGroups[2]]
+                                                      : allShortcutGroups
 
                 readonly property var selectedShortcut: selectedShortcutGroup >= 0
                                                         && selectedShortcutGroup < shortcutGroups.length
@@ -9326,7 +9371,7 @@ ApplicationWindow {
                                                         id: cardImage
                                                         anchors.fill: parent
                                                         source: "qrc:/images/cron/"
-                                                                + (window.selectedCronTemplateCategory + 1)
+                                                                + window.cronTemplateCategories[window.selectedCronTemplateCategory].imageCategory
                                                                 + "-" + (index + 1) + ".png"
                                                     }
 
@@ -10204,10 +10249,12 @@ ApplicationWindow {
                 visible: window.leftSelectedIndex === 3
                 property string skillSearchText: ""
                 property string selectedSkillCategory: "全部"
-                property var skillCategories: [
-                    "全部", "政务技能", "平台基础", "临床科研", "科学计算",
-                    "开发者工具", "第三方服务集成", "场景调度"
-                ]
+                property var skillCategories: window.governmentEdition
+                    ? ["全部", "政务技能", "平台基础"]
+                    : [
+                        "全部", "政务技能", "平台基础", "临床科研", "科学计算",
+                        "开发者工具", "第三方服务集成", "场景调度"
+                    ]
                 property var skillCategoryById: ({
                     "gov-assessment": "政务技能",
                     "gov-briefing": "政务技能",
@@ -10312,6 +10359,12 @@ ApplicationWindow {
                         selectedSkillCategory = "全部"
                 }
 
+                function isVisibleSkillCategory(category) {
+                    return !window.governmentEdition
+                            || category === "政务技能"
+                            || category === "平台基础"
+                }
+
                 onVisibleChanged: {
                     if (visible)
                         ensureSelectedSkillCategory()
@@ -10332,6 +10385,8 @@ ApplicationWindow {
                         var name = String(list[i].name || list[i].skillKey || "").toLowerCase()
                         var id = String(list[i].skillKey || list[i].name || "").toLowerCase()
                         var category = skillCategoryById[id] || ""
+                        if (!isVisibleSkillCategory(category))
+                            continue
                         if (selectedSkillCategory !== "全部" && category !== selectedSkillCategory)
                             continue
                         if (kw && name.indexOf(kw) < 0)
@@ -10485,7 +10540,9 @@ ApplicationWindow {
                 visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
                 property string selectedToolCategory: "深度问数"
-                property var toolCategories: ["深度问数", "生信分析", "政务助手", "系统自带"]
+                property var toolCategories: window.governmentEdition
+                    ? ["深度问数", "政务助手", "系统自带"]
+                    : ["深度问数", "生信分析", "政务助手", "系统自带"]
                 property var deepDataToolIds: ({
                     "data_execute_code": true,
                     "data_explore": true,
@@ -10843,6 +10900,7 @@ ApplicationWindow {
                 userTemplates: window.uploadedDocxTemplates
                 loading: wsClient.docxTemplatesLoading
                 gatewayHttpBaseUrl: wsClient.gatewayHttpBaseUrl
+                governmentEdition: window.governmentEdition
 
                 onRefreshRequested: wsClient.refreshDocxTemplates()
                 onUploadTemplateRequested: function(name, description,
@@ -12214,7 +12272,7 @@ ApplicationWindow {
                                         id: ideaCardImage
                                         anchors.fill: parent
                                         source: "qrc:/images/cron/"
-                                                + (window.selectedCronTemplateCategory + 1)
+                                                + window.cronTemplateCategories[window.selectedCronTemplateCategory].imageCategory
                                                 + "-" + (index + 1) + ".png"
                                     }
 

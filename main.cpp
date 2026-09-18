@@ -382,6 +382,11 @@ int main(int argc, char *argv[])
                                              savedWindowSize.width());
     engine.rootContext()->setContextProperty(QStringLiteral("initialWindowHeight"),
                                              savedWindowSize.height());
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+    engine.rootContext()->setContextProperty(QStringLiteral("buildGovernmentEdition"), true);
+#else
+    engine.rootContext()->setContextProperty(QStringLiteral("buildGovernmentEdition"), false);
+#endif
     engine.rootContext()->setContextProperty("$MainViewController",
                                              GET_SINGLETON(MainViewController));
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);

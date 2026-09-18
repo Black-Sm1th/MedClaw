@@ -6,6 +6,16 @@ TARGET = AetherStudy
 
 CONFIG += c++17
 
+# Build editions from the same source tree. The default build is the main
+# edition; pass "CONFIG+=edition_government" to qmake for the government one.
+contains(CONFIG, edition_government) {
+    DEFINES += MEDCLAW_EDITION_GOVERNMENT
+    message("MedClaw build edition: government")
+} else {
+    DEFINES += MEDCLAW_EDITION_MAIN
+    message("MedClaw build edition: main")
+}
+
 msvc: QMAKE_CXXFLAGS += /utf-8
 
 # Qt 5.15.2 WebEngineCore from the official gcc_64 package can trigger

@@ -22,6 +22,9 @@
 namespace {
 const char kProductionApiBaseUrl[] = "https://www.aethermind.cn/aether";
 const char kTestApiBaseUrl[] = "http://111.6.178.34:23212/aether";
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+const char kGovernmentEnterpriseCode[] = "gov-01";
+#endif
 
 QString normalizedBaseUrl(QString url)
 {
@@ -548,6 +551,10 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
     payload.insert(QStringLiteral("code"), normalizedCode);
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+    payload.insert(QStringLiteral("enterprise_code"),
+                   QString::fromLatin1(kGovernmentEnterpriseCode));
+#endif
     const QByteArray requestBody = QJsonDocument(payload).toJson(QJsonDocument::Compact);
     logApiRequest("POST", request, requestBody);
     QNetworkReply *reply = m_network->post(request, requestBody);

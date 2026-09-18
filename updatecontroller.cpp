@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -16,6 +17,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVariantList>
 
 #ifdef Q_OS_WIN
@@ -24,11 +26,86 @@
 #endif
 
 namespace {
-const QUrl latestReleaseUrl(
-    QStringLiteral("https://www.aethermind.cn/aether/api/app/releases/latest?"
-                   "app_key=aether-study&channel=STABLE&platform=WINDOWS&arch=x64"));
-const QUrl downloadOrigin(QStringLiteral("https://www.aethermind.cn"));
+const char productionApiBaseUrl[] = "https://www.aethermind.cn/aether";
+const char testApiBaseUrl[] = "http://111.6.178.34:23212/aether";
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+const char governmentEnterpriseCode[] = "gov-01";
+#endif
 const QString clientVersion(QStringLiteral("v1.2.0"));
+
+QString clientDisplayVersion()
+{
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+    return clientVersion + QStringLiteral("-gov");
+#else
+    return clientVersion;
+#endif
+}
+
+QString apiEnvironment()
+{
+    const QString environment = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
+    if (environment == QStringLiteral("test"))
+        return environment;
+    if (!environment.isEmpty() && environment != QStringLiteral("prod")) {
+        qWarning().noquote()
+            << "[Update API] Unsupported MEDCLAW_API_ENV value" << environment
+            << "- falling back to prod";
+    }
+    return QStringLiteral("prod");
+}
+
+QString apiBaseUrl()
+{
+    return apiEnvironment() == QStringLiteral("test") ? QString::fromLatin1(testApiBaseUrl)
+                                                       : QString::fromLatin1(productionApiBaseUrl);
+}
+
+QUrl releaseUrl()
+{
+    QUrl url(apiBaseUrl() + QStringLiteral("/api/app/releases/latest"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("app_key"), QStringLiteral("aether-study"));
+    query.addQueryItem(QStringLiteral("channel"), QStringLiteral("STABLE"));
+    query.addQueryItem(QStringLiteral("platform"), QStringLiteral("WINDOWS"));
+    query.addQueryItem(QStringLiteral("arch"), QStringLiteral("x64"));
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+    query.addQueryItem(QStringLiteral("enterprise_code"),
+                       QString::fromLatin1(governmentEnterpriseCode));
+#endif
+    url.setQuery(query);
+    return url;
+}
+
+QUrl downloadOrigin()
+{
+    QUrl origin(apiBaseUrl());
+    origin.setPath(QStringLiteral("/"));
+    origin.setQuery(QString());
+    origin.setFragment(QString());
+    return origin;
+}
+
+void logApiRequest(const QNetworkRequest &request)
+{
+    const QString parameters = QUrlQuery(request.url()).query(QUrl::FullyEncoded);
+    qInfo().noquote() << "[API request] GET"
+                      << request.url().toString(QUrl::FullyEncoded)
+                      << "parameters:"
+                      << (parameters.isEmpty() ? QStringLiteral("<none>") : parameters);
+}
+
+void logApiResponse(QNetworkReply *reply, const QByteArray &body)
+{
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    qInfo().noquote() << "[API response]"
+                      << reply->url().toString(QUrl::FullyEncoded)
+                      << "status:" << status
+                      << "networkError:" << reply->error()
+                      << reply->errorString()
+                      << "body:"
+                      << (body.isEmpty() ? QStringLiteral("<empty>") : QString::fromUtf8(body));
+}
 } // namespace
 
 UpdateController::UpdateController(QObject *parent)
@@ -40,12 +117,14 @@ UpdateController::UpdateController(QObject *parent)
     m_timer->setInterval(10 * 60 * 1000);
     connect(m_timer, &QTimer::timeout, this, &UpdateController::checkForUpdates);
     m_timer->start();
+    qInfo().noquote() << "[Update API] environment:" << apiEnvironment()
+                      << "baseUrl:" << apiBaseUrl();
     QTimer::singleShot(0, this, &UpdateController::checkForUpdates);
 }
 
 QString UpdateController::currentVersion() const
 {
-    return clientVersion;
+    return clientDisplayVersion();
 }
 QString UpdateController::latestVersion() const
 {
@@ -115,9 +194,10 @@ void UpdateController::checkForUpdates()
     m_checking = true;
     setError(QString());
     emit checkingChanged();
-    QNetworkRequest request(latestReleaseUrl);
+    QNetworkRequest request(releaseUrl());
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("AetherStudy-Qt/%1").arg(clientVersion));
+                      QStringLiteral("AetherStudy-Qt/%1").arg(clientDisplayVersion()));
+    logApiRequest(request);
     QNetworkReply *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() { handleReleaseReply(reply); });
 }
@@ -126,6 +206,7 @@ void UpdateController::handleReleaseReply(QNetworkReply *reply)
 {
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const QByteArray body = reply->readAll();
+    logApiResponse(reply, body);
     const bool ok = reply->error() == QNetworkReply::NoError && status != 404;
     if (!ok) {
         if (status != 404)
@@ -184,8 +265,8 @@ QString UpdateController::resolveDownloadUrl(const QVariantMap &release)
     // Older release records return /downloads/... while the production gateway
     // serves the same file under /aether/api/downloads/....
     if (relative.startsWith(QStringLiteral("/downloads/")))
-        return downloadOrigin.resolved(QUrl(QStringLiteral("/aether/api") + relative)).toString();
-    return downloadOrigin.resolved(QUrl(relative)).toString();
+        return downloadOrigin().resolved(QUrl(QStringLiteral("/aether/api") + relative)).toString();
+    return downloadOrigin().resolved(QUrl(relative)).toString();
 }
 
 bool UpdateController::isNewerVersion(const QString &candidate, const QString &current)
@@ -280,7 +361,8 @@ void UpdateController::startNetworkDownload(const QString &target)
     QNetworkRequest request{QUrl(m_downloadUrl)};
     request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("Mozilla/5.0 AetherStudy-Qt/%1").arg(clientVersion));
+                      QStringLiteral("Mozilla/5.0 AetherStudy-Qt/%1")
+                          .arg(clientDisplayVersion()));
     QNetworkReply *reply = m_network->get(request);
     reply->setProperty("targetPath", target);
     connect(reply, &QNetworkReply::readyRead, this, [this, reply]() { consumeDownloadData(reply); });
