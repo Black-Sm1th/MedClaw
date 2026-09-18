@@ -89,6 +89,15 @@ Rectangle {
             intro: "医学影像数据处理专家团：盘点 DICOM/NIfTI/X 线、去标识、转 NIfTI、预处理、配准、掩膜 QC、影像组学与报告结构化。",
             ability: "医学影像数据处理专家团：盘点 DICOM/NIfTI/X 线、去标识、转 NIfTI、预处理、配准、掩膜 QC、影像组学与报告结构化。",
             questions: ["帮我盘点这个 DICOM 文件夹有几个序列、有没有缺层", "把这个 CT 序列转成 NIfTI 并做预处理", "对带 ROI 掩膜的影像做组学特征提取"]
+            // categories: ["数据处理", "分割标注", "影像组学"],
+            // intro: "医学影像专家团：编排数据处理、分割、组学、病例报告四个专员。完整病例只派影像病例报告专员。不做诊断、不做模型商城选模型。",
+            // ability: "编排四个专员：数据处理（盘点/转换/预处理）、分割标注、组学定量、病例厚报告。完整病例 / 肺结节 / 要厚报告只派影像病例报告专员走 imaging_case，不把流水线拆开再手工拼报告。",
+            // questions: [
+            //     "帮我盘点这个 DICOM 文件夹有几个序列、有没有缺层",
+            //     "把这个 CT 序列转成 NIfTI 并做预处理",
+            //     "对带 ROI 的影像做双组学并写一份完整病例报告"
+            // ],
+            // promptTemplate: "影像路径：[DICOM 目录或 NIfTI]\n任务：完整病例报告 / 只要转换 / 只要分割 / 只要组学\n是否已有 mask：[路径或无]\n输出目录：[绝对路径]"
         }
     })
 
@@ -123,6 +132,11 @@ Rectangle {
         "verification-reporter": { name: "核验报告专员", skills: ["知识库检索", "网页抓取", "文件内容读取"], desc: "合成核验报告，含声明评定表、证据摘要、引用链全链路展示与修正建议", avatar: 4 },
         "report-writer": { name: "报告撰写专员", skills: ["整合", "排版", "交付"], desc: "分析产出的\"最后一公里\"整合者。将前面所有专家的产出组装为结构化分析报告，按目标格式排版。确保从数据到结论的逻辑链条连贯、引用规范、表述精准。", avatar: 5 },
         "imaging-agent": { name: "影像数据处理专员", skills: ["DICOM盘点", "转NIfTI", "X线导出", "预处理", "配准", "组学"], desc: "处理 NIfTI、DICOM 序列和 X 线：盘点 QC、去标识、单序列转 NIfTI、预处理、配准、掩膜 QC、影像组学、报告结构化。", avatar: 6, image: "qrc:/images/expert/medical-orchestrator.png" }
+        // "imaging-data-agent": { name: "影像数据处理专员", skills: ["DICOM盘点", "去标识", "转NIfTI", "X线导出", "预处理", "配准"], desc: "盘点 QC、解压、去标识、转 NIfTI、X 线导出、预处理、配准。不做分割、组学、病例厚报告、选模型。", avatar: 1 },
+        // "imaging-seg-agent": { name: "影像分割标注专员", skills: ["算法分割", "深度学习分割", "掩膜QC"], desc: "肺/骨算法分割，或结节/肿瘤/器官深度学习分割（缺包先 pip）。失败不回退 HU 阈值。不做选模型。", avatar: 2 },
+        // "imaging-radiomics-agent": { name: "影像组学定量专员", skills: ["PyRadiomics", "MIRP", "掩膜QC"], desc: "同网格 image+mask 提取 PyRadiomics/MIRP。无 ROI 不编造特征。不做建模、不做选模型。", avatar: 3 },
+        // "imaging-report-agent": { name: "影像病例报告专员", skills: ["病例工作流", "双组学", "厚报告"], desc: "完整病例工作流：imaging_case 产出底图、可选分割、双组学、十章厚报告。不做诊断、不做选模型。", avatar: 4 },
+        // "imaging-agent": { name: "影像数据处理专员（兼容旧 id）", skills: ["兼容"], desc: "旧全能影像专员，仅兼容。新会话请用影像病例报告 / 数据处理 / 分割标注 / 组学定量专员。", avatar: 6 }
     })
 
     function stringList(value) {
@@ -211,6 +225,9 @@ Rectangle {
 
     function expertSubagents(agent) {
         var configured = agent && agent.subagents || []
+        var agentId = String(agent && agent.id || "")
+        if (agentId === "imaging-orchestrator")
+            configured = ["imaging-agent"]
         var result = []
         for (var i = 0; i < configured.length; i++) {
             var id = String(configured[i] || "")

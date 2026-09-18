@@ -10542,7 +10542,7 @@ ApplicationWindow {
                 property string selectedToolCategory: "深度问数"
                 property var toolCategories: window.governmentEdition
                     ? ["深度问数", "政务助手", "系统自带"]
-                    : ["深度问数", "生信分析", "政务助手", "系统自带"]
+                    : ["深度问数", "生信分析", "医学影像处理", "政务助手", "系统自带"]
                 property var deepDataToolIds: ({
                     "data_execute_code": true,
                     "data_explore": true,
@@ -10572,6 +10572,23 @@ ApplicationWindow {
                     "spatial_enrichment": true,
                     "spatial_load": true,
                     "spatial_qc": true
+                })
+                property var imagingToolIds: ({
+                    "imaging_dicom_inspect": true,
+                    "imaging_dicom_anonymize": true,
+                    "imaging_dicom_decompress": true,
+                    "imaging_dicom_multiframe": true,
+                    "imaging_dicom_to_nifti": true,
+                    "imaging_nifti_io_qc": true,
+                    "imaging_xray_io": true,
+                    "imaging_preprocess": true,
+                    "imaging_register": true,
+                    "imaging_mask_qc": true,
+                    "imaging_radiomics": true,
+                    "imaging_seg_classic": true,
+                    "imaging_seg_dl": true,
+                    "imaging_case": true,
+                    "imaging_report_extract": true
                 })
                 property var governmentToolIds: ({
                     "docx_generate": true,
@@ -10615,6 +10632,8 @@ ApplicationWindow {
                         return "深度问数"
                     if (toolIdMatches(id, bioinformaticsToolIds))
                         return "生信分析"
+                    if (toolIdMatches(id, imagingToolIds))
+                        return "医学影像处理"
                     if (toolIdMatches(id, governmentToolIds))
                         return "政务助手"
                     return "系统自带"
