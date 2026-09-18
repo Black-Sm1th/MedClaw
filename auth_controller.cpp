@@ -1,6 +1,7 @@
 #include "auth_controller.h"
 
 #include <QDir>
+#include <QDebug>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -16,11 +17,11 @@
 #include <QStringList>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 
 namespace {
-const char kDefaultApiBaseUrl[] = "https://www.aethermind.cn/aether";
-const char kLegacyApiBaseUrl[] = "http://111.6.178.34:22910";
-const char kPreviousLegacyApiBaseUrl[] = "http://111.6.178.34:24638";
+const char kProductionApiBaseUrl[] = "https://www.aethermind.cn/aether";
+const char kTestApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 
 QString normalizedBaseUrl(QString url)
 {
@@ -28,6 +29,84 @@ QString normalizedBaseUrl(QString url)
     while (url.endsWith(QLatin1Char('/')))
         url.chop(1);
     return url;
+}
+
+QString apiBaseUrlFromEnvironment()
+{
+    const QString environment = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
+    if (environment == QStringLiteral("test"))
+        return QString::fromLatin1(kTestApiBaseUrl);
+    if (!environment.isEmpty() && environment != QStringLiteral("prod")) {
+        qWarning().noquote()
+            << "[API] Unsupported MEDCLAW_API_ENV value" << environment
+            << "- falling back to prod";
+    }
+    return QString::fromLatin1(kProductionApiBaseUrl);
+}
+
+bool isSecretJsonKey(const QString &key)
+{
+    const QString normalized = key.toLower();
+    return normalized.contains(QStringLiteral("token"))
+           || normalized == QStringLiteral("apikey")
+           || normalized == QStringLiteral("api_key")
+           || normalized == QStringLiteral("authorization");
+}
+
+QJsonValue redactedJsonValue(const QJsonValue &value)
+{
+    if (value.isObject()) {
+        QJsonObject object = value.toObject();
+        for (auto it = object.begin(); it != object.end(); ++it)
+            it.value() = isSecretJsonKey(it.key()) ? QJsonValue(QStringLiteral("<redacted>"))
+                                                   : redactedJsonValue(it.value());
+        return object;
+    }
+    if (value.isArray()) {
+        QJsonArray array = value.toArray();
+        for (qsizetype i = 0; i < array.size(); ++i)
+            array[i] = redactedJsonValue(array.at(i));
+        return array;
+    }
+    return value;
+}
+
+QString bodyForLog(const QByteArray &raw)
+{
+    if (raw.isEmpty())
+        return QStringLiteral("<empty>");
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(raw, &parseError);
+    if (parseError.error != QJsonParseError::NoError)
+        return QString::fromUtf8(raw);
+    if (document.isObject())
+        return QString::fromUtf8(QJsonDocument(redactedJsonValue(document.object()).toObject())
+                                     .toJson(QJsonDocument::Compact));
+    if (document.isArray())
+        return QString::fromUtf8(QJsonDocument(redactedJsonValue(document.array()).toArray())
+                                     .toJson(QJsonDocument::Compact));
+    return QString::fromUtf8(raw);
+}
+
+void logApiRequest(const char *method,
+                   const QNetworkRequest &request,
+                   const QByteArray &body = QByteArray())
+{
+    QString parameters = bodyForLog(body);
+    if (body.isEmpty()) {
+        const QString query = QUrlQuery(request.url()).query(QUrl::FullyEncoded);
+        parameters = query.isEmpty() ? QStringLiteral("<none>") : query;
+    }
+    qInfo().noquote() << "[API request]" << method << request.url().toString(QUrl::FullyEncoded)
+                      << "parameters:" << parameters;
+}
+
+void logApiResponse(QNetworkReply *reply, const QByteArray &body)
+{
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    qInfo().noquote() << "[API response]" << reply->url().toString(QUrl::FullyEncoded)
+                      << "status:" << status << "networkError:" << reply->error()
+                      << reply->errorString() << "body:" << bodyForLog(body);
 }
 
 void disableHttp2(QNetworkRequest &request)
@@ -226,9 +305,6 @@ AuthController::AuthController(QObject *parent)
                                   legacySettings.value(QStringLiteral("auth/refreshToken")));
                 settings.setValue(QStringLiteral("auth/userId"), legacyUserId);
                 settings.setValue(QStringLiteral("auth/phone"), legacyPhone);
-                settings.setValue(QStringLiteral("auth/apiBaseUrl"),
-                                  legacySettings.value(QStringLiteral("auth/apiBaseUrl"),
-                                                       QString::fromLatin1(kDefaultApiBaseUrl)));
                 break;
             }
         }
@@ -237,15 +313,13 @@ AuthController::AuthController(QObject *parent)
         settings.setValue(migrationKey, true);
         settings.sync();
     }
-    m_apiBaseUrl = normalizedBaseUrl(
-        settings.value(QStringLiteral("auth/apiBaseUrl"), QString::fromLatin1(kDefaultApiBaseUrl))
-            .toString());
-    if (m_apiBaseUrl == QString::fromLatin1(kLegacyApiBaseUrl)
-        || m_apiBaseUrl == QString::fromLatin1(kPreviousLegacyApiBaseUrl)
-        || m_apiBaseUrl == QStringLiteral("http://192.168.0.36:8080")) {
-        m_apiBaseUrl = QString::fromLatin1(kDefaultApiBaseUrl);
-        settings.setValue(QStringLiteral("auth/apiBaseUrl"), m_apiBaseUrl);
-    }
+    // Runtime selection is intentionally limited to prod/test. The default is
+    // always prod, so build and packaging environments cannot bake in test URLs.
+    m_apiBaseUrl = normalizedBaseUrl(apiBaseUrlFromEnvironment());
+    settings.remove(QStringLiteral("auth/apiBaseUrl"));
+    qInfo().noquote() << "[API] environment:"
+                      << (m_apiBaseUrl == QString::fromLatin1(kTestApiBaseUrl) ? "test" : "prod")
+                      << "baseUrl:" << m_apiBaseUrl;
     m_accessToken = settings.value(QStringLiteral("auth/accessToken")).toString();
     m_refreshToken = settings.value(QStringLiteral("auth/refreshToken")).toString();
     m_userId = settings.value(QStringLiteral("auth/userId")).toString().trimmed();
@@ -346,16 +420,6 @@ bool AuthController::modelConfigReady() const
     return m_modelConfigReady;
 }
 
-void AuthController::setApiBaseUrl(const QString &url)
-{
-    const QString normalized = normalizedBaseUrl(url);
-    if (normalized.isEmpty() || normalized == m_apiBaseUrl)
-        return;
-    m_apiBaseUrl = normalized;
-    QSettings().setValue(QStringLiteral("auth/apiBaseUrl"), m_apiBaseUrl);
-    emit apiBaseUrlChanged();
-}
-
 void AuthController::setBusy(bool busy)
 {
     if (m_busy == busy)
@@ -388,9 +452,11 @@ void AuthController::fetchAndApplyModelConfig(const QString &token,
     QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/v1/model-configs")));
     disableHttp2(request);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+    logApiRequest("GET", request);
     QNetworkReply *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, token, generation, done]() {
         const QByteArray raw = reply->readAll();
+        logApiResponse(reply, raw);
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         QJsonParseError parseError;
         const QJsonDocument document = QJsonDocument::fromJson(raw, &parseError);
@@ -441,11 +507,14 @@ void AuthController::sendSmsCode(const QString &phone)
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
-    QNetworkReply *reply = m_network->post(request,
-                                           QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    const QByteArray requestBody = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    logApiRequest("POST", request, requestBody);
+    QNetworkReply *reply = m_network->post(request, requestBody);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         setBusy(false);
-        const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
+        const QByteArray raw = reply->readAll();
+        logApiResponse(reply, raw);
+        const QJsonObject body = QJsonDocument::fromJson(raw).object();
         const bool ok = reply->error() == QNetworkReply::NoError && responseSucceeded(body);
         if (ok)
             emit smsCodeSent();
@@ -479,10 +548,13 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
     payload.insert(QStringLiteral("code"), normalizedCode);
-    QNetworkReply *reply = m_network->post(request,
-                                           QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    const QByteArray requestBody = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    logApiRequest("POST", request, requestBody);
+    QNetworkReply *reply = m_network->post(request, requestBody);
     connect(reply, &QNetworkReply::finished, this, [this, reply, normalizedPhone]() {
-        const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
+        const QByteArray raw = reply->readAll();
+        logApiResponse(reply, raw);
+        const QJsonObject body = QJsonDocument::fromJson(raw).object();
         QJsonObject data = body.value(QStringLiteral("data")).toObject();
         if (data.isEmpty())
             data = body;
@@ -551,11 +623,13 @@ void AuthController::refreshCredits()
     QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/credits/me")));
     disableHttp2(request);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+    logApiRequest("GET", request);
     QNetworkReply *reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, token]() {
         m_creditsRefreshInFlight = false;
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray raw = reply->readAll();
+        logApiResponse(reply, raw);
         QJsonParseError parseError;
         const QJsonDocument document = QJsonDocument::fromJson(raw, &parseError);
         if (token != m_accessToken) {
