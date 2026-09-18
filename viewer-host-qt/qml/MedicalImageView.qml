@@ -110,8 +110,19 @@ Item {
             resizeFitTimer.restart()
         }
 
+        function resumeInteraction() {
+            if (!root.busy)
+                return
+            viewer.runJavaScript(
+                "window.__medclawResumeInteraction && window.__medclawResumeInteraction();")
+        }
+
         onWidthChanged: scheduleFit()
         onHeightChanged: scheduleFit()
+        onVisibleChanged: {
+            if (visible)
+                Qt.callLater(resumeInteraction)
+        }
 
         Timer {
             id: fitTimer

@@ -98,6 +98,8 @@ Item {
         ]
         if (agentId === "imaging-orchestrator" || agentId === "imaging-agent")
             return "qrc:/images/expert/medical-orchestrator.png"
+        // if (agentId === "imaging-orchestrator")
+        //     return "qrc:/images/expert/medical-orchestrator.png"
         if (orchestrators.indexOf(agentId) >= 0)
             return "qrc:/images/expert/" + agentId + ".png"
 

@@ -22,4 +22,10 @@
     window.__medclawWebGl = { type: kind, webgl2: kind === 'webgl2' };
     return gl;
   };
+  function clearFail() { failedUntil = 0; }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) clearFail();
+  });
+  window.addEventListener('pageshow', clearFail);
+  window.addEventListener('focus', clearFail);
 })();
