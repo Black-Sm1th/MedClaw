@@ -225,7 +225,11 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+    QCoreApplication::setApplicationName(QStringLiteral("Aether study Government"));
+#else
     QCoreApplication::setApplicationName(QStringLiteral("Aether study"));
+#endif
     installWebGlUserScript();
 
     // Keep relative runtime data paths stable and carry existing installs forward.

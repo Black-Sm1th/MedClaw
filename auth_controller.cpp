@@ -288,7 +288,14 @@ AuthController::AuthController(QObject *parent)
     // Import credentials from an earlier product name once. Without the marker,
     // a later logout could be undone by importing the stale token on next launch.
     const QString migrationKey = QStringLiteral("auth/legacyMigrationCompleted");
-    if (!settings.value(migrationKey, false).toBool()
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+    // Government and main editions have separate accounts. Never import the
+    // legacy main-edition token into the government settings namespace.
+    const bool allowLegacyCredentialMigration = false;
+#else
+    const bool allowLegacyCredentialMigration = true;
+#endif
+    if (allowLegacyCredentialMigration && !settings.value(migrationKey, false).toBool()
         && settings.value(QStringLiteral("auth/accessToken")).toString().isEmpty()) {
         const QStringList legacyApplicationNames = {QStringLiteral("Aether_ClawDESK"),
                                                     QStringLiteral("ClawDESK")};
