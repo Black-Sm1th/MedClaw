@@ -31,7 +31,7 @@ const char testApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 #ifdef MEDCLAW_EDITION_GOVERNMENT
 const char governmentEnterpriseCode[] = "gov-01";
 #endif
-const QString clientVersion(QStringLiteral("v1.2.1"));
+const QString clientVersion(QStringLiteral("v1.2.2"));
 
 QString clientDisplayVersion()
 {
