@@ -5,6 +5,8 @@ Item {
     id: root
 
     property bool running: false
+    property bool failed: false
+    property bool unread: false
     property bool hovered: false
     readonly property bool moreHovered: moreMouse.containsMouse
     readonly property bool showingMore: hovered || moreHovered
@@ -19,7 +21,7 @@ Item {
         radius: 3
         anchors.centerIn: parent
         color: "#006BFF"
-        visible: !root.running && !root.showingMore
+        visible: !root.running && !root.failed && root.unread && !root.showingMore
     }
 
     Canvas {
@@ -47,6 +49,31 @@ Item {
             to: 360
             duration: 850
             loops: Animation.Infinite
+        }
+    }
+
+    Item {
+        width: 14
+        height: 14
+        anchors.centerIn: parent
+        visible: !root.running && root.failed && !root.showingMore
+
+        Rectangle {
+            width: 15
+            height: 2
+            radius: 1
+            anchors.centerIn: parent
+            rotation: 45
+            color: "#E5484D"
+        }
+
+        Rectangle {
+            width: 15
+            height: 2
+            radius: 1
+            anchors.centerIn: parent
+            rotation: -45
+            color: "#E5484D"
         }
     }
 

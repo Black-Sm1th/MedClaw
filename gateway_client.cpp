@@ -1210,6 +1210,8 @@ bool GatewayClient::initTaskSessionDb()
         "deleted_at INTEGER,"
         "agents_json TEXT NOT NULL DEFAULT '[]',"
         "pinned INTEGER NOT NULL DEFAULT 0,"
+        "status TEXT NOT NULL DEFAULT 'completed',"
+        "is_read INTEGER NOT NULL DEFAULT 1,"
         "PRIMARY KEY (user_id, session_id)"
         ")"));
     if (!ok) {
@@ -1253,6 +1255,8 @@ bool GatewayClient::initTaskSessionDb()
             "deleted_at INTEGER,"
             "agents_json TEXT NOT NULL DEFAULT '[]',"
             "pinned INTEGER NOT NULL DEFAULT 0,"
+            "status TEXT NOT NULL DEFAULT 'completed',"
+            "is_read INTEGER NOT NULL DEFAULT 1,"
             "PRIMARY KEY (user_id, session_id)"
             ")"));
         const QString sourceUserId = hasUserId ? QStringLiteral("COALESCE(user_id, '')")
@@ -1308,6 +1312,31 @@ bool GatewayClient::initTaskSessionDb()
             "ALTER TABLE task_sessions "
             "ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"))) {
         qWarning().noquote() << "[TaskSessionDb] add pinned failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    bool hasStatus = false;
+    bool hasIsRead = false;
+    if (q.exec(QStringLiteral("PRAGMA table_info(task_sessions)"))) {
+        while (q.next()) {
+            const QString columnName = q.value(1).toString();
+            hasStatus = hasStatus || columnName == QLatin1String("status");
+            hasIsRead = hasIsRead || columnName == QLatin1String("is_read");
+        }
+    }
+    if (!hasStatus
+        && !q.exec(QStringLiteral(
+            "ALTER TABLE task_sessions "
+            "ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'"))) {
+        qWarning().noquote() << "[TaskSessionDb] add status failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    if (!hasIsRead
+        && !q.exec(QStringLiteral(
+            "ALTER TABLE task_sessions "
+            "ADD COLUMN is_read INTEGER NOT NULL DEFAULT 1"))) {
+        qWarning().noquote() << "[TaskSessionDb] add is_read failed:"
                              << q.lastError().text();
         return false;
     }
@@ -1679,7 +1708,7 @@ void GatewayClient::loadTaskSessionListFromDb()
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
             "SELECT session_id, workspace, title, created_at, updated_at, "
-            "deleted_at, agents_json, project_id, pinned "
+            "deleted_at, agents_json, project_id, pinned, status, is_read "
             "FROM task_sessions "
             "WHERE user_id=? AND deleted_at IS NULL "
             "ORDER BY pinned DESC, updated_at DESC, created_at DESC"));
@@ -1714,6 +1743,8 @@ void GatewayClient::loadTaskSessionListFromDb()
             row[QStringLiteral("agentId")] = agents.first().toString();
         row[QStringLiteral("project_id")] = q.value(7).toString();
         row[QStringLiteral("pinned")] = q.value(8).toBool();
+        row[QStringLiteral("taskStatus")] = q.value(9).toString();
+        row[QStringLiteral("isUnread")] = !q.value(10).toBool();
         rows.append(row);
     }
 
@@ -2102,22 +2133,95 @@ QStringList GatewayClient::taskSessionAgentIds(const QVariantMap &row) const
 
 void GatewayClient::setTaskSessionRunning(const QString &sessionKey, bool running)
 {
+    setTaskSessionState(sessionKey,
+                        running ? QStringLiteral("running")
+                                : QStringLiteral("completed"));
+}
+
+void GatewayClient::setTaskSessionFailed(const QString &sessionKey)
+{
+    setTaskSessionState(sessionKey, QStringLiteral("failed"));
+}
+
+void GatewayClient::setTaskSessionState(const QString &sessionKey,
+                                        const QString &status)
+{
     const QString key = sessionKey.trimmed();
-    if (key.isEmpty() || taskSessionInfoByKey(key).isEmpty())
+    const QVariantMap current = taskSessionInfoByKey(key);
+    if (key.isEmpty() || current.isEmpty())
         return;
 
-    const bool changed = running
-        ? !m_runningTaskSessionKeys.contains(key)
-        : m_runningTaskSessionKeys.contains(key);
-    if (!changed)
+    QString normalizedStatus = status.trimmed().toLower();
+    if (normalizedStatus != QLatin1String("running")
+        && normalizedStatus != QLatin1String("failed")) {
+        normalizedStatus = QStringLiteral("completed");
+    }
+
+    const QString currentStatus =
+        current.value(QStringLiteral("taskStatus"), QStringLiteral("completed"))
+            .toString();
+    const bool wasRunning = currentStatus == QLatin1String("running")
+        || m_runningTaskSessionKeys.contains(key);
+    if (normalizedStatus == QLatin1String("completed") && !wasRunning)
+        return;
+
+    QString viewedKey = m_currentViewSessionKey.trimmed();
+    if (viewedKey.isEmpty())
+        viewedKey = m_currentTaskSessionKey.trimmed();
+    const bool isRead = normalizedStatus != QLatin1String("completed")
+        || viewedKey == key;
+    const bool running = normalizedStatus == QLatin1String("running");
+    const bool stateChanged =
+        currentStatus != normalizedStatus
+        || current.value(QStringLiteral("isUnread")).toBool() == isRead
+        || m_runningTaskSessionKeys.contains(key) != running;
+    if (!stateChanged)
         return;
 
     if (running)
         m_runningTaskSessionKeys.insert(key);
     else
         m_runningTaskSessionKeys.remove(key);
-    emit taskSessionListChanged();
-    loadProjectListFromDb();
+
+    if (!m_taskSessionUserId.isEmpty() && initTaskSessionDb()) {
+        QSqlQuery q(m_taskSessionDb);
+        q.prepare(QStringLiteral(
+            "UPDATE task_sessions SET status=?, is_read=? "
+            "WHERE user_id=? AND session_id=? AND deleted_at IS NULL"));
+        q.addBindValue(normalizedStatus);
+        q.addBindValue(isRead ? 1 : 0);
+        q.addBindValue(m_taskSessionUserId);
+        q.addBindValue(key);
+        if (!q.exec()) {
+            qWarning().noquote() << "[TaskSessionDb] update status failed:"
+                                 << q.lastError().text();
+        }
+    }
+    loadTaskSessionListFromDb();
+}
+
+void GatewayClient::markTaskSessionRead(const QString &sessionKey)
+{
+    const QString key = sessionKey.trimmed();
+    const QVariantMap current = taskSessionInfoByKey(key);
+    if (key.isEmpty() || current.isEmpty()
+        || !current.value(QStringLiteral("isUnread")).toBool()
+        || m_taskSessionUserId.isEmpty() || !initTaskSessionDb()) {
+        return;
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE task_sessions SET is_read=1 "
+        "WHERE user_id=? AND session_id=? AND deleted_at IS NULL"));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(key);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] mark read failed:"
+                             << q.lastError().text();
+        return;
+    }
+    loadTaskSessionListFromDb();
 }
 
 void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload)
@@ -2129,33 +2233,50 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
                                  .toString().trimmed().toLower();
     const QString dataType = data.value(QStringLiteral("type"))
                                  .toString().trimmed().toLower();
+    const QString stream = payload.value(QStringLiteral("stream"))
+                               .toString().trimmed().toLower();
+    const bool isToolStream = stream == QLatin1String("tool");
     const QString state = payload.value(QStringLiteral("state"))
                               .toString().trimmed().toLower();
     const QString dataState = data.value(QStringLiteral("state"))
                                   .toString().trimmed().toLower();
-    const bool marksComplete = state == QLatin1String("aborted")
+    const bool marksFailed = !isToolStream
+        && (state == QLatin1String("failed")
+        || state == QLatin1String("failure")
+        || state == QLatin1String("error")
+        || state == QLatin1String("aborted")
         || state == QLatin1String("cancelled")
+        || dataState == QLatin1String("failed")
+        || dataState == QLatin1String("failure")
+        || dataState == QLatin1String("error")
         || dataState == QLatin1String("aborted")
         || dataState == QLatin1String("cancelled")
+        || phase == QLatin1String("failed")
+        || phase == QLatin1String("failure")
+        || phase == QLatin1String("error")
         || phase == QLatin1String("aborted")
         || phase == QLatin1String("cancelled")
-        || phase == QLatin1String("complete")
+        || subEvent.contains(QLatin1String("failed"))
+        || subEvent.contains(QLatin1String("failure"))
+        || subEvent.contains(QLatin1String("error"))
+        || subEvent.contains(QLatin1String("abort"))
+        || subEvent.contains(QLatin1String("cancel")));
+    const bool marksComplete = !isToolStream && !marksFailed
+        && (phase == QLatin1String("complete")
         || phase == QLatin1String("done")
         || phase == QLatin1String("end")
         || subEvent.contains(QLatin1String("complete"))
         || subEvent.contains(QLatin1String("done"))
         || subEvent.contains(QLatin1String("finish"))
-        || subEvent.contains(QLatin1String("end"))
-        || subEvent.contains(QLatin1String("abort"))
-        || subEvent.contains(QLatin1String("cancel"));
-    const bool marksRunning = !marksComplete
+        || subEvent.contains(QLatin1String("end")));
+    const bool marksRunning = !isToolStream && !marksFailed && !marksComplete
         && (phase == QLatin1String("start")
             || data.contains(QStringLiteral("delta"))
             || subEvent.contains(QLatin1String("start"))
             || subEvent.contains(QLatin1String("delta"))
             || subEvent.contains(QLatin1String("chunk"))
             || dataType == QLatin1String("message_start"));
-    if (!marksComplete && !marksRunning)
+    if (!marksFailed && !marksComplete && !marksRunning)
         return;
 
     const QString eventKey = extractPayloadSessionKey(payload).trimmed();
@@ -2164,7 +2285,7 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
     // Events without an explicit session key may be normalized to
     // agent:<id>:main. Resolve them only when exactly one running task uses
     // that controller agent; child-agent events then cannot stop the parent.
-    if (taskKey.isEmpty() && marksComplete
+    if (taskKey.isEmpty() && (marksComplete || marksFailed)
         && !eventKey.contains(QLatin1String(":subagent:"))
         && !eventKey.contains(QLatin1String(":acp:"))) {
         const QString agentId = agentIdFromSessionKey(eventKey);
@@ -2180,8 +2301,11 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
     }
 
     if (!taskKey.isEmpty()) {
-        setTaskSessionRunning(taskKey, marksRunning);
-        if (marksComplete) {
+        if (marksFailed)
+            setTaskSessionFailed(taskKey);
+        else
+            setTaskSessionRunning(taskKey, marksRunning);
+        if (marksFailed || marksComplete) {
             m_chatRunningSessionKeys.remove(taskKey);
             updateChatRunningForCurrentSession();
         }
@@ -3136,7 +3260,7 @@ bool GatewayClient::maybeConfigureSubagentAllowAgents(
     const QJsonObject cfg = buildConfigWithSubagentAllowAgents(
         m_lastConfigSnapshot, controllerAgentId, targets, &changed);
     if (cfg.isEmpty()) {
-        setTaskSessionRunning(controllerSessionKey, false);
+        setTaskSessionFailed(controllerSessionKey);
         clearPendingCollaborationSend();
         emit errorOccurred(QStringLiteral("\u65e0\u6cd5\u6784\u5efa\u534f\u4f5c Agent \u6743\u9650\u914d\u7f6e"));
         return true;
@@ -3162,7 +3286,7 @@ void GatewayClient::sendPendingCollaborationChatNow()
 {
     if (m_pendingCollabControllerSessionKey.trimmed().isEmpty()
         || m_pendingCollabUserMessage.trimmed().isEmpty()) {
-        setTaskSessionRunning(m_pendingCollabControllerSessionKey, false);
+        setTaskSessionFailed(m_pendingCollabControllerSessionKey);
         clearPendingCollaborationSend();
         return;
     }
@@ -4144,7 +4268,7 @@ void GatewayClient::abortChat(const QString &sessionKey)
 
     // Reflect the user's stop action immediately in the local task list;
     // the server's aborted event remains the authoritative cleanup path.
-    setTaskSessionRunning(key, false);
+    setTaskSessionFailed(key);
     m_chatRunningSessionKeys.remove(key);
     updateChatRunningForCurrentSession();
 
@@ -4497,9 +4621,9 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             || chatDataState.compare(QStringLiteral("aborted"), Qt::CaseInsensitive) == 0)) {
         const QString eventKey = extractPayloadSessionKey(payload).trimmed();
         if (!eventKey.isEmpty())
-            setTaskSessionRunning(eventKey, false);
+            setTaskSessionFailed(eventKey);
         else
-            setTaskSessionRunning(m_activeChatSessionKey, false);
+            setTaskSessionFailed(m_activeChatSessionKey);
         const QString abortedKey = eventKey.isEmpty()
             ? m_activeChatSessionKey : eventKey;
         m_chatRunningSessionKeys.remove(abortedKey);
@@ -4829,7 +4953,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_sessionTitleHistReqBatch.remove(id);
         const QString failedChatSession = m_chatSendReqSession.take(id);
         if (!failedChatSession.isEmpty()) {
-            setTaskSessionRunning(failedChatSession, false);
+            setTaskSessionFailed(failedChatSession);
             m_chatRunningSessionKeys.remove(failedChatSession);
         }
         m_chatSendReqMessage.remove(id);
@@ -4901,7 +5025,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             && m_collabAllowConfigSetReqIds.remove(id)) {
             const QString failedTaskKey = m_pendingCollabControllerSessionKey;
             clearPendingCollaborationSend();
-            setTaskSessionRunning(failedTaskKey, false);
+            setTaskSessionFailed(failedTaskKey);
         }
 
         if (method == QLatin1String("sessions.create")) {
@@ -5601,7 +5725,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // 其余 chat.send：只更新当前 agent 侧栏首句标题
     if (method == QLatin1String("chat.abort")) {
         const QString abortedSession = m_chatAbortReqSession.take(id);
-        setTaskSessionRunning(abortedSession, false);
+        setTaskSessionFailed(abortedSession);
         m_chatRunningSessionKeys.remove(abortedSession);
         if (!abortedSession.isEmpty())
             m_recentlyAbortedChatSessionKey = abortedSession;
@@ -6984,6 +7108,8 @@ void GatewayClient::switchTaskSession(const QString &sessionKey)
         clearActiveAgentContext();
         return;
     }
+
+    markTaskSessionRead(key);
 
     m_toolResultRefreshTimer.stop();
     m_toolResultRefreshReqSessions.clear();

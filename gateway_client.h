@@ -847,6 +847,9 @@ private:
     void setCurrentProjectIdInternal(const QString &projectId);
     QStringList taskSessionAgentIds(const QVariantMap &row) const;
     void setTaskSessionRunning(const QString &sessionKey, bool running);
+    void setTaskSessionFailed(const QString &sessionKey);
+    void setTaskSessionState(const QString &sessionKey, const QString &status);
+    void markTaskSessionRead(const QString &sessionKey);
     void updateTaskSessionRuntimeFromEvent(const QJsonObject &payload);
     bool isLocalOnlyCronTaskSession(const QString &sessionKey) const;
     QString cronJobIdFromSessionKey(const QString &sessionKey) const;

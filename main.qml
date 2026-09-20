@@ -1094,10 +1094,19 @@ ApplicationWindow {
             else kbShowError("知识库服务配置不完整")
             return
         }
+        var body = { "tool": tool, "args": args || {} }
+        if (action)
+            body.action = action
+        var logTag = "[KnowledgeBase][" + tool
+                + (action ? ":" + action : "") + "]"
+        console.log(logTag + " 操作参数: " + JSON.stringify(body))
+
         var xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE)
                 return
+            console.log(logTag + " 返回值 (HTTP " + xhr.status + "): "
+                        + (xhr.responseText || ""))
             if (requestUser !== String(authController.userId || "")
                     || (!acceptInactiveCollection && collection !== kbUserCollection())) {
                 return
@@ -1134,9 +1143,6 @@ ApplicationWindow {
         xhr.open("POST", base + "/tools/invoke")
         xhr.setRequestHeader("Authorization", "Bearer " + token)
         xhr.setRequestHeader("Content-Type", "application/json")
-        var body = { "tool": tool, "args": args || {} }
-        if (action)
-            body.action = action
         xhr.send(JSON.stringify(body))
     }
 
@@ -2547,7 +2553,10 @@ ApplicationWindow {
 
                                     TaskSessionStatusIndicator {
                                         id: agentItemStatus
-                                        running: modelData.isRunning || false
+                                        running: (modelData.isRunning || false)
+                                                 || modelData.taskStatus === "running"
+                                        failed: modelData.taskStatus === "failed"
+                                        unread: modelData.isUnread || false
                                         hovered: agentItemRect.hovered
                                         anchors.right: parent.right
                                         anchors.rightMargin: 4
@@ -3018,7 +3027,10 @@ ApplicationWindow {
 
                         TaskSessionStatusIndicator {
                             id: histPopAgentStatus
-                            running: modelData.isRunning || false
+                            running: (modelData.isRunning || false)
+                                     || modelData.taskStatus === "running"
+                            failed: modelData.taskStatus === "failed"
+                            unread: modelData.isUnread || false
                             hovered: histPopAgentRect.hovered
                             anchors.right: parent.right
                             anchors.rightMargin: 4

@@ -267,7 +267,10 @@ Item {
 
                             TaskSessionStatusIndicator {
                                 id: projectSessionStatus
-                                running: modelData.isRunning || false
+                                running: (modelData.isRunning || false)
+                                         || modelData.taskStatus === "running"
+                                failed: modelData.taskStatus === "failed"
+                                unread: modelData.isUnread || false
                                 hovered: projectSessionRow.hovered
                                 anchors.right: parent.right
                                 anchors.rightMargin: 4
