@@ -201,10 +201,9 @@ WebEngineView {
         }
         var aborted = status === 1
                 || String((info && info.errorString) || "").indexOf("ERR_ABORTED") >= 0
-        var pdfPlugin = String(viewer.url).indexOf("/api/document") >= 0
-        if (failed && !(aborted && pdfPlugin))
+        if (failed && !aborted)
             viewerLoadFailed(info.errorString || "")
-        else if (succeeded || (aborted && pdfPlugin))
+        else if (succeeded)
             viewerLoaded()
     }
 

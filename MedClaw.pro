@@ -1,4 +1,4 @@
-QT += quick quickcontrols2 websockets sql network webenginequick widgets core5compat
+QT += quick quickcontrols2 websockets sql network webenginequick widgets core5compat pdf pdfquick
 
 include(viewer-host-qt/viewer-host-qt.pri)
 
