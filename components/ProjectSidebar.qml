@@ -210,9 +210,16 @@ Item {
                             width: sessionColumn.width
                             height: 55
                             radius: 8
-                            color: String(modelData.session_id || "") === root.currentSessionKey
-                                   ? "#E6E7EB"
-                                   : projectSessionRow.hovered ? "#0A000000" : "transparent"
+                            color: {
+                                var isActive = String(modelData.session_id || "")
+                                               === root.currentSessionKey
+                                var isPinned = modelData.pinned || false
+                                if (isActive)
+                                    return isPinned ? "#D5D9DF" : "#E6E7EB"
+                                if (projectSessionRow.hovered)
+                                    return isPinned ? "#E2E5E9" : "#0A000000"
+                                return isPinned ? "#ECEEF1" : "transparent"
+                            }
                             property bool hovered: sessionMouse.containsMouse
                                                    || projectSessionStatus.moreHovered
 

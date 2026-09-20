@@ -2538,9 +2538,10 @@ ApplicationWindow {
                                                            || agentItemStatus.moreHovered
                                     color: {
                                         var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
-                                        if (isActive) return "#E6E7EB"
-                                        if (agentItemRect.hovered) return "#0A000000"
-                                        return "transparent"
+                                        var isPinned = modelData.pinned || false
+                                        if (isActive) return isPinned ? "#D5D9DF" : "#E6E7EB"
+                                        if (agentItemRect.hovered) return isPinned ? "#E2E5E9" : "#0A000000"
+                                        return isPinned ? "#ECEEF1" : "transparent"
                                     }
 
                                     Column {
@@ -3013,9 +3014,10 @@ ApplicationWindow {
                                                || histPopAgentStatus.moreHovered
                         color: {
                             var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
-                            if (isActive) return "#E6E7EB"
-                            if (histPopAgentRect.hovered) return "#0A000000"
-                            return "transparent"
+                            var isPinned = modelData.pinned || false
+                            if (isActive) return isPinned ? "#D5D9DF" : "#E6E7EB"
+                            if (histPopAgentRect.hovered) return isPinned ? "#E2E5E9" : "#0A000000"
+                            return isPinned ? "#ECEEF1" : "transparent"
                         }
 
                         Column {
@@ -9532,7 +9534,12 @@ ApplicationWindow {
                                     width: scheduledTaskScrollView.width - 120
                                     height: 76
                                     radius: 8
-                                    color: taskItemMouse.containsMouse ? "#F0F2F5" : "#F7F9FA"
+                                    color: {
+                                        var isPinned = cronJobRow.job.pinned || false
+                                        if (taskItemMouse.containsMouse)
+                                            return isPinned ? "#E2E5E9" : "#F0F2F5"
+                                        return isPinned ? "#ECEEF1" : "#F7F9FA"
+                                    }
 
                                     Behavior on color { ColorAnimation { duration: 100 } }
 
