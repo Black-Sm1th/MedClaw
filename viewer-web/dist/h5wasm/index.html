@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>HDF5 / AnnData 预览</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #f7f9fa; color: #1f2329; font: 13px/1.45 "Segoe UI", "Alibaba PuHuiTi 3.0", sans-serif; }
+    #bar { height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #17202a; color: #e7ecf1; }
+    #bar b { color: #7dd3fc; }
+    #status { opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #layout { position: absolute; inset: 36px 0 0 0; display: flex; min-height: 0; }
+    #tree { width: 280px; min-width: 200px; max-width: 42%; border-right: 1px solid #e6e7eb; overflow: auto; background: #fafbfc; }
+    #main { flex: 1; min-width: 0; overflow: auto; padding: 12px 16px 24px; }
+    .tree-item { display: flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+    .tree-item:hover { background: #eef2f6; }
+    .tree-item.active { background: #e8f1ff; color: #006bff; }
+    .kind { font-size: 10px; color: #667085; border: 1px solid #d0d5dd; border-radius: 4px; padding: 0 4px; }
+    .kind.ds { color: #067647; border-color: #abefc6; }
+    .kind.g { color: #175cd3; border-color: #b2ddff; }
+    .cards { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+    .card { background: #fff; border: 1px solid #e6e7eb; border-radius: 8px; padding: 8px 12px; min-width: 120px; }
+    .card .k { color: #667085; font-size: 11px; }
+    .card .v { font-size: 16px; font-weight: 600; margin-top: 2px; }
+    h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+    h3 { margin: 16px 0 8px; font-size: 13px; font-weight: 600; color: #344054; }
+    table { border-collapse: collapse; width: max-content; min-width: 100%; background: #fff; }
+    th, td { border: 1px solid #e6e7eb; padding: 4px 8px; text-align: left; font-variant-numeric: tabular-nums; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    th { background: #f2f4f7; font-weight: 600; }
+    .muted { color: #667085; }
+    .error { color: #b42318; }
+    pre { background: #fff; border: 1px solid #e6e7eb; border-radius: 8px; padding: 10px; overflow: auto; max-height: 280px; }
+  </style>
+</head>
+<body>
+  <div id="bar"><b>HDF5</b><span id="status">正在加载…</span></div>
+  <div id="layout">
+    <div id="tree"></div>
+    <div id="main"></div>
+  </div>
+  <script src="h5wasm.js"></script>
+  <script src="embed.js"></script>
+</body>
+</html>

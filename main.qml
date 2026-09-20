@@ -3469,7 +3469,7 @@ ApplicationWindow {
                                  || file.type === "directory" || file.type === "folder"))
                         return "qrc:/images/doc/document-fold.svg"
                     var ext = String((file && file.extension) || fileExtension(file && file.path)).toLowerCase()
-                    if (/^(dcm|dicom|ima|nii|gz|jpg|jpeg|png|gif|bmp|webp|tif|tiff|pdb|cif|mmcif|mol|mol2|sdf|gro|xyz|mmtf|map|mrc|ccp4|fa|fasta|fna|gff|gff3|gtf|bed|vcf|bam|sam)$/.test(ext)
+                    if (/^(dcm|dicom|ima|nii|gz|jpg|jpeg|png|gif|bmp|webp|tif|tiff|pdb|cif|mmcif|mol|mol2|sdf|gro|xyz|mmtf|map|mrc|ccp4|fa|fasta|fna|gff|gff3|gtf|bed|vcf|bam|sam|h5ad|h5|hdf5|hdf)$/.test(ext)
                             || /\.nii(?:\.gz)?$/i.test(String((file && file.path) || "")))
                         return "qrc:/images/knowledge/others.png"
                     if (ext === "doc" || ext === "docx")
@@ -3488,6 +3488,11 @@ ApplicationWindow {
                     if (isNeverOpenFile(file))
                         return false
                     return true
+                }
+
+                function isH5File(file) {
+                    var ext = String((file && file.extension) || fileExtension((file && file.path) || "")).toLowerCase()
+                    return /^(h5ad|h5|hdf5|hdf)$/.test(ext)
                 }
 
                 function isMolstarFile(file) {
@@ -3515,7 +3520,7 @@ ApplicationWindow {
                     var path = String(file.path || "")
                     var name = path.replace(/\\/g, "/").split("/").pop().toLowerCase()
                     var ext = String((file.extension || fileExtension(path))).toLowerCase()
-                    if (isMolstarFile(file) || isJbrowseFile(file))
+                    if (isMolstarFile(file) || isJbrowseFile(file) || isH5File(file))
                         return true
                     if (/\.nii(?:\.gz)?$/.test(name))
                         return true
@@ -3537,6 +3542,8 @@ ApplicationWindow {
                         return "jbrowse"
                     if (isMolstarFile(file))
                         return "molstar"
+                    if (isH5File(file))
+                        return "h5wasm"
                     return "dicom"
                 }
 
@@ -5304,6 +5311,7 @@ ApplicationWindow {
                                 anchors.right: parent.right
                                 anchors.top: officeTitleBar.bottom
                                 anchors.bottom: parent.bottom
+                                clip: true
                                 visible: active
 
                                 Loader {

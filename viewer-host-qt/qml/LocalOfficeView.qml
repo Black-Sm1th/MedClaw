@@ -4,6 +4,7 @@ import MedClaw.Viewer 1.0
 
 Item {
     id: root
+    clip: true
 
     property string filePath: ""
     property string mode: "view"
@@ -11,14 +12,20 @@ Item {
     property string pendingMode: ""
     property bool saving: false
     property bool closeAfterSave: false
-    readonly property bool busy: editorSource.length > 0
+    property bool pdfMode: false
+    readonly property bool busy: pdfMode || editorSource.length > 0
     readonly property string editorUrl: editorSource
-    readonly property string lastError: viewerHost.lastError
+    readonly property string lastError: pdfMode ? pdfView.lastError : viewerHost.lastError
 
     signal documentSaved(string filePath)
     signal saveFinished(string filePath, bool saved)
     signal sessionClosed(string filePath, bool saved)
     signal editorLoaded(string editorMode)
+
+    function isPdfPath(path) {
+        var name = String(path || "").replace(/\\/g, "/").split("/").pop().toLowerCase()
+        return name.length >= 4 && name.substring(name.length - 4) === ".pdf"
+    }
 
     function open(path, requestedMode) {
         var targetPath = String(path || filePath)
@@ -27,6 +34,23 @@ Item {
             return false
 
         filePath = targetPath
+        saving = false
+        pendingMode = ""
+        closeAfterSave = false
+
+        if (isPdfPath(targetPath)) {
+            viewerHost.closeDocument()
+            editorSource = ""
+            pdfMode = true
+            mode = "view"
+            console.log("[LocalOffice] open pdf", targetPath)
+            if (!pdfView.open(targetPath))
+                return false
+            return true
+        }
+
+        pdfMode = false
+        pdfView.close()
         mode = targetMode
         editorSource = viewerHost.openDocument(filePath, mode === "view", "zh-CN")
         console.log("[LocalOffice] open", targetPath, "mode", mode,
@@ -43,6 +67,8 @@ Item {
         var closedPath = filePath
         closeFallbackTimer.stop()
         editorSource = ""
+        pdfMode = false
+        pdfView.close()
         viewerHost.closeDocument()
         saving = false
         pendingMode = ""
@@ -51,10 +77,13 @@ Item {
     }
 
     function closeEditor() {
+        if (pdfMode) {
+            finishClose(false)
+            return
+        }
         const currentUrl = String(viewerWebView.url || "")
         const editorAlive = currentUrl.indexOf("/index.html") >= 0
                          || currentUrl.indexOf("/markdown/") >= 0
-                         || currentUrl.indexOf("/pdf/") >= 0
                          || currentUrl.indexOf("/api/html/") >= 0
         if (mode === "edit" && editorAlive && busy) {
             closeAfterSave = true
@@ -70,7 +99,7 @@ Item {
     }
 
     function saveEditor() {
-        if (!busy || mode !== "edit" || saving)
+        if (pdfMode || !busy || mode !== "edit" || saving)
             return false
         saving = true
         if (!viewerWebView.requestSave()) {
@@ -95,6 +124,10 @@ Item {
 
     function switchMode(requestedMode) {
         var targetMode = requestedMode === "edit" ? "edit" : "view"
+        if (pdfMode) {
+            mode = "view"
+            return
+        }
         if (targetMode === mode)
             return
         if (mode === "edit" && targetMode === "view") {
@@ -128,10 +161,22 @@ Item {
         }
     }
 
+    PdfView {
+        id: pdfView
+        anchors.fill: parent
+        visible: root.pdfMode
+        onLoaded: root.editorLoaded("view")
+        onLoadFailed: function(message) {
+            root.saving = false
+            root.saveFinished(root.filePath, false)
+        }
+    }
+
     ViewerWebView {
         id: viewerWebView
         anchors.fill: parent
-        viewerUrl: root.editorSource
+        visible: !root.pdfMode
+        viewerUrl: root.pdfMode ? "" : root.editorSource
 
         onViewerLoaded: root.editorLoaded(root.mode)
         onViewerLoadFailed: function(message) {
@@ -160,7 +205,7 @@ Item {
 
     BusyIndicator {
         anchors.centerIn: parent
-        running: root.editorSource.length === 0 && root.lastError.length === 0
+        running: !root.pdfMode && root.editorSource.length === 0 && root.lastError.length === 0
         visible: running
         palette.dark: "#006BFF"
         palette.mid: "#006BFF"
@@ -169,7 +214,7 @@ Item {
     Label {
         anchors.centerIn: parent
         width: Math.min(parent.width - 48, 520)
-        visible: root.lastError.length > 0 && root.editorSource.length === 0
+        visible: !root.pdfMode && root.lastError.length > 0 && root.editorSource.length === 0
         text: root.lastError
         color: "#b91c1c"
         wrapMode: Text.WordWrap

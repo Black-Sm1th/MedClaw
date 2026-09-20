@@ -267,6 +267,14 @@ bool isMolstarName(const QString &name)
         });
 }
 
+bool isH5Name(const QString &name)
+{
+    return nameHasAnySuffix(name, {
+            QStringLiteral(".h5ad"), QStringLiteral(".h5"),
+            QStringLiteral(".hdf5"), QStringLiteral(".hdf")
+        });
+}
+
 bool isJbrowseName(const QString &name)
 {
     return nameHasAnySuffix(name, {
@@ -385,7 +393,7 @@ QStringList collectMedicalFiles(const QFileInfo &info)
 
 QString directoryViewerMode(const QFileInfo &info)
 {
-    int dicom = 0, molstar = 0, jbrowse = 0;
+    int dicom = 0, molstar = 0, jbrowse = 0, h5 = 0;
     QDirIterator iterator(info.absoluteFilePath(), QDir::Files, QDirIterator::Subdirectories);
     int seen = 0;
     while (iterator.hasNext() && seen < 400) {
@@ -399,7 +407,11 @@ QString directoryViewerMode(const QFileInfo &info)
             ++molstar;
         else if (isJbrowseName(name))
             ++jbrowse;
+        else if (isH5Name(name))
+            ++h5;
     }
+    if (h5 > 0 && h5 >= dicom && h5 >= molstar && h5 >= jbrowse)
+        return QStringLiteral("h5wasm");
     if (jbrowse > 0 && jbrowse >= dicom && jbrowse >= molstar)
         return QStringLiteral("jbrowse");
     if (molstar > 0 && molstar >= dicom)
@@ -413,6 +425,9 @@ QString medicalViewerMode(const QFileInfo &info)
         return directoryViewerMode(info);
 
     const QString name = info.fileName().toLower();
+    if (isH5Name(name))
+        return QStringLiteral("h5wasm");
+
     if (isMolstarName(name))
         return QStringLiteral("molstar");
 
@@ -466,9 +481,7 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
 
     const QString suffix = info.suffix().toLower();
     QUrl url;
-    if (suffix == QStringLiteral("pdf")) {
-        url = QUrl(QStringLiteral("http://127.0.0.1:%1/pdf/viewer.html").arg(port()));
-    } else if (QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix)) {
+    if (QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix)) {
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/markdown/index.html").arg(port()));
     } else if ((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && m_readOnly) {
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/api/html/%2/%3")
@@ -478,12 +491,7 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/index.html").arg(port()));
     }
     QUrlQuery query;
-    if (suffix == QStringLiteral("pdf")) {
-        query.addQueryItem(QStringLiteral("file"),
-                           QStringLiteral("/api/document?session=") + m_sessionId);
-    }
-    if (suffix != QStringLiteral("pdf")
-        && suffix != QStringLiteral("md") && suffix != QStringLiteral("markdown") && suffix != QStringLiteral("txt")
+    if (suffix != QStringLiteral("md") && suffix != QStringLiteral("markdown") && suffix != QStringLiteral("txt")
         && !((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && m_readOnly)) {
         query.addQueryItem(QStringLiteral("route"),
                            (suffix == QStringLiteral("html") || suffix == QStringLiteral("htm"))
@@ -516,6 +524,9 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
         page = QStringLiteral("index.html");
     } else if (mode == QStringLiteral("jbrowse")) {
         pagePrefix = QStringLiteral("jbrowse2");
+        page = QStringLiteral("index.html");
+    } else if (mode == QStringLiteral("h5wasm")) {
+        pagePrefix = QStringLiteral("h5wasm");
         page = QStringLiteral("index.html");
     } else if (mode == QStringLiteral("raster")) {
         page = QStringLiteral("raster.html");
@@ -598,6 +609,8 @@ QString ViewerHost::medicalPageUrl(const QString &mode) const
         pagePrefix = QStringLiteral("molstar");
     } else if (mode == QStringLiteral("jbrowse")) {
         pagePrefix = QStringLiteral("jbrowse2");
+    } else if (mode == QStringLiteral("h5wasm")) {
+        pagePrefix = QStringLiteral("h5wasm");
     } else if (mode == QStringLiteral("raster")) {
         page = QStringLiteral("raster.html");
     }
@@ -859,17 +872,15 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
         relative = QStringLiteral("index.html");
     }
       QByteArray responseBody = file.readAll();
-      if (relative == QStringLiteral("pdf/viewer.html"))
-          responseBody.replace("{{baseUrl}}", "/pdf");
-      else if (relative == QStringLiteral("markdown/index.html"))
+      if (relative == QStringLiteral("markdown/index.html"))
           responseBody.replace("{{baseUrl}}", "/markdown");
       const bool isMutableViewerResource = relative == QStringLiteral("index.html")
           || relative == QStringLiteral("cornerstone3d/index.html")
           || relative == QStringLiteral("webgl-compat.js")
           || relative == QStringLiteral("webgl2-compat.js")
           || relative == QStringLiteral("cornerstone3d/webgl2-compat.js")
+          || relative.startsWith(QStringLiteral("h5wasm/"))
           || relative.startsWith(QStringLiteral("markdown/"))
-          || relative.startsWith(QStringLiteral("pdf/"))
           || relative.startsWith(QStringLiteral("pptist/"))
           || relative == QStringLiteral("html/index.html");
       respond(socket, 200, contentTypeForPath(path).toLatin1(), responseBody, {
@@ -1100,6 +1111,9 @@ QString ViewerHost::contentTypeForPath(const QString &path) const
         return QStringLiteral("text/plain; charset=utf-8");
     if (suffix == QStringLiteral("woff2")) return QStringLiteral("font/woff2");
     if (suffix == QStringLiteral("pdf")) return QStringLiteral("application/pdf");
+    if (QStringList{QStringLiteral("h5"), QStringLiteral("h5ad"),
+                    QStringLiteral("hdf5"), QStringLiteral("hdf")}.contains(suffix))
+        return QStringLiteral("application/x-hdf5");
     if (QStringList{QStringLiteral("dcm"), QStringLiteral("dicom"), QStringLiteral("ima")}
             .contains(suffix)) return QStringLiteral("application/dicom");
     return QStringLiteral("application/octet-stream");
