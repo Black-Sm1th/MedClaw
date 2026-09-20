@@ -898,6 +898,11 @@ private:
                                     const QString &agentId,
                                     const QString &jobName,
                                     const QString &workspace);
+    void loadCronTaskConversationHistory(const QString &taskSessionKey);
+    void startCronTaskHistoryMerge(const QString &taskSessionKey,
+                                   const QVariantList &runs);
+    bool completeCronTaskHistoryPart(const QString &requestId,
+                                     const QVariantList &history);
     void rememberCronToolCall(const QString &toolName,
                               const QString &toolArgs,
                               const QString &toolCallId);
@@ -1043,6 +1048,23 @@ private:
     };
     QMap<QString, PendingCronTaskSession>
         m_pendingCronTaskSessions; ///< cron.add reqId -> task row info
+    struct PendingCronRunsRequest
+    {
+        QString taskSessionKey;
+        quint64 generation = 0;
+    };
+    QMap<QString, PendingCronRunsRequest>
+        m_cronConversationRunsRequests; ///< cron.runs requestId -> selected cron task
+    struct PendingCronHistoryRequest
+    {
+        quint64 generation = 0;
+        int order = 0;
+    };
+    QMap<QString, PendingCronHistoryRequest> m_cronHistoryRequests;
+    QMap<int, QVariantList> m_cronHistoryParts;
+    quint64 m_cronHistoryGeneration = 0;
+    QString m_cronHistoryTaskSessionKey;
+    int m_cronHistoryPending = 0;
     struct PendingCronToolCall
     {
         QString toolName;

@@ -305,13 +305,17 @@ int WsScheduledTask::parseRunsResponse(const QJsonObject &payload)
         entry[QStringLiteral("error")] = r.value(QStringLiteral("error")).toString();
         entry[QStringLiteral("summary")] = r.value(QStringLiteral("summary")).toString();
         entry[QStringLiteral("durationMs")] = r.value(QStringLiteral("durationMs")).toInt(0);
+        entry[QStringLiteral("sessionId")] = r.value(QStringLiteral("sessionId")).toString();
+        entry[QStringLiteral("sessionKey")] = r.value(QStringLiteral("sessionKey")).toString();
 
         const auto tsMs = static_cast<qint64>(r.value(QStringLiteral("ts")).toDouble(0));
+        const auto runAtMs = static_cast<qint64>(
+            r.value(QStringLiteral("runAtMs")).toDouble(0));
+        entry[QStringLiteral("runAtMs")] = QVariant(static_cast<qlonglong>(runAtMs));
         if (tsMs > 0) {
             entry[QStringLiteral("startedAt")] = QDateTime::fromMSecsSinceEpoch(tsMs).toString(
                 Qt::ISODate);
         } else {
-            const auto runAtMs = static_cast<qint64>(r.value(QStringLiteral("runAtMs")).toDouble(0));
             if (runAtMs > 0)
                 entry[QStringLiteral("startedAt")] = QDateTime::fromMSecsSinceEpoch(runAtMs)
                                                          .toString(Qt::ISODate);

@@ -913,6 +913,44 @@ ApplicationWindow {
         return ""
     }
 
+    function openCronTaskConversation(jobId) {
+        var id = String(jobId || "").trim()
+        if (id.length === 0)
+            return
+
+        var suffix = ":cron:" + id
+        var sessionKey = ""
+        var sessions = wsClient.taskSessionList || []
+        for (var i = 0; i < sessions.length; ++i) {
+            var key = String(sessions[i].session_id || "")
+            if (key.length >= suffix.length
+                    && key.substring(key.length - suffix.length) === suffix) {
+                sessionKey = key
+                break
+            }
+        }
+
+        // cron.list normally has a matching local task session. Keep a
+        // deterministic fallback for the brief interval before that list is refreshed.
+        if (sessionKey.length === 0) {
+            var jobs = wsClient.cronJobs || []
+            for (var j = 0; j < jobs.length; ++j) {
+                if (String(jobs[j].id || "") !== id)
+                    continue
+                var agentId = String(jobs[j].agentId || "").trim()
+                if (agentId.length > 0)
+                    sessionKey = "agent:" + agentId + suffix
+                break
+            }
+        }
+
+        if (sessionKey.length === 0)
+            return
+        leftMidPanel.activeAgentId = window.agentIdFromSessionKey(sessionKey)
+        window.leftSelectedIndex = 6
+        wsClient.switchTaskSession(sessionKey)
+    }
+
     /// FileDialog.fileUrl → 本地路径（与定时任务工作目录选择逻辑一致）
     function localFilePathFromUrl(fileUrl) {
         var path = decodeURIComponent(fileUrl.toString().replace(/^file:\/{2,3}/, ""))
@@ -9902,7 +9940,10 @@ ApplicationWindow {
                                         id: historyHover
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        acceptedButtons: Qt.NoButton
+                                        acceptedButtons: Qt.LeftButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: window.openCronTaskConversation(
+                                                       historyRow.run.jobId)
                                     }
 
                                     Row {
@@ -9972,39 +10013,6 @@ ApplicationWindow {
                                                         return "#73000000"
                                                     }
                                                 }
-                                                }
-
-                                                Rectangle {
-                                                    visible: {
-                                                        var d = historyRow.run.deliveryStatus || ""
-                                                        return d !== "" && d !== "not-requested"
-                                                    }
-                                                    width: deliveryLabel.implicitWidth + 12
-                                                    height: 20
-                                                    radius: 4
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    color: {
-                                                        var d = historyRow.run.deliveryStatus || ""
-                                                        if (d === "delivered") return "#0F006BFF"
-                                                        return "#0A000000"
-                                                }
-                                                Label {
-                                                        id: deliveryLabel
-                                                        anchors.centerIn: parent
-                                                        text: {
-                                                            var d = historyRow.run.deliveryStatus || ""
-                                                            if (d === "delivered") return "已投递"
-                                                            if (d === "not-delivered") return "未投递"
-                                                            if (d === "unknown") return "投递未知"
-                                                            return d
-                                                        }
-                                                        font.pixelSize: 11
-                                                        color: {
-                                                            var d = historyRow.run.deliveryStatus || ""
-                                                            if (d === "delivered") return "#006BFF"
-                                                            return "#73000000"
-                                                        }
-                                                    }
                                                 }
 
                                                 Label {

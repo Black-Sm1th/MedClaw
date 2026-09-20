@@ -3811,6 +3811,124 @@ void GatewayClient::createCronTaskSessionLocal(
                        << "workspace=" << workspaceValue;
 }
 
+void GatewayClient::loadCronTaskConversationHistory(const QString &taskSessionKey)
+{
+    const QString key = taskSessionKey.trimmed();
+    const QString jobId = cronJobIdFromSessionKey(key);
+    if (key.isEmpty() || jobId.isEmpty()) {
+        loadChatHistory(key);
+        return;
+    }
+
+    const QString reqId = sendRequest(
+        QStringLiteral("cron.runs"), m_scheduledTask.buildRunsParams(jobId, 200));
+    PendingCronRunsRequest pending;
+    pending.taskSessionKey = key;
+    pending.generation = m_cronHistoryGeneration;
+    m_cronConversationRunsRequests.insert(reqId, pending);
+}
+
+void GatewayClient::startCronTaskHistoryMerge(const QString &taskSessionKey,
+                                               const QVariantList &runs)
+{
+    const QString taskKey = taskSessionKey.trimmed();
+    if (taskKey.isEmpty() || taskKey != m_currentTaskSessionKey
+        || taskKey != m_currentViewSessionKey) {
+        return;
+    }
+
+    const QString jobId = cronJobIdFromSessionKey(taskKey);
+    QVariantList orderedRuns;
+    QSet<QString> seenSessionKeys;
+    for (const QVariant &value : runs) {
+        const QVariantMap run = value.toMap();
+        if (run.value(QStringLiteral("jobId")).toString().trimmed() != jobId)
+            continue;
+
+        QString sessionKey = run.value(QStringLiteral("sessionKey")).toString().trimmed();
+        if (sessionKey.isEmpty()) {
+            const QString sessionId =
+                run.value(QStringLiteral("sessionId")).toString().trimmed();
+            if (!sessionId.isEmpty())
+                sessionKey = taskKey + QStringLiteral(":run:") + sessionId;
+        }
+        if (sessionKey.isEmpty() || seenSessionKeys.contains(sessionKey))
+            continue;
+
+        QVariantMap normalized = run;
+        normalized[QStringLiteral("sessionKey")] = sessionKey;
+        orderedRuns.append(normalized);
+        seenSessionKeys.insert(sessionKey);
+    }
+
+    std::sort(orderedRuns.begin(), orderedRuns.end(),
+              [](const QVariant &left, const QVariant &right) {
+                  const QVariantMap a = left.toMap();
+                  const QVariantMap b = right.toMap();
+                  const qint64 aTime = a.value(QStringLiteral("runAtMs")).toLongLong();
+                  const qint64 bTime = b.value(QStringLiteral("runAtMs")).toLongLong();
+                  if (aTime != bTime)
+                      return aTime < bTime;
+                  return a.value(QStringLiteral("startedAt")).toString()
+                      < b.value(QStringLiteral("startedAt")).toString();
+              });
+
+    if (orderedRuns.isEmpty()) {
+        loadChatHistory(taskKey);
+        return;
+    }
+
+    ++m_cronHistoryGeneration;
+    m_cronHistoryTaskSessionKey = taskKey;
+    m_cronHistoryParts.clear();
+    m_cronHistoryPending = orderedRuns.size();
+
+    for (int i = 0; i < orderedRuns.size(); ++i) {
+        const QString sessionKey = orderedRuns.at(i).toMap()
+                                       .value(QStringLiteral("sessionKey"))
+                                       .toString();
+        const QString reqId = sendRequest(
+            QStringLiteral("chat.history"),
+            m_session.buildChatHistoryParams(sessionKey, 500));
+        PendingCronHistoryRequest pending;
+        pending.generation = m_cronHistoryGeneration;
+        pending.order = i;
+        m_cronHistoryRequests.insert(reqId, pending);
+    }
+}
+
+bool GatewayClient::completeCronTaskHistoryPart(const QString &requestId,
+                                                const QVariantList &history)
+{
+    const auto it = m_cronHistoryRequests.find(requestId);
+    if (it == m_cronHistoryRequests.end())
+        return false;
+
+    const PendingCronHistoryRequest pending = it.value();
+    m_cronHistoryRequests.erase(it);
+    if (pending.generation != m_cronHistoryGeneration)
+        return true;
+
+    m_cronHistoryParts.insert(pending.order, history);
+    if (m_cronHistoryPending > 0)
+        --m_cronHistoryPending;
+    if (m_cronHistoryPending > 0)
+        return true;
+
+    if (m_cronHistoryTaskSessionKey != m_currentTaskSessionKey
+        || m_cronHistoryTaskSessionKey != m_currentViewSessionKey) {
+        return true;
+    }
+
+    QVariantList merged;
+    for (auto part = m_cronHistoryParts.cbegin();
+         part != m_cronHistoryParts.cend(); ++part) {
+        merged.append(part.value());
+    }
+    emit historyLoaded(merged);
+    return true;
+}
+
 void GatewayClient::rememberCronToolCall(const QString &toolName,
                                           const QString &toolArgs,
                                           const QString &toolCallId)
@@ -4951,6 +5069,15 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         m_sidebarTitleHistReqBatch.remove(id);
         m_sessionTitleHistReqSession.remove(id);
         m_sessionTitleHistReqBatch.remove(id);
+        const PendingCronRunsRequest failedCronRuns =
+            m_cronConversationRunsRequests.take(id);
+        if (!failedCronRuns.taskSessionKey.isEmpty()
+            && failedCronRuns.generation == m_cronHistoryGeneration
+            && failedCronRuns.taskSessionKey == m_currentTaskSessionKey
+            && failedCronRuns.taskSessionKey == m_currentViewSessionKey) {
+            loadChatHistory(failedCronRuns.taskSessionKey);
+        }
+        completeCronTaskHistoryPart(id, QVariantList());
         const QString failedChatSession = m_chatSendReqSession.take(id);
         if (!failedChatSession.isEmpty()) {
             setTaskSessionFailed(failedChatSession);
@@ -5370,6 +5497,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
 
+        if (completeCronTaskHistoryPart(id, history))
+            return;
+
         const QString sidebarAgent = m_sidebarTitleHistReqAgent.take(id);
         const quint64 reqBatch = m_sidebarTitleHistReqBatch.take(id);
         const QString titleSession = m_sessionTitleHistReqSession.take(id);
@@ -5514,6 +5644,12 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 v.toMap().value(QStringLiteral("jobId")).toString().trimmed();
             if (m_currentUserCronJobIds.contains(jobId))
                 ownedRuns.append(v);
+        }
+        const PendingCronRunsRequest cronRunsRequest =
+            m_cronConversationRunsRequests.take(id);
+        if (!cronRunsRequest.taskSessionKey.isEmpty()
+            && cronRunsRequest.generation == m_cronHistoryGeneration) {
+            startCronTaskHistoryMerge(cronRunsRequest.taskSessionKey, ownedRuns);
         }
         emit cronRunsLoaded(ownedRuns);
         return;
@@ -7104,6 +7240,10 @@ void GatewayClient::switchTaskSession(const QString &sessionKey)
     }
 
     const QString key = sessionKey.trimmed();
+    ++m_cronHistoryGeneration;
+    m_cronHistoryTaskSessionKey.clear();
+    m_cronHistoryParts.clear();
+    m_cronHistoryPending = 0;
     if (key.isEmpty()) {
         clearActiveAgentContext();
         return;
@@ -7125,11 +7265,16 @@ void GatewayClient::switchTaskSession(const QString &sessionKey)
     emit currentSessionChanged();
 
     getAgentIdentity(key);
+    const bool cronTaskRoot = key.contains(QStringLiteral(":cron:"))
+        && !key.contains(QStringLiteral(":run:"));
     const bool localCronPlaceholder = isLocalOnlyCronTaskSession(key);
-    if (localCronPlaceholder)
+    if (cronTaskRoot) {
+        loadCronTaskConversationHistory(key);
+    } else if (localCronPlaceholder) {
         emit historyLoaded(QVariantList());
-    else
+    } else {
         loadChatHistory(key);
+    }
     refreshSessions();
     if (localCronPlaceholder)
         patchSessionModel(QString());
