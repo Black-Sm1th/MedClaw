@@ -11,10 +11,44 @@ Item {
     property color borderColor: "#E6E7EB"
     property color textColor: "#D9000000"
     property int fontSize: 14
+    property int minimumHour: -1
+    property int minimumMinute: -1
 
     signal timeSelected(int hour, int minute)
 
     function pad(n) { return n < 10 ? "0" + n : "" + n }
+
+    function minimumTotalMinutes() {
+        if (minimumHour < 0 || minimumMinute < 0)
+            return -1
+        return minimumHour * 60 + minimumMinute
+    }
+
+    function isTimeEnabled(hour, minute) {
+        var minimum = minimumTotalMinutes()
+        return minimum < 0 || hour * 60 + minute >= minimum
+    }
+
+    function isHourEnabled(hour) {
+        var minimum = minimumTotalMinutes()
+        return minimum < 0 || hour * 60 + 59 >= minimum
+    }
+
+    function normalizeSelection() {
+        var minimum = minimumTotalMinutes()
+        var selected = root.selectedHour * 60 + root.selectedMinute
+        if (minimum < 0 || selected >= minimum)
+            return
+        root.selectedHour = root.minimumHour
+        root.selectedMinute = root.minimumMinute
+        if (popup.visible) {
+            hourList.currentIndex = root.selectedHour
+            minuteList.currentIndex = root.selectedMinute
+        }
+    }
+
+    onMinimumHourChanged: normalizeSelection()
+    onMinimumMinuteChanged: normalizeSelection()
 
     implicitWidth: 160
     implicitHeight: 40
@@ -84,7 +118,12 @@ Item {
         }
 
         y: calcY()
-        onAboutToShow: y = calcY()
+        onAboutToShow: {
+            root.normalizeSelection()
+            hourList.currentIndex = root.selectedHour
+            minuteList.currentIndex = root.selectedMinute
+            y = calcY()
+        }
 
         background: Rectangle {
             radius: 12
@@ -128,13 +167,14 @@ Item {
                     delegate: Item {
                         width: hourList.width
                         height: 32
+                        property bool timeEnabled: root.isHourEnabled(index)
 
                         Rectangle {
                             anchors.fill: parent
                             anchors.margins: 2
                             radius: 6
-                            color: hourList.currentIndex === index ? "#0A006BFF"
-                                 : hourItemMouse.containsMouse ? "#0A000000"
+                            color: timeEnabled && hourList.currentIndex === index ? "#0A006BFF"
+                                 : timeEnabled && hourItemMouse.containsMouse ? "#0A000000"
                                  : "transparent"
                         }
 
@@ -144,17 +184,23 @@ Item {
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.weight: hourList.currentIndex === index ? Font.DemiBold : Font.Normal
-                            color: hourList.currentIndex === index ? "#006BFF" : "#D9000000"
+                            color: !timeEnabled ? "#29000000"
+                                 : hourList.currentIndex === index ? "#006BFF" : "#D9000000"
                         }
 
                         MouseArea {
                             id: hourItemMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: timeEnabled
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
                                 hourList.currentIndex = index
                                 root.selectedHour = index
+                                if (!root.isTimeEnabled(index, root.selectedMinute)) {
+                                    root.selectedMinute = root.minimumMinute
+                                    minuteList.currentIndex = root.selectedMinute
+                                }
                             }
                         }
                     }
@@ -182,13 +228,14 @@ Item {
                     delegate: Item {
                         width: minuteList.width
                         height: 32
+                        property bool timeEnabled: root.isTimeEnabled(root.selectedHour, index)
 
                         Rectangle {
                             anchors.fill: parent
                             anchors.margins: 2
                             radius: 6
-                            color: minuteList.currentIndex === index ? "#0A006BFF"
-                                 : minItemMouse.containsMouse ? "#0A000000"
+                            color: timeEnabled && minuteList.currentIndex === index ? "#0A006BFF"
+                                 : timeEnabled && minItemMouse.containsMouse ? "#0A000000"
                                  : "transparent"
                         }
 
@@ -198,14 +245,16 @@ Item {
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.weight: minuteList.currentIndex === index ? Font.DemiBold : Font.Normal
-                            color: minuteList.currentIndex === index ? "#006BFF" : "#D9000000"
+                            color: !timeEnabled ? "#29000000"
+                                 : minuteList.currentIndex === index ? "#006BFF" : "#D9000000"
                         }
 
                         MouseArea {
                             id: minItemMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: timeEnabled
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
                                 minuteList.currentIndex = index
                                 root.selectedMinute = index
@@ -217,13 +266,16 @@ Item {
 
             Rectangle {
                 id: confirmBtn
+                property bool selectionEnabled: root.isTimeEnabled(hourList.currentIndex,
+                                                                    minuteList.currentIndex)
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 8
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: parent.width - 16
                 height: 32
                 radius: 6
-                color: confirmMouse.pressed ? "#005CE6"
+                color: !selectionEnabled ? "#D9DCE1"
+                     : confirmMouse.pressed ? "#005CE6"
                      : confirmMouse.containsMouse ? "#1A7AFF"
                      : "#006BFF"
 
@@ -241,7 +293,8 @@ Item {
                     id: confirmMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
+                    enabled: confirmBtn.selectionEnabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: {
                         root.selectedHour = hourList.currentIndex
                         root.selectedMinute = minuteList.currentIndex

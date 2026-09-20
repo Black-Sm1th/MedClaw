@@ -12439,12 +12439,53 @@ ApplicationWindow {
 
     Popup {
         id: newTaskDialog
+        property var schedulingNow: new Date()
+        readonly property var earliestOneTimeDate: {
+            var value = new Date(schedulingNow.getTime())
+            value.setSeconds(0, 0)
+            value.setMinutes(value.getMinutes() + 1)
+            return value
+        }
+        readonly property bool oneTimeRestrictionActive:
+            newTaskRepeatSelect.currentIndex === 0
+            && window.pendingCronTemplateExpr === ""
+
+        function isSameLocalDate(year, month, day, value) {
+            return year === value.getFullYear()
+                    && month === value.getMonth() + 1
+                    && day === value.getDate()
+        }
+
+        function ensureFutureOneTimeSelection() {
+            if (!oneTimeRestrictionActive)
+                return
+            var earliest = earliestOneTimeDate
+            var selected = new Date(newTaskDatePicker.selectedYear,
+                                    newTaskDatePicker.selectedMonth - 1,
+                                    newTaskDatePicker.selectedDay,
+                                    newTaskTimePicker.selectedHour,
+                                    newTaskTimePicker.selectedMinute, 0, 0)
+            if (selected.getTime() >= earliest.getTime())
+                return
+            newTaskDatePicker.selectedYear = earliest.getFullYear()
+            newTaskDatePicker.selectedMonth = earliest.getMonth() + 1
+            newTaskDatePicker.selectedDay = earliest.getDate()
+            newTaskTimePicker.selectedHour = earliest.getHours()
+            newTaskTimePicker.selectedMinute = earliest.getMinutes()
+        }
+
+        function refreshSchedulingNow() {
+            schedulingNow = new Date()
+            ensureFutureOneTimeSelection()
+        }
+
         anchors.centerIn: parent
         width: parent.width
         height: parent.height
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         padding: 0
+        onOpened: refreshSchedulingNow()
         onVisibleChanged: {
             if (!visible) {
                 window.editingCronJobId = ""
@@ -12456,6 +12497,13 @@ ApplicationWindow {
                 window.pendingCronTemplateTrigger = ""
                 newTaskWorkDirInput.text = ""
             }
+        }
+
+        Timer {
+            interval: 30000
+            repeat: true
+            running: newTaskDialog.visible
+            onTriggered: newTaskDialog.refreshSchedulingNow()
         }
 
         enter: Transition {
@@ -12597,12 +12645,17 @@ ApplicationWindow {
                                 onSelected: {
                                     window.pendingCronTemplateExpr = ""
                                     window.pendingCronTemplateTrigger = ""
+                                    Qt.callLater(function() {
+                                        newTaskDialog.refreshSchedulingNow()
+                                    })
                                 }
                             }
                             DatePicker {
                                 id: newTaskDatePicker
                                 width: (parent.width - 24) / 3
                                 height: 40
+                                minimumDate: newTaskDialog.oneTimeRestrictionActive
+                                             ? newTaskDialog.earliestOneTimeDate : null
                                 onDateSelected: {
                                     window.pendingCronTemplateExpr = ""
                                     window.pendingCronTemplateTrigger = ""
@@ -12612,6 +12665,17 @@ ApplicationWindow {
                                 id: newTaskTimePicker
                                 width: (parent.width - 24) / 3
                                 height: 40
+                                readonly property bool usesMinimumTime:
+                                    newTaskDialog.oneTimeRestrictionActive
+                                    && newTaskDialog.isSameLocalDate(
+                                        newTaskDatePicker.selectedYear,
+                                        newTaskDatePicker.selectedMonth,
+                                        newTaskDatePicker.selectedDay,
+                                        newTaskDialog.earliestOneTimeDate)
+                                minimumHour: usesMinimumTime
+                                             ? newTaskDialog.earliestOneTimeDate.getHours() : -1
+                                minimumMinute: usesMinimumTime
+                                               ? newTaskDialog.earliestOneTimeDate.getMinutes() : -1
                                 onTimeSelected: {
                                     window.pendingCronTemplateExpr = ""
                                     window.pendingCronTemplateTrigger = ""
@@ -12733,6 +12797,14 @@ ApplicationWindow {
                                         var ed = newTaskDatePicker.selectedDay
                                         schedExpr = ey + "-" + pad2(emo) + "-" + pad2(ed)
                                                   + "T" + pad2(ehh) + ":" + pad2(emm) + ":00"
+                                        var editedTrigger = new Date(ey, emo - 1, ed,
+                                                                     ehh, emm, 0, 0)
+                                        if (editedTrigger.getTime() <= Date.now()) {
+                                            errorToast.text = "执行时间必须晚于当前时间"
+                                            errorToast.visible = true
+                                            errorToastTimer.restart()
+                                            return
+                                        }
                                     } else if (repeatIdx === 1) {
                                         schedKind = 1
                                         schedExpr = emm + " " + ehh + " * * *"
@@ -12796,6 +12868,13 @@ ApplicationWindow {
                                                 window.pendingCronTemplateTz, 0, "", cronWorkspace)
                                 } else if (repeatIdx === 0) {
                                     var dt = y + "-" + pad(m) + "-" + pad(d) + "T" + pad(hh) + ":" + pad(mm) + ":00"
+                                    var oneTimeTrigger = new Date(y, m - 1, d, hh, mm, 0, 0)
+                                    if (oneTimeTrigger.getTime() <= Date.now()) {
+                                        errorToast.text = "执行时间必须晚于当前时间"
+                                        errorToast.visible = true
+                                        errorToastTimer.restart()
+                                        return
+                                    }
                                     console.log("[CronAdd] oneTime dateTime=" + dt)
                                     wsClient.prepareCronJobWithDedicatedAgent(3, title, prompt, "", "", 0, dt, cronWorkspace)
                                 } else if (repeatIdx === 1) {

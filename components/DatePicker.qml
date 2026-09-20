@@ -14,6 +14,7 @@ Item {
     property color placeholderColor: "#80000000"
     property string placeholder: "年/月/日"
     property int fontSize: 14
+    property var minimumDate: null
 
     signal dateSelected(int year, int month, int day)
 
@@ -81,6 +82,55 @@ Item {
         return d === 0 ? 7 : d
     }
 
+    function normalizedMinimumDate() {
+        if (!root.minimumDate)
+            return null
+        var value = new Date(root.minimumDate)
+        if (isNaN(value.getTime()))
+            return null
+        return new Date(value.getFullYear(), value.getMonth(), value.getDate())
+    }
+
+    function isDateEnabled(year, month, day) {
+        if (day <= 0)
+            return false
+        var minimum = normalizedMinimumDate()
+        if (!minimum)
+            return true
+        return new Date(year, month - 1, day).getTime() >= minimum.getTime()
+    }
+
+    function monthHasEnabledDate(year, month) {
+        var minimum = normalizedMinimumDate()
+        if (!minimum)
+            return true
+        var lastDay = new Date(year, month, 0)
+        return lastDay.getTime() >= minimum.getTime()
+    }
+
+    function ensureValidSelection() {
+        var minimum = normalizedMinimumDate()
+        if (!minimum || isDateEnabled(root.selectedYear, root.selectedMonth,
+                                      root.selectedDay))
+            return
+        root.selectedYear = minimum.getFullYear()
+        root.selectedMonth = minimum.getMonth() + 1
+        root.selectedDay = minimum.getDate()
+        if (popup.visible) {
+            root.viewYear = root.selectedYear
+            root.viewMonth = root.selectedMonth
+            dayGrid.model = buildDayModel()
+        }
+    }
+
+    function resetViewForPopup() {
+        ensureValidSelection()
+        root.viewYear = root.selectedYear
+        root.viewMonth = root.selectedMonth
+    }
+
+    onMinimumDateChanged: ensureValidSelection()
+
     function buildDayModel() {
         var list = []
         var total = daysInMonth(viewYear, viewMonth)
@@ -106,7 +156,11 @@ Item {
         }
 
         y: calcY()
-        onAboutToShow: y = calcY()
+        onAboutToShow: {
+            root.resetViewForPopup()
+            dayGrid.model = buildDayModel()
+            y = calcY()
+        }
 
         background: Rectangle {
             radius: 12
@@ -135,22 +189,40 @@ Item {
                     spacing: 4
 
                     Rectangle {
+                        property bool canNavigate: root.monthHasEnabledDate(root.viewYear - 1,
+                                                                            root.viewMonth)
                         width: 28; height: 28; radius: 6
-                        color: prevYearMouse.containsMouse ? "#0A000000" : "transparent"
-                        Text { anchors.centerIn: parent; text: "«"; font.pixelSize: 14; color: "#80000000" }
+                        color: canNavigate && prevYearMouse.containsMouse ? "#0A000000" : "transparent"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "«"
+                            font.pixelSize: 14
+                            color: parent.canNavigate ? "#80000000" : "#29000000"
+                        }
                         MouseArea {
                             id: prevYearMouse; anchors.fill: parent; hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: parent.canNavigate
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: { root.viewYear--; dayGrid.model = buildDayModel() }
                         }
                     }
                     Rectangle {
+                        property int targetYear: root.viewMonth === 1
+                                                 ? root.viewYear - 1 : root.viewYear
+                        property int targetMonth: root.viewMonth === 1 ? 12 : root.viewMonth - 1
+                        property bool canNavigate: root.monthHasEnabledDate(targetYear, targetMonth)
                         width: 28; height: 28; radius: 6
-                        color: prevMonthMouse.containsMouse ? "#0A000000" : "transparent"
-                        Text { anchors.centerIn: parent; text: "‹"; font.pixelSize: 16; color: "#80000000" }
+                        color: canNavigate && prevMonthMouse.containsMouse ? "#0A000000" : "transparent"
+                        Text {
+                            anchors.centerIn: parent
+                            text: "‹"
+                            font.pixelSize: 16
+                            color: parent.canNavigate ? "#80000000" : "#29000000"
+                        }
                         MouseArea {
                             id: prevMonthMouse; anchors.fill: parent; hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: parent.canNavigate
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
                                 if (root.viewMonth === 1) { root.viewMonth = 12; root.viewYear-- }
                                 else root.viewMonth--
@@ -236,6 +308,9 @@ Item {
                         width: dayGridContainer.width / 7
                         height: 32
 
+                        property bool dateEnabled: root.isDateEnabled(root.viewYear,
+                                                                      root.viewMonth,
+                                                                      modelData)
                         property bool isToday: modelData > 0
                             && root.viewYear === selectedYear
                             && root.viewMonth === selectedMonth
@@ -245,8 +320,8 @@ Item {
                             width: 28; height: 28
                             radius: 14
                             anchors.centerIn: parent
-                            color: isToday ? "#006BFF"
-                                 : dayMouse.containsMouse && modelData > 0 ? "#0A000000"
+                            color: isToday && dateEnabled ? "#006BFF"
+                                 : dayMouse.containsMouse && dateEnabled ? "#0A000000"
                                  : "transparent"
 
                             Behavior on color { ColorAnimation { duration: 100 } }
@@ -256,7 +331,8 @@ Item {
                                 text: modelData > 0 ? modelData : ""
                                 font.pixelSize: 13
                                 font.family: "Alibaba PuHuiTi 3.0"
-                                color: isToday ? "#FFFFFF" : "#D9000000"
+                                color: !dateEnabled ? "#29000000"
+                                     : isToday ? "#FFFFFF" : "#D9000000"
                             }
                         }
 
@@ -264,15 +340,14 @@ Item {
                             id: dayMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: modelData > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            enabled: dateEnabled
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
-                                if (modelData > 0) {
-                                    root.selectedYear = root.viewYear
-                                    root.selectedMonth = root.viewMonth
-                                    root.selectedDay = modelData
-                                    root.dateSelected(root.selectedYear, root.selectedMonth, root.selectedDay)
-                                    popup.close()
-                                }
+                                root.selectedYear = root.viewYear
+                                root.selectedMonth = root.viewMonth
+                                root.selectedDay = modelData
+                                root.dateSelected(root.selectedYear, root.selectedMonth, root.selectedDay)
+                                popup.close()
                             }
                         }
                     }
