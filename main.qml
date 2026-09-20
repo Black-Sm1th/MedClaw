@@ -9156,6 +9156,7 @@ ApplicationWindow {
                 id: scheduledTaskRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 1
+                property string searchText: ""
 
                 // 调度类型显示名映射
                 function scheduleDisplay(kind, expr) {
@@ -9174,6 +9175,22 @@ ApplicationWindow {
                     }
                     if (kind === "at") return "不重复"
                     return kind || "未知"
+                }
+
+                function filteredCronJobs() {
+                    var jobs = wsClient.cronJobs
+                    var query = searchText.trim().toLowerCase()
+                    if (!query)
+                        return jobs
+
+                    var result = []
+                    for (var i = 0; i < jobs.length; ++i) {
+                        var job = jobs[i]
+                        var name = (job.name || "").toLowerCase()
+                        if (name.indexOf(query) >= 0)
+                            result.push(job)
+                    }
+                    return result
                 }
 
                 Column{
@@ -9207,6 +9224,15 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 8
+                            SingleLineTextInput {
+                                id: scheduledTaskSearchInput
+                                inputWidth: 220
+                                inputHeight: 36
+                                icon: "qrc:/images/search.png"
+                                iconSize: 16
+                                placeholderText: qsTr("搜索定时任务...")
+                                onTextChanged: scheduledTaskRec.searchText = text
+                            }
                             CustomButton {
                                 width: 112
                                 height: 36
@@ -9453,7 +9479,7 @@ ApplicationWindow {
                             }
 
                             Repeater{
-                                model: wsClient.cronJobs
+                                model: scheduledTaskRec.filteredCronJobs()
                                 delegate: Rectangle {
                                     id: cronJobRow
                                     property var job: modelData
@@ -9808,6 +9834,19 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                            }
+
+                            Label {
+                                width: scheduledTaskScrollView.width - 120
+                                height: 76
+                                visible: wsClient.cronJobs.length > 0
+                                         && scheduledTaskRec.searchText.trim() !== ""
+                                         && scheduledTaskRec.filteredCronJobs().length === 0
+                                text: qsTr("未找到匹配的定时任务")
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 14
+                                color: "#73000000"
                             }
                         }
                     }
