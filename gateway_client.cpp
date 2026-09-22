@@ -189,6 +189,30 @@ QString agentWorkspaceSlug(QString name)
     return out.left(48);
 }
 
+const QString &defaultProjectColor()
+{
+    static const QString color = QStringLiteral("#73000000");
+    return color;
+}
+
+QString normalizeProjectColor(QString color)
+{
+    color = color.trimmed().toUpper();
+    const QStringList colors{
+        defaultProjectColor(),
+        QStringLiteral("#FF3D40"),
+        QStringLiteral("#FF8D2F"),
+        QStringLiteral("#56CA00"),
+        QStringLiteral("#16B1FF"),
+        QStringLiteral("#CA29FF")
+    };
+    for (const QString &allowed : colors) {
+        if (color == allowed)
+            return allowed;
+    }
+    return defaultProjectColor();
+}
+
 QVariantMap loadAgentIntro(const QString &agentId)
 {
     const QString id = agentId.trimmed();
@@ -1350,12 +1374,41 @@ bool GatewayClient::initTaskSessionDb()
             "project_id TEXT NOT NULL,"
             "title TEXT NOT NULL,"
             "workspace TEXT NOT NULL,"
+            "color TEXT NOT NULL DEFAULT '#73000000',"
+            "pinned INTEGER NOT NULL DEFAULT 0,"
             "created_at INTEGER NOT NULL,"
             "updated_at INTEGER NOT NULL,"
             "deleted_at INTEGER,"
             "PRIMARY KEY (user_id, project_id)"
             ")"))) {
         qWarning().noquote() << "[TaskSessionDb] create projects failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    bool projectsHasColor = false;
+    bool projectsHasPinned = false;
+    if (q.exec(QStringLiteral("PRAGMA table_info(projects)"))) {
+        while (q.next()) {
+            const QString columnName = q.value(1).toString();
+            if (columnName == QLatin1String("color"))
+                projectsHasColor = true;
+            else if (columnName == QLatin1String("pinned"))
+                projectsHasPinned = true;
+        }
+    }
+    if (!projectsHasColor
+        && !q.exec(QStringLiteral(
+            "ALTER TABLE projects "
+            "ADD COLUMN color TEXT NOT NULL DEFAULT '#73000000'"))) {
+        qWarning().noquote() << "[TaskSessionDb] add project color failed:"
+                             << q.lastError().text();
+        return false;
+    }
+    if (!projectsHasPinned
+        && !q.exec(QStringLiteral(
+            "ALTER TABLE projects "
+            "ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"))) {
+        qWarning().noquote() << "[TaskSessionDb] add project pinned failed:"
                              << q.lastError().text();
         return false;
     }
@@ -1768,9 +1821,9 @@ void GatewayClient::loadProjectListFromDb()
     QVariantList projects;
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
-        "SELECT project_id, title, workspace, created_at, updated_at "
+        "SELECT project_id, title, workspace, color, pinned, created_at, updated_at "
         "FROM projects WHERE user_id=? AND deleted_at IS NULL "
-        "ORDER BY updated_at DESC, created_at DESC"));
+        "ORDER BY pinned DESC, updated_at DESC, created_at DESC"));
     q.addBindValue(m_taskSessionUserId);
     if (!q.exec()) {
         qWarning().noquote() << "[TaskSessionDb] load projects failed:"
@@ -1784,10 +1837,12 @@ void GatewayClient::loadProjectListFromDb()
         project[QStringLiteral("project_id")] = projectId;
         project[QStringLiteral("title")] = q.value(1).toString();
         project[QStringLiteral("workspace")] = q.value(2).toString();
+        project[QStringLiteral("color")] = normalizeProjectColor(q.value(3).toString());
+        project[QStringLiteral("pinned")] = q.value(4).toBool();
         project[QStringLiteral("created_at")] =
-            QVariant(static_cast<qlonglong>(q.value(3).toLongLong()));
+            QVariant(static_cast<qlonglong>(q.value(5).toLongLong()));
         project[QStringLiteral("updated_at")] =
-            QVariant(static_cast<qlonglong>(q.value(4).toLongLong()));
+            QVariant(static_cast<qlonglong>(q.value(6).toLongLong()));
 
         QVariantList sessions;
         for (const QVariant &value : m_taskSessionList) {
@@ -1992,7 +2047,8 @@ void GatewayClient::setCurrentProjectIdInternal(const QString &projectId)
 }
 
 QString GatewayClient::createProject(const QString &title,
-                                     const QString &workspace)
+                                     const QString &workspace,
+                                     const QString &color)
 {
     const QString normalizedTitle = title.trimmed();
     if (m_taskSessionUserId.isEmpty()) {
@@ -2005,6 +2061,8 @@ QString GatewayClient::createProject(const QString &title,
     }
     if (!initTaskSessionDb())
         return QString();
+
+    const QString projectColor = normalizeProjectColor(color);
 
     const QString projectId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     QString projectWorkspace = workspace.trimmed();
@@ -2022,12 +2080,13 @@ QString GatewayClient::createProject(const QString &title,
     QSqlQuery q(m_taskSessionDb);
     q.prepare(QStringLiteral(
         "INSERT INTO projects "
-        "(user_id, project_id, title, workspace, created_at, updated_at, deleted_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, NULL)"));
+        "(user_id, project_id, title, workspace, color, created_at, updated_at, deleted_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, NULL)"));
     q.addBindValue(m_taskSessionUserId);
     q.addBindValue(projectId);
     q.addBindValue(normalizedTitle);
     q.addBindValue(projectWorkspace);
+    q.addBindValue(projectColor);
     q.addBindValue(QVariant(static_cast<qlonglong>(now)));
     q.addBindValue(QVariant(static_cast<qlonglong>(now)));
     if (!q.exec()) {
@@ -2039,6 +2098,78 @@ QString GatewayClient::createProject(const QString &title,
 
     loadProjectListFromDb();
     return projectId;
+}
+
+void GatewayClient::setProjectPinned(const QString &projectId, bool pinned)
+{
+    const QString id = projectId.trimmed();
+    if (id.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return;
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE projects SET pinned=? "
+        "WHERE user_id=? AND project_id=? AND deleted_at IS NULL"));
+    q.addBindValue(pinned ? 1 : 0);
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(id);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] set project pinned failed:"
+                             << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() > 0)
+        loadProjectListFromDb();
+}
+
+void GatewayClient::renameProject(const QString &projectId, const QString &title)
+{
+    const QString id = projectId.trimmed();
+    const QString normalizedTitle = title.trimmed();
+    if (id.isEmpty() || normalizedTitle.isEmpty()
+        || m_taskSessionUserId.isEmpty() || !initTaskSessionDb()) {
+        return;
+    }
+
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE projects SET title=? "
+        "WHERE user_id=? AND project_id=? AND deleted_at IS NULL"));
+    q.addBindValue(normalizedTitle);
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(id);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] rename project failed:"
+                             << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() > 0)
+        loadProjectListFromDb();
+}
+
+void GatewayClient::updateProjectColor(const QString &projectId, const QString &color)
+{
+    const QString id = projectId.trimmed();
+    if (id.isEmpty() || m_taskSessionUserId.isEmpty() || !initTaskSessionDb())
+        return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QSqlQuery q(m_taskSessionDb);
+    q.prepare(QStringLiteral(
+        "UPDATE projects SET color=?, updated_at=? "
+        "WHERE user_id=? AND project_id=? AND deleted_at IS NULL"));
+    q.addBindValue(normalizeProjectColor(color));
+    q.addBindValue(QVariant(static_cast<qlonglong>(now)));
+    q.addBindValue(m_taskSessionUserId);
+    q.addBindValue(id);
+    if (!q.exec()) {
+        qWarning().noquote() << "[TaskSessionDb] update project color failed:"
+                             << q.lastError().text();
+        emit errorOccurred(QStringLiteral("项目颜色修改失败"));
+        return;
+    }
+
+    loadProjectListFromDb();
 }
 
 void GatewayClient::deleteProject(const QString &projectId)

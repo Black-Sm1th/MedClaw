@@ -301,7 +301,15 @@ public:
     /// 在系统文件管理器中打开任务会话的工作空间。
     Q_INVOKABLE bool openTaskSessionFolder(const QString &sessionKey) const;
     /// 创建项目；workspace 为空时在默认项目目录中创建独立工作空间。
-    Q_INVOKABLE QString createProject(const QString &title, const QString &workspace = QString());
+    Q_INVOKABLE QString createProject(const QString &title,
+                                      const QString &workspace = QString(),
+                                      const QString &color = QString());
+    /// 更新项目的置顶状态。
+    Q_INVOKABLE void setProjectPinned(const QString &projectId, bool pinned);
+    /// 更新项目名称。
+    Q_INVOKABLE void renameProject(const QString &projectId, const QString &title);
+    /// 更新项目图标颜色。
+    Q_INVOKABLE void updateProjectColor(const QString &projectId, const QString &color);
     /// 软删除项目及其本地会话记录，不删除磁盘中的项目文件。
     Q_INVOKABLE void deleteProject(const QString &projectId);
     Q_INVOKABLE bool openProjectFolder(const QString &projectId) const;

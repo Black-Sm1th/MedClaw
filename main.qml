@@ -570,7 +570,20 @@ ApplicationWindow {
     property string pendingProjectId: ""
     property string pendingProjectTitle: ""
     property string pendingProjectWorkspace: ""
+    property string pendingProjectColor: "#73000000"
+    property bool pendingProjectPinned: false
     property string newProjectWorkspace: ""
+    property string newProjectColor: "#73000000"
+    readonly property var projectColors: [
+        "#73000000", "#FF3D40", "#FF8D2F",
+        "#56CA00", "#16B1FF", "#CA29FF"
+    ]
+
+    function normalizedProjectColor(value) {
+        var color = String(value || "").toUpperCase()
+        return window.projectColors.indexOf(color) >= 0
+                ? color : window.projectColors[0]
+    }
     property string pendingDeleteAgentId: ""
     property string pendingDeleteAgentName: ""
     property int agentManageTabIndex: 0
@@ -2418,6 +2431,7 @@ ApplicationWindow {
                                 onClicked: {
                                     projectNameInput.text = ""
                                     window.newProjectWorkspace = ""
+                                    window.newProjectColor = window.projectColors[0]
                                     createProjectPopup.open()
                                     projectNameInput.forceActiveFocus()
                                 }
@@ -2464,6 +2478,7 @@ ApplicationWindow {
                             onNewProjectRequested: {
                                 projectNameInput.text = ""
                                 window.newProjectWorkspace = ""
+                                window.newProjectColor = window.projectColors[0]
                                 createProjectPopup.open()
                                 projectNameInput.forceActiveFocus()
                             }
@@ -2476,10 +2491,13 @@ ApplicationWindow {
                                 wsClient.beginProjectChat(projectId)
                                 window.leftSelectedIndex = 0
                             }
-                            onMoreRequested: function(projectId, title, workspace, sceneX, sceneY) {
+                            onMoreRequested: function(projectId, title, workspace, color, pinned,
+                                                       sceneX, sceneY) {
                                 window.pendingProjectId = projectId
                                 window.pendingProjectTitle = title
                                 window.pendingProjectWorkspace = workspace
+                                window.pendingProjectColor = window.normalizedProjectColor(color)
+                                window.pendingProjectPinned = !!pinned
                                 projectContextMenu.x = Math.min(sceneX,
                                                                 window.width - projectContextMenu.width - 4)
                                 projectContextMenu.y = Math.min(sceneY,
@@ -12956,6 +12974,45 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 6
+                color: pinProjectMouse.containsMouse ? "#0A000000" : "transparent"
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    height: parent.height
+                    spacing: 8
+                    Image {
+                        width: 16
+                        height: 16
+                        source: "qrc:/images/pin.png"
+                        anchors.verticalCenter: parent.verticalCenter
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        text: window.pendingProjectPinned ? qsTr("取消置顶") : qsTr("置顶")
+                        font.pixelSize: 14
+                        color: "#D9000000"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+                MouseArea {
+                    id: pinProjectMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        var id = window.pendingProjectId
+                        var wasPinned = window.pendingProjectPinned
+                        projectContextMenu.close()
+                        if (id)
+                            wsClient.setProjectPinned(id, !wasPinned)
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 36
+                radius: 6
                 color: openProjectFolderMouse.containsMouse ? "#0A000000" : "transparent"
                 Row {
                     anchors.left: parent.left
@@ -12975,6 +13032,97 @@ ApplicationWindow {
                         projectContextMenu.close()
                         if (id)
                             wsClient.openProjectFolder(id)
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                height: 36
+                radius: 6
+                color: renameProjectMenuMouse.containsMouse ? "#0A000000" : "transparent"
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    height: parent.height
+                    spacing: 8
+                    Image {
+                        width: 16
+                        height: 16
+                        source: "qrc:/images/edit.png"
+                        anchors.verticalCenter: parent.verticalCenter
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        text: qsTr("重命名")
+                        font.pixelSize: 14
+                        color: "#D9000000"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+                MouseArea {
+                    id: renameProjectMenuMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        projectContextMenu.close()
+                        if (window.pendingProjectId)
+                            renameProjectPopup.open()
+                    }
+                }
+            }
+
+            Rectangle {
+                id: modifyProjectColorMenu
+                width: parent.width
+                height: 36
+                radius: 6
+                color: modifyProjectColorMouse.containsMouse ? "#0A000000" : "transparent"
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.right: modifyProjectColorArrow.left
+                    anchors.rightMargin: 4
+                    height: parent.height
+                    spacing: 8
+
+                    Image {
+                        width: 16
+                        height: 16
+                        source: "qrc:/images/folder.png"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Label {
+                        text: qsTr("修改颜色")
+                        font.pixelSize: 14
+                        color: "#D9000000"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+                Label {
+                    id: modifyProjectColorArrow
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "\u203a"
+                    font.pixelSize: 20
+                    color: "#73000000"
+                }
+                MouseArea {
+                    id: modifyProjectColorMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        var point = modifyProjectColorMenu.mapToItem(
+                                    window.contentItem,
+                                    modifyProjectColorMenu.width + 4, 0)
+                        projectColorPopup.x = Math.min(point.x,
+                                                       window.width - projectColorPopup.width - 4)
+                        projectColorPopup.y = Math.min(point.y,
+                                                       window.height - projectColorPopup.height - 4)
+                        projectColorPopup.open()
                     }
                 }
             }
@@ -13008,6 +13156,133 @@ ApplicationWindow {
     }
 
     Popup {
+        id: projectColorPopup
+        parent: window.contentItem
+        padding: 8
+        width: 226
+        height: 52
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#E6E7EB"
+            border.width: 1
+        }
+        contentItem: Row {
+            anchors.centerIn: parent
+            spacing: 6
+            Repeater {
+                model: window.projectColors
+                delegate: Rectangle {
+                    width: 30
+                    height: 30
+                    radius: 4
+                    color: modelData
+                    border.width: 2
+                    border.color: window.pendingProjectColor === modelData
+                                         ? "#006BFF" : "transparent"
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            window.pendingProjectColor = modelData
+                            wsClient.updateProjectColor(window.pendingProjectId, modelData)
+                            projectColorPopup.close()
+                            projectContextMenu.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: renameProjectPopup
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: Math.min(380, window.width - 48)
+        padding: 20
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: {
+            renameProjectInput.text = window.pendingProjectTitle
+            renameProjectInput.forceActiveFocus()
+            renameProjectInput.selectAll()
+        }
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.color: "#14000000"
+            border.width: 1
+        }
+        contentItem: Column {
+            width: parent.width
+            spacing: 16
+
+            Label {
+                text: qsTr("重命名项目")
+                font.pixelSize: 18
+                font.bold: true
+                color: "#D9000000"
+            }
+            TextField {
+                id: renameProjectInput
+                width: parent.width
+                height: 40
+                font.pixelSize: 14
+                selectByMouse: true
+                maximumLength: 200
+                verticalAlignment: Text.AlignVCenter
+                topPadding: 0
+                bottomPadding: 0
+                leftPadding: 10
+                rightPadding: 10
+                background: Rectangle {
+                    radius: 6
+                    color: "#FFFFFF"
+                    border.width: 1
+                    border.color: renameProjectInput.activeFocus ? "#006BFF" : "#D9DCE1"
+                }
+                onAccepted: renameProjectButton.clicked()
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 10
+                layoutDirection: Qt.RightToLeft
+                CustomButton {
+                    id: renameProjectButton
+                    width: 88
+                    height: 36
+                    text: qsTr("保存")
+                    fontSize: 14
+                    backgroundColor: "#006BFF"
+                    textColor: "#FFFFFF"
+                    enabled: renameProjectInput.text.trim().length > 0
+                    onClicked: {
+                        wsClient.renameProject(window.pendingProjectId,
+                                               renameProjectInput.text)
+                        renameProjectPopup.close()
+                    }
+                }
+                CustomButton {
+                    width: 88
+                    height: 36
+                    text: qsTr("取消")
+                    fontSize: 14
+                    backgroundColor: "#F7F9FA"
+                    textColor: "#A6000000"
+                    borderColor: "#E6E7EB"
+                    borderWidth: 1
+                    onClicked: renameProjectPopup.close()
+                }
+            }
+        }
+    }
+
+    Popup {
         id: createProjectPopup
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
@@ -13020,6 +13295,7 @@ ApplicationWindow {
         onClosed: {
             projectNameInput.text = ""
             window.newProjectWorkspace = ""
+            window.newProjectColor = window.projectColors[0]
         }
         background: Rectangle {
             radius: 8
@@ -13059,6 +13335,32 @@ ApplicationWindow {
                         border.color: projectNameInput.activeFocus ? "#006BFF" : "#D9DCE1"
                     }
                     onAccepted: createProjectButton.clicked()
+                }
+            }
+            Column {
+                width: parent.width
+                spacing: 6
+                Label { text: qsTr("项目颜色"); font.pixelSize: 13; color: "#A6000000" }
+                Row {
+                    spacing: 8
+                    Repeater {
+                        model: window.projectColors
+                        delegate: Rectangle {
+                            width: 30
+                            height: 30
+                            radius: 4
+                            color: modelData
+                            border.width: 2
+                            border.color: window.newProjectColor === modelData
+                                                 ? "#006BFF" : "transparent"
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: window.newProjectColor = modelData
+                            }
+                        }
+                    }
                 }
             }
             Column {
@@ -13122,7 +13424,8 @@ ApplicationWindow {
                     enabled: projectNameInput.text.trim().length > 0
                     onClicked: {
                         var projectId = wsClient.createProject(
-                                    projectNameInput.text, window.newProjectWorkspace)
+                                    projectNameInput.text, window.newProjectWorkspace,
+                                    window.newProjectColor)
                         if (projectId)
                             createProjectPopup.close()
                     }
@@ -13161,6 +13464,8 @@ ApplicationWindow {
             window.pendingProjectId = ""
             window.pendingProjectTitle = ""
             window.pendingProjectWorkspace = ""
+            window.pendingProjectColor = window.projectColors[0]
+            window.pendingProjectPinned = false
         }
         background: Rectangle {
             radius: 8

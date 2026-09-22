@@ -9,7 +9,8 @@ Item {
     property var sessionTitleFormatter: null
     signal newProjectRequested()
     signal newChatRequested(string projectId)
-    signal moreRequested(string projectId, string title, string workspace,
+    signal moreRequested(string projectId, string title, string workspace, string color,
+                         bool pinned,
                          real sceneX, real sceneY)
     signal sessionRequested(string sessionId)
     signal sessionMoreRequested(string sessionId, string title, string workspace,
@@ -22,6 +23,18 @@ Item {
             return String(root.sessionTitleFormatter(session) || "")
         var title = String((session && session.title) || "").trim()
         return title.length > 0 ? title : qsTr("新对话")
+    }
+
+    function projectIconSource(color) {
+        var sources = {
+            "#FF3D40": "qrc:/images/project-red.png",
+            "#FF8D2F": "qrc:/images/project-orange.png",
+            "#56CA00": "qrc:/images/project-green.png",
+            "#16B1FF": "qrc:/images/project-blue.png",
+            "#CA29FF": "qrc:/images/project-purple.png"
+        }
+        return sources[String(color || "").toUpperCase()]
+                || "qrc:/images/project-grey.png"
     }
 
     Column {
@@ -75,6 +88,7 @@ Item {
                 width: contentColumn.width
                 height: projectRow.height + (expanded ? sessionColumn.implicitHeight : 0)
                 property bool expanded: true
+                property bool pinned: modelData.pinned || false
                 property var projectSessions: modelData.sessions || []
                 property bool hovered: projectMouse.containsMouse
                                        || moreMouse.containsMouse
@@ -85,7 +99,11 @@ Item {
                     width: parent.width
                     height: 36
                     radius: 7
-                    color: projectDelegate.hovered ? "#0A000000" : "transparent"
+                    color: {
+                        if (projectDelegate.hovered)
+                            return projectDelegate.pinned ? "#E2E5E9" : "#0A000000"
+                        return projectDelegate.pinned ? "#ECEEF1" : "transparent"
+                    }
 
                     Label {
                         id: disclosure
@@ -101,8 +119,8 @@ Item {
 
                     Label {
                         id: projectTitleLabel
-                        anchors.left: disclosure.right
-                        anchors.leftMargin: 8
+                        anchors.left: projectIcon.right
+                        anchors.leftMargin: 4
                         anchors.right: projectActions.visible ? projectActions.left : parent.right
                         anchors.rightMargin: 4
                         anchors.verticalCenter: parent.verticalCenter
@@ -131,6 +149,16 @@ Item {
                                 wrapMode: Text.Wrap
                             }
                         }
+                    }
+
+                    Image {
+                        id: projectIcon
+                        anchors.left: disclosure.right
+                        anchors.leftMargin: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16
+                        height: 16
+                        source: root.projectIconSource(modelData.color)
                     }
 
                     Row {
@@ -163,6 +191,8 @@ Item {
                                     root.moreRequested(String(modelData.project_id || ""),
                                                        String(modelData.title || ""),
                                                        String(modelData.workspace || ""),
+                                                       String(modelData.color || "#73000000"),
+                                                       modelData.pinned || false,
                                                        point.x, point.y)
                                 }
                             }

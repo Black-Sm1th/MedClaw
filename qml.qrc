@@ -268,5 +268,11 @@
         <file>images/user/yearly.png</file>
         <file>images/login/loginShortcut3-sp.png</file>
         <file>images/login/loginShortcut6-sp.png</file>
+        <file>images/project-blue.png</file>
+        <file>images/project-green.png</file>
+        <file>images/project-grey.png</file>
+        <file>images/project-orange.png</file>
+        <file>images/project-purple.png</file>
+        <file>images/project-red.png</file>
     </qresource>
 </RCC>
