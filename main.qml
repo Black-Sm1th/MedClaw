@@ -70,7 +70,6 @@ ApplicationWindow {
     property string pendingCronTemplateExpr: ""
     property string pendingCronTemplateTz: "Asia/Shanghai"
     property string pendingCronTemplateTrigger: ""
-    readonly property string accountWebsiteUrl: "https://www.aethermind.cn/aether/#/profile"
     readonly property string governmentAnnotationInstruction:
         "\n\n【批注】正文完成后通读全文，动态生成分类批注（不设固定类别），交付两份 .docx：①干净正文版；②标注版＝在正文上挂 Word 原生批注（锚定到对应段落，显示在审阅窗格）。不要 HTML、不要批注清单、不要图例。\n\n每条批注两段：第一段 【类别】（加粗、彩色、14pt）；第二段正文（同色、加粗、11pt，先指问题再依据/建议）。\n\n配色用色相环等分：统计类别数 N，第 i 类取 HSL(round(i×360/N),70%,45%)，同类同色、异类色相均分，禁止落入同一色相族。"
 
@@ -226,7 +225,7 @@ ApplicationWindow {
     }
 
     function accountOpenWebsite() {
-        Qt.openUrlExternally(accountWebsiteUrl)
+        authController.requestWebLogin()
     }
 
     function openAccountPopup() {
@@ -1813,6 +1812,14 @@ ApplicationWindow {
     }
     Connections {
         target: authController
+        function onWebLoginUrlReady(url) {
+            Qt.openUrlExternally(url)
+        }
+        function onWebLoginFailed(message) {
+            errorToast.text = message || qsTr("官网登录失败，请稍后重试")
+            errorToast.visible = true
+            errorToastTimer.restart()
+        }
         function onUserChanged() {
             if (!authController.loggedIn)
                 return

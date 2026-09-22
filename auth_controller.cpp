@@ -51,6 +51,7 @@ bool isSecretJsonKey(const QString &key)
 {
     const QString normalized = key.toLower();
     return normalized.contains(QStringLiteral("token"))
+           || normalized.contains(QStringLiteral("ticket"))
            || normalized == QStringLiteral("apikey")
            || normalized == QStringLiteral("api_key")
            || normalized == QStringLiteral("authorization");
@@ -623,6 +624,58 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
             if (!wasLoggedIn)
                 emit loggedInChanged();
         });
+        reply->deleteLater();
+    });
+}
+
+void AuthController::requestWebLogin()
+{
+    if (m_webLoginRequestInFlight)
+        return;
+    if (!m_loggedIn || m_accessToken.isEmpty()) {
+        emit webLoginFailed(QStringLiteral("当前登录状态无效，请重新登录"));
+        return;
+    }
+
+    m_webLoginRequestInFlight = true;
+    const QString token = m_accessToken;
+    QNetworkRequest request(
+        QUrl(QString::fromLatin1(kProductionApiBaseUrl)
+             + QStringLiteral("/api/auth/web-login-ticket")));
+    disableHttp2(request);
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+    request.setRawHeader("Accept", "application/json");
+    logApiRequest("POST", request);
+    QNetworkReply *reply = m_network->post(request, QByteArray());
+    connect(reply, &QNetworkReply::finished, this, [this, reply, token]() {
+        m_webLoginRequestInFlight = false;
+        const QByteArray raw = reply->readAll();
+        logApiResponse(reply, raw);
+
+        if (token != m_accessToken) {
+            reply->deleteLater();
+            return;
+        }
+
+        QJsonParseError parseError;
+        const QJsonDocument document = QJsonDocument::fromJson(raw, &parseError);
+        const QJsonObject body = document.isObject() ? document.object() : QJsonObject();
+        const QJsonObject wrappedData = body.value(QStringLiteral("data")).toObject();
+        const QJsonObject data = wrappedData.isEmpty() ? body : wrappedData;
+        const QString ticket = data.value(QStringLiteral("ticket")).toString().trimmed();
+        if (reply->error() != QNetworkReply::NoError || ticket.isEmpty()) {
+            const QString fallback = reply->errorString().isEmpty()
+                                         ? QStringLiteral("官网登录凭证获取失败，请稍后重试")
+                                         : reply->errorString();
+            emit webLoginFailed(responseMessage(body, fallback));
+            reply->deleteLater();
+            return;
+        }
+
+        const QByteArray callback
+            = QByteArrayLiteral("https://www.aethermind.cn/aether/#/auth/callback?login_ticket=")
+              + QUrl::toPercentEncoding(ticket);
+        emit webLoginUrlReady(QUrl::fromEncoded(callback).toString(QUrl::FullyEncoded));
         reply->deleteLater();
     });
 }

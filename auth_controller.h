@@ -40,6 +40,7 @@ public:
 
     Q_INVOKABLE void sendSmsCode(const QString &phone);
     Q_INVOKABLE void loginWithPhone(const QString &phone, const QString &smsCode);
+    Q_INVOKABLE void requestWebLogin();
     Q_INVOKABLE void refreshCredits();
     Q_INVOKABLE void logout();
     Q_INVOKABLE void clearError();
@@ -53,6 +54,8 @@ signals:
     void creditDetailsChanged();
     void modelConfigReadyChanged();
     void smsCodeSent();
+    void webLoginUrlReady(const QString &url);
+    void webLoginFailed(const QString &message);
 
 private:
     void setBusy(bool busy);
@@ -76,6 +79,7 @@ private:
     bool m_creditPreviewMode = false;
     bool m_modelConfigReady = false;
     bool m_creditsRefreshInFlight = false;
+    bool m_webLoginRequestInFlight = false;
     quint64 m_modelConfigGeneration = 0;
     QTimer m_creditsRefreshTimer;
 };
