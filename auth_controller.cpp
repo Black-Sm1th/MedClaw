@@ -52,6 +52,7 @@ bool isSecretJsonKey(const QString &key)
     const QString normalized = key.toLower();
     return normalized.contains(QStringLiteral("token"))
            || normalized.contains(QStringLiteral("ticket"))
+           || normalized.contains(QStringLiteral("password"))
            || normalized == QStringLiteral("apikey")
            || normalized == QStringLiteral("api_key")
            || normalized == QStringLiteral("authorization");
@@ -414,6 +415,14 @@ QString AuthController::apiBaseUrl() const
 {
     return m_apiBaseUrl;
 }
+bool AuthController::enterpriseCredentialLoginEnabled() const
+{
+#ifdef MEDCLAW_EDITION_GOVERNMENT
+    return m_apiBaseUrl == QString::fromLatin1(kTestApiBaseUrl);
+#else
+    return false;
+#endif
+}
 QString AuthController::creditsBalance() const
 {
     return m_creditsBalance;
@@ -628,6 +637,93 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
     });
 }
 
+void AuthController::loginWithCredentials(const QString &username, const QString &password)
+{
+    const QString normalizedUsername = username.trimmed();
+    if (normalizedUsername.isEmpty()) {
+        setErrorMessage(QStringLiteral("请输入账号"));
+        return;
+    }
+    if (password.isEmpty()) {
+        setErrorMessage(QStringLiteral("请输入密码"));
+        return;
+    }
+
+    setBusy(true);
+    clearError();
+    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/enterprise/auth/agent-login")));
+    disableHttp2(request);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QJsonObject payload;
+    payload.insert(QStringLiteral("username"), normalizedUsername);
+    payload.insert(QStringLiteral("password"), password);
+    const QByteArray requestBody = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    logApiRequest("POST", request, requestBody);
+    QNetworkReply *reply = m_network->post(request, requestBody);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, normalizedUsername]() {
+        const QByteArray raw = reply->readAll();
+        logApiResponse(reply, raw);
+        const QJsonDocument document = QJsonDocument::fromJson(raw);
+        const QJsonObject body = document.isObject() ? document.object() : QJsonObject();
+        QString accessToken = body.value(QStringLiteral("stable_token")).toString().trimmed();
+        if (accessToken.isEmpty())
+            accessToken = body.value(QStringLiteral("access_token")).toString().trimmed();
+        if (accessToken.isEmpty())
+            accessToken = body.value(QStringLiteral("accessToken")).toString().trimmed();
+        const bool ok = reply->error() == QNetworkReply::NoError && !accessToken.isEmpty();
+        if (!ok) {
+            setBusy(false);
+            setErrorMessage(responseMessage(body,
+                                            reply->errorString().isEmpty()
+                                                ? QStringLiteral("登录失败，请检查账号和密码")
+                                                : reply->errorString()));
+            reply->deleteLater();
+            return;
+        }
+
+        m_accessToken = accessToken;
+        m_refreshToken = body.value(QStringLiteral("refresh_token")).toString();
+        if (m_refreshToken.isEmpty())
+            m_refreshToken = body.value(QStringLiteral("refreshToken")).toString();
+        m_phone = body.value(QStringLiteral("username")).toString().trimmed();
+        if (m_phone.isEmpty())
+            m_phone = normalizedUsername;
+        m_userId = userIdFromLoginData(body, m_phone);
+        const QString credits = body.value(QStringLiteral("credits_balance")).toString();
+        if (m_creditsBalance != credits) {
+            m_creditsBalance = credits;
+            emit creditsBalanceChanged();
+        }
+        QSettings settings;
+        settings.setValue(QStringLiteral("auth/accessToken"), m_accessToken);
+        settings.setValue(QStringLiteral("auth/refreshToken"), m_refreshToken);
+        settings.setValue(QStringLiteral("auth/userId"), m_userId);
+        settings.setValue(QStringLiteral("auth/phone"), m_phone);
+        settings.setValue(QStringLiteral("auth/creditsBalance"), m_creditsBalance);
+        m_modelConfigReady = false;
+        emit modelConfigReadyChanged();
+        fetchAndApplyModelConfig(m_accessToken, [this](bool configOk, const QString &message) {
+            setBusy(false);
+            if (!configOk) {
+                setErrorMessage(message);
+                const bool wasLoggedIn = m_loggedIn;
+                m_loggedIn = false;
+                if (wasLoggedIn)
+                    emit loggedInChanged();
+                return;
+            }
+            refreshCredits();
+            m_creditsRefreshTimer.start();
+            const bool wasLoggedIn = m_loggedIn;
+            m_loggedIn = true;
+            emit userChanged();
+            if (!wasLoggedIn)
+                emit loggedInChanged();
+        });
+        reply->deleteLater();
+    });
+}
+
 void AuthController::requestWebLogin()
 {
     if (m_webLoginRequestInFlight)
@@ -639,9 +735,7 @@ void AuthController::requestWebLogin()
 
     m_webLoginRequestInFlight = true;
     const QString token = m_accessToken;
-    QNetworkRequest request(
-        QUrl(QString::fromLatin1(kProductionApiBaseUrl)
-             + QStringLiteral("/api/auth/web-login-ticket")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/web-login-ticket")));
     disableHttp2(request);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
     request.setRawHeader("Accept", "application/json");
@@ -673,7 +767,7 @@ void AuthController::requestWebLogin()
         }
 
         const QByteArray callback
-            = QByteArrayLiteral("https://www.aethermind.cn/aether/#/auth/callback?login_ticket=")
+            = m_apiBaseUrl.toUtf8() + QByteArrayLiteral("/#/auth/callback?login_ticket=")
               + QUrl::toPercentEncoding(ticket);
         emit webLoginUrlReady(QUrl::fromEncoded(callback).toString(QUrl::FullyEncoded));
         reply->deleteLater();

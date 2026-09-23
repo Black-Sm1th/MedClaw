@@ -12,6 +12,8 @@ Item {
     readonly property real contentWidth: Math.min(709, Math.max(280, width - 48))
     readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
     readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
+    readonly property bool useEnterpriseCredentials: governmentEdition
+                                                     && authController.enterpriseCredentialLoginEnabled
     readonly property string welcomeTitle: governmentEdition
                                          ? qsTr("你好，欢迎来到 政务智能体")
                                          : qsTr("你好，欢迎来到 汇小智 Aether study")
@@ -21,7 +23,12 @@ Item {
                                              "loginShortcut4.png", "loginShortcut5.png", "loginShortcut6.png"]
 
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
-    function submitLogin() { authController.loginWithPhone(phoneInput.text, codeInput.text) }
+    function submitLogin() {
+        if (loginPage.useEnterpriseCredentials)
+            authController.loginWithCredentials(usernameInput.text, passwordInput.text)
+        else
+            authController.loginWithPhone(phoneInput.text, codeInput.text)
+    }
 
     Rectangle { anchors.fill: parent; color: "#FFFFFF" }
     MouseArea {
@@ -143,7 +150,7 @@ Item {
         }
         Item { width: 1; height: 68; visible: !loginPage.showPhoneForm }
         Column {
-            width: parent.width; spacing: 24; visible: loginPage.showPhoneForm; height: visible ? implicitHeight : 0
+            width: parent.width; spacing: 24; visible: loginPage.showPhoneForm && !loginPage.useEnterpriseCredentials; height: visible ? implicitHeight : 0
             Rectangle {
                 width: loginPage.formWidth; height: 56; radius: 7; color: "#F7F8FA"
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -230,6 +237,39 @@ Item {
                 }
             }
         }
+        Column {
+            width: parent.width; spacing: 16; visible: loginPage.showPhoneForm && loginPage.useEnterpriseCredentials; height: visible ? implicitHeight : 0
+            SingleLineTextInput {
+                id: usernameInput
+                anchors.horizontalCenter: parent.horizontalCenter
+                inputWidth: loginPage.formWidth
+                inputHeight: 56
+                backgroundColor: "#F7F8FA"
+                borderWidth: 0
+                inputRadius: 7
+                fontSize: 16
+                textColor: "#262626"
+                placeholderColor: "#BFBFBF"
+                placeholderText: "请输入账号"
+                onTextChanged: authController.clearError()
+            }
+            SingleLineTextInput {
+                id: passwordInput
+                anchors.horizontalCenter: parent.horizontalCenter
+                inputWidth: loginPage.formWidth
+                inputHeight: 56
+                backgroundColor: "#F7F8FA"
+                borderWidth: 0
+                inputRadius: 7
+                fontSize: 16
+                textColor: "#262626"
+                placeholderColor: "#BFBFBF"
+                placeholderText: "请输入密码"
+                echoMode: TextInput.Password
+                onAccepted: loginPage.submitLogin()
+                onTextChanged: authController.clearError()
+            }
+        }
         Item { width: 1; height: 24; visible: loginPage.showPhoneForm}
         CustomButton {
             buttonWidth: loginPage.showPhoneForm ? loginPage.formWidth : Math.min(240, loginPage.contentWidth)
@@ -248,7 +288,10 @@ Item {
             onClicked: {
                 if (!loginPage.showPhoneForm) {
                     loginPage.showPhoneForm = true
-                    phoneInput.forceActiveFocus()
+                    if (loginPage.useEnterpriseCredentials)
+                        usernameInput.forceActiveFocus()
+                    else
+                        phoneInput.forceActiveFocus()
                 } else {
                     loginPage.submitLogin()
                 }
@@ -328,6 +371,8 @@ Item {
             resendSeconds = 0
             phoneInput.clear()
             codeInput.clear()
+            usernameInput.clear()
+            passwordInput.clear()
             authController.clearError()
         }
     }

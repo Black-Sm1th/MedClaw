@@ -18,6 +18,7 @@ class AuthController : public QObject
     Q_PROPERTY(QString phone READ phone NOTIFY userChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     Q_PROPERTY(QString apiBaseUrl READ apiBaseUrl CONSTANT)
+    Q_PROPERTY(bool enterpriseCredentialLoginEnabled READ enterpriseCredentialLoginEnabled CONSTANT)
     Q_PROPERTY(QString creditsBalance READ creditsBalance NOTIFY creditsBalanceChanged)
     Q_PROPERTY(QVariantList creditLots READ creditLots NOTIFY creditDetailsChanged)
     Q_PROPERTY(QVariantList creditPackages READ creditPackages NOTIFY creditDetailsChanged)
@@ -32,6 +33,7 @@ public:
     QString phone() const;
     QString errorMessage() const;
     QString apiBaseUrl() const;
+    bool enterpriseCredentialLoginEnabled() const;
     QString creditsBalance() const;
     QVariantList creditLots() const;
     QVariantList creditPackages() const;
@@ -40,6 +42,7 @@ public:
 
     Q_INVOKABLE void sendSmsCode(const QString &phone);
     Q_INVOKABLE void loginWithPhone(const QString &phone, const QString &smsCode);
+    Q_INVOKABLE void loginWithCredentials(const QString &username, const QString &password);
     Q_INVOKABLE void requestWebLogin();
     Q_INVOKABLE void refreshCredits();
     Q_INVOKABLE void logout();
