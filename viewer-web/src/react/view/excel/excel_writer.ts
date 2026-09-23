@@ -141,7 +141,8 @@ async function emitSave(buffer: Uint8Array, options?: ExportOptions) {
 async function patchWorkbookSortStates(buffer: Uint8Array, sheets: SheetData[]) {
     const zip = await JSZip.loadAsync(buffer);
     for (let i = 0; i < sheets.length; i += 1) {
-        const file = zip.file(`xl/worksheets/sheet${i + 1}.xml`);
+        const file = zip.file(`xl/worksheets/sheet${i + 1}.xml`)
+            || zip.file(`xl\\worksheets\\sheet${i + 1}.xml`);
         if (!file) continue;
         const xml = await file.async('string');
         zip.file(`xl/worksheets/sheet${i + 1}.xml`, patchWorksheetSortStateXml(xml, sheets[i].autofilter));

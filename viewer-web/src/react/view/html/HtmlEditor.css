@@ -44,10 +44,16 @@ body,
 }
 
 .html-grapes-editor .gjs-editor,
-.html-grapes-editor .gjs-editor-cont,
-.html-grapes-editor .gjs-cv-canvas {
+.html-grapes-editor .gjs-editor-cont {
     width: 100%;
     height: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* Keep GrapesJS' own calc() for canvas size. Forcing 100% here covers the
+   top command bar and the right blocks/styles panel. */
+.html-grapes-editor .gjs-cv-canvas {
     min-width: 0;
     min-height: 0;
 }

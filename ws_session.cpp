@@ -3,6 +3,7 @@
  * @brief WebSocket 会话管理类 —— 实现
  */
 #include "ws_session.h"
+#include "chat_message_visibility.h"
 #include <QDebug>
 #include <QJsonDocument>
 #include <QUuid>
@@ -298,6 +299,8 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
 
     for (const QJsonValue &v : arr) {
         const QJsonObject m = v.toObject();
+        if (ChatMessageVisibility::isInternalMessage(m))
+            continue;
         const QString role = m.value(QStringLiteral("role")).toString();
         if (role.isEmpty())
             continue;
@@ -569,6 +572,14 @@ WsEventResult WsSession::parseEvent(const QString &event, const QJsonObject &pay
     // ── 解构 payload 二级结构 ──
     const QString subEvent = payload.value(QStringLiteral("event")).toString();
     const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
+
+    if (ChatMessageVisibility::isInternalMessage(payload)
+        || ChatMessageVisibility::isInternalMessage(data)
+        || ChatMessageVisibility::isInternalMessage(payload.value(QStringLiteral("message")).toObject())
+        || ChatMessageVisibility::isInternalMessage(data.value(QStringLiteral("message")).toObject())) {
+        result.ignore = true;
+        return result;
+    }
 
     // ── 工具调用检测 ──
     // 兼容两种格式：

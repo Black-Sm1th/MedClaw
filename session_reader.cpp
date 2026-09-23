@@ -3,6 +3,7 @@
  * @brief 本地会话历史读取器 —— 实现
  */
 #include "session_reader.h"
+#include "chat_message_visibility.h"
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -109,6 +110,8 @@ QVariantMap SessionReader::quickParseSummary(const QString &filePath)
         // 消息：统计并提取首条用户消息
         else if (type == QLatin1String("message")) {
             const QJsonObject msg = obj.value(QStringLiteral("message")).toObject();
+            if (ChatMessageVisibility::isInternalMessage(msg))
+                continue;
             const QString role = msg.value(QStringLiteral("role")).toString();
 
             if (role == QLatin1String("user")) {
@@ -337,6 +340,8 @@ QVariantList SessionReader::readSessionMessages(const QString &filePath)
             continue;
 
         const QJsonObject msg = obj.value(QStringLiteral("message")).toObject();
+        if (ChatMessageVisibility::isInternalMessage(msg))
+            continue;
         const QString role = msg.value(QStringLiteral("role")).toString();
         const QString ts = obj.value(QStringLiteral("timestamp")).toString();
 
@@ -550,6 +555,8 @@ QVariantList SessionReader::parseResponseFile(const QString &filePath)
     // 复用与 readSessionMessages 相同的解析逻辑
     for (const QJsonValue &v : messagesArr) {
         const QJsonObject m = v.toObject();
+        if (ChatMessageVisibility::isInternalMessage(m))
+            continue;
         const QString role = m.value(QStringLiteral("role")).toString();
         if (role.isEmpty())
             continue;

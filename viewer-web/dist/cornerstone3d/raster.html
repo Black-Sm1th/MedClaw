@@ -36,7 +36,7 @@
         document.getElementById('name').textContent = entry.name || '医学影像';
         image.onload = function () { message.hidden = true; image.hidden = false; status.textContent = '已加载'; };
         image.onerror = function () { message.textContent = '影像格式无法在当前查看器中显示'; message.classList.add('error'); status.textContent = '加载失败'; };
-        image.src = entry.url;
+        image.src = new URL(entry.url, window.location.href).href;
       } catch (error) {
         message.textContent = error && error.message ? error.message : String(error);
         message.classList.add('error');

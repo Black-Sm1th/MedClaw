@@ -34,9 +34,50 @@ function parseScriptTag(source: string): HTMLScriptElement | null {
     return parsed.body.querySelector('script');
 }
 
+function resolveUrl(value: string, baseUrl: string): string {
+    try {
+        return new URL(value, baseUrl).href;
+    } catch {
+        return value;
+    }
+}
+
 function runInFrame(frameWindow: Window, code: string) {
-    const Fn = frameWindow.Function as new (...args: string[]) => () => unknown;
-    new Fn(code)();
+    // Force the browser UMD branch. GrapesJS / bundler frames often expose
+    // `module`/`exports`/`define`, so a raw Function() eval of echarts.js
+    // never assigns window.echarts and the "images" (charts) stay blank.
+    const Fn = frameWindow.Function as new (...args: string[]) => void;
+    const runner = new Fn(
+        'window', 'self', 'global', 'globalThis', 'module', 'exports', 'define',
+        code,
+    );
+    runner.call(
+        frameWindow,
+        frameWindow,
+        frameWindow,
+        frameWindow,
+        frameWindow,
+        undefined,
+        undefined,
+        undefined,
+    );
+}
+
+function loadScriptElement(frameWindow: Window, src: string): Promise<void> {
+    return new Promise(resolve => {
+        const node = frameWindow.document.createElement('script');
+        node.async = false;
+        node.onload = () => {
+            node.remove();
+            resolve();
+        };
+        node.onerror = () => {
+            node.remove();
+            resolve();
+        };
+        node.src = src;
+        frameWindow.document.head.appendChild(node);
+    });
 }
 
 async function injectScripts(frameWindow: Window, sources: string[], baseUrl: string) {
@@ -45,12 +86,10 @@ async function injectScripts(frameWindow: Window, sources: string[], baseUrl: st
         if (!original) continue;
         const srcAttr = original.getAttribute('src');
         if (srcAttr) {
-            let abs = srcAttr;
-            try {
-                abs = new URL(srcAttr, baseUrl).href;
-            } catch {
-                /* keep srcAttr */
-            }
+            const abs = resolveUrl(srcAttr, baseUrl);
+            const before = (frameWindow as Window & { echarts?: unknown }).echarts;
+            await loadScriptElement(frameWindow, abs);
+            if ((frameWindow as Window & { echarts?: unknown }).echarts || before) continue;
             try {
                 const response = await fetch(abs);
                 if (!response.ok) throw new Error(String(response.status));
@@ -81,23 +120,37 @@ function waitForFrame(frameWindow: Window, frames = 1): Promise<void> {
     });
 }
 
+function chartHostElements(document: Document): HTMLElement[] {
+    return Array.from(document.querySelectorAll(
+        'canvas, .pie-chart, [class*="chart"], iframe.chart-interactive, img.chart-static',
+    )) as HTMLElement[];
+}
+
 async function waitForRuntimeSurface(frameWindow: Window) {
     const document = frameWindow.document;
-    for (let i = 0; i < 45; i++) {
+    for (let i = 0; i < 60; i++) {
         const bodyWidth = document.body?.clientWidth || 0;
-        const canvases = Array.from(document.querySelectorAll('canvas')) as HTMLCanvasElement[];
-        const canvasReady = canvases.length === 0
-            || canvases.some(canvas => canvas.offsetWidth > 8 && canvas.offsetHeight > 8);
-        if (bodyWidth > 64 && canvasReady) return;
+        const hosts = chartHostElements(document);
+        const hostsReady = hosts.length === 0
+            || hosts.some(element => element.offsetWidth > 8 && element.offsetHeight > 8);
+        if (bodyWidth > 64 && hostsReady) return;
         await waitForFrame(frameWindow);
     }
 }
 
 function restoreAuthorCanvasIds(liveDocument: Document, bodyHtml: string) {
     const parsed = new DOMParser().parseFromString(`<body>${bodyHtml}</body>`, 'text/html');
-    const originals = Array.from(parsed.querySelectorAll('canvas'));
+    const originals = Array.from(parsed.body.querySelectorAll('[id]'));
+    originals.forEach(original => {
+        const id = original.id;
+        if (!id || liveDocument.getElementById(id)) return;
+        const tag = original.tagName;
+        const index = Array.from(parsed.body.querySelectorAll(tag)).indexOf(original);
+        const node = liveDocument.body.querySelectorAll(tag)[index] as HTMLElement | undefined;
+        if (node && !node.id) node.id = id;
+    });
     const live = Array.from(liveDocument.querySelectorAll('canvas'));
-    originals.forEach((original, index) => {
+    Array.from(parsed.querySelectorAll('canvas')).forEach((original, index) => {
         const node = live[index] as HTMLCanvasElement | undefined;
         if (!node) return;
         if (original.id && node.id !== original.id) node.id = original.id;
@@ -107,10 +160,40 @@ function restoreAuthorCanvasIds(liveDocument: Document, bodyHtml: string) {
     });
 }
 
+function resolveMediaUrls(document: Document, baseUrl: string) {
+    document.querySelectorAll('img[src], source[src], video[src], audio[src], iframe[src]').forEach(element => {
+        const src = element.getAttribute('src');
+        if (!src || /^(?:https?:|data:|blob:|\/\/)/i.test(src)) return;
+        element.setAttribute('src', resolveUrl(src, baseUrl));
+    });
+}
+
+type EchartsHost = Window & {
+    echarts?: {
+        getInstanceByDom?: (el: Element) => { resize: () => void } | undefined;
+    };
+    __medclawHeadScripts?: boolean;
+    __medclawBodyScripts?: boolean;
+};
+
+function echartsInstanceCount(frameWindow: Window): number {
+    const echarts = (frameWindow as EchartsHost).echarts;
+    if (!echarts?.getInstanceByDom) return 0;
+    let count = 0;
+    frameWindow.document.querySelectorAll('div, canvas').forEach(element => {
+        try {
+            if (echarts.getInstanceByDom?.(element)) count += 1;
+        } catch {
+            /* ignore */
+        }
+    });
+    return count;
+}
+
 function resizeCanvasCharts(frameWindow: Window) {
-    const echarts = (frameWindow as Window & { echarts?: { getInstanceByDom?: (el: Element) => { resize: () => void } | undefined } }).echarts;
+    const echarts = (frameWindow as EchartsHost).echarts;
     if (echarts?.getInstanceByDom) {
-        frameWindow.document.querySelectorAll('div').forEach(element => {
+        frameWindow.document.querySelectorAll('div, canvas').forEach(element => {
             try {
                 echarts.getInstanceByDom?.(element)?.resize();
             } catch {
@@ -125,17 +208,26 @@ async function activateCanvasRuntime(frameWindow: Window, parts: HtmlDocumentPar
     const document = frameWindow.document;
     restoreCanvasEventHandlers(document, parts);
     restoreAuthorCanvasIds(document, parts.body);
+    resolveMediaUrls(document, baseUrl);
     await waitForRuntimeSurface(frameWindow);
 
-    const runtimeWindow = frameWindow as Window & { __medclawRuntimeActivated?: boolean };
-    if (!runtimeWindow.__medclawRuntimeActivated) {
+    const runtimeWindow = frameWindow as EchartsHost;
+    if (!runtimeWindow.__medclawHeadScripts) {
         await injectScripts(frameWindow, parts.headScripts, baseUrl);
-        await waitForRuntimeSurface(frameWindow);
-        restoreAuthorCanvasIds(document, parts.body);
+        runtimeWindow.__medclawHeadScripts = true;
+    }
+    await waitForRuntimeSurface(frameWindow);
+    restoreAuthorCanvasIds(document, parts.body);
+    resolveMediaUrls(document, baseUrl);
+    if (!runtimeWindow.__medclawBodyScripts) {
         await injectScripts(frameWindow, parts.scripts, baseUrl);
-        runtimeWindow.__medclawRuntimeActivated = true;
+        runtimeWindow.__medclawBodyScripts = true;
         document.dispatchEvent(new frameWindow.Event('DOMContentLoaded', { bubbles: true }));
         frameWindow.dispatchEvent(new frameWindow.Event('load'));
+    } else if (runtimeWindow.echarts && echartsInstanceCount(frameWindow) === 0) {
+        runtimeWindow.__medclawBodyScripts = false;
+        await injectScripts(frameWindow, parts.scripts, baseUrl);
+        runtimeWindow.__medclawBodyScripts = true;
     }
 
     const fit = () => resizeCanvasCharts(frameWindow);
@@ -273,6 +365,9 @@ function HtmlEditorView() {
                 // Source import/export bypasses preservation of the original document shell.
                 editor.Panels.removeButton('options', 'export-template');
                 editor.Panels.removeButton('options', 'gjs-open-import-webpage');
+                if (editor.Commands.isActive('preview')) {
+                    editor.Commands.stop('preview');
+                }
                 let canvasReady = false;
                 let canvasInitializing = false;
                 let initGeneration = 0;
@@ -290,6 +385,7 @@ function HtmlEditorView() {
                         if (typeof refresh === 'function') refresh.call(editor);
                         applyDocumentAttributes(canvasDocument, parts);
                         restoreAuthorCanvasIds(canvasDocument, parts.body);
+                        resolveMediaUrls(canvasDocument, documentBase);
                         await activateCanvasRuntime(frameWindow, parts, documentBase);
                         if (disposed || generation !== initGeneration) return false;
                         const hasAuthorContent = Boolean(parts.body.trim());

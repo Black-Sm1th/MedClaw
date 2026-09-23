@@ -22,6 +22,128 @@ html {
 #vditor {
     flex: 1;
     min-height: 0;
+    overflow: hidden;
+    position: relative;
+    --markdown-panel-background: #ffffff;
+    --markdown-panel-foreground: #24292f;
+    --markdown-panel-border: #d0d7de;
+}
+
+#vditor.vditor--dark {
+    --markdown-panel-background: #202124;
+    --markdown-panel-foreground: #e6e6e6;
+    --markdown-panel-border: #45474b;
+}
+
+/* The desktop host does not always supply VS Code theme variables. Keep the
+   compact outline opaque, and reserve toolbar space for its toggle. */
+@media (max-width: 700px) {
+    #vditor[data-editor-theme] .vditor-toolbar {
+        box-sizing: border-box;
+        min-height: 40px;
+        padding-left: 46px !important;
+    }
+
+    #vditor[data-editor-theme] .vditor-mobile-outline-trigger {
+        position: absolute;
+        top: 4px;
+        left: 6px;
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        background: var(--panel-background-color, var(--markdown-panel-background));
+        color: var(--front-color, var(--markdown-panel-foreground));
+        border: 1px solid var(--border-color, var(--markdown-panel-border));
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+
+    #vditor[data-editor-theme] .vditor-outline__backdrop {
+        background: transparent;
+        backdrop-filter: none;
+    }
+
+    #vditor[data-editor-theme] .vditor-outline {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        bottom: auto;
+        max-height: min(420px, calc(100% - 16px));
+        overflow: auto;
+        width: min(260px, calc(100% - 16px)) !important;
+        box-sizing: border-box;
+        border-radius: 6px;
+        background: var(--outline-bg-color, var(--markdown-panel-background));
+        color: var(--front-color, var(--markdown-panel-foreground));
+        border: 1px solid var(--border-color, var(--markdown-panel-border));
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #vditor[data-editor-theme] .vditor-outline__content {
+        box-sizing: border-box;
+        height: auto;
+        overflow: visible;
+    }
+
+    #vditor[data-editor-theme] .vditor-outline li > span > span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    #vditor .vditor-wysiwyg > .vditor-reset,
+    #vditor .vditor-ir > .vditor-reset {
+        padding-left: 20px !important;
+        padding-right: 20px !important;
+    }
+}
+
+/* Keep the editor chrome in the viewport and scroll the markdown body.
+   Flex items default to min-height:auto, so without this chain the preview
+   grows with the document, overflow is clipped, and no scrollbar appears. */
+#vditor .vditor,
+#vditor .vditor-content,
+#vditor .vditor-wysiwyg,
+#vditor .vditor-ir {
+    min-height: 0;
+    overflow: hidden;
+}
+
+#vditor .vditor-content {
+    flex: 1;
+}
+
+#vditor .vditor-wysiwyg,
+#vditor .vditor-ir {
+    height: 100%;
+}
+
+#vditor .vditor-reset {
+    min-height: 0;
+    max-height: 100%;
+    overflow: auto !important;
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
+    scrollbar-color: #9ca3af #f3f4f6;
+}
+
+#vditor .vditor-reset::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+#vditor .vditor-reset::-webkit-scrollbar-track {
+    background: #f3f4f6;
+}
+
+#vditor .vditor-reset::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 6px;
+    border: 2px solid #f3f4f6;
+}
+
+#vditor .vditor-reset::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
 }
 
 .markdown-readonly-banner {

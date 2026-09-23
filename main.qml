@@ -3589,6 +3589,8 @@ ApplicationWindow {
                         return true
                     if (/\.nii(?:\.gz)?$/.test(name))
                         return true
+                    if (name === "result.json" || ext === "npy")
+                        return true
                     if (/^(dcm|dicom|ima|nii|jpg|jpeg|png|gif|bmp|webp|tif|tiff)$/.test(ext))
                         return true
                     // DICOM files frequently have no extension. The native
@@ -3686,7 +3688,9 @@ ApplicationWindow {
                     var ext = String((file && file.extension) || fileExtension(path)).toLowerCase()
                     // These formats are intentionally outside MedClaw's supported
                     // document scope, even when viewer-web contains a generic viewer.
-                    return /^(zip|7z|rar|tar|tar\.gz|tgz|ttf|otf|woff|woff2|parquet|psd|mp4|avi|dcm)$/.test(ext)
+                    // Legacy binary Word/PowerPoint (.doc/.ppt OLE) are not OOXML
+                    // and cannot be opened by the local viewers.
+                    return /^(zip|7z|rar|tar|tar\.gz|tgz|ttf|otf|woff|woff2|parquet|psd|mp4|avi|dcm|doc|ppt)$/.test(ext)
                 }
 
                 function supportsLocalViewerEdit(file) {
@@ -3703,7 +3707,10 @@ ApplicationWindow {
                         return
                     }
                     if (!supportsLocalViewer(file)) {
-                        errorToast.text = qsTr("该文件类型不支持打开")
+                        var blockedExt = String((file && file.extension) || fileExtension(path)).toLowerCase()
+                        errorToast.text = /^(doc|ppt)$/.test(blockedExt)
+                                ? qsTr("不支持旧版 .doc/.ppt，请先另存为 .docx/.pptx")
+                                : qsTr("该文件类型不支持打开")
                         errorToast.visible = true
                         errorToastTimer.restart()
                         return
@@ -10716,6 +10723,7 @@ ApplicationWindow {
                     "imaging_radiomics": true,
                     "imaging_seg_classic": true,
                     "imaging_seg_dl": true,
+                    "imaging_seg_radar": true,
                     "imaging_case": true,
                     "imaging_report_extract": true
                 })

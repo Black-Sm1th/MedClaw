@@ -170,6 +170,9 @@ export default function Word() {
                                 handler.emit("change");
                             }
                         }}
+                        onError={(e) => {
+                            setError(e instanceof Error ? e.message : "Failed to parse document");
+                        }}
                         onSave={emitSave}
                     />
                     <footer className="word-sponsor-footer">

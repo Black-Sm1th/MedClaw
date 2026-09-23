@@ -12,6 +12,7 @@
  *   7. 业务方法（会话管理、历史加载、聊天发送）
  */
 #include "gateway_client.h"
+#include "chat_message_visibility.h"
 #include <QAbstractSocket>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -29,6 +30,7 @@
 #include <QNetworkRequest>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStandardPaths>
@@ -63,6 +65,22 @@ QString stripInternalPolicyBlocks(QString text)
         }
     }
     return text.trimmed();
+}
+
+QString wrapMessageWithWorkspacePolicy(const QString &message, const QString &outputDir)
+{
+    const QString dir = QDir::toNativeSeparators(QDir::cleanPath(outputDir));
+    if (dir.isEmpty() || message.contains(QStringLiteral("<workspace-policy>")))
+        return message;
+    return QStringLiteral(
+               "<workspace-policy>\n"
+               "本次任务产物目录（绝对路径）：%1\n"
+               "spawn 时必须把 IDENTITY 模板里的每一个 <workspace> 替换成上面这条绝对路径，"
+               "例如输出目录写成 %1\\imaging\\<case_id>\\01_data。\n"
+               "禁止写到 ~/.openclaw/workspace、workspace-imaging-orchestrator、"
+               "workspace-imaging-*-agent，或任何相对路径 imaging/。\n"
+               "</workspace-policy>\n\n%2")
+        .arg(dir, message);
 }
 
 void configureBackgroundProcess(QProcess *process)
@@ -1724,6 +1742,20 @@ QVariantList GatewayClient::restoreSessionArtifacts(const QString &sessionKey,
             restored[i] = message;
         }
     }
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
+    const bool hideUntilComplete = !taskKey.isEmpty()
+        && key == taskKey
+        && !collaborationTaskFullyComplete(taskKey);
+    if (hideUntilComplete) {
+        for (int i = 0; i < restored.size(); ++i) {
+            QVariantMap message = restored.at(i).toMap();
+            if (!message.contains(QStringLiteral("artifacts")))
+                continue;
+            message.remove(QStringLiteral("artifacts"));
+            restored[i] = message;
+        }
+        return restored;
+    }
     if (!pendingLatestArtifacts.isEmpty()) {
         int pendingIndex = pendingLatestArtifacts.size() - 1;
         for (int i = restored.size() - 1; i >= 0 && pendingIndex >= 0; --i) {
@@ -2329,6 +2361,8 @@ void GatewayClient::setTaskSessionState(const QString &sessionKey,
         }
     }
     loadTaskSessionListFromDb();
+    if (!running)
+        maybeShowControllerProducts();
 }
 
 void GatewayClient::markTaskSessionRead(const QString &sessionKey)
@@ -3509,7 +3543,14 @@ void GatewayClient::sendChatMessageNow(const QString &sessionKey,
     const QString key = sessionKey.trimmed();
     if (key.isEmpty() || message.trimmed().isEmpty())
         return;
-    const QJsonObject params = m_session.buildChatSendParams(message, key);
+    QString outputDir = normalizeWorkspacePath(
+        taskSessionInfoByKey(key).value(QStringLiteral("workspace")).toString());
+    if (outputDir.isEmpty()) {
+        outputDir = normalizeWorkspacePath(
+            sessionInfoByKey(key).value(QStringLiteral("sessionOutputDir")).toString());
+    }
+    const QString outbound = wrapMessageWithWorkspacePolicy(message, outputDir);
+    const QJsonObject params = m_session.buildChatSendParams(outbound, key);
     const QString runId = params.value(QStringLiteral("idempotencyKey")).toString().trimmed();
     const QString reqId = sendRequest(QStringLiteral("chat.send"), params);
     m_chatSendReqSession.insert(reqId, key);
@@ -3573,6 +3614,18 @@ GatewayClient::WorkspaceSnapshot GatewayClient::snapshotWorkspace(
     return snapshot;
 }
 
+GatewayClient::WorkspaceSnapshot GatewayClient::snapshotWorkspaces(
+    const QStringList &workspaces) const
+{
+    WorkspaceSnapshot snapshot;
+    for (const QString &workspace : workspaces) {
+        const WorkspaceSnapshot part = snapshotWorkspace(workspace);
+        for (auto it = part.constBegin(); it != part.constEnd(); ++it)
+            snapshot.insert(it.value().absolutePath, it.value());
+    }
+    return snapshot;
+}
+
 QString GatewayClient::resolveArtifactTrackingKey(const QString &sessionKey) const
 {
     const QString key = sessionKey.trimmed();
@@ -3618,64 +3671,275 @@ QString GatewayClient::resolveArtifactTrackingKey(const QString &sessionKey) con
 
 QString GatewayClient::workspaceForArtifactSession(const QString &sessionKey) const
 {
+    const QStringList workspaces = workspacesForArtifactSession(sessionKey);
+    return workspaces.isEmpty() ? QString() : workspaces.constFirst();
+}
+
+QStringList GatewayClient::workspacesForArtifactSession(const QString &sessionKey) const
+{
+    QStringList workspaces;
+    auto add = [&](const QString &raw) {
+        const QString path = normalizeWorkspacePath(raw);
+        if (path.isEmpty() || workspaces.contains(path, Qt::CaseInsensitive))
+            return;
+        if (!QDir(path).exists())
+            return;
+        workspaces.append(path);
+    };
+
     const QString key = sessionKey.trimmed();
     const QString trackingKey = resolveArtifactTrackingKey(key);
-    QString workspace = normalizeWorkspacePath(
+    add(taskSessionInfoByKey(trackingKey).value(QStringLiteral("workspace")).toString());
+    add(taskSessionInfoByKey(m_currentTaskSessionKey)
+            .value(QStringLiteral("workspace")).toString());
+    add(sessionInfoByKey(trackingKey).value(QStringLiteral("sessionOutputDir")).toString());
+    add(sessionInfoByKey(key).value(QStringLiteral("sessionOutputDir")).toString());
+
+    // Imaging specialists write into the orchestrator/agent workspace
+    // (e.g. ~/.openclaw/workspace-imaging-orchestrator), not the task folder.
+    const QStringList agentIds{
+        agentIdFromSessionKey(trackingKey),
+        agentIdFromSessionKey(key),
+        agentIdFromSessionKey(m_currentTaskSessionKey),
+    };
+    QSet<QString> seenAgents;
+    for (const QString &aid : agentIds) {
+        if (aid.isEmpty() || seenAgents.contains(aid))
+            continue;
+        seenAgents.insert(aid);
+        add(agentInfoById(aid).value(QStringLiteral("workspace")).toString());
+        for (const QString &childId : m_agentSubagentsById.value(aid)) {
+            const QString child = childId.trimmed();
+            if (child.isEmpty() || seenAgents.contains(child))
+                continue;
+            seenAgents.insert(child);
+            add(agentInfoById(child).value(QStringLiteral("workspace")).toString());
+        }
+    }
+
+    for (const QVariant &value : m_collaborationChildSessionHints) {
+        const QVariantMap hinted = value.toMap();
+        const QString spawnedBy =
+            hinted.value(QStringLiteral("spawnedBy")).toString().trimmed();
+        const QString parent =
+            hinted.value(QStringLiteral("parentSessionKey")).toString().trimmed();
+        if (spawnedBy != trackingKey && parent != trackingKey
+            && spawnedBy != m_currentTaskSessionKey
+            && parent != m_currentTaskSessionKey)
+            continue;
+        const QString childAgent =
+            hinted.value(QStringLiteral("agentId")).toString().trimmed();
+        add(agentInfoById(childAgent).value(QStringLiteral("workspace")).toString());
+        add(sessionInfoByKey(hinted.value(QStringLiteral("sessionKey")).toString())
+                .value(QStringLiteral("sessionOutputDir")).toString());
+    }
+    return workspaces;
+}
+
+QString GatewayClient::desiredTaskOutputDir(const QString &sessionKey) const
+{
+    const QString trackingKey = resolveArtifactTrackingKey(sessionKey);
+    QString dir = normalizeWorkspacePath(
         taskSessionInfoByKey(trackingKey).value(QStringLiteral("workspace")).toString());
-    if (workspace.isEmpty())
-        workspace = normalizeWorkspacePath(
+    if (dir.isEmpty()) {
+        dir = normalizeWorkspacePath(
             taskSessionInfoByKey(m_currentTaskSessionKey)
                 .value(QStringLiteral("workspace")).toString());
-    if (workspace.isEmpty())
-        workspace = normalizeWorkspacePath(
+    }
+    if (dir.isEmpty()) {
+        dir = normalizeWorkspacePath(
             sessionInfoByKey(trackingKey)
                 .value(QStringLiteral("sessionOutputDir")).toString());
-    if (workspace.isEmpty())
-        workspace = normalizeWorkspacePath(
-            sessionInfoByKey(key)
-                .value(QStringLiteral("sessionOutputDir")).toString());
-    return workspace;
+    }
+    if (dir.isEmpty() || isOpenClawAgentWorkspace(dir))
+        return QString();
+    return dir;
+}
+
+bool GatewayClient::isOpenClawAgentWorkspace(const QString &path) const
+{
+    const QString normalized =
+        QDir::fromNativeSeparators(normalizeWorkspacePath(path)).toLower();
+    if (normalized.isEmpty())
+        return false;
+    if (normalized.contains(QLatin1String("/.openclaw/workspace")))
+        return true;
+    if (normalized.contains(QLatin1String("/workspace-imaging-")))
+        return true;
+    for (auto it = m_agentWorkspaceById.constBegin();
+         it != m_agentWorkspaceById.constEnd(); ++it) {
+        const QString agentDir =
+            QDir::fromNativeSeparators(normalizeWorkspacePath(it.value())).toLower();
+        if (agentDir.isEmpty())
+            continue;
+        if (normalized == agentDir || normalized.startsWith(agentDir + QLatin1Char('/')))
+            return true;
+    }
+    return false;
+}
+
+void GatewayClient::ensureChildSessionOutputDir(const QString &childSessionKey,
+                                                const QString &parentSessionKey)
+{
+    const QString child = childSessionKey.trimmed();
+    if (child.isEmpty() || m_patchedChildOutputDirKeys.contains(child))
+        return;
+    const QString dest = desiredTaskOutputDir(
+        parentSessionKey.trimmed().isEmpty() ? child : parentSessionKey);
+    if (dest.isEmpty())
+        return;
+    m_patchedChildOutputDirKeys.insert(child);
+    QJsonObject params;
+    params[QStringLiteral("key")] = child;
+    params[QStringLiteral("sessionOutputDir")] = dest;
+    sendRequest(QStringLiteral("sessions.patch"), params);
+    qDebug().noquote() << "[Gateway] child sessionOutputDir:" << dest
+                       << "session:" << child;
+}
+
+void GatewayClient::syncSpawnedArtifactsIntoTaskWorkspace(const QString &sessionKey)
+{
+    const QString dest = desiredTaskOutputDir(sessionKey);
+    if (dest.isEmpty())
+        return;
+
+    QStringList sources = workspacesForArtifactSession(sessionKey);
+    QSet<QString> seen;
+    int copied = 0;
+    for (const QString &raw : sources) {
+        const QString source = normalizeWorkspacePath(raw);
+        if (source.isEmpty() || seen.contains(source.toLower()))
+            continue;
+        seen.insert(source.toLower());
+        if (QDir::fromNativeSeparators(source).compare(
+                QDir::fromNativeSeparators(dest), Qt::CaseInsensitive) == 0)
+            continue;
+        if (!isOpenClawAgentWorkspace(source))
+            continue;
+        const QString imagingSrc =
+            QDir(source).absoluteFilePath(QStringLiteral("imaging"));
+        if (!QDir(imagingSrc).exists())
+            continue;
+        const QString imagingDst =
+            QDir(dest).absoluteFilePath(QStringLiteral("imaging"));
+        if (copyDirectoryRecursive(imagingSrc, imagingDst))
+            ++copied;
+        else
+            qWarning().noquote()
+                << "[Gateway] failed to copy imaging artifacts from"
+                << imagingSrc << "to" << imagingDst;
+    }
+    if (copied > 0) {
+        qDebug().noquote() << "[Gateway] copied imaging artifacts into"
+                           << dest << "from" << copied << "agent workspace(s)";
+    }
+}
+
+QString GatewayClient::currentUiSessionKey() const
+{
+    QString key = m_currentViewSessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_currentTaskSessionKey.trimmed();
+    if (key.isEmpty())
+        key = m_session.currentSessionKey().trimmed();
+    return key;
+}
+
+bool GatewayClient::collaborationTaskFullyComplete(const QString &taskKey) const
+{
+    const QString key = taskKey.trimmed();
+    if (key.isEmpty())
+        return false;
+    if (m_runningTaskSessionKeys.contains(key)
+        || m_chatRunningSessionKeys.contains(key))
+        return false;
+    for (const QVariant &value : collaborationParticipants()) {
+        const QVariantMap row = value.toMap();
+        if (row.value(QStringLiteral("isController")).toBool())
+            continue;
+        // Roster agents that were never spawned must not block the expert
+        // transcript forever.
+        if (row.value(QStringLiteral("isPending")).toBool())
+            continue;
+        if (row.value(QStringLiteral("isRunning")).toBool())
+            return false;
+        const QString childKey = row.value(QStringLiteral("sessionKey")).toString().trimmed();
+        if (!childKey.isEmpty() && m_chatRunningSessionKeys.contains(childKey))
+            return false;
+    }
+    return true;
+}
+
+void GatewayClient::maybeShowControllerProducts()
+{
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
+    if (taskKey.isEmpty() || currentUiSessionKey() != taskKey)
+        return;
+    if (!collaborationTaskFullyComplete(taskKey))
+        return;
+    loadChatHistory(taskKey);
+}
+
+QVariantList GatewayClient::filterControllerHistory(const QVariantList &history) const
+{
+    QVariantList out;
+    out.reserve(history.size());
+    const bool showProducts = collaborationTaskFullyComplete(m_currentTaskSessionKey);
+    for (const QVariant &value : history) {
+        QVariantMap row = value.toMap();
+        if (!showProducts && row.contains(QStringLiteral("artifacts")))
+            row.remove(QStringLiteral("artifacts"));
+        out.append(row);
+    }
+    return out;
 }
 
 bool GatewayClient::artifactResultsBelongToView(const QString &artifactSessionKey,
                                                 const QString &viewSessionKey) const
 {
-    const QString artifactKey = resolveArtifactTrackingKey(artifactSessionKey);
+    const QString sourceKey = artifactSessionKey.trimmed();
     const QString viewKey = viewSessionKey.trimmed();
-    if (artifactKey.isEmpty() || viewKey.isEmpty())
+    if (sourceKey.isEmpty() || viewKey.isEmpty())
         return false;
-    if (artifactKey == viewKey)
-        return true;
-    const QString viewTask = resolveArtifactTrackingKey(viewKey);
-    return !viewTask.isEmpty() && viewTask == artifactKey;
+
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
+    const QString artifactKey = resolveArtifactTrackingKey(sourceKey);
+    const bool viewingController = !taskKey.isEmpty() && viewKey == taskKey;
+    if (viewingController) {
+        if (sourceKey != viewKey && artifactKey != viewKey)
+            return false;
+        return collaborationTaskFullyComplete(viewKey);
+    }
+
+    return sourceKey == viewKey;
 }
 
 void GatewayClient::beginArtifactTracking(const QString &sessionKey, bool resetSnapshot)
 {
     const QString key = resolveArtifactTrackingKey(sessionKey);
-    const QString workspace = workspaceForArtifactSession(key);
-    if (key.isEmpty() || workspace.isEmpty())
+    const QStringList workspaces = workspacesForArtifactSession(key);
+    if (key.isEmpty() || workspaces.isEmpty())
         return;
 
     auto trackingIt = m_artifactTrackingBySession.find(key);
     if (trackingIt != m_artifactTrackingBySession.end()) {
         if (!resetSnapshot)
             return;
-        trackingIt->workspace = workspace;
-        trackingIt->before = snapshotWorkspace(workspace);
+        trackingIt->workspaces = workspaces;
+        trackingIt->before = snapshotWorkspaces(workspaces);
         ++trackingIt->generation;
         qDebug() << "[Gateway] artifact tracking reset:" << key
-                 << workspace << trackingIt->before.size() << "files";
+                 << workspaces << trackingIt->before.size() << "files";
         return;
     }
 
     ArtifactTrackingState state;
-    state.workspace = workspace;
-    state.before = snapshotWorkspace(workspace);
+    state.workspaces = workspaces;
+    state.before = snapshotWorkspaces(workspaces);
     state.generation = 1;
     m_artifactTrackingBySession.insert(key, state);
     qDebug() << "[Gateway] artifact tracking started:" << key
-             << workspace << state.before.size() << "files";
+             << workspaces << state.before.size() << "files";
 }
 
 void GatewayClient::finishArtifactTracking(const QString &sessionKey)
@@ -3687,7 +3951,7 @@ void GatewayClient::finishArtifactTracking(const QString &sessionKey)
     }
 
     const ArtifactTrackingState tracking = trackingIt.value();
-    const QString workspace = tracking.workspace;
+    const QStringList workspaces = tracking.workspaces;
     const WorkspaceSnapshot before = tracking.before;
     const quint64 generation = tracking.generation;
     // Keep the original snapshot until the next user turn. Child experts may
@@ -3696,20 +3960,26 @@ void GatewayClient::finishArtifactTracking(const QString &sessionKey)
 
     // External tools such as Chrome and Office can return before the final
     // output file is fully flushed to disk.
-    QTimer::singleShot(2000, this, [this, key, workspace, before, generation]() {
+    QTimer::singleShot(2000, this, [this, key, workspaces, before, generation]() {
         const auto trackingIt = m_artifactTrackingBySession.constFind(key);
         if (trackingIt != m_artifactTrackingBySession.cend()
             && trackingIt->generation != generation) {
             return;
         }
-        const WorkspaceSnapshot after = snapshotWorkspace(workspace);
+        syncSpawnedArtifactsIntoTaskWorkspace(key);
+        const QString dest = desiredTaskOutputDir(key);
+        const bool destHasImaging = !dest.isEmpty()
+            && QDir(QDir(dest).absoluteFilePath(QStringLiteral("imaging"))).exists();
+        const WorkspaceSnapshot after = snapshotWorkspaces(workspaces);
         QVariantList artifacts;
         QStringList paths = after.keys();
         paths.sort(Qt::CaseInsensitive);
-        for (const QString &relativePath : paths) {
-            const WorkspaceFileState state = after.value(relativePath);
+        for (const QString &absolutePath : paths) {
+            const WorkspaceFileState state = after.value(absolutePath);
+            if (destHasImaging && isOpenClawAgentWorkspace(state.absolutePath))
+                continue;
             QString changeType = QStringLiteral("created");
-            const auto oldIt = before.constFind(relativePath);
+            const auto oldIt = before.constFind(absolutePath);
             if (oldIt != before.cend()) {
                 if (oldIt->size == state.size
                     && oldIt->modifiedMs == state.modifiedMs) {
@@ -3717,12 +3987,12 @@ void GatewayClient::finishArtifactTracking(const QString &sessionKey)
                 }
                 changeType = QStringLiteral("modified");
             }
+            const QFileInfo info(state.absolutePath);
             QVariantMap item;
-            item.insert(QStringLiteral("name"), QFileInfo(relativePath).fileName());
+            item.insert(QStringLiteral("name"), info.fileName());
             item.insert(QStringLiteral("path"), state.absolutePath);
-            item.insert(QStringLiteral("relativePath"), relativePath);
-            item.insert(QStringLiteral("extension"),
-                        QFileInfo(relativePath).suffix().toLower());
+            item.insert(QStringLiteral("relativePath"), info.fileName());
+            item.insert(QStringLiteral("extension"), info.suffix().toLower());
             item.insert(QStringLiteral("size"), state.size);
             item.insert(QStringLiteral("changeType"), changeType);
             artifacts.append(item);
@@ -4433,6 +4703,7 @@ void GatewayClient::connectToServer(const QString &url)
     m_pendingCronToolCalls.clear();
     m_pendingCreatedSessionMessages.clear();
     m_pendingSessionOutputPatches.clear();
+    m_patchedChildOutputDirKeys.clear();
     m_activeChatRunId.clear();
     m_activeChatSessionKey.clear();
     m_recentlyAbortedChatSessionKey.clear();
@@ -4577,6 +4848,7 @@ void GatewayClient::onDisconnected()
     m_pendingCronToolCalls.clear();
     m_pendingCreatedSessionMessages.clear();
     m_pendingSessionOutputPatches.clear();
+    m_patchedChildOutputDirKeys.clear();
     if (m_toolInstallBusy) {
         m_pendingToolInstallConfigGetReqId.clear();
         m_pendingToolInstallMutationReqId.clear();
@@ -4936,9 +5208,10 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     //  session key 检查用宽松模式：payload 无 key 时默认通过
     // ══════════════════════════════════════════════════════════════
     if (event == QLatin1String("session.tool")) {
-        if (!eventAppliesToCurrentUiSession(payload, true))
+        const bool viewingController = !m_currentTaskSessionKey.trimmed().isEmpty()
+            && currentUiSessionKey() == m_currentTaskSessionKey;
+        if (!eventAppliesToCurrentUiSession(payload, !viewingController))
             return;
-
         const WsEventResult tr = m_session.parseEvent(event, payload);
         if (tr.ignore) return;
 
@@ -5055,6 +5328,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             updateChatRunningForCurrentSession();
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
+            maybeShowControllerProducts();
             return;
         }
         if (!r.content.isEmpty()) {
@@ -5103,6 +5377,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             m_toolResultRefreshTimer.start();
             updateChatRunningForCurrentSession();
             schedulePostStreamSidebarRefresh();
+            maybeShowControllerProducts();
             return;
         }
         return;
@@ -5423,7 +5698,11 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                  << "nextCursor=" << payload.value(QStringLiteral("nextCursor")).toString();
         const QVariantList history =
             m_session.parseHistoryResponse(payload);
-        emit historyLoaded(history);
+        const QString currentView = currentUiSessionKey();
+        QVariantList visible = history;
+        if (!currentView.isEmpty() && currentView == m_currentTaskSessionKey)
+            visible = filterControllerHistory(history);
+        emit historyLoaded(visible);
         return;
     }
 
@@ -5658,15 +5937,25 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         const QString toolResultSession =
             m_toolResultRefreshReqSessions.take(id);
         if (!toolResultSession.isEmpty()) {
-            QString currentView = m_currentViewSessionKey.trimmed();
-            if (currentView.isEmpty())
-                currentView = m_currentTaskSessionKey.trimmed();
-            if (toolResultSession == currentView)
-                emit toolResultsRefreshed(history);
+            const QString currentView = currentUiSessionKey();
+            if (toolResultSession == currentView) {
+                QVariantList visible = history;
+                if (currentView == m_currentTaskSessionKey)
+                    visible = filterControllerHistory(history);
+                emit toolResultsRefreshed(visible);
+            }
             return;
         }
 
-        emit historyLoaded(history);
+        const QString historySession = m_chatHistoryReqSessions.take(id);
+        const QString currentView = currentUiSessionKey();
+        if (!historySession.isEmpty() && historySession != currentView)
+            return;
+
+        QVariantList visible = history;
+        if (currentView == m_currentTaskSessionKey)
+            visible = filterControllerHistory(history);
+        emit historyLoaded(visible);
         return;
     }
 
@@ -6067,6 +6356,8 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
     }
 
     QString role = msg.value(QStringLiteral("role")).toString();
+    if (ChatMessageVisibility::isInternalMessage(msg))
+        return true;
     const QString roleNorm = role.trimmed().toLower();
     if (roleNorm.isEmpty()) return false;
 
@@ -7485,8 +7776,10 @@ void GatewayClient::loadChatHistory(const QString &sessionKey, int limit)
         ? m_session.currentSessionKey() : sessionKey;
     if (key.trimmed().isEmpty())
         return;
-    sendRequest(QStringLiteral("chat.history"),
+    const QString reqId = sendRequest(QStringLiteral("chat.history"),
                 m_session.buildChatHistoryParams(key, limit));
+    if (!reqId.isEmpty())
+        m_chatHistoryReqSessions.insert(reqId, key);
 }
 
 /**
@@ -8854,6 +9147,8 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
                         static_cast<qlonglong>(QDateTime::currentMSecsSinceEpoch()));
                     m_collaborationChildSessionHints[i] = existing;
                     emit collaborationParticipantsChanged();
+                    if (!nextRunning)
+                        maybeShowControllerProducts();
                 }
                 break;
             }
@@ -8938,10 +9233,14 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     if (existingIndex >= 0) {
         m_collaborationChildSessionHints[existingIndex] = row;
         emit collaborationParticipantsChanged();
+        ensureChildSessionOutputDir(sessionKey, parentKey.isEmpty() ? taskKey : parentKey);
+        if (!row.value(QStringLiteral("isRunning")).toBool())
+            maybeShowControllerProducts();
         return;
     }
     m_collaborationChildSessionHints.append(row);
     emit collaborationParticipantsChanged();
+    ensureChildSessionOutputDir(sessionKey, parentKey.isEmpty() ? taskKey : parentKey);
 }
 
 void GatewayClient::refreshCollaborationSessionsAfterSpawn(
@@ -8996,11 +9295,7 @@ QVariantMap GatewayClient::collaborationChildHintForAgent(
 bool GatewayClient::eventAppliesToCurrentUiSession(
     const QJsonObject &payload, bool allowIfKeyMissing) const
 {
-    QString cur = m_currentViewSessionKey.trimmed();
-    if (cur.isEmpty())
-        cur = m_currentTaskSessionKey.trimmed();
-    if (cur.isEmpty())
-        cur = m_session.currentSessionKey().trimmed();
+    const QString cur = currentUiSessionKey();
     if (cur.isEmpty())
         return allowIfKeyMissing;
 
@@ -9023,6 +9318,12 @@ bool GatewayClient::eventAppliesToCurrentUiSession(
     if (!hasExplicitSessionKey
         && !eventAgentId.isEmpty()
         && eventAgentId == currentAgentId) {
+        // Do not let a synthesized agent:<id>:main event paint onto the
+        // expert controller transcript while a child of the same agent is
+        // running, or onto a different sibling session.
+        const QString taskKey = m_currentTaskSessionKey.trimmed();
+        if (!taskKey.isEmpty() && cur == taskKey)
+            return false;
         return true;
     }
 

@@ -279,8 +279,8 @@ public:
     void persistDetectedArtifacts(const QString &sessionKey, const QVariantList &artifacts);
     QVariantList restoreSessionArtifacts(const QString &sessionKey, const QVariantList &history);
     /// True when artifact results for artifactSessionKey should be shown on
-    /// the currently viewed Q&A session (same task, including a switched
-    /// collaboration expert).
+    /// the currently viewed Q&A session. Child products stay off the
+    /// controller transcript until the whole collaboration run has finished.
     bool artifactResultsBelongToView(const QString &artifactSessionKey,
                                      const QString &viewSessionKey) const;
 
@@ -789,6 +789,10 @@ private:
     QString displayNameForSession(const QVariantMap &session) const;
     QString agentIdFromSessionKey(const QString &sessionKey) const;
     bool sessionBelongsToTask(const QVariantMap &session, const QString &taskKey) const;
+    bool collaborationTaskFullyComplete(const QString &taskKey) const;
+    QVariantList filterControllerHistory(const QVariantList &history) const;
+    QString currentUiSessionKey() const;
+    void maybeShowControllerProducts();
     QString normalizeWorkspacePath(const QString &workspace) const;
     QString prepareCronWorkspace(const QString &workspace);
     QString buildCollaborationPrompt(const QString &userMessage,
@@ -827,16 +831,23 @@ private:
     typedef QHash<QString, WorkspaceFileState> WorkspaceSnapshot;
     struct ArtifactTrackingState
     {
-        QString workspace;
+        QStringList workspaces;
         WorkspaceSnapshot before;
         quint64 generation = 0;
     };
     WorkspaceSnapshot snapshotWorkspace(const QString &workspace) const;
+    WorkspaceSnapshot snapshotWorkspaces(const QStringList &workspaces) const;
     QString resolveArtifactTrackingKey(const QString &sessionKey) const;
     QString workspaceForArtifactSession(const QString &sessionKey) const;
+    QStringList workspacesForArtifactSession(const QString &sessionKey) const;
     void beginArtifactTracking(const QString &sessionKey, bool resetSnapshot = false);
     void finishArtifactTracking(const QString &sessionKey);
     static bool shouldIgnoreArtifactPath(const QString &relativePath);
+    QString desiredTaskOutputDir(const QString &sessionKey) const;
+    bool isOpenClawAgentWorkspace(const QString &path) const;
+    void ensureChildSessionOutputDir(const QString &childSessionKey,
+                                     const QString &parentSessionKey);
+    void syncSpawnedArtifactsIntoTaskWorkspace(const QString &sessionKey);
 
     bool initTaskSessionDb();
     void loadTaskSessionListFromDb();
@@ -1095,6 +1106,7 @@ private:
     QString m_activeChatSessionKey;               ///< 当前聊天运行所属 sessionKey
     QString m_recentlyAbortedChatSessionKey;      ///< 中止后用于过滤迟到的 complete 事件
     QHash<QString, ArtifactTrackingState> m_artifactTrackingBySession;
+    QSet<QString> m_patchedChildOutputDirKeys;
     quint64 m_sidebarTitleBatchGen = 0;
     quint64 m_sessionTitleBatchGen = 0;
     QTimer m_agentFirstUserTitleDebounce;
@@ -1103,6 +1115,7 @@ private:
     /// 收到 toolResult 后防抖补拉历史；仅更新 toolResult 文本，不清空聊天模型
     QTimer m_toolResultRefreshTimer;
     QMap<QString, QString> m_toolResultRefreshReqSessions; ///< requestId -> view sessionKey
+    QMap<QString, QString> m_chatHistoryReqSessions; ///< chat.history requestId -> sessionKey
 
     // ── 模型管理 ──
     QVariantList m_modelList;        ///< 可用模型列表缓存（models.list 响应）

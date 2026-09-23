@@ -930,7 +930,8 @@
         if (!Array.isArray(artifacts) || artifacts.length === 0)
           return '';
         var key = 'artifacts:' + row;
-        var visible = artifacts;
+        var previewLimit = 6;
+        var visible = artifacts.slice(0, previewLimit);
         var html = ['<div class="artifact-section">'];
         html.push('<div class="artifact-header">'
           + '<div class="artifact-heading"><span class="artifact-title">产物</span>'

@@ -27,6 +27,7 @@ linux:QMAKE_LFLAGS += -fuse-ld=gold
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000
 
 HEADERS += \
+    chat_message_visibility.h \
     mainviewcontroller.h \
     CommonFunc.h \
     gateway_client.h \

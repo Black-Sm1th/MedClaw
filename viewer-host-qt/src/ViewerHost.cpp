@@ -11,6 +11,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QHostAddress>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QTcpSocket>
 #include <QUrlQuery>
@@ -290,6 +291,47 @@ bool isJbrowseName(const QString &name)
         });
 }
 
+bool isNiftiName(const QString &name)
+{
+    return nameHasAnySuffix(name, {
+            QStringLiteral(".nii"), QStringLiteral(".nii.gz")
+        });
+}
+
+bool isNpyName(const QString &name)
+{
+    return name.endsWith(QStringLiteral(".npy"), Qt::CaseInsensitive);
+}
+
+bool isVolumeName(const QString &name)
+{
+    return isNiftiName(name) || isNpyName(name);
+}
+
+QString volumeStemName(const QString &fileName)
+{
+    QString stem = fileName;
+    if (stem.endsWith(QStringLiteral(".nii.gz"), Qt::CaseInsensitive))
+        stem.chop(7);
+    else if (stem.endsWith(QStringLiteral(".nii"), Qt::CaseInsensitive))
+        stem.chop(4);
+    else if (stem.endsWith(QStringLiteral(".npy"), Qt::CaseInsensitive))
+        stem.chop(4);
+    return stem;
+}
+
+bool isNiftiMaskName(const QString &fileName)
+{
+    const QString stem = volumeStemName(fileName).toLower();
+    static const QRegularExpression re(
+        QStringLiteral("(?:^|[_-])(?:mask|seg|label|labels|labelmap|pred|prediction)(?:[_-]|$)"));
+    if (re.match(stem).hasMatch())
+        return true;
+    return stem.contains(QStringLiteral("器官分割"))
+        || stem.contains(QStringLiteral("分割标签"))
+        || stem.contains(QStringLiteral("分割mask"));
+}
+
 struct ByteRange {
     bool specified = false;
     qint64 start = 0;
@@ -365,9 +407,339 @@ bool sameMedicalPath(const QString &left, const QString &right)
                             normalizedMedicalPath(right), Qt::CaseInsensitive) == 0;
 }
 
+QStringList siblingNiftiPaths(const QFileInfo &info)
+{
+    QStringList extras;
+    const QDir dir = info.absoluteDir();
+    const QFileInfoList candidates = dir.entryInfoList(
+        QStringList{QStringLiteral("*.nii"), QStringLiteral("*.nii.gz")},
+        QDir::Files);
+    for (const QFileInfo &candidate : candidates) {
+        const QString path = normalizedMedicalPath(candidate.absoluteFilePath());
+        if (path.isEmpty() || sameMedicalPath(path, info.absoluteFilePath()))
+            continue;
+        extras.append(path);
+    }
+    return extras;
+}
+
+QString joinResultRelative(const QDir &dir, const QString &relative)
+{
+    if (relative.isEmpty())
+        return {};
+    const QFileInfo direct(dir.filePath(relative));
+    if (direct.exists() && direct.isFile())
+        return normalizedMedicalPath(direct.absoluteFilePath());
+
+    const QString name = QFileInfo(relative).fileName();
+    if (name.isEmpty())
+        return {};
+    const QStringList nearby{
+        dir.filePath(name),
+        dir.filePath(QStringLiteral("../01_data/") + name),
+        dir.filePath(QStringLiteral("../02_seg/") + name),
+        dir.filePath(QStringLiteral("../../01_data/") + name),
+        dir.filePath(QStringLiteral("../../02_seg/") + name),
+        dir.filePath(QStringLiteral("01_data/") + name),
+        dir.filePath(QStringLiteral("02_seg/") + name),
+        dir.filePath(QStringLiteral("04_report/") + name),
+    };
+    for (const QString &candidate : nearby) {
+        const QFileInfo info(candidate);
+        if (info.exists() && info.isFile())
+            return normalizedMedicalPath(info.absoluteFilePath());
+    }
+    QDir cursor = dir;
+    for (int i = 0; i < 3; ++i) {
+        const QFileInfoList matches = cursor.entryInfoList(
+            QStringList{name}, QDir::Files, QDir::Name);
+        if (!matches.isEmpty())
+            return normalizedMedicalPath(matches.first().absoluteFilePath());
+        const QFileInfoList children = cursor.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo &child : children) {
+            const QFileInfo nested(QDir(child.absoluteFilePath()).filePath(name));
+            if (nested.exists() && nested.isFile())
+                return normalizedMedicalPath(nested.absoluteFilePath());
+            if (child.fileName() == QLatin1String("04_report")) {
+                const QFileInfoList cases = QDir(child.absoluteFilePath())
+                    .entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+                for (const QFileInfo &caseDir : cases) {
+                    const QFileInfo caseFile(QDir(caseDir.absoluteFilePath()).filePath(name));
+                    if (caseFile.exists() && caseFile.isFile())
+                        return normalizedMedicalPath(caseFile.absoluteFilePath());
+                }
+            }
+        }
+        if (!cursor.cdUp())
+            break;
+    }
+    return {};
+}
+
+QJsonObject readJsonObjectFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject())
+        return {};
+    return document.object();
+}
+
+bool jsonTruthy(const QJsonValue &value)
+{
+    if (value.isBool())
+        return value.toBool();
+    if (value.isDouble())
+        return !qFuzzyIsNull(value.toDouble());
+    if (value.isString()) {
+        const QString text = value.toString().trimmed().toLower();
+        return text == QStringLiteral("true") || text == QStringLiteral("1")
+            || text == QStringLiteral("yes");
+    }
+    return false;
+}
+
+QJsonObject overlayObjectFromSummary(const QJsonObject &root)
+{
+    if (root.value(QStringLiteral("status")).toString() != QStringLiteral("ok"))
+        return {};
+    const QJsonObject summary = root.value(QStringLiteral("summary")).toObject();
+    const QJsonObject display = summary.value(QStringLiteral("display")).toObject();
+    const QJsonValue overlayValue = display.value(QStringLiteral("overlay"));
+    if (!overlayValue.isObject())
+        return {};
+    const QJsonObject overlay = overlayValue.toObject();
+    if (!jsonTruthy(overlay.value(QStringLiteral("same_grid"))))
+        return {};
+    return overlay;
+}
+
+QStringList candidateResultJsonPaths(const QFileInfo &info)
+{
+    QStringList paths;
+    auto add = [&](const QString &path) {
+        if (path.isEmpty() || !QFileInfo::exists(path) || paths.contains(path, Qt::CaseInsensitive))
+            return;
+        paths.append(path);
+    };
+
+    auto addReportResults = [&](const QDir &dir) {
+        add(dir.filePath(QStringLiteral("04_report/result.json")));
+        const QDir report(dir.filePath(QStringLiteral("04_report")));
+        if (!report.exists())
+            return;
+        const QFileInfoList children = report.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo &child : children)
+            add(QDir(child.absoluteFilePath()).filePath(QStringLiteral("result.json")));
+    };
+
+    if (info.isDir()) {
+        QDir dir(info.absoluteFilePath());
+        add(dir.filePath(QStringLiteral("result.json")));
+        add(dir.filePath(QStringLiteral("02_seg/result.json")));
+        add(dir.filePath(QStringLiteral("01_data/result.json")));
+        addReportResults(dir);
+        const QFileInfoList children = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo &child : children)
+            add(QDir(child.absoluteFilePath()).filePath(QStringLiteral("result.json")));
+        for (int i = 0; i < 3; ++i) {
+            if (!dir.cdUp())
+                break;
+            add(dir.filePath(QStringLiteral("result.json")));
+            add(dir.filePath(QStringLiteral("02_seg/result.json")));
+            add(dir.filePath(QStringLiteral("01_data/result.json")));
+            addReportResults(dir);
+        }
+        return paths;
+    }
+
+    const QDir dir = info.absoluteDir();
+    add(dir.filePath(QStringLiteral("result.json")));
+    if (info.fileName().compare(QStringLiteral("result.json"), Qt::CaseInsensitive) == 0)
+        add(info.absoluteFilePath());
+
+    QDir cursor = dir;
+    for (int i = 0; i < 4; ++i) {
+        add(cursor.filePath(QStringLiteral("result.json")));
+        add(cursor.filePath(QStringLiteral("02_seg/result.json")));
+        addReportResults(cursor);
+        if (!cursor.cdUp())
+            break;
+    }
+    return paths;
+}
+
+void appendUniquePath(QStringList &files, const QString &path)
+{
+    if (path.isEmpty() || files.contains(path, Qt::CaseInsensitive))
+        return;
+    files.append(path);
+}
+
+QString preferredNiftiCompanion(const QDir &dir, const QString &npyPath)
+{
+    if (npyPath.isEmpty())
+        return {};
+    const QFileInfo npy(npyPath);
+    const QString stem = npy.completeBaseName();
+    const QStringList candidates{
+        dir.filePath(stem + QStringLiteral(".nii.gz")),
+        dir.filePath(stem + QStringLiteral(".nii")),
+    };
+    for (const QString &candidate : candidates) {
+        const QString path = normalizedMedicalPath(candidate);
+        if (QFileInfo::exists(path))
+            return path;
+    }
+    return {};
+}
+
+QString resolveOverlayVolumePath(const QDir &dir, const QString &relative)
+{
+    QString path = joinResultRelative(dir, relative);
+    if (path.isEmpty())
+        return {};
+    if (isNpyName(QFileInfo(path).fileName())) {
+        const QString nifti = preferredNiftiCompanion(dir, path);
+        if (!nifti.isEmpty())
+            return nifti;
+    }
+    return path;
+}
+
+QString overlaySameGridPath(const QDir &dir, const QString &relative)
+{
+    // Keep the overlay pair on the same preprocess grid. Do not remap an npy
+    // mask to a sibling NIfTI: that file is often xyz rather than DHW.
+    return joinResultRelative(dir, relative);
+}
+
+QStringList overlayPairFromResult(const QJsonObject &overlay, const QDir &dir, QStringList *maskNames)
+{
+    QStringList pair;
+    const QString imagePath = overlaySameGridPath(
+        dir, overlay.value(QStringLiteral("image")).toString());
+    const QString maskPath = overlaySameGridPath(
+        dir, overlay.value(QStringLiteral("mask")).toString());
+    if (!isVolumeName(QFileInfo(imagePath).fileName())
+        || !isVolumeName(QFileInfo(maskPath).fileName()))
+        return {};
+    appendUniquePath(pair, imagePath);
+    appendUniquePath(pair, maskPath);
+    if (maskNames && !maskPath.isEmpty())
+        maskNames->append(QFileInfo(maskPath).fileName());
+    return pair;
+}
+
+QString displayPathString(const QJsonValue &value)
+{
+    if (value.isString())
+        return value.toString().trimmed();
+    if (value.isObject()) {
+        const QJsonObject object = value.toObject();
+        const QString path = object.value(QStringLiteral("path")).toString().trimmed();
+        if (!path.isEmpty())
+            return path;
+        return object.value(QStringLiteral("npy")).toString().trimmed();
+    }
+    return {};
+}
+
+bool displayIsOriginalCt(const QJsonObject &image)
+{
+    const QString grid = image.value(QStringLiteral("grid")).toString().toLower();
+    if (grid.contains(QLatin1String("original")))
+        return true;
+    const QString path = displayPathString(image);
+    const QString name = QFileInfo(path).fileName();
+    return isNiftiName(name) && !isNiftiMaskName(name)
+        && (name.contains(QStringLiteral("底图"))
+            || name.contains(QStringLiteral("_0000.nii"), Qt::CaseInsensitive));
+}
+
+QStringList displayPairFromResult(const QJsonObject &root, const QDir &dir, QStringList *maskNames)
+{
+    const QJsonObject overlay = overlayObjectFromSummary(root);
+    const QStringList overlayPair = overlayPairFromResult(overlay, dir, maskNames);
+    if (overlayPair.size() >= 2)
+        return overlayPair;
+
+    const QJsonObject summary = root.value(QStringLiteral("summary")).toObject();
+    const QJsonObject display = summary.value(QStringLiteral("display")).toObject();
+    const QJsonObject imageObj = display.value(QStringLiteral("image")).toObject();
+    const QJsonObject maskObj = display.value(QStringLiteral("mask")).toObject();
+    QString imageRel = displayPathString(imageObj);
+    if (imageRel.isEmpty())
+        imageRel = overlay.value(QStringLiteral("image")).toString();
+    QString maskRel = displayPathString(maskObj);
+    if (maskRel.isEmpty())
+        maskRel = maskObj.value(QStringLiteral("npy")).toString();
+    if (maskRel.isEmpty())
+        maskRel = overlay.value(QStringLiteral("mask")).toString();
+    const QString imagePath = overlaySameGridPath(dir, imageRel);
+    const QString maskPath = overlaySameGridPath(dir, maskRel);
+    QStringList pair;
+    if (!isVolumeName(QFileInfo(imagePath).fileName())
+        || !isVolumeName(QFileInfo(maskPath).fileName()))
+        return {};
+    appendUniquePath(pair, imagePath);
+    appendUniquePath(pair, maskPath);
+    if (maskNames && !maskPath.isEmpty())
+        maskNames->append(QFileInfo(maskPath).fileName());
+    return pair;
+}
+
+QStringList collectOverlayFromResults(const QFileInfo &info, QStringList *maskNames)
+{
+    if (info.isFile()) {
+        const QString name = info.fileName().toLower();
+        if (name != QStringLiteral("result.json") && !isVolumeName(name))
+            return {};
+    }
+    const QStringList jsonPaths = candidateResultJsonPaths(info);
+    QStringList preferred;
+    QStringList fallback;
+    QStringList preferredMasks;
+    QStringList fallbackMasks;
+    for (const QString &jsonPath : jsonPaths) {
+        const QJsonObject root = readJsonObjectFile(jsonPath);
+        if (root.isEmpty())
+            continue;
+        const QDir dir = QFileInfo(jsonPath).absoluteDir();
+        QStringList names;
+        const QStringList pair = displayPairFromResult(root, dir, &names);
+        if (pair.size() < 2)
+            continue;
+        const bool preferSeg = root.value(QStringLiteral("skill")).toString()
+                                   .contains(QStringLiteral("seg"), Qt::CaseInsensitive)
+            || jsonPath.contains(QStringLiteral("02_seg"), Qt::CaseInsensitive);
+        if (preferSeg) {
+            preferred = pair;
+            preferredMasks = names;
+            break;
+        }
+        if (fallback.isEmpty()) {
+            fallback = pair;
+            fallbackMasks = names;
+        }
+    }
+    const QStringList files = !preferred.isEmpty() ? preferred : fallback;
+    if (maskNames)
+        *maskNames = !preferred.isEmpty() ? preferredMasks : fallbackMasks;
+    return files;
+}
+
 QStringList collectMedicalFiles(const QFileInfo &info)
 {
     QStringList files;
+    QStringList overlayMaskNames;
+    const QStringList overlay = collectOverlayFromResults(info, &overlayMaskNames);
+    if (!overlay.isEmpty())
+        return overlay;
+
     if (info.isDir()) {
         QDirIterator iterator(info.absoluteFilePath(), QDir::Files,
                               QDirIterator::Subdirectories);
@@ -380,11 +752,18 @@ QStringList collectMedicalFiles(const QFileInfo &info)
     } else {
         const QString path = normalizedMedicalPath(info.absoluteFilePath());
         files.append(path);
-        if (isJbrowseName(info.fileName().toLower())) {
+        const QString name = info.fileName().toLower();
+        if (isJbrowseName(name)) {
             for (const QString &companion : genomeCompanionPaths(info)) {
                 const QString extra = normalizedMedicalPath(companion);
                 if (!extra.isEmpty() && !files.contains(extra, Qt::CaseInsensitive))
                     files.append(extra);
+            }
+        } else if (isVolumeName(name) && !isNiftiMaskName(info.fileName())) {
+            for (const QString &companion : siblingNiftiPaths(info)) {
+                if (isNiftiMaskName(QFileInfo(companion).fileName())
+                    && !files.contains(companion, Qt::CaseInsensitive))
+                    files.append(companion);
             }
         }
     }
@@ -434,8 +813,10 @@ QString medicalViewerMode(const QFileInfo &info)
     if (isJbrowseName(name))
         return QStringLiteral("jbrowse");
 
-    if (name.endsWith(QStringLiteral(".nii"))
-        || name.endsWith(QStringLiteral(".nii.gz")))
+    if (isNiftiName(name))
+        return QStringLiteral("volume");
+
+    if (name == QStringLiteral("result.json") || name.endsWith(QStringLiteral(".npy")))
         return QStringLiteral("volume");
 
     const QString suffix = info.suffix().toLower();
@@ -472,8 +853,15 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
 
     m_currentPath = info.absoluteFilePath();
     m_medicalFiles.clear();
+    m_medicalMaskNames.clear();
     m_medicalMode = false;
-    m_readOnly = readOnly || !info.isWritable();
+    m_readOnly = readOnly;
+    // Downloads (WeChat/browser) often arrive with the Windows ReadOnly bit.
+    // Keep view-mode HTML on the real preview page, but still enter the editor
+    // when the caller asked to edit. Saving later clears the attribute.
+    if (!readOnly && !info.isWritable())
+        QFile(info.absoluteFilePath()).setPermissions(
+            info.permissions() | QFileDevice::WriteOwner | QFileDevice::WriteUser);
     m_language = language.isEmpty() ? QStringLiteral("zh-CN") : language;
     m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     ++m_nonce;
@@ -483,7 +871,7 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
     QUrl url;
     if (QStringList{QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("txt")}.contains(suffix)) {
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/markdown/index.html").arg(port()));
-    } else if ((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && m_readOnly) {
+    } else if ((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && readOnly) {
         url = QUrl(QStringLiteral("http://127.0.0.1:%1/api/html/%2/%3")
                        .arg(port())
                        .arg(m_sessionId, QString::fromLatin1(QUrl::toPercentEncoding(info.fileName()))));
@@ -492,7 +880,7 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
     }
     QUrlQuery query;
     if (suffix != QStringLiteral("md") && suffix != QStringLiteral("markdown") && suffix != QStringLiteral("txt")
-        && !((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && m_readOnly)) {
+        && !((suffix == QStringLiteral("html") || suffix == QStringLiteral("htm")) && readOnly)) {
         query.addQueryItem(QStringLiteral("route"),
                            (suffix == QStringLiteral("html") || suffix == QStringLiteral("htm"))
                                ? QStringLiteral("htmlEditor")
@@ -538,7 +926,13 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
         return {};
     }
 
-    const QStringList files = collectMedicalFiles(info);
+    QStringList overlayMaskNames;
+    QStringList overlayFiles;
+    // Opening a PNG/JPEG must not pick up a sibling result.json overlay pair
+    // (that pair is npy/nifti and would be served to <img>, which then fails).
+    if (mode != QStringLiteral("raster"))
+        overlayFiles = collectOverlayFromResults(info, &overlayMaskNames);
+    const QStringList files = overlayFiles.isEmpty() ? collectMedicalFiles(info) : overlayFiles;
     if (files.isEmpty()) {
         setLastError(QStringLiteral("影像文件夹为空：%1").arg(info.absoluteFilePath()));
         return {};
@@ -546,6 +940,7 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
 
     m_currentPath = info.absoluteFilePath();
     m_medicalFiles = files;
+    m_medicalMaskNames = overlayMaskNames;
     m_medicalViewerMode = mode;
     m_medicalMode = true;
     m_readOnly = true;
@@ -631,6 +1026,7 @@ void ViewerHost::closeDocument()
     m_currentPath.clear();
     m_sessionId.clear();
     m_medicalFiles.clear();
+    m_medicalMaskNames.clear();
     m_medicalViewerMode.clear();
     m_medicalMode = false;
     m_readOnly = false;
@@ -780,7 +1176,8 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           const QFileInfo info(localPath);
           const QByteArray disposition = "inline; filename*=UTF-8''"
               + QUrl::toPercentEncoding(info.fileName());
-          respondLocalFile(socket, request, localPath, "application/octet-stream",
+          respondLocalFile(socket, request, localPath,
+                           contentTypeForPath(localPath).toLatin1(),
                            {{"Content-Disposition", disposition}},
                            method == "HEAD");
           return;
@@ -1163,7 +1560,10 @@ QJsonObject ViewerHost::medicalManifest() const
             {QStringLiteral("url"), fileUrl},
             {QStringLiteral("mime"), contentTypeForPath(info.absoluteFilePath())},
             {QStringLiteral("size"), info.size()},
-            {QStringLiteral("modifiedAt"), info.lastModified().toMSecsSinceEpoch()}
+            {QStringLiteral("modifiedAt"), info.lastModified().toMSecsSinceEpoch()},
+            {QStringLiteral("role"), (m_medicalMaskNames.contains(info.fileName(), Qt::CaseInsensitive)
+                                      || isNiftiMaskName(info.fileName()))
+                ? QStringLiteral("mask") : QStringLiteral("image")}
         });
     }
     return QJsonObject{
@@ -1231,6 +1631,13 @@ QJsonObject ViewerHost::openPayload() const
 
 bool ViewerHost::writeBytes(const QString &path, const QByteArray &bytes)
 {
+    const QFileInfo info(path);
+    if (info.exists() && !info.isWritable()) {
+        QFile existing(path);
+        existing.setPermissions(info.permissions()
+                                | QFileDevice::WriteOwner
+                                | QFileDevice::WriteUser);
+    }
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
         setLastError(file.errorString());

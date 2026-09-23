@@ -78,6 +78,7 @@ private:
     QString m_lastError;
     QString m_viewerRootOverride;
     QStringList m_medicalFiles;
+    QStringList m_medicalMaskNames;
     QString m_medicalViewerMode;
     bool m_readOnly = false;
     bool m_medicalMode = false;

@@ -176,7 +176,7 @@ const readWorkbookSortStateXml = async (buffer: ArrayBuffer) => {
     const entries = new Map<number, ReturnType<typeof readWorksheetSortStateXml>>();
     const worksheetFiles = Object.keys(zip.files)
         .map((name) => {
-            const match = /^xl\/worksheets\/sheet(\d+)\.xml$/i.exec(name);
+            const match = /^xl\/worksheets\/sheet(\d+)\.xml$/i.exec(name.replace(/\\/g, "/"));
             return match ? { index: Number(match[1]) - 1, name } : null;
         })
         .filter((it): it is { index: number; name: string } => Boolean(it))
