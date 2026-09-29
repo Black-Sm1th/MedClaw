@@ -3372,6 +3372,8 @@ ApplicationWindow {
                 property bool officeSaveRequested: false
                 property bool officeEditPending: false
                 property bool officePreviewPending: false
+                // 各标签页「打开时」的磁盘文件状态（mtime + size），用于判断预览内容是否过期
+                property var officeTabFileStates: ({})
                 readonly property bool officeDocumentVisible: artifactSidebarMode === "preview"
                                                              || artifactSidebarMode === "edit"
                 readonly property int currentSessionOfficeTabCount: {
@@ -3474,9 +3476,21 @@ ApplicationWindow {
 
                 function finishSidebarSessionLoad() {
                     var key = currentSidebarSessionKey()
+                    // 这个函数既在「切到某个会话」时调用，也在任何一次后台历史重载
+                    // （回答结束、任务状态更新等）后调用。后者发生时面板上可能正开着
+                    // 文件，此时绝不能拿「上次离开会话时存的快照」把用户正在看的东西
+                    // 重置掉——那会让预览莫名退回文件列表甚至收起。
+                    var showingOpenFile = activeOfficeTabIndex >= 0
+                                          && activeOfficeTabIndex < officeTabs.count
+                                          && String(officeTabs.get(activeOfficeTabIndex).sessionKey
+                                                    || "") === key
                     sidebarStateSessionKey = key
                     sessionInputFiles = wsClient.currentSessionInputFiles()
                     rebuildSessionArtifacts()
+                    if (showingOpenFile) {
+                        sessionHistoryLoading = false
+                        return
+                    }
                     var saved = sidebarVisibilityBySession[key]
                     officePanelMaximized = !!(saved && saved.maximized)
                     officePanelSizeManuallySet = !!(saved && saved.sizeManuallySet)
@@ -3504,6 +3518,16 @@ ApplicationWindow {
                         if (!resourcePopoverHover.hovered)
                             newTaskRec.hideResourcePopover()
                     }
+                }
+
+                // 只在文件面板显示着打开的文件时轮询（preview / edit 两种模式都算）
+                Timer {
+                    id: officeFileWatchTimer
+                    interval: 1000
+                    repeat: true
+                    running: newTaskRec.officeDocumentVisible
+                             && newTaskRec.officeTabs.count > 0
+                    onTriggered: newTaskRec.checkOfficeFileChanges()
                 }
 
                 FolderDialog {
@@ -3754,6 +3778,88 @@ ApplicationWindow {
                     return String(path || "").replace(/\\/g, "/").toLowerCase()
                 }
 
+                /**
+                 * 这些扩展名由页面里的编辑器负责保存提示（HTML/Excel 系/Zip/Parquet/SVG/XMind
+                 * 都会自己弹一条 message.success），app 层不要再弹，否则一次保存出现两个提示。
+                 * docx/pptx/md/txt 的编辑器不提示，仍由 app 弹「xx 已保存」。
+                 */
+                function viewerToastsOnSave(path) {
+                    var ext = String(fileExtension(String(path || ""))).toLowerCase()
+                    return /^(html?|xlsx|xlsm|xls|ods|csv|tsv|zip|parquet|svg|xmind)$/.test(ext)
+                }
+
+                // ---- 打开中的文件被外部改写 ----------------------------------
+                // 只在轮询里比对 mtime + size：应用自身保存走 QSaveFile 原子替换，
+                // agent / 编辑器改写文件也常常是「写临时文件再改名」，文件级 watcher
+                // 会漏掉这类事件，定时比对磁盘状态更可靠。
+                function setOfficeFileBaseline(path) {
+                    if (!path)
+                        return
+                    var key = officeTabKey(path)
+                    var info = $MainViewController.localFileInfo(path)
+                    var next = {}
+                    for (var known in officeTabFileStates)
+                        next[known] = officeTabFileStates[known]
+                    next[key] = {
+                        "modifiedAt": (info && info.modifiedAt) ? info.modifiedAt : 0,
+                        "sizeBytes": (info && info.sizeBytes) ? info.sizeBytes : 0,
+                        "stale": false
+                    }
+                    officeTabFileStates = next
+                }
+
+                function checkOfficeFileChanges() {
+                    var next = {}
+                    var changed = false
+                    for (var i = 0; i < officeTabs.count; ++i) {
+                        var tab = officeTabs.get(i)
+                        var key = officeTabKey(tab.path)
+                        var previous = officeTabFileStates[key]
+                        var info = $MainViewController.localFileInfo(tab.path)
+                        if (!info || !info.absolutePath) {
+                            // 读不到（被删除 / 正在被替换）：保留原判断，不误报
+                            if (previous)
+                                next[key] = previous
+                            continue
+                        }
+                        var modifiedAt = info.modifiedAt ? info.modifiedAt : 0
+                        var sizeBytes = info.sizeBytes ? info.sizeBytes : 0
+                        if (!previous) {
+                            next[key] = { "modifiedAt": modifiedAt, "sizeBytes": sizeBytes,
+                                          "stale": false }
+                            changed = true
+                            continue
+                        }
+                        var stale = previous.modifiedAt !== modifiedAt
+                                    || previous.sizeBytes !== sizeBytes
+                        if (stale === previous.stale) {
+                            next[key] = previous
+                            continue
+                        }
+                        // 基线保留在打开时的值：文件被改写多次也只报一次，刷新后重新取基线
+                        next[key] = { "modifiedAt": previous.modifiedAt,
+                                      "sizeBytes": previous.sizeBytes,
+                                      "stale": stale }
+                        changed = true
+                    }
+                    if (changed || Object.keys(next).length !== Object.keys(officeTabFileStates).length)
+                        officeTabFileStates = next
+                }
+
+                function refreshOfficeTab(index) {
+                    var tab = officeTabs.get(index)
+                    var host = officeViewsRepeater.itemAt(index)
+                    if (!tab || !host || !host.officeView || !host.officeView.refresh)
+                        return
+                    if (!host.officeView.refresh()) {
+                        errorToast.text = qsTr("刷新失败，请稍后重试")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
+                    setOfficeFileBaseline(tab.path)
+                }
+
                 function findOfficeTab(path, sessionKey) {
                     var key = officeTabKey(path)
                     var owner = String(sessionKey === undefined
@@ -3812,17 +3918,8 @@ ApplicationWindow {
                 function closeOfficeTab(index) {
                     if (index < 0 || index >= officeTabs.count)
                         return
-                    var host = officeViewsRepeater.itemAt(index)
-                    if (host && host.closeWhenFinished) {
-                        closeOfficeTabNow(index)
-                        return
-                    }
-                    if (host && host.officeView && host.officeClient && host.officeClient.busy
-                            && host.officeView.mode === "edit") {
-                        host.closeWhenFinished = true
-                        host.officeView.closeEditor()
-                        return
-                    }
+                    // 关闭即关闭：编辑态不再"先保存再关"。未保存的改动会随标签一起丢弃，
+                    // 想保留请点工具条上的「保存」。
                     closeOfficeTabNow(index)
                 }
 
@@ -5193,35 +5290,46 @@ ApplicationWindow {
                                     officeViewsRepeater.count > newTaskRec.activeOfficeTabIndex
                                     && newTaskRec.activeOfficeTabIndex >= 0
                                     ? officeViewsRepeater.itemAt(newTaskRec.activeOfficeTabIndex) : null
+                                // 编辑态下同一个按钮变成「保存」
+                                readonly property bool editMode:
+                                    newTaskRec.artifactSidebarMode === "edit"
                                 anchors.right: officeMoreButton.left
                                 anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: newTaskRec.supportsLocalViewerEdit(newTaskRec.selectedOfficeFile)
-                                         && newTaskRec.artifactSidebarMode === "preview"
-                                width: 68
+                                         && (newTaskRec.artifactSidebarMode === "preview"
+                                             || officeActionButton.editMode)
+                                width: officeActionButton.editMode ? 64 : 68
                                 height: 36
                                 radius: 8
-                                color: officeActionMouse.pressed ? "#14000000"
-                                      : officeActionMouse.containsMouse ? "#F7F9FA" : "transparent"
+                                // 编辑态按设计走蓝底主按钮（#006BFF），视图态保持原来的朴素样式
+                                color: officeActionButton.editMode
+                                       ? (officeActionMouse.pressed ? "#0059D6"
+                                          : officeActionMouse.containsMouse ? "#1A7AFF" : "#006BFF")
+                                       : (officeActionMouse.pressed ? "#14000000"
+                                          : officeActionMouse.containsMouse ? "#F7F9FA"
+                                          : "transparent")
 
                                 Row {
                                     anchors.centerIn: parent
-                                    spacing: 8
+                                    spacing: officeActionButton.editMode ? 4 : 8
 
                                     Image {
                                         width: 16; height: 16
                                         anchors.verticalCenter: parent.verticalCenter
                                         visible: true
-                                        source: "qrc:/images/office/edit.svg"
+                                        source: officeActionButton.editMode
+                                                ? "qrc:/images/office/save.svg"
+                                                : "qrc:/images/office/edit.svg"
                                         fillMode: Image.PreserveAspectFit
                                     }
 
                                     Label {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: qsTr("编辑")
+                                        text: officeActionButton.editMode ? qsTr("保存") : qsTr("编辑")
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 14
-                                        color: "#A6000000"
+                                        color: officeActionButton.editMode ? "#FFFFFF" : "#A6000000"
                                     }
                                 }
                                 MouseArea {
@@ -5238,10 +5346,17 @@ ApplicationWindow {
                                              && !officeActionButton.activeHost.officeClient.saving
                                              && String(officeActionButton.activeHost.officeClient.editorUrl || "").length > 0
                                     onClicked: {
-                                        var view = officeActionButton.activeHost
-                                                   ? officeActionButton.activeHost.officeView : null
+                                        var host = officeActionButton.activeHost
+                                        var view = host ? host.officeView : null
                                         if (!view)
                                             return
+                                        if (officeActionButton.editMode) {
+                                            // 编辑态：原地保存并留在编辑态，失败由保存流程自己提示
+                                            newTaskRec.officeSaveRequested = true
+                                            if (!view.saveEditor())
+                                                newTaskRec.officeSaveRequested = false
+                                            return
+                                        }
                                         newTaskRec.officeEditPending = true
                                         newTaskRec.officePreviewPending = false
                                         newTaskRec.officePanelMaximized = true
@@ -5371,7 +5486,6 @@ ApplicationWindow {
                                 required property string path
                                 required property string sessionKey
                                 required property string kind
-                                property bool closeWhenFinished: false
                                 property bool returnToPreviewAfterSave: false
                                 property bool downloadWhenFinished: false
                                 readonly property bool active:
@@ -5379,6 +5493,12 @@ ApplicationWindow {
                                     && sessionKey === newTaskRec.currentSidebarSessionKey()
                                 readonly property var officeClient: tabOfficeLoader.item
                                 property var officeView: tabOfficeLoader.item
+                                readonly property var fileState:
+                                    newTaskRec.officeTabFileStates[newTaskRec.officeTabKey(path)]
+                                    || null
+                                readonly property bool fileStale: kind !== "medical"
+                                                                  && !!fileState
+                                                                  && fileState.stale === true
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.top: officeTitleBar.bottom
@@ -5386,9 +5506,91 @@ ApplicationWindow {
                                 clip: true
                                 visible: active
 
+                                Rectangle {
+                                    id: staleFileBanner
+                                    anchors.top: parent.top
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    height: officeViewHost.fileStale ? 40 : 0
+                                    visible: height > 0
+                                    color: "#E6F4FF"
+
+                                    Rectangle {
+                                        id: staleBannerIcon
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 16
+                                        height: 16
+                                        radius: 8
+                                        color: "#1677FF"
+
+                                        Label {
+                                            anchors.centerIn: parent
+                                            anchors.verticalCenterOffset: -1
+                                            text: "i"
+                                            color: "#FFFFFF"
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+
+                                    Label {
+                                        anchors.left: staleBannerIcon.right
+                                        anchors.leftMargin: 8
+                                        anchors.right: staleRefreshButton.left
+                                        anchors.rightMargin: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("当前文件不是最新版本，请刷新查看。")
+                                        elide: Text.ElideRight
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 13
+                                        color: "#1F2329"
+                                    }
+
+                                    Rectangle {
+                                        id: staleRefreshButton
+                                        // 编辑态刷新会丢掉页面上未保存的改动，按钮上写明
+                                        readonly property bool editMode:
+                                            !!officeViewHost.officeView
+                                            && officeViewHost.officeView.mode === "edit"
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: staleRefreshLabel.implicitWidth + 24
+                                        height: 28
+                                        radius: 6
+                                        color: staleRefreshMouse.pressed ? "#D6E4FF"
+                                             : staleRefreshMouse.containsMouse ? "#F0F7FF"
+                                             : "#FFFFFF"
+
+                                        Label {
+                                            id: staleRefreshLabel
+                                            anchors.centerIn: parent
+                                            text: staleRefreshButton.editMode
+                                                  ? qsTr("放弃并刷新") : qsTr("刷新")
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 13
+                                            color: "#1F2329"
+                                        }
+
+                                        MouseArea {
+                                            id: staleRefreshMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: newTaskRec.refreshOfficeTab(officeViewHost.index)
+                                        }
+                                    }
+                                }
+
                                 Loader {
                                     id: tabOfficeLoader
-                                    anchors.fill: parent
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: staleFileBanner.bottom
+                                    anchors.bottom: parent.bottom
                                     source: officeViewHost.kind === "medical"
                                             ? "qrc:/localviewer/MedicalImageView.qml"
                                             : "qrc:/localviewer/LocalOfficeView.qml"
@@ -5402,6 +5604,8 @@ ApplicationWindow {
                                     ignoreUnknownSignals: true
                                     function onDocumentSaved(filePath) {
                                         newTaskRec.rebuildSessionArtifacts()
+                                        // 自己保存也会改 mtime，重取基线，别把自己的写当成"外部改动"
+                                        newTaskRec.setOfficeFileBaseline(filePath)
                                     }
                                     function onSaveFinished(filePath, saved) {
                                         if (officeViewHost.active)
@@ -5410,9 +5614,15 @@ ApplicationWindow {
                                         officeViewHost.downloadWhenFinished = false
                                         var returningToPreview = officeViewHost.returnToPreviewAfterSave
                                         officeViewHost.returnToPreviewAfterSave = false
+                                        var pageToasted = false
                                         if (saved) {
                                             newTaskRec.rebuildSessionArtifacts()
-                                            errorToast.text = (officeViewHost.name || "文档") + " 已保存"
+                                            // HTML/Excel/CSV/Zip/Parquet/SVG/XMind 这些编辑器保存后
+                                            // 自己会弹「保存成功」，这里再弹一条就是两个提示；
+                                            // docx/pptx/md/txt 页面不提示，仍由这里兜底。
+                                            pageToasted = newTaskRec.viewerToastsOnSave(officeViewHost.path)
+                                            if (!pageToasted)
+                                                errorToast.text = (officeViewHost.name || "文档") + " 已保存"
                                             if (officeViewHost.active && returningToPreview)
                                                 newTaskRec.officePreviewPending = true
                                             if (downloading && officeViewHost.active)
@@ -5424,14 +5634,19 @@ ApplicationWindow {
                                                 newTaskRec.officePreviewPending = false
                                                 newTaskRec.artifactSidebarMode = "edit"
                                             }
-                                            officeViewHost.closeWhenFinished = false
                                             errorToast.text = officeViewHost.officeClient.lastError
                                                     || ((officeViewHost.name || "文档") + " 保存失败，请重试")
                                         }
-                                        errorToast.visible = true
-                                        errorToastTimer.restart()
+                                        if (!pageToasted) {
+                                            errorToast.visible = true
+                                            errorToastTimer.restart()
+                                        }
                                     }
                                     function onEditorLoaded(editorMode) {
+                                        // 内容刚按磁盘最新状态读进来，取此刻为基线。首次打开、
+                                        // 刷新、切到编辑 / 查看、重新打开都会走到这里。
+                                        if (officeViewHost.kind !== "medical")
+                                            newTaskRec.setOfficeFileBaseline(officeViewHost.path)
                                         if (!officeViewHost.active)
                                             return
                                         if (newTaskRec.officeEditPending && editorMode === "edit") {
@@ -5454,20 +5669,6 @@ ApplicationWindow {
                                     function onSessionClosed(filePath, saved) {
                                         if (officeViewHost.active && newTaskRec.officeSaveRequested)
                                             newTaskRec.officeSaveRequested = false
-                                        if (officeViewHost.closeWhenFinished) {
-                                            officeViewHost.closeWhenFinished = false
-                                            if (saved || (officeViewHost.officeView
-                                                          && officeViewHost.officeView.mode === "view")) {
-                                                Qt.callLater(function() {
-                                                    newTaskRec.closeOfficeTabNow(officeViewHost.index)
-                                                })
-                                            } else if (officeViewHost.officeView) {
-                                                Qt.callLater(function() {
-                                                    officeViewHost.officeView.open(
-                                                                officeViewHost.path, "edit")
-                                                })
-                                            }
-                                        }
                                     }
                                 }
                             }

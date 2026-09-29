@@ -63,6 +63,15 @@ Item {
         return true
     }
 
+    /// 磁盘文件被外部改写后重新加载。编辑态会丢弃未保存的改动，按钮文案已写明。
+    function refresh() {
+        if (saving || !filePath)
+            return false
+        if (pdfMode)
+            return pdfView.reload()
+        return open(filePath, mode)
+    }
+
     function finishClose(saved) {
         var closedPath = filePath
         closeFallbackTimer.stop()

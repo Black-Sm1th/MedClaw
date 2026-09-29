@@ -8,6 +8,7 @@ Item {
     clip: true
 
     property url sourceUrl: ""
+    property string filePath: ""
     property string lastError: ""
     property bool outlineVisible: true
     property int bookmarkCount: 0
@@ -36,6 +37,7 @@ Item {
 
     function open(path) {
         lastError = ""
+        filePath = String(path || "")
         var url = toFileUrl(path)
         if (!url)
             return false
@@ -45,6 +47,21 @@ Item {
             return true
         }
         sourceUrl = url
+        return true
+    }
+
+    /// 磁盘上的 PDF 被外部改写后强制重新加载。
+    /// 同一 URL 会被上面的 open() 短路，所以先清空 source，下一个事件循环再设回去。
+    function reload() {
+        if (!filePath)
+            return false
+        var url = toFileUrl(filePath)
+        if (!url)
+            return false
+        sourceUrl = ""
+        Qt.callLater(function() {
+            root.sourceUrl = url
+        })
         return true
     }
 
