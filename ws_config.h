@@ -26,10 +26,10 @@ class WsConfig
 {
 public:
     /**
-     * @brief 构造函数 —— 从「用户主目录/AppData/config.json」加载或创建默认配置，并生成 Ed25519 设备密钥对
+     * @brief 构造函数 —— 从系统配置目录加载或创建配置，并加载持久化的 Ed25519 设备密钥对
      *
-     * 自动调用 initDeviceKeys() 完成以下工作：
-     *   1. 使用内嵌 TweetNaCl 实现生成 Ed25519 公私钥对
+     * 自动调用 loadOrCreateDeviceKeys() 完成以下工作：
+     *   1. 加载已持久化的 Ed25519 公私钥对，不存在时再生成
      *   2. 对公钥做 SHA-256 哈希得到 deviceId（十六进制字符串）
      */
     WsConfig();
@@ -86,22 +86,22 @@ public:
 
 private:
     /**
-     * @brief 从 AppData/config/config.json 读取 serverUrl、token、clientId、skillsStoragePath；
-     *        若文件不存在则创建并写入默认值；缺省键会补全并写回。
+     * @brief 从系统配置目录读取 serverUrl、token、clientId、skillsStoragePath；
+     *        首次运行会迁移旧 AppData/config/config.json，本机网关会同步 OpenClaw Token。
      */
     void loadOrCreatePersistentConfig();
 
     /**
-     * @brief 初始化 Ed25519 设备密钥对
+     * @brief 加载或创建 Ed25519 设备密钥对
      *
      * 使用内嵌纯 C++ 实现（基于 TweetNaCl，SHA-512 由 Qt 提供）。
-     * 生成流程：
+     * 新密钥生成流程：
      *   1. QRandomGenerator 生成 32 字节随机种子
      *   2. SHA-512 扩展种子 → 得到密钥标量 a
      *   3. 计算 A = a·B（基点乘法）→ 公钥（32 字节）
      *   4. SHA-256(公钥) → deviceId（64 字符十六进制）
      */
-    void initDeviceKeys();
+    void loadOrCreateDeviceKeys();
 
     /**
      * @brief 构建带 Ed25519 签名的 device JSON 对象
@@ -118,6 +118,8 @@ private:
     // ── 服务器与认证 ──
     QString m_serverUrl; ///< WebSocket 服务器地址
     QString m_token;     ///< 身份认证 Token
+    QString m_configPath;     ///< 跨平台应用配置文件
+    QString m_deviceKeysPath; ///< 持久化设备密钥文件
 
     QString m_skillsStoragePath; ///< 存放技能路径
     bool m_llmJudgmentEnabled = false;

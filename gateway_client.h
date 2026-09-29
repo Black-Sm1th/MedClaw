@@ -114,7 +114,7 @@ class GatewayClient : public QObject
     /// 尚无侧栏 agent 时用户在聊天栏勾选技能后的暂存（待新建 agent 后写入 config）
     Q_PROPERTY(bool pendingNewAgentSkillPolicySet READ pendingNewAgentSkillPolicySet NOTIFY
                    pendingNewAgentSkillPolicyChanged)
-    /// 与 AppData/config.json 中 serverUrl 一致（握手 token/clientId 亦来自该文件）
+    /// 与系统配置目录中 serverUrl 一致（本机网关 token 优先来自 OpenClaw）
     Q_PROPERTY(QString serverUrl READ serverUrl CONSTANT)
     /// 将 serverUrl 的 ws/wss 转为 http/https、去掉 path，用于 POST /tools/invoke 等 Gateway HTTP API
     Q_PROPERTY(QString gatewayHttpBaseUrl READ gatewayHttpBaseUrl CONSTANT)
@@ -1127,7 +1127,7 @@ private:
     QString m_lastConnectedWsUrl; ///< 最近一次 connectToServer 的 URL（自动重连用）
     /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费
     int m_pendingReconnectDelayMs = 0;
-    /// 自动重连：非用户主动断开时持续尝试恢复，退避间隔最大 5 秒
+    /// 自动重连：普通网络失败退避至 60 秒；认证限流使用服务端延时或默认 5 分钟
     bool m_userRequestedDisconnect = false; ///< disconnectFromServer() 触发的断开，不自动重连
     bool m_skipAutoReconnectOnNextDisconnect = false; ///< connectToServer 为换新连接而 close 旧 socket
     bool m_connectFromAutoReconnect = false;          ///< 当前 connectToServer 由自动重连定时器发起

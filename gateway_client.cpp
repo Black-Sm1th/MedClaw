@@ -4934,8 +4934,8 @@ void GatewayClient::onDisconnected()
     if (prevState == Connecting || prevState == Handshaking) {
         if (m_autoReconnectFailureCount < std::numeric_limits<int>::max())
             m_autoReconnectFailureCount += 1;
-        const int backoffStep = std::min(m_autoReconnectFailureCount - 1, 4);
-        const int retryDelayMs = std::min(500 << backoffStep, 5000);
+        const int backoffStep = std::min(m_autoReconnectFailureCount - 1, 7);
+        const int retryDelayMs = std::min(500 << backoffStep, 60000);
         qDebug().noquote() << "[Gateway] auto-reconnect retry in"
                            << retryDelayMs << "ms (failure"
                            << m_autoReconnectFailureCount << ")" << url;
@@ -5586,11 +5586,50 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     if (id == m_connectRequestId) {
         if (!ok) {
             QString errMsg;
-            if (errVal.isObject())
-                errMsg = errVal.toObject()
-                             .value(QStringLiteral("message")).toString();
+            QJsonObject errObject;
+            QJsonObject details;
+            if (errVal.isObject()) {
+                errObject = errVal.toObject();
+                details = errObject.value(QStringLiteral("details")).toObject();
+                errMsg = errObject.value(QStringLiteral("message")).toString();
+            }
             if (errMsg.isEmpty() && errVal.isString())
                 errMsg = errVal.toString();
+
+            QString errorCode = details.value(QStringLiteral("code")).toString().trimmed();
+            if (errorCode.isEmpty())
+                errorCode = errObject.value(QStringLiteral("code")).toString().trimmed();
+            const QString authReason = details.value(QStringLiteral("authReason"))
+                                           .toString().trimmed();
+            const bool authRateLimited = errorCode == QLatin1String("AUTH_RATE_LIMITED")
+                                         || authReason == QLatin1String("rate_limited");
+            const bool authenticationFailure = authRateLimited
+                || errorCode.startsWith(QLatin1String("AUTH_"))
+                || errMsg.contains(QLatin1String("unauthorized"), Qt::CaseInsensitive);
+
+            if (authRateLimited) {
+                int retryDelayMs = details.value(QStringLiteral("retryAfterMs")).toInt();
+                if (retryDelayMs <= 0) {
+                    const qint64 retryAfterSeconds =
+                        details.value(QStringLiteral("retryAfterSeconds")).toInt();
+                    if (retryAfterSeconds > 0)
+                        retryDelayMs = static_cast<int>(
+                            std::min<qint64>(retryAfterSeconds * 1000,
+                                             15 * 60 * 1000));
+                }
+                // Current gateways can omit retryAfter. Five minutes prevents
+                // the old five-second loop from extending the limiter.
+                if (retryDelayMs <= 0)
+                    retryDelayMs = 5 * 60 * 1000;
+                m_pendingReconnectDelayMs = std::clamp(retryDelayMs, 30000, 15 * 60 * 1000);
+                qWarning() << "[Gateway] authentication rate limited; retry delayed by"
+                           << m_pendingReconnectDelayMs << "ms";
+            } else if (authenticationFailure) {
+                // Invalid credentials cannot recover through repeated attempts.
+                // A manual connection or application restart clears this flag.
+                m_userRequestedDisconnect = true;
+                qWarning() << "[Gateway] authentication failed; auto-reconnect paused";
+            }
             qWarning() << "[Gateway] connect failed:" << errMsg;
             emit errorOccurred(errMsg);
             m_socket->abort();

@@ -8,34 +8,128 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
+#include <QStandardPaths>
+#include <QSysInfo>
+#include <QUrl>
 #include "ed25519_local.h"
 #include <cstring>
+
+namespace {
+
+const QString kDefaultServer = QStringLiteral("ws://127.0.0.1:18789");
+const QString kDefaultClientId = QStringLiteral("openclaw-control-ui");
+const QString kDefaultSkillsStoragePath = QStringLiteral("~/AetherStudy/skills");
+
+QString expandUserPath(const QString &path)
+{
+    const QString trimmed = path.trimmed();
+    if (trimmed == QLatin1String("~"))
+        return QDir::homePath();
+    if (trimmed.startsWith(QLatin1String("~/")))
+        return QDir(QDir::homePath()).filePath(trimmed.mid(2));
+    return trimmed;
+}
+
+QString applicationConfigDirectory()
+{
+    QString root = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    if (root.trimmed().isEmpty())
+        root = QDir(QDir::homePath()).filePath(QStringLiteral(".config"));
+    return QDir(root).filePath(QStringLiteral("AetherStudy"));
+}
+
+bool readJsonObject(const QString &path, QJsonObject *object)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject())
+        return false;
+    *object = document.object();
+    return true;
+}
+
+bool writePrivateJson(const QString &path, const QJsonObject &object)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return false;
+    file.write(QJsonDocument(object).toJson(QJsonDocument::Indented));
+    if (!file.commit())
+        return false;
+    QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    return true;
+}
+
+bool isLocalGateway(const QString &serverUrl)
+{
+    const QString host = QUrl(serverUrl).host().trimmed().toLower();
+    return host == QLatin1String("127.0.0.1") || host == QLatin1String("localhost")
+           || host == QLatin1String("::1");
+}
+
+QString openClawGatewayToken(QString *source)
+{
+    QString token = qEnvironmentVariable("OPENCLAW_GATEWAY_TOKEN").trimmed();
+    if (!token.isEmpty()) {
+        if (source)
+            *source = QStringLiteral("OPENCLAW_GATEWAY_TOKEN");
+        return token;
+    }
+
+    QString stateDir = expandUserPath(qEnvironmentVariable("OPENCLAW_STATE_DIR"));
+    if (stateDir.isEmpty())
+        stateDir = QDir(QDir::homePath()).filePath(QStringLiteral(".openclaw"));
+
+    const QString configPath = QDir(stateDir).filePath(QStringLiteral("openclaw.json"));
+    QJsonObject root;
+    if (!readJsonObject(configPath, &root))
+        return {};
+
+    token = root.value(QStringLiteral("gateway"))
+                .toObject()
+                .value(QStringLiteral("auth"))
+                .toObject()
+                .value(QStringLiteral("token"))
+                .toString()
+                .trimmed();
+    if (!token.isEmpty() && source)
+        *source = configPath;
+    return token;
+}
+
+QString currentPlatformName()
+{
+#if defined(Q_OS_WIN)
+    return QStringLiteral("Win32");
+#elif defined(Q_OS_LINUX)
+    return QStringLiteral("Linux %1").arg(QSysInfo::currentCpuArchitecture());
+#elif defined(Q_OS_MACOS)
+    return QStringLiteral("MacIntel");
+#else
+    return QSysInfo::prettyProductName();
+#endif
+}
+
+} // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
 //  构造 / 初始化
 // ═══════════════════════════════════════════════════════════════════════
 
 WsConfig::WsConfig()
-    // ── 占位；loadOrCreatePersistentConfig() 从 AppData/config.json 覆盖 ──
-    : m_serverUrl(QStringLiteral("ws://127.0.0.1:18789"))
-    , m_token(QStringLiteral("faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe"))
+    : m_serverUrl(kDefaultServer)
     , m_skillsStoragePath(QStringLiteral("~/AetherStudy/skills"))
-    , m_clientId(QStringLiteral("openclaw-control-ui"))
+    , m_clientId(kDefaultClientId)
     , m_clientVersion(QStringLiteral("dev"))
-// ── 平台标识：编译期自动检测 ──
-#if defined(Q_OS_WIN)
-    , m_clientPlatform(QStringLiteral("Win32"))
-#elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM)
-    , m_clientPlatform(QStringLiteral("Linux x86_64"))
-#elif defined(Q_OS_LINUX)
-    , m_clientPlatform(QStringLiteral("Linux"))
-#elif defined(Q_OS_MACOS)
-    , m_clientPlatform(QStringLiteral("MacIntel"))
-#else
-    , m_clientPlatform(QStringLiteral("Unknown"))
-#endif
+    , m_clientPlatform(currentPlatformName())
     // This is the desktop control client, not the browser WebChat client.
     // Session mutations such as model overrides are restricted for webchat
     // connections, so the handshake must declare the desktop UI mode.
@@ -55,59 +149,43 @@ WsConfig::WsConfig()
     memset(m_ed25519Pk, 0, sizeof(m_ed25519Pk));
     memset(m_ed25519Sk, 0, sizeof(m_ed25519Sk));
 
-    // 在构造阶段即生成设备密钥，确保后续握手时密钥可用
-    initDeviceKeys();
+    loadOrCreateDeviceKeys();
 }
 
 void WsConfig::loadOrCreatePersistentConfig()
 {
-    static const QString kDefaultServer = QStringLiteral("ws://127.0.0.1:18789");
-    static const QString kDefaultToken = QStringLiteral(
-        "faaefb8293b41aaad4dfa2a2d25740505183f59286a348fe");
-    static const QString kDefaultClientId = QStringLiteral("openclaw-control-ui");
-    static const QString kDefaultSkillsStoragePath = QStringLiteral("~/AetherStudy/skills");
-    const QString base = QStringLiteral("AppData/config/");
-    QDir().mkpath(base);
-    const QString path = base + QStringLiteral("config.json");
+    const QString configDir = applicationConfigDirectory();
+    m_configPath = QDir(configDir).filePath(QStringLiteral("config.json"));
+    m_deviceKeysPath = QDir(configDir).filePath(QStringLiteral("gateway-device.json"));
 
-    auto writeDefaults = [&](const QJsonObject &o) {
-        QFile out(path);
-        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            qWarning() << "[WsConfig] cannot write" << path;
-            return;
+    QJsonObject merged;
+    bool loaded = readJsonObject(m_configPath, &merged);
+    if (!loaded) {
+        // Older releases wrote below the process working directory. main.cpp
+        // makes that directory stable, so migrate without deleting the source.
+        const QString legacyPath = QDir::current().filePath(
+            QStringLiteral("AppData/config/config.json"));
+        if (readJsonObject(legacyPath, &merged)) {
+            loaded = true;
+            qDebug().noquote() << "[WsConfig] migrating legacy config" << legacyPath
+                               << "to" << m_configPath;
         }
-        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
-        out.close();
-        qDebug().noquote() << "[WsConfig] wrote" << path;
-    };
-
-    QFile f(path);
-    if (!f.exists()) {
-        m_serverUrl = kDefaultServer;
-        m_token = kDefaultToken;
-        m_clientId = kDefaultClientId;
-        QJsonObject o;
-        o[QStringLiteral("serverUrl")] = m_serverUrl;
-        o[QStringLiteral("token")] = m_token;
-        o[QStringLiteral("clientId")] = m_clientId;
-        o[QStringLiteral("skillsStoragePath")] = m_skillsStoragePath;
-        writeDefaults(o);
-        return;
     }
 
-    if (!f.open(QIODevice::ReadOnly)) {
-        qWarning() << "[WsConfig] cannot read" << path;
-        return;
-    }
-    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    f.close();
-    if (!doc.isObject()) {
-        qWarning() << "[WsConfig] invalid JSON in" << path;
-        return;
-    }
-
-    QJsonObject merged = doc.object();
     bool mergedDirty = false;
+    if (merged.value(QStringLiteral("serverUrl")).toString().trimmed().isEmpty()) {
+        merged[QStringLiteral("serverUrl")] = kDefaultServer;
+        mergedDirty = true;
+    }
+    if (!merged.contains(QStringLiteral("token"))) {
+        // Local OpenClaw credentials are discovered at runtime below.
+        merged[QStringLiteral("token")] = QString();
+        mergedDirty = true;
+    }
+    if (merged.value(QStringLiteral("clientId")).toString().trimmed().isEmpty()) {
+        merged[QStringLiteral("clientId")] = kDefaultClientId;
+        mergedDirty = true;
+    }
     if (merged.value(QStringLiteral("skillsStoragePath")).toString().trimmed().isEmpty()) {
         merged[QStringLiteral("skillsStoragePath")] = kDefaultSkillsStoragePath;
         mergedDirty = true;
@@ -120,19 +198,17 @@ void WsConfig::loadOrCreatePersistentConfig()
         merged.remove(QStringLiteral("shortcut"));
         mergedDirty = true;
     }
-    if (mergedDirty)
-        writeDefaults(merged);
+    if (!loaded || mergedDirty || !QFileInfo::exists(m_configPath)) {
+        if (!writePrivateJson(m_configPath, merged))
+            qWarning().noquote() << "[WsConfig] cannot write" << m_configPath;
+    }
 
     if (merged.contains(QStringLiteral("serverUrl"))) {
         const QString u = merged.value(QStringLiteral("serverUrl")).toString().trimmed();
         if (!u.isEmpty())
             m_serverUrl = u;
     }
-    if (merged.contains(QStringLiteral("token"))) {
-        const QString t = merged.value(QStringLiteral("token")).toString().trimmed();
-        if (!t.isEmpty())
-            m_token = t;
-    }
+    m_token = merged.value(QStringLiteral("token")).toString().trimmed();
     if (merged.contains(QStringLiteral("clientId"))) {
         const QString c = merged.value(QStringLiteral("clientId")).toString().trimmed();
         if (!c.isEmpty())
@@ -144,14 +220,32 @@ void WsConfig::loadOrCreatePersistentConfig()
 
     if (m_serverUrl.isEmpty())
         m_serverUrl = kDefaultServer;
-    if (m_token.isEmpty())
-        m_token = kDefaultToken;
     if (m_clientId.isEmpty())
         m_clientId = kDefaultClientId;
     if (m_skillsStoragePath.isEmpty())
         m_skillsStoragePath = kDefaultSkillsStoragePath;
 
-    qDebug().noquote() << "[WsConfig] loaded" << path << "serverUrl=" << m_serverUrl;
+    QString tokenSource;
+    const QString explicitToken = qEnvironmentVariable("MEDCLAW_GATEWAY_TOKEN").trimmed();
+    if (!explicitToken.isEmpty()) {
+        m_token = explicitToken;
+        tokenSource = QStringLiteral("MEDCLAW_GATEWAY_TOKEN");
+    } else if (isLocalGateway(m_serverUrl)) {
+        const QString localToken = openClawGatewayToken(&tokenSource);
+        if (!localToken.isEmpty())
+            m_token = localToken;
+    }
+
+    if (tokenSource.isEmpty() && !m_token.isEmpty())
+        tokenSource = m_configPath;
+    if (m_token.isEmpty())
+        qWarning().noquote() << "[WsConfig] gateway token is empty for" << m_serverUrl;
+
+    qDebug().noquote() << "[WsConfig] loaded" << m_configPath
+                       << "serverUrl=" << m_serverUrl
+                       << "platform=" << m_clientPlatform
+                       << "tokenSource=" << (tokenSource.isEmpty()
+                                                ? QStringLiteral("none") : tokenSource);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -192,19 +286,12 @@ bool WsConfig::llmJudgmentEnabled() const
 void WsConfig::setLlmJudgmentEnabled(bool enabled)
 {
     m_llmJudgmentEnabled = enabled;
-    const QString path = QStringLiteral("AppData/config/config.json");
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly))
+    QJsonObject object;
+    if (!readJsonObject(m_configPath, &object))
         return;
-    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    f.close();
-    if (!doc.isObject())
-        return;
-    QJsonObject o = doc.object();
-    o[QStringLiteral("llmJudgmentEnabled")] = enabled;
-    QFile out(path);
-    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        out.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+    object[QStringLiteral("llmJudgmentEnabled")] = enabled;
+    if (!writePrivateJson(m_configPath, object))
+        qWarning().noquote() << "[WsConfig] cannot update" << m_configPath;
 }
 
 QString WsConfig::deviceId() const
@@ -220,13 +307,43 @@ bool WsConfig::hasDeviceKeys() const
 //  Ed25519 设备密钥生成
 // ═══════════════════════════════════════════════════════════════════════
 
-void WsConfig::initDeviceKeys()
+void WsConfig::loadOrCreateDeviceKeys()
 {
-    // 步骤 1：生成 Ed25519 密钥对（内嵌纯 C++ 实现，无需外部 OpenSSL）
-    ed25519_create_keypair(m_ed25519Pk, m_ed25519Sk);
-    m_hasKeys = true;
+    QJsonObject stored;
+    if (readJsonObject(m_deviceKeysPath, &stored)) {
+        const QByteArray publicKey = QByteArray::fromBase64(
+            stored.value(QStringLiteral("publicKey")).toString().toLatin1(),
+            QByteArray::Base64UrlEncoding);
+        const QByteArray privateKey = QByteArray::fromBase64(
+            stored.value(QStringLiteral("privateKey")).toString().toLatin1(),
+            QByteArray::Base64UrlEncoding);
+        if (publicKey.size() == 32 && privateKey.size() == 64
+            && privateKey.right(32) == publicKey) {
+            memcpy(m_ed25519Pk, publicKey.constData(), 32);
+            memcpy(m_ed25519Sk, privateKey.constData(), 64);
+            m_hasKeys = true;
+        }
+    }
 
-    // 步骤 2：公钥 → SHA-256 哈希 → 设备 ID（十六进制字符串，64 字符）
+    if (!m_hasKeys) {
+        ed25519_create_keypair(m_ed25519Pk, m_ed25519Sk);
+        m_hasKeys = true;
+
+        const QByteArray publicKey(reinterpret_cast<const char *>(m_ed25519Pk), 32);
+        const QByteArray privateKey(reinterpret_cast<const char *>(m_ed25519Sk), 64);
+        QJsonObject object;
+        object[QStringLiteral("publicKey")] = QString::fromLatin1(
+            publicKey.toBase64(QByteArray::Base64UrlEncoding
+                               | QByteArray::OmitTrailingEquals));
+        object[QStringLiteral("privateKey")] = QString::fromLatin1(
+            privateKey.toBase64(QByteArray::Base64UrlEncoding
+                                | QByteArray::OmitTrailingEquals));
+        if (!writePrivateJson(m_deviceKeysPath, object))
+            qWarning().noquote() << "[WsConfig] cannot persist device keys to"
+                                 << m_deviceKeysPath;
+    }
+
+    // 公钥 → SHA-256 哈希 → 设备 ID（十六进制字符串，64 字符）
     const QByteArray rawPk(reinterpret_cast<char *>(m_ed25519Pk), 32);
     m_deviceId = QString::fromLatin1(
         QCryptographicHash::hash(rawPk, QCryptographicHash::Sha256).toHex());
