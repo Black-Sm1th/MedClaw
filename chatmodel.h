@@ -122,6 +122,12 @@ private:
     /// 注意：m_messages[m_streamFlushRow].content 仍持有完整累积内容，供 delegate 重建 /
     /// 历史加载 / 最终 Markdown 精排时一次性读取。
     QString m_streamPending;
+
+    /// 客户端自己检测到的产物（工作区快照 diff），按所属 assistant 文本内容记忆。
+    /// 服务端历史行里没有 artifacts 字段时用它兜底：否则一次 loadHistory 就会把刚
+    /// 显示出来的产物清单抹掉（专家团完成度判断被卡住时尤其明显）。
+    QString m_detectedArtifactsContent;
+    QVariantList m_detectedArtifacts;
 };
 
 #endif // CHATMODEL_H

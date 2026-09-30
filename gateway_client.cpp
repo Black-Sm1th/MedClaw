@@ -1012,6 +1012,26 @@ QVariantList GatewayClient::collaborationParticipants() const
                 < mb.value(QStringLiteral("sessionKey")).toString();
         });
     }
+
+    // 任务级收尾兜底：父任务已经不在运行时，任何子行都不该再显示"运行中"。
+    // 子 agent 的完成事件可能只带 agentId（或根本没送达），hint / 会话记录就会停在
+    // running，专家团 popover 于是一直转圈；更麻烦的是 collaborationTaskFullyComplete()
+    // 只要有一行 isRunning 就返回 false，会把 filterControllerHistory 里的产物清单一起
+    // 挡掉。所以这里按「任务级运行态」而不是「子行自己的状态」来收尾。
+    const bool taskActive = m_runningTaskSessionKeys.contains(taskKey)
+                            || m_chatRunningSessionKeys.contains(taskKey);
+    if (!taskActive) {
+        for (QVariant &value : out) {
+            QVariantMap row = value.toMap();
+            if (row.value(QStringLiteral("isController")).toBool())
+                continue;
+            if (!row.value(QStringLiteral("isRunning")).toBool())
+                continue;
+            row[QStringLiteral("isRunning")] = false;
+            row[QStringLiteral("isCompleted")] = true;
+            value = row;
+        }
+    }
     return out;
 }
 
@@ -2361,8 +2381,12 @@ void GatewayClient::setTaskSessionState(const QString &sessionKey,
         }
     }
     loadTaskSessionListFromDb();
-    if (!running)
+    if (!running) {
+        // 任务停下来就通知一次：collaborationParticipants() 里的任务级兜底会把残留的
+        // 子行"运行中"收掉，专家团 popover 立刻从转圈变回完成态。
+        emit collaborationParticipantsChanged();
         maybeShowControllerProducts();
+    }
 }
 
 void GatewayClient::markTaskSessionRead(const QString &sessionKey)

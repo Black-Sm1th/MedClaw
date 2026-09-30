@@ -344,6 +344,8 @@ bool ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
         if (msg.isIntermediate)
             continue;
         msg.artifacts = artifacts;
+        m_detectedArtifactsContent = msg.content;
+        m_detectedArtifacts = artifacts;
         const QModelIndex idx = index(i);
         emit dataChanged(idx, idx, {ArtifactsRole});
         emit messagePayloadChanged();
@@ -353,6 +355,8 @@ bool ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
         return false;
 
     m_messages[fallback].artifacts = artifacts;
+    m_detectedArtifactsContent = m_messages[fallback].content;
+    m_detectedArtifacts = artifacts;
     const QModelIndex idx = index(fallback);
     emit dataChanged(idx, idx, {ArtifactsRole});
     emit messagePayloadChanged();
@@ -451,6 +455,12 @@ void ChatModel::loadHistory(const QVariantList &messages)
         msg.msgType = QStringLiteral("text");
         msg.isError = false;
         msg.artifacts = m.value(QStringLiteral("artifacts")).toList();
+        // 服务端历史行没有 artifacts 时，用客户端自己检测到的那份兜底，
+        // 避免一次历史重载把已经显示出来的产物清单抹掉。
+        if (msg.role == QLatin1String("assistant") && msg.artifacts.isEmpty()
+            && !m_detectedArtifacts.isEmpty() && msg.content == m_detectedArtifactsContent) {
+            msg.artifacts = m_detectedArtifacts;
+        }
         m_messages.append(msg);
     }
 

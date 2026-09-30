@@ -10926,7 +10926,8 @@ ApplicationWindow {
                     "imaging_seg_dl": true,
                     "imaging_seg_radar": true,
                     "imaging_case": true,
-                    "imaging_report_extract": true
+                    "imaging_report_extract": true,
+                    "imaging_ct_report": true
                 })
                 property var governmentToolIds: ({
                     "docx_generate": true,
