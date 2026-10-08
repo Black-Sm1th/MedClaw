@@ -1478,7 +1478,14 @@
           artifactToggle = artifactToggle.parentNode;
         if (artifactToggle && artifactToggle.getAttribute
             && artifactToggle.getAttribute('data-artifact-key')) {
-          console.log('MEDCLAW_CHAT:' + JSON.stringify({ type: 'openArtifacts' }));
+          // 把所属轮次一起送出去（data-artifact-key 形如 "artifacts:<row>"），
+          // 侧边栏列表据此把这一轮问答的产物排在最前并异色显示。
+          var artifactKey = String(artifactToggle.getAttribute('data-artifact-key') || '');
+          var artifactRow = Number(artifactKey.split(':').pop());
+          console.log('MEDCLAW_CHAT:' + JSON.stringify({
+            type: 'openArtifacts',
+            row: Number.isFinite(artifactRow) ? artifactRow : -1
+          }));
           return;
         }
 

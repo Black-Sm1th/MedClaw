@@ -3352,6 +3352,9 @@ ApplicationWindow {
                 property bool artifactSidebarVisible: false
                 property var sessionInputFiles: []
                 property var sessionArtifacts: []
+                /// 「查看全部」点进来的那一轮问答的产物（归一化路径 -> true）：
+                /// 侧边栏产物列表据此把它们排在最前并异色显示。
+                property var artifactHighlights: ({})
                 property string artifactSidebarMode: "list"
                 property var selectedOfficeFile: ({})
                 property alias officeTabs: officeTabsModel
@@ -3408,7 +3411,17 @@ ApplicationWindow {
                     })
                     if (!sidebarFilesAscending)
                         sorted.reverse()
-                    return sorted
+                    // 「查看全部」点进来的那一轮产物排在最前。放在升/降序之后做，
+                    // 否则降序 reverse 会把它们甩到末尾。
+                    var current = []
+                    var rest = []
+                    for (var i = 0; i < sorted.length; i++) {
+                        if (artifactHighlights[artifactHighlightKey(sorted[i])])
+                            current.push(sorted[i])
+                        else
+                            rest.push(sorted[i])
+                    }
+                    return current.concat(rest)
                 }
 
                 function showResourcePopover() {
@@ -3463,6 +3476,7 @@ ApplicationWindow {
                     sessionHistoryLoading = nextKey.length > 0
                     sessionInputFiles = []
                     sessionArtifacts = []
+                    artifactHighlights = ({})
                     hideResourcePopover()
                     officeMoreMenuVisible = false
                     officeSaveRequested = false
@@ -4033,6 +4047,25 @@ ApplicationWindow {
                     }
                     artifactSidebarVisible = !artifactSidebarVisible
                     artifactSidebarMode = "list"
+                }
+
+                /// 产物条目比对用的键：和文件路径一样做归一化（小写 + 正斜杠）
+                function artifactHighlightKey(file) {
+                    return String((file && file.path) || "").replace(/\\/g, "/").toLowerCase()
+                }
+
+                /** 点「查看全部」：记住这一轮问答的产物用于置顶 + 异色，再打开产物列表 */
+                function openTurnArtifacts(row) {
+                    var rows = chatModel.messages ? chatModel.messages() : []
+                    var highlights = ({})
+                    var index = Number(row)
+                    if (index >= 0 && index < rows.length) {
+                        var artifacts = rows[index].artifacts || []
+                        for (var i = 0; i < artifacts.length; i++)
+                            highlights[artifactHighlightKey(artifacts[i])] = true
+                    }
+                    artifactHighlights = highlights
+                    toggleArtifactSidebar()
                 }
 
                 function rebuildSessionArtifacts() {
@@ -4662,7 +4695,7 @@ ApplicationWindow {
                     model: chatModel
                     conversationRunning: wsClient.chatRunning
                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                    onArtifactsRequested: newTaskRec.toggleArtifactSidebar()
+                    onArtifactsRequested: function(row) { newTaskRec.openTurnArtifacts(row) }
                     onArtifactRequested: function(path) { newTaskRec.openArtifactPath(path) }
                 }
 
@@ -5812,12 +5845,15 @@ ApplicationWindow {
                     Rectangle {
                         id: sidebarFileRow
                         required property var modelData
+                        /// 「查看全部」那一轮问答的产物：置顶 + 异色
+                        readonly property bool highlighted:
+                            !!newTaskRec.artifactHighlights[newTaskRec.artifactHighlightKey(modelData)]
                         width: parent ? parent.width : 268
                         height: 36
                         radius: 8
                         color: sidebarFileMouse.pressed ? "#14000000"
                              : sidebarFileMouse.containsMouse ? "#EBEDF0"
-                             : "transparent"
+                             : highlighted ? "#0F006BFF" : "transparent"
 
                         Row {
                             anchors.fill: parent
@@ -5839,7 +5875,7 @@ ApplicationWindow {
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 16
                                 font.weight: Font.Normal
-                                color: "#D9000000"
+                                color: sidebarFileRow.highlighted ? "#006BFF" : "#D9000000"
                             }
                         }
 
