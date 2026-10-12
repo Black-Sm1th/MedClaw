@@ -283,6 +283,85 @@
         reportState();
       }
 
+      function startsStructuredLine(value) {
+        return /^\s*(?:[-*+•●▪◦]|\d+[.)]|[一二三四五六七八九十百千]+[、.)]|[（(][一二三四五六七八九十百千]+[）)])\s*/.test(value);
+      }
+
+      function endsSentence(value) {
+        return /[。！？!?；;：:.]\s*[”"'’）)]*$/.test(value);
+      }
+
+      function looksLikeSoftWrap(previous, next, lines) {
+        var left = String(previous || '').trim();
+        var right = String(next || '').trim();
+        if (!left || !right)
+          return false;
+        if (/^\s/.test(next) || startsStructuredLine(next) || endsSentence(left))
+          return false;
+
+        // A single short line is more likely to be an intentional break. PDF
+        // visual wrapping usually produces several similarly sized lines.
+        var lengths = [];
+        for (var i = 0; i < lines.length; i++) {
+          var line = String(lines[i] || '').trim();
+          if (line)
+            lengths.push(line.length);
+        }
+        var comparableLines = lengths.length >= 3;
+        if (!comparableLines && left.length < 20 && right.length < 20)
+          return false;
+        if (comparableLines) {
+          var sorted = lengths.slice(0).sort(function (a, b) { return a - b; });
+          var median = sorted[Math.floor(sorted.length / 2)];
+          var comparable = left.length >= Math.max(8, median * 0.55)
+              && right.length >= Math.max(8, median * 0.55);
+          if (!comparable && left.length < 20 && right.length < 20)
+            return false;
+        }
+        return true;
+      }
+
+      function normalizePastedText(value) {
+        var text = String(value || '').replace(/\r\n?/g, '\n');
+        var lines = text.split('\n');
+        var normalized = '';
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          if (i > 0) {
+            var previous = lines[i - 1];
+            if (looksLikeSoftWrap(previous, line, lines, i)) {
+              // A hyphen at the visual edge belongs to the wrap, not the word.
+              if (/\u00ad$/.test(normalized) && /^[a-z]/.test(line.trim()))
+                normalized = normalized.slice(0, -1);
+              else if (/[A-Za-z0-9]$/.test(normalized) && /^[A-Za-z0-9]/.test(line.trim()))
+                normalized += ' ';
+            } else {
+              normalized += '\n';
+            }
+          }
+          normalized += line;
+        }
+        return normalized;
+      }
+
+      function insertPlainText(value) {
+        var text = String(value || '');
+        if (!text)
+          return;
+        editor.focus();
+        var range = restoreSelection();
+        range.deleteContents();
+        var node = document.createTextNode(text);
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.collapse(true);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        savedRange = range.cloneRange();
+        reportState();
+      }
+
       function setReadOnly(value) {
         editor.contentEditable = value ? 'false' : 'true';
       }
@@ -319,7 +398,13 @@
         if (hasFile || (data.files && data.files.length > 0)) {
           event.preventDefault();
           emit({ type: 'pasteFiles' });
+          return;
         }
+        var text = data.getData('text/plain');
+        if (!text)
+          return;
+        event.preventDefault();
+        insertPlainText(normalizePastedText(text));
       });
 
       editor.addEventListener('dragover', function (event) {
