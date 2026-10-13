@@ -4431,7 +4431,11 @@ ApplicationWindow {
                     // A preset template supplies the same starter prompt as
                     // the template-library flow, but never replaces text the
                     // user has already entered.
-                    if (!String(textInputArea.text || "").trim() && prompt)
+                    // Only seed a starter prompt before the first message. A
+                    // template added to an existing conversation should affect
+                    // the selected resource, not inject its example request.
+                    if (!chatSelectionsCommitted
+                            && !String(textInputArea.text || "").trim() && prompt)
                         textInputArea.text = prompt
                     chatOptionsPopup.close()
                 }
@@ -13525,7 +13529,7 @@ ApplicationWindow {
                                     window.contentItem,
                                     modifyProjectColorMenu.width + 4, 0)
                         projectColorPopup.x = Math.min(point.x,
-                                                       window.width - projectColorPopup.width - 4)
+                                                       window.width - projectColorPopup.width - 4) + 4
                         projectColorPopup.y = Math.min(point.y,
                                                        window.height - projectColorPopup.height - 4)
                         projectColorPopup.open()
@@ -13565,7 +13569,7 @@ ApplicationWindow {
         id: projectColorPopup
         parent: window.contentItem
         padding: 8
-        width: 226
+        width: 180
         height: 52
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle {
@@ -13575,13 +13579,14 @@ ApplicationWindow {
             border.width: 1
         }
         contentItem: Row {
-            anchors.centerIn: parent
-            spacing: 6
+            height: 36
+            spacing: 4
             Repeater {
                 model: window.projectColors
                 delegate: Rectangle {
-                    width: 30
-                    height: 30
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 24
+                    height: 24
                     radius: 4
                     color: modelData
                     border.width: 2
