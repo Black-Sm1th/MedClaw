@@ -1778,6 +1778,9 @@ ApplicationWindow {
                     "id": id,
                     "name": String(source.name || source.title || qsTr("未命名模板")),
                     "detail": String(source.detail || source.description || source.desc || ""),
+                    "category": String(source.category
+                                       || (userTemplate ? qsTr("用户上传模板")
+                                                        : qsTr("其他模板"))),
                     "templatePath": String(source.templatePath || ""),
                     "isUserTemplate": !!userTemplate
                 })
@@ -1785,6 +1788,44 @@ ApplicationWindow {
         }
         appendRows(wsClient.docxTemplates, false)
         appendRows(uploadedDocxTemplates, true)
+        return result
+    }
+
+    function chatTemplateCategories() {
+        var preferredOrder = [
+            "国际国内期刊论文类", "行业情报类", "新药研发类",
+            "药品注册申报类", "医药监管申报合规类", "药品准入与HTA类",
+            "政务类", "医工交叉期刊类", "设备科工作模板类",
+            "用户上传模板", "其他模板"
+        ]
+        var present = {}
+        var options = chatTemplateOptions()
+        for (var i = 0; i < options.length; i++) {
+            var category = String(options[i].category || qsTr("其他模板"))
+            present[category] = true
+        }
+        var result = []
+        for (var j = 0; j < preferredOrder.length; j++) {
+            if (present[preferredOrder[j]]) {
+                result.push(preferredOrder[j])
+                delete present[preferredOrder[j]]
+            }
+        }
+        for (var remaining in present)
+            result.push(remaining)
+        return result
+    }
+
+    function chatTemplatesForCategory(category) {
+        var target = String(category || "").replace(/\s/g, "")
+        if (!target)
+            return []
+        var options = chatTemplateOptions()
+        var result = []
+        for (var i = 0; i < options.length; i++) {
+            if (String(options[i].category || "").replace(/\s/g, "") === target)
+                result.push(options[i])
+        }
         return result
     }
 
@@ -2186,11 +2227,12 @@ ApplicationWindow {
                         visible: window.sidebarExpanded
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库", "模板库"/*, "MCP"*/]
+                            model: ["新建任务", "定时任务", "专家·工具", "知识库", "模板库"/*, "MCP"*/]
                             delegate: Rectangle{
                                 readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8))
                                 property bool isSelected: index === 2
-                                                          ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
+                                                          ? (window.leftSelectedIndex === 2
+                                                             || window.leftSelectedIndex === 4)
                                                           : targetIndex === window.leftSelectedIndex
                                 width: leftMidPanel.width
                                 height: 36
@@ -2213,7 +2255,7 @@ ApplicationWindow {
                                                 return "qrc:/images/chatNew.png"
                                             }else if(modelData === "定时任务"){
                                                 return "qrc:/images/alarm.png"
-                                            }else if(modelData === "专家·技能·工具"){
+                                            }else if(modelData === "专家·工具"){
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "知识库"){
                                                 return "qrc:/images/knowledge.png"
@@ -2272,11 +2314,12 @@ ApplicationWindow {
                         visible: !window.sidebarExpanded
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "专家·技能·工具", "知识库", "模板库" /*, "MCP"*/ ]
+                            model: ["新建任务", "定时任务", "专家·工具", "知识库", "模板库" /*, "MCP"*/ ]
                             delegate: Rectangle{
                                 readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8))
                                 property bool isSelected: index === 2
-                                                          ? window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
+                                                          ? (window.leftSelectedIndex === 2
+                                                             || window.leftSelectedIndex === 4)
                                                           : targetIndex === window.leftSelectedIndex
                                 width: leftMidPanel.width
                                 height: 36
@@ -2293,7 +2336,7 @@ ApplicationWindow {
                                             return "qrc:/images/chatNew.png"
                                         }else if(modelData === "定时任务"){
                                             return "qrc:/images/alarm.png"
-                                        }else if(modelData === "专家·技能·工具"){
+                                        }else if(modelData === "专家·工具"){
                                             return "qrc:/images/category.png"
                                         }else if(modelData === "知识库"){
                                             return "qrc:/images/knowledge.png"
@@ -6552,23 +6595,30 @@ ApplicationWindow {
                                      Popup {
                                          id: chatOptionsPopup
                                          parent: Overlay.overlay
-                                        width: activeCategory
-                                               ? Math.min(390, Math.max(300, chatInputContainer.width - 16))
+                                        width: activeCategory === "template"
+                                               ? Math.min(650, Math.max(480, chatInputContainer.width - 16))
+                                               : activeCategory
+                                                 ? Math.min(390, Math.max(300, chatInputContainer.width - 16))
                                                : chatOptionsPrimaryPanel.width
                                         height: Math.max(chatOptionsPrimaryPanel.height,
-                                                         chatOptionsSecondaryPanel.height)
+                                                         chatOptionsSecondaryPanel.height,
+                                                         chatOptionsTertiaryPanel.height)
                                         z: 100
                                         padding: 0
                                         focus: true
                                         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                                         property string activeCategory: ""
+                                        property string activeTemplateCategory: ""
                                         readonly property int secondaryItemCount:
                                             activeCategory === "expert"
                                             ? window.visibleAgentList().length
                                             : activeCategory === "knowledge"
                                               ? window.kbCollections.length
                                               : activeCategory === "template"
-                                                ? window.chatTemplateOptions().length : 0
+                                                ? window.chatTemplateCategories().length : 0
+                                        readonly property int tertiaryItemCount:
+                                            activeCategory === "template"
+                                            ? window.chatTemplatesForCategory(activeTemplateCategory).length : 0
                                         readonly property int secondaryMaximumHeight: 316
 
                                         function reposition() {
@@ -6595,10 +6645,14 @@ ApplicationWindow {
                                             if (category === "template" && !newTaskRec.canSelectTemplate)
                                                 return
                                             activeCategory = category
+                                            activeTemplateCategory = category === "template"
+                                                    && window.chatTemplateCategories().length > 0
+                                                    ? String(window.chatTemplateCategories()[0]) : ""
                                         }
 
                                         onAboutToShow: {
                                             activeCategory = ""
+                                            activeTemplateCategory = ""
                                             reposition()
                                         }
                                         onWidthChanged: {
@@ -6811,7 +6865,9 @@ ApplicationWindow {
                                             Rectangle {
                                                 id: chatOptionsSecondaryPanel
                                                 visible: chatOptionsPopup.activeCategory !== ""
-                                                width: parent.width - chatOptionsPrimaryPanel.width - parent.spacing
+                                                width: chatOptionsPopup.activeCategory === "template"
+                                                       ? 180
+                                                       : parent.width - chatOptionsPrimaryPanel.width - parent.spacing
                                                 height: visible
                                                         ? Math.min(chatOptionsPopup.secondaryMaximumHeight,
                                                                    Math.max(54,
@@ -6843,8 +6899,43 @@ ApplicationWindow {
                                                                          : chatOptionsPopup.activeCategory === "knowledge"
                                                                            ? chatKnowledgeListComponent
                                                                            : chatOptionsPopup.activeCategory === "template"
-                                                                             ? chatTemplateListComponent : null
+                                                                             ? chatTemplateCategoryListComponent : null
                                                     }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                id: chatOptionsTertiaryPanel
+                                                visible: chatOptionsPopup.activeCategory === "template"
+                                                         && chatOptionsPopup.activeTemplateCategory !== ""
+                                                width: visible
+                                                       ? parent.width - chatOptionsPrimaryPanel.width
+                                                         - chatOptionsSecondaryPanel.width
+                                                         - parent.spacing * 2
+                                                       : 0
+                                                height: visible
+                                                        ? Math.min(chatOptionsPopup.secondaryMaximumHeight,
+                                                                   Math.max(54,
+                                                                            chatOptionsPopup.tertiaryItemCount * 38 + 16))
+                                                        : 0
+                                                anchors.bottom: parent.bottom
+                                                radius: 10
+                                                color: "#FFFFFF"
+                                                border.width: 1
+                                                border.color: "#14000000"
+                                                layer.enabled: true
+                                                layer.effect: DropShadow {
+                                                    transparentBorder: true
+                                                    radius: 14
+                                                    samples: 25
+                                                    color: "#26000000"
+                                                    verticalOffset: 4
+                                                }
+
+                                                Loader {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    sourceComponent: chatTemplateListComponent
                                                 }
                                             }
                                         }
@@ -6986,10 +7077,69 @@ ApplicationWindow {
                                         }
 
                                         Component {
+                                            id: chatTemplateCategoryListComponent
+                                            ListView {
+                                                clip: true
+                                                model: window.chatTemplateCategories()
+                                                boundsBehavior: Flickable.StopAtBounds
+                                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                                                delegate: Rectangle {
+                                                    width: ListView.view.width
+                                                    height: 38
+                                                    radius: 6
+                                                    color: chatOptionsPopup.activeTemplateCategory === String(modelData)
+                                                           ? "#F0F2F5"
+                                                           : chatTemplateCategoryMouse.containsMouse
+                                                             ? "#0A000000" : "transparent"
+                                                    Label {
+                                                        anchors.left: parent.left
+                                                        anchors.leftMargin: 10
+                                                        anchors.right: chatTemplateCategoryArrow.left
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: String(modelData)
+                                                        font.pixelSize: 14
+                                                        color: "#D9000000"
+                                                        elide: Text.ElideRight
+                                                    }
+                                                    Canvas {
+                                                        id: chatTemplateCategoryArrow
+                                                        width: 14; height: 14
+                                                        anchors.right: parent.right
+                                                        anchors.rightMargin: 8
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        onPaint: {
+                                                            var ctx = getContext("2d")
+                                                            ctx.reset()
+                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.lineWidth = 1.2
+                                                            ctx.lineCap = "round"
+                                                            ctx.lineJoin = "round"
+                                                            ctx.beginPath()
+                                                            ctx.moveTo(4, 3)
+                                                            ctx.lineTo(9, 7)
+                                                            ctx.lineTo(4, 11)
+                                                            ctx.stroke()
+                                                        }
+                                                    }
+                                                    MouseArea {
+                                                        id: chatTemplateCategoryMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: chatOptionsPopup.activeTemplateCategory = String(modelData)
+                                                        onEntered: chatOptionsPopup.activeTemplateCategory = String(modelData)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Component {
                                             id: chatTemplateListComponent
                                             ListView {
                                                 clip: true
-                                                model: window.chatTemplateOptions()
+                                                model: window.chatTemplatesForCategory(
+                                                           chatOptionsPopup.activeTemplateCategory)
                                                 boundsBehavior: Flickable.StopAtBounds
                                                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                                                 delegate: Rectangle {
@@ -10338,7 +10488,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 64
-                visible: window.leftSelectedIndex >= 2 && window.leftSelectedIndex <= 4
+                visible: window.leftSelectedIndex === 2 || window.leftSelectedIndex === 4
                 z: 2
 
                 Row {
@@ -10348,9 +10498,12 @@ ApplicationWindow {
                     spacing: 8
 
                     Repeater {
-                        model: [qsTr("专家"), qsTr("技能"), qsTr("工具")]
+                        model: [
+                            { title: qsTr("专家"), pageIndex: 2 },
+                            { title: qsTr("工具"), pageIndex: 4 }
+                        ]
                         delegate: Rectangle {
-                            readonly property int pageIndex: index + 2
+                            readonly property int pageIndex: Number(modelData.pageIndex)
                             width: 76
                             height: 36
                             radius: 6
@@ -10359,7 +10512,7 @@ ApplicationWindow {
 
                             Label {
                                 anchors.centerIn: parent
-                                text: modelData
+                                text: modelData.title
                                 font.pixelSize: 16
                                 font.weight: window.leftSelectedIndex === parent.pageIndex
                                              ? Font.Bold : Font.Medium
