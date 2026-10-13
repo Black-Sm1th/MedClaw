@@ -5,7 +5,6 @@ import QtQuick.Dialogs
 import QtCore
 import Qt5Compat.GraphicalEffects
 import "./components"
-import "data/TemplatePrompts.js" as TemplatePrompts
 ApplicationWindow {
     id: window
     Settings {
@@ -642,7 +641,6 @@ ApplicationWindow {
         }
         return text.trim()
     }
-    property string pendingExpertPrompt: ""
     property double pendingExpertInstallStartedAt: 0
     property bool pendingChatExpertInstall: false
 
@@ -892,7 +890,6 @@ ApplicationWindow {
             return
         }
         pendingChatExpertInstall = chatInstallRequested
-        pendingExpertPrompt = String(promptText || "")
         pendingExpertInstallStartedAt = Date.now()
         wsClient.summonAgent(id)
     }
@@ -1867,7 +1864,6 @@ ApplicationWindow {
                 dropdownSelectionWorkSpace.currentText = qsTr("workspace")
                 dropdownSelectionWorkSpace.absolutePath = ""
                 dropdownSelectionModel.currentIndex = 0
-                window.pendingExpertPrompt = ""
                 window.pendingExpertInstallStartedAt = 0
                 window.pendingChatExpertInstall = false
                 kbSources = []
@@ -1989,12 +1985,7 @@ ApplicationWindow {
                 if (window.leftSelectedIndex !== 0 || selected.length !== 1
                         || String(selected[0] || "") !== String(agentId || ""))
                     window.startTaskWithAgents([agentId])
-                if (window.pendingExpertPrompt.length > 0) {
-                    textInputArea.text = window.pendingExpertPrompt
-                    textInputArea.forceActiveFocus()
-                }
             }
-            window.pendingExpertPrompt = ""
             window.pendingExpertInstallStartedAt = 0
             window.pendingChatExpertInstall = false
         }
@@ -2020,7 +2011,6 @@ ApplicationWindow {
             if (window.pendingChatExpertInstall && !wsClient.agentInstallBusy) {
                 newTaskRec.selectedCollaborationAgentIds = []
                 window.pendingChatExpertInstall = false
-                window.pendingExpertPrompt = ""
                 window.pendingExpertInstallStartedAt = 0
             }
         }
@@ -4306,11 +4296,7 @@ ApplicationWindow {
                         return
                     if (!hasSelectedDocxTemplate)
                         return
-                    var prompt = String(selectedDocxTemplate.prompt || "")
                     selectedDocxTemplate = ({})
-                    if (clearMatchingPrompt && prompt
-                            && String(textInputArea.text || "") === prompt)
-                        textInputArea.text = ""
                 }
 
                 function templateFromHistoryReference(reference, isUserTemplate) {
@@ -4335,8 +4321,6 @@ ApplicationWindow {
                             "id": String(option.id || normalizedId),
                             "name": String(option.name || option.title || qsTr("模板")),
                             "detail": String(option.detail || option.description || ""),
-                            "prompt": isUserTemplate
-                                      ? "" : TemplatePrompts.promptForId(normalizedId),
                             "isUserTemplate": !!isUserTemplate,
                             "templatePath": String(option.templatePath || (isUserTemplate ? ref : ""))
                         }
@@ -4345,7 +4329,6 @@ ApplicationWindow {
                         "id": isUserTemplate ? ref : normalizedId,
                         "name": isUserTemplate ? qsTr("用户模板") : qsTr("模板"),
                         "detail": "",
-                        "prompt": isUserTemplate ? "" : TemplatePrompts.promptForId(normalizedId),
                         "isUserTemplate": !!isUserTemplate,
                         "templatePath": isUserTemplate ? ref : ""
                     }
@@ -4371,25 +4354,16 @@ ApplicationWindow {
                         templateId = "0" + templateId
                     if (!templateId)
                         return
-                    var prompt = isUserTemplate ? "" : TemplatePrompts.promptForId(templateId)
                     var templatePath = String(template.templatePath || "")
                     if (isUserTemplate && !templatePath)
-                        return
-                    if (!isUserTemplate && !prompt)
                         return
                     selectedDocxTemplate = {
                         "id": templateId,
                         "name": String(template.name || template.title || qsTr("预设模板")),
                         "detail": String(template.detail || template.description || ""),
-                        "prompt": prompt,
                         "isUserTemplate": isUserTemplate,
                         "templatePath": templatePath
                     }
-                    // A preset template supplies the same starter prompt as
-                    // the template-library flow, but never replaces text the
-                    // user has already entered.
-                    if (!String(textInputArea.text || "").trim() && prompt)
-                        textInputArea.text = prompt
                     chatOptionsPopup.close()
                 }
 
@@ -4546,16 +4520,9 @@ ApplicationWindow {
                     }
                     var templateName = String(template.name || template.title || qsTr("预设模板"))
                     var detail = String(template.detail || template.description || "")
-                    var prompt = isUserTemplate ? "" : TemplatePrompts.promptForId(templateId)
                     var templatePath = String(template.templatePath || "")
                     if (isUserTemplate && !templatePath) {
                         errorToast.text = qsTr("用户模板文件路径无效")
-                        errorToast.visible = true
-                        errorToastTimer.restart()
-                        return
-                    }
-                    if (!isUserTemplate && !prompt) {
-                        errorToast.text = qsTr("该模板暂未配置提示词")
                         errorToast.visible = true
                         errorToastTimer.restart()
                         return
@@ -4582,11 +4549,9 @@ ApplicationWindow {
                         "id": templateId,
                         "name": templateName,
                         "detail": detail,
-                        "prompt": prompt,
                         "isUserTemplate": isUserTemplate,
                         "templatePath": templatePath
                     }
-                    textInputArea.text = prompt
                     window.leftSelectedIndex = 0
                     Qt.callLater(function() { textInputArea.forceActiveFocus() })
                 }
@@ -13372,7 +13337,7 @@ ApplicationWindow {
                                     window.contentItem,
                                     modifyProjectColorMenu.width + 4, 0)
                         projectColorPopup.x = Math.min(point.x,
-                                                       window.width - projectColorPopup.width - 4)
+                                                       window.width - projectColorPopup.width - 4) + 4
                         projectColorPopup.y = Math.min(point.y,
                                                        window.height - projectColorPopup.height - 4)
                         projectColorPopup.open()
@@ -13412,7 +13377,7 @@ ApplicationWindow {
         id: projectColorPopup
         parent: window.contentItem
         padding: 8
-        width: 226
+        width: 180
         height: 52
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle {
@@ -13422,13 +13387,14 @@ ApplicationWindow {
             border.width: 1
         }
         contentItem: Row {
-            anchors.centerIn: parent
-            spacing: 6
+            height: 36
+            spacing: 4
             Repeater {
                 model: window.projectColors
                 delegate: Rectangle {
-                    width: 30
-                    height: 30
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 24
+                    height: 24
                     radius: 4
                     color: modelData
                     border.width: 2
