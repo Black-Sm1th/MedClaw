@@ -6563,10 +6563,14 @@ ApplicationWindow {
                                                                     - newTaskRec.artifactSidebarWidth)
                     width: Math.min(840, Math.max(320, availableWidth - 48))
                     x: Math.max(0, (availableWidth - width) / 2)
-                    y: newTaskRec.isNewTaskWelcome
-                       ? shortcutTopRow.y + shortcutTopRow.height + 20
-                       : newTaskRec.height - height - 24
-                    Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                    readonly property real devicePixelRatio: Screen.devicePixelRatio > 0
+                                                               ? Screen.devicePixelRatio : 1.0
+                    readonly property real targetY: newTaskRec.isNewTaskWelcome
+                                                    ? shortcutTopRow.y + shortcutTopRow.height + 20
+                                                    : newTaskRec.height - height - 24
+                    // Keep the WebEngine-backed editor on physical-pixel boundaries.
+                    // Fractional translations can blur its composited text on scaled displays.
+                    y: Math.round(targetY * devicePixelRatio) / devicePixelRatio
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                     clip: false
                     Rectangle {
