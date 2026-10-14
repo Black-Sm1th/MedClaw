@@ -6,6 +6,7 @@ import QtCore
 import Qt5Compat.GraphicalEffects
 import "./components"
 import "data/TemplatePrompts.js" as TemplatePrompts
+import "data/ToolCategories.js" as ToolCategories
 ApplicationWindow {
     id: window
     Settings {
@@ -11073,118 +11074,135 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
-                property string selectedToolCategory: "深度问数"
-                property var toolCategories: window.governmentEdition
-                    ? ["深度问数", "政务助手", "系统自带"]
-                    : ["深度问数", "生信分析", "医学影像处理", "政务助手", "系统自带"]
-                property var deepDataToolIds: ({
-                    "data_execute_code": true,
-                    "data_explore": true,
-                    "data_clean": true,
-                    "echarts_transform": true,
-                    "file_extract": true,
-                    "file_list_archive": true,
-                    "ml_export_model": true,
-                    "ml_recommend_models": true,
-                    "ml_run_pipeline": true,
-                    "read_file_content": true,
-                    "stats_association": true,
-                    "stats_comparative": true,
-                    "stats_correlation": true,
-                    "stats_crosstab": true,
-                    "stats_linear_regression": true,
-                    "stats_logistic_regression": true,
-                    "stats_tableone": true
-                })
-                property var bioinformaticsToolIds: ({
-                    "scrna_annotate": true,
-                    "scrna_cluster": true,
-                    "scrna_preprocess": true,
-                    "scrna_validate": true,
-                    "spatial_cluster": true,
-                    "spatial_deg": true,
-                    "spatial_enrichment": true,
-                    "spatial_load": true,
-                    "spatial_qc": true
-                })
-                property var imagingToolIds: ({
-                    "imaging_dicom_inspect": true,
-                    "imaging_dicom_anonymize": true,
-                    "imaging_dicom_decompress": true,
-                    "imaging_dicom_multiframe": true,
-                    "imaging_dicom_to_nifti": true,
-                    "imaging_nifti_io_qc": true,
-                    "imaging_xray_io": true,
-                    "imaging_preprocess": true,
-                    "imaging_register": true,
-                    "imaging_mask_qc": true,
-                    "imaging_radiomics": true,
-                    "imaging_seg_classic": true,
-                    "imaging_seg_dl": true,
-                    "imaging_seg_radar": true,
-                    "imaging_case": true,
-                    "imaging_report_extract": true,
-                    "imaging_ct_report": true
-                })
-                property var governmentToolIds: ({
-                    "docx_generate": true,
-                    "docx_install_font": true,
-                    "docx_check_fonts": true,
-                    "data_profile": true,
-                    "policy_eligibility_match": true,
-                    "enterprise_profile_query": true,
-                    "policy_document_drafting": true,
-                    "12345_monthly_analysis_report": true,
-                    "knowledge_base_qa": true,
-                    "document_summary": true,
-                    "policy_law_fast_search": true,
-                    "comprehensive_judgment_analysis": true,
-                    "data_analysis": true,
-                    "policy_interpretation": true,
-                    "official_document_draft": true,
-                    "report_material": true,
-                    "work_summary": true,
-                    "meeting_minutes": true
-                })
+                property string selectedToolPrimaryCategory: ""
+                property string selectedToolSecondaryCategory: "全部"
+                readonly property var toolCategoryTree: ToolCategories.categoryTree
+
                 onVisibleChanged: {
-                    if (visible && wsClient.connectionState === 3)
+                    if (!visible)
+                        return
+                    ensureSelectedToolCategories()
+                    if (wsClient.connectionState === 3)
                         wsClient.refreshToolsCatalog("main")
                 }
 
-                function toolIdMatches(id, idMap) {
-                    if (idMap[id])
-                        return true
-                    for (var knownId in idMap) {
-                        if (id.length > knownId.length
-                                && id.lastIndexOf(knownId) === id.length - knownId.length)
-                            return true
+                Connections {
+                    target: wsClient
+                    function onToolListChanged() {
+                        toolsSettingRec.ensureSelectedToolCategories()
                     }
-                    return false
                 }
 
                 function categoryForTool(tool) {
-                    var id = String(tool.toolId || "").trim().toLowerCase()
-                    if (toolIdMatches(id, deepDataToolIds))
-                        return "深度问数"
-                    if (toolIdMatches(id, bioinformaticsToolIds))
-                        return "生信分析"
-                    if (toolIdMatches(id, imagingToolIds))
-                        return "医学影像处理"
-                    if (toolIdMatches(id, governmentToolIds))
-                        return "政务助手"
-                    return "系统自带"
+                    return ToolCategories.classify(tool ? tool.toolId : "")
                 }
 
-                function filteredTools(category) {
+                function categoryNode(primaryCategory) {
+                    for (var i = 0; i < toolCategoryTree.length; i++) {
+                        if (toolCategoryTree[i].name === primaryCategory)
+                            return toolCategoryTree[i]
+                    }
+                    return null
+                }
+
+                function visiblePrimaryCategories() {
+                    var list = wsClient.toolList || []
+                    var result = []
+                    var present = ({})
+                    for (var i = 0; i < list.length; i++)
+                        present[categoryForTool(list[i]).primary] = true
+
+                    for (var categoryIndex = 0; categoryIndex < toolCategoryTree.length;
+                            categoryIndex++) {
+                        var category = toolCategoryTree[categoryIndex].name
+                        if (list.length === 0 || present[category])
+                            result.push(category)
+                    }
+                    if (present[ToolCategories.uncategorizedPrimary])
+                        result.push(ToolCategories.uncategorizedPrimary)
+                    return result
+                }
+
+                function visibleSecondaryCategories(primaryCategory) {
+                    var result = ["全部"]
+                    var list = wsClient.toolList || []
+                    var present = ({})
+                    for (var i = 0; i < list.length; i++) {
+                        var classification = categoryForTool(list[i])
+                        if (classification.primary === primaryCategory)
+                            present[classification.secondary] = true
+                    }
+
+                    var node = categoryNode(primaryCategory)
+                    if (node) {
+                        for (var childIndex = 0; childIndex < node.children.length; childIndex++) {
+                            var secondary = node.children[childIndex].name
+                            if (list.length === 0 || present[secondary])
+                                result.push(secondary)
+                        }
+                    } else if (present[ToolCategories.uncategorizedSecondary]) {
+                        result.push(ToolCategories.uncategorizedSecondary)
+                    }
+                    return result
+                }
+
+                function ensureSelectedToolCategories() {
+                    var primaryCategories = visiblePrimaryCategories()
+                    if (primaryCategories.length === 0) {
+                        selectedToolPrimaryCategory = ""
+                        selectedToolSecondaryCategory = "全部"
+                        return
+                    }
+                    if (primaryCategories.indexOf(selectedToolPrimaryCategory) < 0)
+                        selectedToolPrimaryCategory = primaryCategories[0]
+
+                    var secondaryCategories = visibleSecondaryCategories(
+                                selectedToolPrimaryCategory)
+                    if (secondaryCategories.indexOf(selectedToolSecondaryCategory) < 0)
+                        selectedToolSecondaryCategory = "全部"
+                }
+
+                function selectPrimaryCategory(category) {
+                    selectedToolPrimaryCategory = category
+                    selectedToolSecondaryCategory = "全部"
+                }
+
+                function toolCount(primaryCategory, secondaryCategory) {
+                    var count = 0
+                    var list = wsClient.toolList || []
+                    for (var i = 0; i < list.length; i++) {
+                        var classification = categoryForTool(list[i])
+                        if (classification.primary !== primaryCategory)
+                            continue
+                        if (secondaryCategory && secondaryCategory !== "全部"
+                                && classification.secondary !== secondaryCategory)
+                            continue
+                        count++
+                    }
+                    return count
+                }
+
+                function filteredTools(primaryCategory, secondaryCategory) {
                     var result = []
                     var list = wsClient.toolList || []
-                    var search = toolSearchText.toLowerCase()
+                    var search = toolSearchText.trim().toLowerCase()
                     for (var i = 0; i < list.length; i++) {
                         var t = list[i]
-                        if (categoryForTool(t) !== category)
+                        var classification = categoryForTool(t)
+                        if (classification.primary !== primaryCategory)
                             continue
-                        if (search && (t.label || "").toLowerCase().indexOf(search) < 0)
+                        if (secondaryCategory !== "全部"
+                                && classification.secondary !== secondaryCategory)
                             continue
+                        if (search) {
+                            var haystack = [
+                                t.label || "", t.toolId || "", t.description || "",
+                                t.pluginId || "", classification.primary,
+                                classification.secondary
+                            ].join(" ").toLowerCase()
+                            if (haystack.indexOf(search) < 0)
+                                continue
+                        }
                         result.push(t)
                     }
                     return result
@@ -11196,37 +11214,92 @@ ApplicationWindow {
                     rightPadding: 60
                     spacing: 16
 
-                    Row {
-                        id: toolsTab
+                    Flow {
+                        id: toolsPrimaryCategoryBar
+                        width: parent.width - 120
+                        height: childrenRect.height
                         spacing: 8
 
                         Repeater {
-                            model: toolsSettingRec.toolCategories
+                            model: toolsSettingRec.visiblePrimaryCategories()
 
                             delegate: Rectangle {
                                 readonly property bool selected:
-                                    toolsSettingRec.selectedToolCategory === modelData
-                                width: toolCategoryLabel.implicitWidth + 24
+                                    toolsSettingRec.selectedToolPrimaryCategory === modelData
+                                width: toolPrimaryCategoryLabel.implicitWidth + 24
                                 height: 32
                                 radius: 6
                                 color: selected ? "#0F006BFF"
-                                     : toolCategoryMouse.containsMouse ? "#F7F8FA" : "#F7F9FA"
+                                     : toolPrimaryCategoryMouse.containsMouse ? "#F7F8FA" : "#F7F9FA"
 
                                 Label {
-                                    id: toolCategoryLabel
+                                    id: toolPrimaryCategoryLabel
                                     anchors.centerIn: parent
-                                    text: modelData
+                                    text: modelData + " (" + toolsSettingRec.toolCount(modelData, "全部") + ")"
                                     font.pixelSize: 14
                                     font.weight: parent.selected ? Font.Medium : Font.Normal
                                     color: parent.selected ? "#006BFF" : "#A6000000"
                                 }
 
                                 MouseArea {
-                                    id: toolCategoryMouse
+                                    id: toolPrimaryCategoryMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: toolsSettingRec.selectedToolCategory = modelData
+                                    onClicked: toolsSettingRec.selectPrimaryCategory(modelData)
+                                }
+                            }
+                        }
+                    }
+
+                    Flickable {
+                        id: toolsSecondaryCategoryBar
+                        width: parent.width - 120
+                        height: toolsSettingRec.selectedToolPrimaryCategory ? 34 : 0
+                        visible: height > 0
+                        contentWidth: toolsSecondaryCategoryRow.width
+                        contentHeight: height
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.HorizontalFlick
+
+                        Row {
+                            id: toolsSecondaryCategoryRow
+                            spacing: 8
+
+                            Repeater {
+                                model: toolsSettingRec.visibleSecondaryCategories(
+                                           toolsSettingRec.selectedToolPrimaryCategory)
+
+                                delegate: Rectangle {
+                                    readonly property bool selected:
+                                        toolsSettingRec.selectedToolSecondaryCategory === modelData
+                                    width: toolSecondaryCategoryLabel.implicitWidth + 22
+                                    height: 30
+                                    radius: 15
+                                    color: selected ? "#EAF2FF"
+                                         : toolSecondaryCategoryMouse.containsMouse ? "#F0F3F8" : "#F7F9FA"
+                                    border.width: selected ? 1 : 0
+                                    border.color: "#99BFFF"
+
+                                    Label {
+                                        id: toolSecondaryCategoryLabel
+                                        anchors.centerIn: parent
+                                        text: modelData + " (" + toolsSettingRec.toolCount(
+                                                  toolsSettingRec.selectedToolPrimaryCategory,
+                                                  modelData) + ")"
+                                        font.pixelSize: 13
+                                        font.weight: parent.selected ? Font.Medium : Font.Normal
+                                        color: parent.selected ? "#006BFF" : "#73000000"
+                                    }
+
+                                    MouseArea {
+                                        id: toolSecondaryCategoryMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: toolsSettingRec.selectedToolSecondaryCategory = modelData
+                                    }
                                 }
                             }
                         }
@@ -11235,7 +11308,9 @@ ApplicationWindow {
                     ScrollView {
                         id: toolsScrollView
                         width: parent.width - 120
-                        height: toolsSettingRec.height - 16 - toolsTab.height - 16
+                        height: Math.max(0, toolsSettingRec.height
+                                         - toolsPrimaryCategoryBar.height
+                                         - toolsSecondaryCategoryBar.height - 64)
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
@@ -11246,11 +11321,16 @@ ApplicationWindow {
 
                             Label {
                                 visible: toolsSettingRec.filteredTools(
-                                    toolsSettingRec.selectedToolCategory).length === 0
+                                    toolsSettingRec.selectedToolPrimaryCategory,
+                                    toolsSettingRec.selectedToolSecondaryCategory).length === 0
                                 width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 topPadding: 40
-                                text: qsTr("暂无%1工具").arg(toolsSettingRec.selectedToolCategory)
+                                text: toolsSettingRec.selectedToolSecondaryCategory === "全部"
+                                      ? qsTr("暂无“%1”工具").arg(
+                                            toolsSettingRec.selectedToolPrimaryCategory)
+                                      : qsTr("暂无“%1”工具").arg(
+                                            toolsSettingRec.selectedToolSecondaryCategory)
                                 font.pixelSize: 14
                                 color: "#73000000"
                                 wrapMode: Text.WordWrap
@@ -11265,9 +11345,13 @@ ApplicationWindow {
 
                                 Repeater {
                                     model: toolsSettingRec.filteredTools(
-                                        toolsSettingRec.selectedToolCategory)
+                                        toolsSettingRec.selectedToolPrimaryCategory,
+                                        toolsSettingRec.selectedToolSecondaryCategory)
 
                                     delegate: Rectangle {
+                                        id: toolCard
+                                        readonly property var toolClassification:
+                                            toolsSettingRec.categoryForTool(modelData)
                                         width: toolCardGrid.cellWidth
                                         height: toolsLabelColumn.height
                                         radius: 8
@@ -11313,7 +11397,10 @@ ApplicationWindow {
 
                                                     Label {
                                                         width: parent.width
-                                                        text: modelData.pluginId || modelData.toolId || ""
+                                                        text: toolCard.toolClassification.secondary
+                                                              + " · "
+                                                              + (modelData.pluginId
+                                                                 || modelData.toolId || "")
                                                         font.pixelSize: 14
                                                         color: "#40000000"
                                                         elide: Text.ElideRight

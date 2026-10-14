@@ -63,7 +63,8 @@ OTHER_FILES += \
     components/ExpertPage.qml \
     components/ProjectSidebar.qml \
     components/TemplateLibraryPage.qml \
-    data/TemplatePrompts.js
+    data/TemplatePrompts.js \
+    data/ToolCategories.js
 
 # Keep the local viewer assets beside the executable. A post-link directory
 # copy avoids expanding every frontend asset into qmake's source archive rule.
