@@ -276,5 +276,6 @@
         <file>images/project-purple.png</file>
         <file>images/project-red.png</file>
         <file>images/magicpen.png</file>
+        <file>images/bottomArrow.png</file>
     </qresource>
 </RCC>

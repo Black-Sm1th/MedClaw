@@ -134,6 +134,53 @@
       visibility: visible;
     }
 
+    .scroll-to-bottom {
+      position: fixed;
+      z-index: 30;
+      left: 50%;
+      /* ChatWebView ends 8px above the composer, so 14px here gives a 22px gap. */
+      bottom: 14px;
+      display: flex;
+      box-sizing: border-box;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(0, 0, 0, .08);
+      border-radius: 50%;
+      background: #FFFFFF;
+      color: rgba(0, 0, 0, .62);
+      cursor: pointer;
+      outline: none;
+      box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.06), 0 4px 12px 0 rgba(0, 0, 0, 0.16);
+      transform: translateX(-50%);
+      transition: background-color 120ms ease, color 120ms ease,
+                  box-shadow 120ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .scroll-to-bottom[hidden] { display: none; }
+    .scroll-to-bottom:hover {
+      background: #F7F9FA;
+      color: rgba(0, 0, 0, .86);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, .24);
+    }
+    .scroll-to-bottom:active {
+      background: #EBEDF0;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, .20);
+    }
+    .scroll-to-bottom:focus-visible {
+      box-shadow: 0 0 0 2px rgba(0, 107, 255, .22),
+                  0 2px 8px rgba(0, 0, 0, .20);
+    }
+    .scroll-to-bottom img {
+      display: block;
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+      pointer-events: none;
+    }
+
     #app::-webkit-scrollbar,
     pre::-webkit-scrollbar,
     .table-wrap::-webkit-scrollbar,
@@ -628,6 +675,10 @@
   <div id="app"></div>
   <nav id="turn-nav" class="turn-nav" aria-label="对话快速跳转" hidden></nav>
   <div id="turn-nav-tooltip" class="turn-nav-tooltip" role="tooltip" aria-hidden="true"></div>
+  <button id="scroll-to-bottom" class="scroll-to-bottom" type="button"
+          aria-label="跳转到底部" title="跳转到底部" hidden>
+    <img src="qrc:///images/bottomArrow.png" alt="" aria-hidden="true">
+  </button>
   <script>
     (function () {
       var app = document.getElementById('app');
@@ -638,6 +689,7 @@
       var conversationRunning = false;
       var turnNav = document.getElementById('turn-nav');
       var turnNavTooltip = document.getElementById('turn-nav-tooltip');
+      var scrollToBottomButton = document.getElementById('scroll-to-bottom');
       var activeTurnRow = -1;
       var turnNavSignature = '';
 
@@ -1079,7 +1131,16 @@
 
       function scrollToBottom() {
         app.scrollTop = app.scrollHeight;
+        updateScrollToBottomButton();
         updateActiveTurn();
+      }
+
+      function isAtBottom() {
+        return app.scrollHeight - app.clientHeight - app.scrollTop <= 2;
+      }
+
+      function updateScrollToBottomButton() {
+        scrollToBottomButton.hidden = isAtBottom();
       }
 
       function toolKey(msg, index) {
@@ -1378,6 +1439,7 @@
           requestAnimationFrame(function () {
             if (token === renderToken) {
               restoreViewport(viewport, shouldScrollToBottom);
+              updateScrollToBottomButton();
               updateActiveTurn();
             }
           });
@@ -1404,6 +1466,7 @@
           }
           rebuildTurnNav();
           restoreViewport(viewport, followBottom);
+          updateScrollToBottomButton();
         },
         appendStreamDelta: function (row, delta) {
           row = Number(row);
@@ -1426,6 +1489,7 @@
             streamNode.appendChild(document.createTextNode(String(delta || '')));
           }
           restoreViewport(viewport, followBottom);
+          updateScrollToBottomButton();
         },
         appendToolDelta: function (row, delta) {
           row = Number(row);
@@ -1442,6 +1506,7 @@
             node = app.querySelector('[data-tool-result-row="' + row + '"]');
             if (node) scrollToolResultToBottom(row);
             restoreViewport(viewport, followBottom);
+            updateScrollToBottomButton();
             return;
           }
           if (node.lastChild && node.lastChild.nodeType === 3)
@@ -1453,11 +1518,20 @@
             if (!node.isConnected) return;
             node.scrollTop = node.scrollHeight;
             restoreViewport(viewport, followBottom);
+            updateScrollToBottomButton();
           });
           restoreViewport(viewport, followBottom);
+          updateScrollToBottomButton();
         },
         scrollToBottom: scrollToBottom
       };
+
+      scrollToBottomButton.addEventListener('click', function () {
+        if (app.scrollTo)
+          app.scrollTo({ top: app.scrollHeight, behavior: 'smooth' });
+        else
+          scrollToBottom();
+      });
 
       // Qt WebEngine's default HTML clipboard payload includes CF_HTML
       // offsets that Microsoft Word may render as visible text.  Export the
@@ -1576,8 +1650,13 @@
         clearFileHover();
         hideTurnTooltip();
         markScrolling(event.target);
-        if (event.target === app) updateActiveTurn();
+        if (event.target === app) {
+          updateScrollToBottomButton();
+          updateActiveTurn();
+        }
       }, true);
+
+      window.addEventListener('resize', updateScrollToBottomButton);
     })();
   </script>
 </body>
