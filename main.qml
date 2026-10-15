@@ -11097,6 +11097,14 @@ ApplicationWindow {
                     return ToolCategories.classify(tool ? tool.toolId : "")
                 }
 
+                function toolDetailsForTool(tool) {
+                    var localized = ToolCategories.details(tool ? tool.toolId : "")
+                    return {
+                        name: localized.name || (tool ? tool.label : "") || (tool ? tool.toolId : "") || "",
+                        description: localized.description || (tool ? tool.description : "") || ""
+                    }
+                }
+
                 function categoryNode(primaryCategory) {
                     for (var i = 0; i < toolCategoryTree.length; i++) {
                         if (toolCategoryTree[i].name === primaryCategory)
@@ -11195,10 +11203,12 @@ ApplicationWindow {
                                 && classification.secondary !== secondaryCategory)
                             continue
                         if (search) {
+                            var localizedDetails = toolDetailsForTool(t)
                             var haystack = [
                                 t.label || "", t.toolId || "", t.description || "",
-                                t.pluginId || "", classification.primary,
-                                classification.secondary
+                                t.pluginId || "", localizedDetails.name || "",
+                                localizedDetails.description || "",
+                                classification.primary, classification.secondary
                             ].join(" ").toLowerCase()
                             if (haystack.indexOf(search) < 0)
                                 continue
@@ -11352,6 +11362,8 @@ ApplicationWindow {
                                         id: toolCard
                                         readonly property var toolClassification:
                                             toolsSettingRec.categoryForTool(modelData)
+                                        readonly property var toolDetails:
+                                            toolsSettingRec.toolDetailsForTool(modelData)
                                         width: toolCardGrid.cellWidth
                                         height: toolsLabelColumn.height
                                         radius: 8
@@ -11388,7 +11400,7 @@ ApplicationWindow {
 
                                                     Label {
                                                         width: parent.width
-                                                        text: modelData.label || modelData.toolId || ""
+                                                        text: toolCard.toolDetails.name
                                                         font.pixelSize: 14
                                                         font.weight: Font.DemiBold
                                                         color: "#D9000000"
@@ -11456,12 +11468,12 @@ ApplicationWindow {
                                             Label {
                                                 id: toolDescLabel
                                                 width: parent.width - 40
-                                                text: modelData.description || ""
+                                                text: toolCard.toolDetails.description
                                                 font.pixelSize: 14
                                                 lineHeight: 1.35
                                                 color: "#73000000"
                                                 wrapMode: Text.Wrap
-                                                maximumLineCount: 2
+                                                maximumLineCount: 1
                                                 elide: Text.ElideRight
 
                                                 ToolTip {
