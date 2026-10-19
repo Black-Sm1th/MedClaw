@@ -4707,7 +4707,147 @@ void GatewayClient::persistCronToolResult(const QString &toolName,
  *
  * 后续流程在 onConnected() 中继续。
  */
+bool GatewayClient::isPackagedLocalGateway(const QString &url) const
+{
+#ifdef Q_OS_WIN
+    const QUrl parsed(url);
+    const QString host = parsed.host().trimmed().toLower();
+    if (host != QStringLiteral("127.0.0.1")
+        && host != QStringLiteral("localhost")
+        && host != QStringLiteral("::1")) {
+        return false;
+    }
+    // Packaged layouts always place the executable in an exact "client"
+    // directory. Do not require the recovery script to exist here: a missing
+    // script/runtime is damage that must reach the recovery error dialog and
+    // recommend reinstalling, not silently degrade to endless reconnects.
+    return QDir(QCoreApplication::applicationDirPath()).dirName().compare(
+               QStringLiteral("client"), Qt::CaseInsensitive) == 0;
+#else
+    Q_UNUSED(url)
+    return false;
+#endif
+}
+
+void GatewayClient::openGatewayRecoveryLogDirectory()
+{
+    const QString logDir = QDir::home().absoluteFilePath(
+        QStringLiteral(".openclaw/logs"));
+    QDir().mkpath(logDir);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(logDir));
+}
+
+void GatewayClient::ensureLocalGatewayRunning(const QString &url, bool connectAfterRecovery)
+{
+    if (!isPackagedLocalGateway(url) || m_localGatewayAvailable) {
+        if (connectAfterRecovery)
+            beginGatewayConnection(url);
+        return;
+    }
+
+    m_pendingGatewayConnectUrl = url;
+    m_connectAfterGatewayRecovery = m_connectAfterGatewayRecovery || connectAfterRecovery;
+    if (m_gatewayRecoveryInProgress)
+        return;
+    m_gatewayRecoveryInProgress = true;
+    m_gatewayRecoveryOutput.clear();
+
+    const QDir installRoot = applicationInstallRoot();
+    const QString script = installRoot.absoluteFilePath(
+        QStringLiteral("tools/start-backend.ps1"));
+    const QString stateDir = QDir::home().absoluteFilePath(QStringLiteral(".openclaw"));
+    const int port = QUrl(url).port(18789);
+
+    auto *proc = new QProcess(this);
+    configureBackgroundProcess(proc);
+    proc->setProcessChannelMode(QProcess::MergedChannels);
+    proc->setWorkingDirectory(installRoot.absolutePath());
+    proc->setProgram(QStringLiteral("powershell.exe"));
+    proc->setArguments({
+        QStringLiteral("-NoLogo"), QStringLiteral("-NoProfile"),
+        QStringLiteral("-NonInteractive"), QStringLiteral("-ExecutionPolicy"),
+        QStringLiteral("Bypass"), QStringLiteral("-File"), script,
+        QStringLiteral("-InstallRoot"), installRoot.absolutePath(),
+        QStringLiteral("-StateDir"), stateDir,
+        QStringLiteral("-Port"), QString::number(port)
+    });
+
+    connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc]() {
+        m_gatewayRecoveryOutput.append(proc->readAllStandardOutput());
+        constexpr qsizetype maxDiagnosticBytes = 32768;
+        if (m_gatewayRecoveryOutput.size() > maxDiagnosticBytes)
+            m_gatewayRecoveryOutput = m_gatewayRecoveryOutput.right(maxDiagnosticBytes);
+    });
+
+    const auto reportFailure = [this, proc, stateDir](const QString &reason) {
+        if (proc->property("gatewayRecoveryHandled").toBool())
+            return;
+        proc->setProperty("gatewayRecoveryHandled", true);
+        m_gatewayRecoveryOutput.append(proc->readAllStandardOutput());
+        m_gatewayRecoveryInProgress = false;
+        m_localGatewayAvailable = false;
+        m_connectAfterGatewayRecovery = false;
+        const QString logDir = QDir(stateDir).absoluteFilePath(QStringLiteral("logs"));
+        QString diagnostic = QString::fromUtf8(m_gatewayRecoveryOutput).trimmed();
+        if (diagnostic.size() > 1800)
+            diagnostic = diagnostic.right(1800);
+        const QString message = QStringLiteral(
+            "本机 Gateway 服务启动失败。软件已经尝试自动启动或恢复服务，但服务仍不可用。"
+            "\n\n错误：%1"
+            "\n\n日志目录：%2"
+            "\n\n请先查看日志；如果服务或运行文件缺失、损坏，请重新安装 Aether study。")
+            .arg(diagnostic.isEmpty() ? reason : diagnostic,
+                 QDir::toNativeSeparators(logDir));
+        emit gatewayRecoveryFailed(message, logDir);
+        emit errorOccurred(message);
+        proc->deleteLater();
+    };
+
+    connect(proc, &QProcess::errorOccurred, this,
+            [reportFailure](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            reportFailure(QStringLiteral("无法启动 Gateway 恢复脚本。"));
+    });
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+            [this, proc, reportFailure](int exitCode,
+                                        QProcess::ExitStatus exitStatus) {
+        if (proc->property("gatewayRecoveryHandled").toBool())
+            return;
+        m_gatewayRecoveryOutput.append(proc->readAllStandardOutput());
+        if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+            reportFailure(QStringLiteral("Gateway 恢复命令退出码：%1").arg(exitCode));
+            return;
+        }
+        proc->setProperty("gatewayRecoveryHandled", true);
+        proc->deleteLater();
+        m_gatewayRecoveryInProgress = false;
+        m_localGatewayAvailable = true;
+        const QString pendingUrl = m_pendingGatewayConnectUrl;
+        const bool shouldConnect = m_connectAfterGatewayRecovery;
+        m_pendingGatewayConnectUrl.clear();
+        m_connectAfterGatewayRecovery = false;
+        if (shouldConnect && !pendingUrl.isEmpty())
+            beginGatewayConnection(pendingUrl);
+    });
+    proc->start();
+}
+
+void GatewayClient::ensureLocalGatewayService(const QString &url)
+{
+    ensureLocalGatewayRunning(url, false);
+}
+
 void GatewayClient::connectToServer(const QString &url)
+{
+    if (isPackagedLocalGateway(url) && !m_localGatewayAvailable) {
+        m_userRequestedDisconnect = false;
+        ensureLocalGatewayRunning(url, true);
+        return;
+    }
+    beginGatewayConnection(url);
+}
+
+void GatewayClient::beginGatewayConnection(const QString &url)
 {
     const bool fromAuto = m_connectFromAutoReconnect;
     m_connectFromAutoReconnect = false;
@@ -4838,6 +4978,8 @@ void GatewayClient::onConnected()
              << "socket=" << reinterpret_cast<quintptr>(m_socket)
              << "pending=" << m_pendingRequests.size();
     setState(Handshaking);
+    if (isPackagedLocalGateway(m_lastConnectedWsUrl))
+        m_localGatewayAvailable = true;
 }
 
 /**
@@ -4866,6 +5008,8 @@ void GatewayClient::onDisconnected()
              << "socket=" << reinterpret_cast<quintptr>(m_socket)
              << "pendingBeforeClear=" << m_pendingRequests.size();
     const ConnectionState prevState = m_state;
+    if (isPackagedLocalGateway(m_lastConnectedWsUrl))
+        m_localGatewayAvailable = false;
 
     m_session.setStreaming(false);
     m_pendingRequests.clear();
@@ -4951,7 +5095,16 @@ void GatewayClient::onDisconnected()
         m_autoReconnectFailureCount = 0;
         if (!pendingDelayed)
             delayMs = 0;
-        scheduleAutoReconnectConnect(url, delayMs);
+        if (isPackagedLocalGateway(url) && !pendingDelayed) {
+            // A local service disappearing is not a network-only event: run the
+            // same packaged recovery used at application startup before reconnecting.
+            QTimer::singleShot(500, this, [this, url]() {
+                if (m_state == Disconnected && !m_userRequestedDisconnect)
+                    ensureLocalGatewayRunning(url, true);
+            });
+        } else {
+            scheduleAutoReconnectConnect(url, delayMs);
+        }
         return;
     }
 

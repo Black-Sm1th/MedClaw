@@ -250,6 +250,10 @@ public:
      *   4. 调用 QWebSocket::open() 发起连接
      */
     Q_INVOKABLE void connectToServer(const QString &url = QStringLiteral("ws://127.0.0.1:18789"));
+    /// Check/recover the packaged local service without opening a WebSocket yet.
+    Q_INVOKABLE void ensureLocalGatewayService(const QString &url = QStringLiteral("ws://127.0.0.1:18789"));
+    /// Open the local Gateway recovery log directory from the startup error dialog.
+    Q_INVOKABLE void openGatewayRecoveryLogDirectory();
 
     /// 主动断开 WebSocket 连接
     Q_INVOKABLE void disconnectFromServer();
@@ -627,6 +631,8 @@ signals:
 
     // ── 错误 ──
     void errorOccurred(const QString &message); ///< 发生错误
+    /// The packaged local Gateway could not be started or recovered.
+    void gatewayRecoveryFailed(const QString &message, const QString &logDirectory);
 
     // ── 会话管理 ──
     void sessionsChanged();                                  ///< 会话列表更新
@@ -709,6 +715,9 @@ private:
     void setState(ConnectionState state);
     void setChatRunning(bool running);
     void updateChatRunningForCurrentSession();
+    void beginGatewayConnection(const QString &url);
+    void ensureLocalGatewayRunning(const QString &url, bool connectAfterRecovery);
+    bool isPackagedLocalGateway(const QString &url) const;
 
     /**
      * @brief 处理入站事件帧（type: "event"）
@@ -1125,6 +1134,11 @@ private:
     bool m_docxTemplatesLoading = false;
 
     QString m_lastConnectedWsUrl; ///< 最近一次 connectToServer 的 URL（自动重连用）
+    QString m_pendingGatewayConnectUrl; ///< Gateway 恢复成功后待连接的本地 URL
+    QByteArray m_gatewayRecoveryOutput;  ///< start-backend.ps1 的诊断输出
+    bool m_gatewayRecoveryInProgress = false;
+    bool m_localGatewayAvailable = false;
+    bool m_connectAfterGatewayRecovery = false;
     /// 收到 shutdown 事件时由 restartExpectedMs + 余量 写入；断线重连前消费
     int m_pendingReconnectDelayMs = 0;
     /// 自动重连：普通网络失败退避至 60 秒；认证限流使用服务端延时或默认 5 分钟

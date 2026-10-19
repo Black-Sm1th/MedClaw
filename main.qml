@@ -49,6 +49,8 @@ ApplicationWindow {
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
     property string notifiedUpdateVersion: ""
+    property string gatewayRecoveryErrorText: ""
+    property string gatewayRecoveryLogDirectory: ""
     property string knowledgeBaseReadyUserId: ""
     property bool userSessionInitializing: authController.loggedIn
     readonly property bool userSessionReady: accountPreviewMode || (authController.loggedIn
@@ -1835,6 +1837,9 @@ ApplicationWindow {
 
     // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
+        // Protect the packaged local backend as soon as the application opens,
+        // even before login. connectToServer joins the same recovery if login is ready.
+        wsClient.ensureLocalGatewayService(wsClient.serverUrl)
         if (accountPreviewMode) {
             accountPreviewOpenTimer.start()
         } else if (authController.loggedIn && authController.modelConfigReady) {
@@ -2064,6 +2069,84 @@ ApplicationWindow {
                 window.pendingChatExpertInstall = false
                 window.pendingExpertPrompt = ""
                 window.pendingExpertInstallStartedAt = 0
+            }
+        }
+        function onGatewayRecoveryFailed(message, logDirectory) {
+            window.gatewayRecoveryErrorText = String(message || "")
+            window.gatewayRecoveryLogDirectory = String(logDirectory || "")
+            gatewayRecoveryErrorPopup.open()
+        }
+    }
+
+    Popup {
+        id: gatewayRecoveryErrorPopup
+        anchors.centerIn: parent
+        width: parent.width
+        height: parent.height
+        modal: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        z: 20000
+
+        Overlay.modal: Rectangle { color: "#59000000" }
+        background: Rectangle { color: "transparent" }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            Rectangle {
+                width: Math.min(600, parent.width - 40)
+                height: Math.min(410, parent.height - 40)
+                anchors.centerIn: parent
+                radius: 16
+                color: "#FFFFFF"
+
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 24
+                    spacing: 16
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("本机服务无法启动")
+                        color: "#D9000000"
+                        font.pixelSize: 20
+                        font.weight: Font.DemiBold
+                    }
+
+                    ScrollView {
+                        width: parent.width
+                        height: parent.height - 112
+                        clip: true
+                        TextArea {
+                            text: window.gatewayRecoveryErrorText
+                            readOnly: true
+                            wrapMode: Text.Wrap
+                            selectByMouse: true
+                            color: "#A6000000"
+                            font.pixelSize: 14
+                            background: Rectangle {
+                                radius: 8
+                                color: "#F7F9FA"
+                            }
+                        }
+                    }
+
+                    Row {
+                        anchors.right: parent.right
+                        spacing: 12
+
+                        Button {
+                            text: qsTr("打开日志目录")
+                            visible: window.gatewayRecoveryLogDirectory.length > 0
+                            onClicked: wsClient.openGatewayRecoveryLogDirectory()
+                        }
+                        Button {
+                            text: qsTr("关闭")
+                            onClicked: gatewayRecoveryErrorPopup.close()
+                        }
+                    }
+                }
             }
         }
     }
