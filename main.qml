@@ -9790,6 +9790,7 @@ ApplicationWindow {
                                 icon: "qrc:/images/search.png"
                                 iconSize: 16
                                 placeholderText: qsTr("搜索定时任务...")
+                                visible: scheduledTaskTab.currentIndex === 0
                                 onTextChanged: scheduledTaskRec.searchText = text
                             }
                             CustomButton {

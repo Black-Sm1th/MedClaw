@@ -7,6 +7,10 @@ Item {
     property var projects: []
     property string currentSessionKey: ""
     property var sessionTitleFormatter: null
+    // Repeater delegates are recreated whenever the project list is reloaded
+    // or reordered. Keep collapsed state here, keyed by the stable project id,
+    // so metadata updates (for example an icon color change) do not expand it.
+    property var collapsedProjectIds: ({})
     signal newProjectRequested()
     signal newChatRequested(string projectId)
     signal moreRequested(string projectId, string title, string workspace, string color,
@@ -36,6 +40,49 @@ Item {
         return sources[String(color || "").toUpperCase()]
                 || "qrc:/images/project-grey.png"
     }
+
+    function projectKey(project) {
+        return String((project && project.project_id) || "")
+    }
+
+    function isProjectExpanded(project) {
+        var key = projectKey(project)
+        return key.length === 0 || collapsedProjectIds[key] !== true
+    }
+
+    function setProjectExpanded(project, expanded) {
+        var key = projectKey(project)
+        if (key.length === 0)
+            return
+
+        var states = Object.assign({}, collapsedProjectIds)
+        if (expanded)
+            delete states[key]
+        else
+            states[key] = true
+        collapsedProjectIds = states
+    }
+
+    function pruneCollapsedProjects() {
+        var existing = ({})
+        var projectItems = projects || []
+        for (var i = 0; i < projectItems.length; ++i) {
+            var key = projectKey(projectItems[i])
+            if (key.length > 0)
+                existing[key] = true
+        }
+
+        var states = ({})
+        var collapsedKeys = Object.keys(collapsedProjectIds)
+        for (var j = 0; j < collapsedKeys.length; ++j) {
+            var collapsedKey = collapsedKeys[j]
+            if (existing[collapsedKey] === true)
+                states[collapsedKey] = true
+        }
+        collapsedProjectIds = states
+    }
+
+    onProjectsChanged: pruneCollapsedProjects()
 
     Column {
         id: contentColumn
@@ -87,7 +134,7 @@ Item {
                 id: projectDelegate
                 width: contentColumn.width
                 height: projectRow.height + (expanded ? sessionColumn.implicitHeight : 0)
-                property bool expanded: true
+                readonly property bool expanded: root.isProjectExpanded(modelData)
                 property bool pinned: modelData.pinned || false
                 property var projectSessions: modelData.sessions || []
                 property bool hovered: projectMouse.containsMouse
@@ -222,7 +269,8 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: projectDelegate.expanded = !projectDelegate.expanded
+                        onClicked: root.setProjectExpanded(modelData,
+                                                           !projectDelegate.expanded)
                     }
                 }
 
