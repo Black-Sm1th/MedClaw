@@ -11213,6 +11213,13 @@ ApplicationWindow {
                 }
 
                 function categoryForTool(tool) {
+                    var pluginId = String(tool ? tool.pluginId : "").trim().toLowerCase()
+                    var label = String(tool ? tool.label : "").trim().toLowerCase()
+                    if (pluginId === "imaging-skills"
+                            && (label.indexOf("nv-reason-ct") >= 0
+                                || label.indexOf("ct报告问答") >= 0)) {
+                        return { primary: "医学影像处理", secondary: "特征与报告" }
+                    }
                     return ToolCategories.classify(tool ? tool.toolId : "")
                 }
 
