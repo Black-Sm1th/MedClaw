@@ -11192,7 +11192,8 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
-                property string selectedToolPrimaryCategory: ""
+                readonly property string allToolCategoriesLabel: "全部"
+                property string selectedToolPrimaryCategory: allToolCategoriesLabel
                 property string selectedToolSecondaryCategory: "全部"
                 readonly property var toolCategoryTree: ToolCategories.categoryTree
 
@@ -11233,7 +11234,7 @@ ApplicationWindow {
 
                 function visiblePrimaryCategories() {
                     var list = wsClient.toolList || []
-                    var result = []
+                    var result = [allToolCategoriesLabel]
                     var present = ({})
                     for (var i = 0; i < list.length; i++)
                         present[categoryForTool(list[i]).primary] = true
@@ -11251,6 +11252,9 @@ ApplicationWindow {
 
                 function visibleSecondaryCategories(primaryCategory) {
                     var result = ["全部"]
+                    if (primaryCategory === allToolCategoriesLabel)
+                        return result
+
                     var list = wsClient.toolList || []
                     var present = ({})
                     for (var i = 0; i < list.length; i++) {
@@ -11275,7 +11279,7 @@ ApplicationWindow {
                 function ensureSelectedToolCategories() {
                     var primaryCategories = visiblePrimaryCategories()
                     if (primaryCategories.length === 0) {
-                        selectedToolPrimaryCategory = ""
+                        selectedToolPrimaryCategory = allToolCategoriesLabel
                         selectedToolSecondaryCategory = "全部"
                         return
                     }
@@ -11298,7 +11302,8 @@ ApplicationWindow {
                     var list = wsClient.toolList || []
                     for (var i = 0; i < list.length; i++) {
                         var classification = categoryForTool(list[i])
-                        if (classification.primary !== primaryCategory)
+                        if (primaryCategory !== toolsSettingRec.allToolCategoriesLabel
+                                && classification.primary !== primaryCategory)
                             continue
                         if (secondaryCategory && secondaryCategory !== "全部"
                                 && classification.secondary !== secondaryCategory)
@@ -11315,7 +11320,8 @@ ApplicationWindow {
                     for (var i = 0; i < list.length; i++) {
                         var t = list[i]
                         var classification = categoryForTool(t)
-                        if (classification.primary !== primaryCategory)
+                        if (primaryCategory !== toolsSettingRec.allToolCategoriesLabel
+                                && classification.primary !== primaryCategory)
                             continue
                         if (secondaryCategory !== "全部"
                                 && classification.secondary !== secondaryCategory)
@@ -11383,7 +11389,9 @@ ApplicationWindow {
                     Flickable {
                         id: toolsSecondaryCategoryBar
                         width: parent.width - 120
-                        height: toolsSettingRec.selectedToolPrimaryCategory ? 34 : 0
+                        height: toolsSettingRec.selectedToolPrimaryCategory
+                                && toolsSettingRec.selectedToolPrimaryCategory
+                                   !== toolsSettingRec.allToolCategoriesLabel ? 34 : 0
                         visible: height > 0
                         contentWidth: toolsSecondaryCategoryRow.width
                         contentHeight: height
@@ -11454,7 +11462,10 @@ ApplicationWindow {
                                 width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 topPadding: 40
-                                text: toolsSettingRec.selectedToolSecondaryCategory === "全部"
+                                text: toolsSettingRec.selectedToolPrimaryCategory
+                                      === toolsSettingRec.allToolCategoriesLabel
+                                      ? qsTr("暂无匹配的工具")
+                                      : toolsSettingRec.selectedToolSecondaryCategory === "全部"
                                       ? qsTr("暂无“%1”工具").arg(
                                             toolsSettingRec.selectedToolPrimaryCategory)
                                       : qsTr("暂无“%1”工具").arg(
