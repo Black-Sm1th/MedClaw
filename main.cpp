@@ -1,11 +1,14 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QLibraryInfo>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QPainterPath>
 #include <QProcess>
 #include <QQmlApplicationEngine>
@@ -18,12 +21,14 @@
 #include <QStandardPaths>
 #include <QStringList>
 #include <QSurfaceFormat>
+#include <QTextStream>
 #include <QTimer>
 #include <QWebEngineProfile>
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
 #include <QWindow>
 #include <QtWebEngineQuick>
+#include <cstdio>
 #include "CommonFunc.h"
 #include "auth_controller.h"
 #include "chatmodel.h"
@@ -32,6 +37,57 @@
 #include "session_reader.h"
 #include "updatecontroller.h"
 #include "viewer-host-qt/include/ViewerHost.h"
+
+namespace {
+QMutex g_clientInitLogMutex;
+QFile g_clientInitLogFile;
+QtMessageHandler g_previousMessageHandler = nullptr;
+
+void clientInitMessageHandler(QtMsgType type,
+                              const QMessageLogContext &context,
+                              const QString &message)
+{
+    if (message.contains(QStringLiteral("[KB-INIT]"))) {
+        QMutexLocker locker(&g_clientInitLogMutex);
+        if (g_clientInitLogFile.isOpen()) {
+            QTextStream stream(&g_clientInitLogFile);
+            stream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                   << " [" << static_cast<int>(type) << "] " << message << Qt::endl;
+            g_clientInitLogFile.flush();
+        }
+    }
+
+    if (g_previousMessageHandler)
+        g_previousMessageHandler(type, context, message);
+    else {
+        const QByteArray localMessage = message.toLocal8Bit();
+        std::fprintf(stderr, "%s\n", localMessage.constData());
+        std::fflush(stderr);
+    }
+}
+
+void installClientInitFileLogging(const QString &dataRoot)
+{
+    const QString logDirectory = QDir(dataRoot).filePath(QStringLiteral("logs"));
+    if (!QDir().mkpath(logDirectory)) {
+        qWarning().noquote() << "[KB-INIT] unable to create client diagnostic log directory:"
+                            << logDirectory;
+        return;
+    }
+
+    g_clientInitLogFile.setFileName(
+        QDir(logDirectory).filePath(QStringLiteral("client-init.log")));
+    if (!g_clientInitLogFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        qWarning().noquote() << "[KB-INIT] unable to open client diagnostic log:"
+                            << g_clientInitLogFile.fileName();
+        return;
+    }
+
+    g_previousMessageHandler = qInstallMessageHandler(clientInitMessageHandler);
+    qInfo().noquote() << "[KB-INIT] persistent diagnostic logging enabled; file="
+                      << g_clientInitLogFile.fileName();
+}
+} // namespace
 
 static void appendChromiumFlag(QByteArray &flags, const char *flag)
 {
@@ -245,6 +301,7 @@ int main(int argc, char *argv[])
     }
     if (!QDir().mkpath(dataRoot) || !QDir::setCurrent(dataRoot))
         qWarning() << "Unable to use application data directory:" << dataRoot;
+    installClientInitFileLogging(dataRoot);
 
     // ── WebSocket 客户端 & 聊天数据模型 ──
     GatewayClient wsClient;

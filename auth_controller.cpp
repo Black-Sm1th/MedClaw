@@ -171,6 +171,9 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
         if (!value.isObject())
             continue;
         QJsonObject model = value.toObject();
+        // Pricing metadata is returned by the account API for client-side
+        // display, but the installed Gateway config schema rejects it.
+        model.remove(QStringLiteral("pricing"));
         const QString id = model.value(QStringLiteral("id")).toString().trimmed();
         if (id.isEmpty() || seenIds.contains(id))
             continue;
@@ -465,6 +468,10 @@ void AuthController::fetchAndApplyModelConfig(const QString &token,
                                               const std::function<void(bool, const QString &)> &done)
 {
     const quint64 generation = ++m_modelConfigGeneration;
+    qInfo().noquote() << "[KB-INIT][Auth] requesting model configuration"
+                      << "generation=" << generation
+                      << "hasToken=" << !token.isEmpty()
+                      << "apiHost=" << QUrl(m_apiBaseUrl).host();
     if (m_modelConfigReady) {
         m_modelConfigReady = false;
         emit modelConfigReadyChanged();
@@ -488,6 +495,13 @@ void AuthController::fetchAndApplyModelConfig(const QString &token,
             modelArray = document.object().value(QStringLiteral("models")).toArray();
         bool ok = reply->error() == QNetworkReply::NoError && !modelArray.isEmpty();
         QString message;
+        qInfo().noquote() << "[KB-INIT][Auth] model configuration response"
+                          << "generation=" << generation
+                          << "current=" << current
+                          << "httpStatus=" << status
+                          << "networkError=" << reply->error()
+                          << "modelCount=" << modelArray.size()
+                          << "jsonError=" << parseError.errorString();
         if (!ok) {
             QJsonObject body = document.isObject() ? document.object() : QJsonObject();
             message = status == 401 ? QStringLiteral("登录已失效，请重新登录")
@@ -496,14 +510,23 @@ void AuthController::fetchAndApplyModelConfig(const QString &token,
                                                           ? QStringLiteral("模型列表获取失败")
                                                           : reply->errorString());
         } else {
-            if (current)
+            if (current) {
                 ok = writeOpenClawModelConfig(modelArray, token, m_apiBaseUrl, &message);
+                qInfo().noquote() << "[KB-INIT][Auth] model configuration applied"
+                                  << "generation=" << generation
+                                  << "success=" << ok
+                                  << "message=" << message;
+            }
             if (ok && current && !m_modelConfigReady) {
                 m_modelConfigReady = true;
+                qInfo() << "[KB-INIT][Auth] model configuration ready";
                 emit modelConfigReadyChanged();
             }
         }
         if (current) {
+            qInfo().noquote() << "[KB-INIT][Auth] model configuration callback"
+                              << "success=" << ok
+                              << "message=" << message;
             done(ok, message);
             if (status == 401)
                 clearSession();

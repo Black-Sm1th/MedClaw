@@ -1195,6 +1195,7 @@ private:
 
     QHash<QString, QStringList> m_agentSubagentsById;
 
+    /// Direct WebSocket reconnect that intentionally bypasses local service recovery.
     void scheduleAutoReconnectConnect(const QString &url, int delayMs);
     static QString expandTildePath(const QString &path);
     static bool copyDirectoryRecursive(const QString &srcDir, const QString &dstDir);

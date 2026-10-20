@@ -45,6 +45,30 @@
 
 namespace {
 
+// A Gateway restart briefly makes the local port unavailable.  Treat that as a
+// reconnect window first; only run the service-recovery script after repeated
+// direct WebSocket attempts have failed.  This prevents normal config/tool/account
+// restarts from being mistaken for a stopped Windows service.
+constexpr int kLocalGatewayRecoveryFailureThreshold = 6;
+constexpr int kLocalGatewayRestartGraceMs = 500;
+
+QString knowledgeBaseDiagnosticUserTag(const QString &userId)
+{
+    if (userId.trimmed().isEmpty())
+        return QStringLiteral("<none>");
+    return QString::fromLatin1(QCryptographicHash::hash(
+        userId.trimmed().toUtf8(), QCryptographicHash::Sha256).toHex().left(12));
+}
+
+QString knowledgeBaseDiagnosticDirectoryTag(const QString &dataDir)
+{
+    static const QRegularExpression userDirectoryPattern(
+        QStringLiteral("/users/([0-9a-fA-F]{64})$"));
+    const QRegularExpressionMatch match = userDirectoryPattern.match(
+        dataDir.trimmed().replace(QLatin1Char('\\'), QLatin1Char('/')));
+    return match.hasMatch() ? match.captured(1).left(12) : QStringLiteral("<unscoped>");
+}
+
 QString stripInternalPolicyBlocks(QString text)
 {
     const QStringList tags{
@@ -4851,6 +4875,12 @@ void GatewayClient::beginGatewayConnection(const QString &url)
 {
     const bool fromAuto = m_connectFromAutoReconnect;
     m_connectFromAutoReconnect = false;
+    const QUrl targetUrl(url);
+    qInfo().noquote() << "[KB-INIT][Gateway] websocket connect attempt"
+                      << "host=" << targetUrl.host()
+                      << "port=" << targetUrl.port(-1)
+                      << "autoReconnect=" << fromAuto
+                      << "previousState=" << static_cast<int>(m_state);
 
     m_userRequestedDisconnect = false;
     m_lastConnectedWsUrl = url;
@@ -4974,6 +5004,7 @@ void GatewayClient::abortChat(const QString &sessionKey)
  */
 void GatewayClient::onConnected()
 {
+    qInfo().noquote() << "[KB-INIT][Gateway] websocket transport connected; waiting for protocol handshake";
     qDebug() << "[Gateway][TRACE][CONNECTED]"
              << "socket=" << reinterpret_cast<quintptr>(m_socket)
              << "pending=" << m_pendingRequests.size();
@@ -4998,7 +5029,10 @@ void GatewayClient::scheduleAutoReconnectConnect(const QString &url, int delayMs
         if (m_userRequestedDisconnect)
             return;
         m_connectFromAutoReconnect = true;
-        connectToServer(url);
+        // Auto-reconnect is deliberately a direct socket attempt.  connectToServer()
+        // would see m_localGatewayAvailable == false immediately after a planned
+        // Gateway restart and invoke start-backend.ps1 far too early.
+        beginGatewayConnection(url);
     });
 }
 
@@ -5008,6 +5042,12 @@ void GatewayClient::onDisconnected()
              << "socket=" << reinterpret_cast<quintptr>(m_socket)
              << "pendingBeforeClear=" << m_pendingRequests.size();
     const ConnectionState prevState = m_state;
+    qInfo().noquote() << "[KB-INIT][Gateway] websocket disconnected"
+                      << "previousState=" << static_cast<int>(prevState)
+                      << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId)
+                      << "awaitingRestart=" << m_knowledgeBaseAwaitingRestart
+                      << "restartObserved=" << m_knowledgeBaseRestartObserved
+                      << "socketError=" << m_socket->errorString();
     if (isPackagedLocalGateway(m_lastConnectedWsUrl))
         m_localGatewayAvailable = false;
 
@@ -5094,23 +5134,24 @@ void GatewayClient::onDisconnected()
     if (prevState == Connected || pendingDelayed) {
         m_autoReconnectFailureCount = 0;
         if (!pendingDelayed)
-            delayMs = 0;
-        if (isPackagedLocalGateway(url) && !pendingDelayed) {
-            // A local service disappearing is not a network-only event: run the
-            // same packaged recovery used at application startup before reconnecting.
-            QTimer::singleShot(500, this, [this, url]() {
-                if (m_state == Disconnected && !m_userRequestedDisconnect)
-                    ensureLocalGatewayRunning(url, true);
-            });
-        } else {
-            scheduleAutoReconnectConnect(url, delayMs);
-        }
+            delayMs = isPackagedLocalGateway(url)
+                ? kLocalGatewayRestartGraceMs : 0;
+        scheduleAutoReconnectConnect(url, delayMs);
         return;
     }
 
     if (prevState == Connecting || prevState == Handshaking) {
         if (m_autoReconnectFailureCount < std::numeric_limits<int>::max())
             m_autoReconnectFailureCount += 1;
+        if (isPackagedLocalGateway(url)
+            && m_autoReconnectFailureCount >= kLocalGatewayRecoveryFailureThreshold) {
+            qWarning().noquote()
+                << "[Gateway] local reconnect grace period exhausted after"
+                << m_autoReconnectFailureCount
+                << "failures; attempting Windows service recovery";
+            ensureLocalGatewayRunning(url, true);
+            return;
+        }
         const int backoffStep = std::min(m_autoReconnectFailureCount - 1, 7);
         const int retryDelayMs = std::min(500 << backoffStep, 60000);
         qDebug().noquote() << "[Gateway] auto-reconnect retry in"
@@ -5266,7 +5307,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
     // ── ① connect.challenge：握手阶段 ──
     if (event == QLatin1String("connect.challenge")) {
         m_challengeNonce = payload.value(QStringLiteral("nonce")).toString();
-        qDebug() << "[Gateway] challenge nonce:" << m_challengeNonce;
+        qInfo() << "[KB-INIT][Gateway] protocol challenge received; sending connect request";
         sendConnectRequest();
         return;
     }
@@ -5607,6 +5648,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (errMsg.isEmpty())
             errMsg = QStringLiteral("Request failed (ok=false)");
         qWarning() << "[Gateway] error" << method << "id=" << id << errMsg;
+        if (method == QLatin1String("config.get")
+            || id == m_pendingKnowledgeBaseConfigMutationReqId) {
+            qWarning().noquote() << "[KB-INIT][Gateway] RPC failed"
+                                 << "method=" << method
+                                 << "requestId=" << id
+                                 << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId)
+                                 << "error=" << errMsg;
+        }
 
         if (method == QLatin1String("agents.create") && !m_pendingCreateName.isEmpty()) {
             emit agentCreated(m_pendingCreateName, false, errMsg, false);
@@ -5692,6 +5741,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         if (id == m_pendingKnowledgeBaseConfigMutationReqId) {
             m_pendingKnowledgeBaseConfigMutationReqId.clear();
             if (looksLikeConfigHashStaleError(errMsg)) {
+                qWarning().noquote() << "[KB-INIT][Gateway] config.set baseHash stale; requesting a fresh config snapshot";
                 m_knowledgeBaseConfigMutationAwaitingRetry = true;
             } else {
                 m_knowledgeBaseConfigMutationAwaitingRetry = false;
@@ -5807,12 +5857,14 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
                 m_userRequestedDisconnect = true;
                 qWarning() << "[Gateway] authentication failed; auto-reconnect paused";
             }
+            qWarning().noquote() << "[KB-INIT][Gateway] protocol handshake rejected:" << errMsg;
             qWarning() << "[Gateway] connect failed:" << errMsg;
             emit errorOccurred(errMsg);
             m_socket->abort();
             return;
         }
         // 握手成功：切换到 Connected，自动加载所有初始数据
+        qInfo() << "[KB-INIT][Gateway] protocol handshake complete";
         qDebug() << "[Gateway] handshake complete!";
         m_autoReconnectFailureCount = 0;
         setState(Connected);
@@ -6349,6 +6401,10 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
 
     // config.get → 更新 baseHash 与 mcp.servers 列表
     if (method == QLatin1String("config.get")) {
+        qInfo().noquote() << "[KB-INIT][Gateway] config.get response received"
+                          << "requestId=" << id
+                          << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId)
+                          << "hasHash=" << !payload.value(QStringLiteral("hash")).toString().trimmed().isEmpty();
         applyMcpListFromConfigGetPayload(payload);
         emit mcpListChanged();
         if (id == m_pendingToolInstallConfigGetReqId) {
@@ -6366,6 +6422,9 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         qDebug() << "[Gateway] config.set ok, follow-up config.get";
         const bool wasCollabAllowConfigSet = m_collabAllowConfigSetReqIds.remove(id);
         if (id == m_pendingKnowledgeBaseConfigMutationReqId) {
+            qInfo().noquote() << "[KB-INIT][Gateway] config.set accepted; waiting for Gateway restart and reconnect"
+                              << "requestId=" << id
+                              << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId);
             m_pendingKnowledgeBaseConfigMutationReqId.clear();
             m_knowledgeBaseConfigMutationAwaitingRetry = false;
             setKnowledgeBaseDataDirState(
@@ -8646,9 +8705,20 @@ void GatewayClient::mergeWorkspaceIntoAgentIdentity()
 
 void GatewayClient::refreshMcpList()
 {
-    if (m_state != Connected)
+    if (m_state != Connected) {
+        if (!m_knowledgeBaseDataDirUserId.isEmpty()) {
+            qInfo().noquote() << "[KB-INIT][Gateway] config.get not sent because Gateway is not connected"
+                              << "connectionState=" << static_cast<int>(m_state)
+                              << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId);
+        }
         return;
-    sendRequest(QStringLiteral("config.get"), QJsonObject());
+    }
+    const QString requestId = sendRequest(QStringLiteral("config.get"), QJsonObject());
+    if (!m_knowledgeBaseDataDirUserId.isEmpty()) {
+        qInfo().noquote() << "[KB-INIT][Gateway] config.get sent"
+                          << "requestId=" << requestId
+                          << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId);
+    }
 }
 
 void GatewayClient::refreshDocxTemplates()
@@ -8686,12 +8756,19 @@ void GatewayClient::setKnowledgeBaseDataDirState(bool ready,
     }
     m_knowledgeBaseDataDirReady = ready;
     m_knowledgeBaseDataDirMessage = message;
+    qInfo().noquote() << "[KB-INIT][Gateway] readiness state changed"
+                      << "ready=" << ready
+                      << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId)
+                      << "stage=" << (message.isEmpty() ? QStringLiteral("ready-or-idle") : message);
     emit knowledgeBaseDataDirStateChanged();
 }
 
 void GatewayClient::configureKnowledgeBaseForUser(const QString &userId)
 {
     const QString normalizedUserId = userId.trimmed();
+    qInfo().noquote() << "[KB-INIT][Gateway] configure requested"
+                      << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(normalizedUserId)
+                      << "connectionState=" << static_cast<int>(m_state);
     if (normalizedUserId.isEmpty()) {
         m_knowledgeBaseDataDirUserId.clear();
         m_knowledgeBaseDesiredDataDir.clear();
@@ -8718,6 +8795,8 @@ void GatewayClient::configureKnowledgeBaseForUser(const QString &userId)
             : QStringLiteral("正在初始化当前用户的知识库..."));
     if (m_state == Connected)
         refreshMcpList();
+    else
+        qInfo() << "[KB-INIT][Gateway] config snapshot deferred until websocket is connected";
 }
 
 void GatewayClient::applyPendingKnowledgeBaseDataDir()
@@ -8725,6 +8804,14 @@ void GatewayClient::applyPendingKnowledgeBaseDataDir()
     if (m_state != Connected || m_knowledgeBaseDataDirUserId.isEmpty()
         || m_lastConfigSnapshot.isEmpty() || m_configHashRetryAfterGet
         || m_configHashRetryInFlight) {
+        if (!m_knowledgeBaseDataDirUserId.isEmpty()) {
+            qInfo().noquote() << "[KB-INIT][Gateway] config snapshot not applied yet"
+                              << "connectionState=" << static_cast<int>(m_state)
+                              << "hasUser=" << !m_knowledgeBaseDataDirUserId.isEmpty()
+                              << "hasSnapshot=" << !m_lastConfigSnapshot.isEmpty()
+                              << "hashRetryAfterGet=" << m_configHashRetryAfterGet
+                              << "hashRetryInFlight=" << m_configHashRetryInFlight;
+        }
         return;
     }
 
@@ -8740,11 +8827,23 @@ void GatewayClient::applyPendingKnowledgeBaseDataDir()
         m_knowledgeBaseDesiredDataDir = knowledgeBaseDataDirForUser(
             m_knowledgeBaseDataDirUserId, currentDataDir);
     }
+    qInfo().noquote() << "[KB-INIT][Gateway] comparing knowledge-base directories"
+                      << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId)
+                      << "pluginEntryPresent=" << !kbEntry.isEmpty()
+                      << "currentDirConfigured=" << !currentDataDir.isEmpty()
+                      << "currentDirectoryTag=" << knowledgeBaseDiagnosticDirectoryTag(currentDataDir)
+                      << "desiredDirectoryTag=" << knowledgeBaseDiagnosticDirectoryTag(m_knowledgeBaseDesiredDataDir)
+                      << "currentMatchesDesired=" << (currentDataDir == m_knowledgeBaseDesiredDataDir)
+                      << "awaitingRestart=" << m_knowledgeBaseAwaitingRestart
+                      << "restartObserved=" << m_knowledgeBaseRestartObserved
+                      << "mutationPending=" << !m_pendingKnowledgeBaseConfigMutationReqId.isEmpty()
+                      << "retryPending=" << m_knowledgeBaseConfigMutationAwaitingRetry;
 
     if (currentDataDir == m_knowledgeBaseDesiredDataDir) {
         m_pendingKnowledgeBaseConfigMutationReqId.clear();
         if (m_knowledgeBaseAwaitingRestart
             && !m_knowledgeBaseRestartObserved) {
+            qInfo() << "[KB-INIT][Gateway] desired directory matches, but restart has not been observed yet";
             setKnowledgeBaseDataDirState(
                 false, QStringLiteral("正在重启知识库服务..."));
             return;
@@ -8759,6 +8858,9 @@ void GatewayClient::applyPendingKnowledgeBaseDataDir()
 
     if (!m_pendingKnowledgeBaseConfigMutationReqId.isEmpty()
         || m_knowledgeBaseConfigMutationAwaitingRetry) {
+        qInfo().noquote() << "[KB-INIT][Gateway] directory update already pending"
+                          << "requestId=" << m_pendingKnowledgeBaseConfigMutationReqId
+                          << "retryPending=" << m_knowledgeBaseConfigMutationAwaitingRetry;
         return;
     }
 
@@ -8787,6 +8889,10 @@ void GatewayClient::applyPendingKnowledgeBaseDataDir()
     m_knowledgeBaseRestartObserved = false;
     m_pendingKnowledgeBaseConfigMutationReqId =
         sendConfigMutation(QStringLiteral("config.set"), params);
+    qInfo().noquote() << "[KB-INIT][Gateway] config.set sent"
+                      << "requestId=" << m_pendingKnowledgeBaseConfigMutationReqId
+                      << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId)
+                      << "baseHashPresent=" << !m_configSnapshotHash.isEmpty();
     setKnowledgeBaseDataDirState(
         false, QStringLiteral("正在应用当前用户的知识库目录..."));
     qDebug().noquote() << "[Gateway][KB] switching dataDir to"

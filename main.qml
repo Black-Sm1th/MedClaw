@@ -112,15 +112,33 @@ ApplicationWindow {
         var packageStates = ({})
         var packageNames = ({})
         var packageCodes = ({})
+        var packageEndTimes = ({})
+        var packageEndStatuses = ({})
         var packageList = packages || []
         for (var p = 0; p < packageList.length; ++p) {
             var pack = packageList[p] || ({})
+            var packageCode = String(pack.code || pack.plan_code || "").trim()
+            var packageEndTime = String(pack.end_time || "")
+            var packageStatus = String(pack.status || "").toUpperCase()
+            if (packageCode && packageEndTime) {
+                var currentEndTime = String(packageEndTimes[packageCode] || "")
+                var currentStatus = String(packageEndStatuses[packageCode] || "")
+                var candidateEnd = new Date(packageEndTime).getTime()
+                var currentEnd = new Date(currentEndTime).getTime()
+                if (!currentEndTime
+                        || (packageStatus === "ACTIVE" && currentStatus !== "ACTIVE")
+                        || (packageStatus === currentStatus && isFinite(candidateEnd)
+                            && (!isFinite(currentEnd) || candidateEnd < currentEnd))) {
+                    packageEndTimes[packageCode] = packageEndTime
+                    packageEndStatuses[packageCode] = packageStatus
+                }
+            }
             var subscriptionId = String(pack.subscription_id || "")
             if (!subscriptionId)
                 continue
-            packageStates[subscriptionId] = String(pack.status || "").toUpperCase()
+            packageStates[subscriptionId] = packageStatus
             packageNames[subscriptionId] = String(pack.plan_name || "")
-            packageCodes[subscriptionId] = String(pack.plan_code || "")
+            packageCodes[subscriptionId] = packageCode
         }
 
         var buckets = {
@@ -142,7 +160,7 @@ ApplicationWindow {
                     && packageStates[lotSubscriptionId] !== "ACTIVE")
                 continue
 
-            var code = String(lot.plan_code || packageCodes[lotSubscriptionId] || "")
+            var code = String(lot.code || lot.plan_code || packageCodes[lotSubscriptionId] || "")
             var sourceType = String(lot.source_type || "").toUpperCase()
             var kind = sourceType === "FREE" || code === "monthly-free-500"
                     ? "free" : (accountIsAddon(code, lotSubscriptionId) ? "addon" : "package")
@@ -161,7 +179,9 @@ ApplicationWindow {
                 bucket.names.push(name)
             if (code && bucket.codes.indexOf(code) < 0)
                 bucket.codes.push(code)
-            var expiresAt = String(lot.expires_at || "")
+            // Credit lots expire monthly as credits are replenished. The displayed
+            // subscription expiry must come from the matching package instead.
+            var expiresAt = String(packageEndTimes[code] || "")
             if (expiresAt && (!bucket.expiresAt
                     || new Date(expiresAt).getTime() < new Date(bucket.expiresAt).getTime()))
                 bucket.expiresAt = expiresAt
@@ -1886,6 +1906,9 @@ ApplicationWindow {
                 kbRefreshFiles()
         }
         function onLoggedInChanged() {
+            console.info("[KB-INIT][QML] login state changed; loggedIn=" + authController.loggedIn
+                         + ", userIdPresent=" + (String(authController.userId || "").length > 0)
+                         + ", modelConfigReady=" + authController.modelConfigReady)
             if (authController.loggedIn) {
                 window.userSessionInitializing = true
                 window.knowledgeBaseReadyUserId = ""
@@ -1935,6 +1958,10 @@ ApplicationWindow {
             }
         }
         function onModelConfigReadyChanged() {
+            console.info("[KB-INIT][QML] model configuration state changed; ready="
+                         + authController.modelConfigReady
+                         + ", loggedIn=" + authController.loggedIn
+                         + ", userIdPresent=" + (String(authController.userId || "").length > 0))
             if (authController.loggedIn && authController.modelConfigReady) {
                 window.reloadUploadedDocxTemplates()
                 window.kbLoadMetadata()
@@ -1945,6 +1972,8 @@ ApplicationWindow {
     Connections{
         target: wsClient
         function onConnectionStateChanged(){
+            console.info("[KB-INIT][QML] Gateway connection state changed; state=" + wsClient.connectionState
+                         + ", userIdPresent=" + (String(authController.userId || "").length > 0))
             if(wsClient.connectionState === 3){
                 wsClient.configureKnowledgeBaseForUser(String(authController.userId || ""))
                 wsClient.refreshSkills()
@@ -1957,6 +1986,11 @@ ApplicationWindow {
             }
         }
         function onKnowledgeBaseDataDirStateChanged() {
+            console.info("[KB-INIT][QML] knowledge-base readiness changed; ready="
+                         + wsClient.knowledgeBaseDataDirReady
+                         + ", loggedIn=" + authController.loggedIn
+                         + ", userSessionInitializing=" + window.userSessionInitializing
+                         + ", stage=" + (wsClient.knowledgeBaseDataDirMessage || "ready"))
             if (wsClient.knowledgeBaseDataDirReady) {
                 window.knowledgeBaseReadyUserId = String(authController.userId || "")
                 window.userSessionInitializing = false
