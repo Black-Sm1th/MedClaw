@@ -31,7 +31,7 @@ const char testApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 #ifdef MEDCLAW_EDITION_GOVERNMENT
 const char governmentEnterpriseCode[] = "gov-01";
 #endif
-const QString clientVersion(QStringLiteral("v1.2.12"));
+const QString clientVersion(QStringLiteral("v1.2.11"));
 
 QString clientDisplayVersion()
 {
@@ -142,6 +142,26 @@ QString UpdateController::releaseNotes() const
 {
     return m_releaseNotes;
 }
+QString UpdateController::changeList() const
+{
+    return m_changeList;
+}
+QString UpdateController::releaseDetails() const
+{
+    return m_releaseDetails;
+}
+QString UpdateController::oneLineSummary() const
+{
+    return m_oneLineSummary;
+}
+qint64 UpdateController::fileSize() const
+{
+    return m_fileSize;
+}
+QString UpdateController::publishDate() const
+{
+    return m_publishDate;
+}
 QString UpdateController::downloadUrl() const
 {
     return m_downloadUrl;
@@ -235,10 +255,36 @@ void UpdateController::handleReleaseReply(QNetworkReply *reply)
     m_latestTitle = release.value(QStringLiteral("title")).toString();
     m_latestSummary = release.value(QStringLiteral("summary")).toString();
     m_releaseNotes = release.value(QStringLiteral("release_notes")).toString();
+    m_changeList = release.value(QStringLiteral("change_list")).toString();
+    if (m_changeList.isEmpty())
+        m_changeList = release.value(QStringLiteral("changeList")).toString();
+    if (m_changeList.isEmpty())
+        m_changeList = release.value(QStringLiteral("changes")).toString();
+    if (m_changeList.isEmpty())
+        m_changeList = release.value(QStringLiteral("changelog")).toString();
+    m_releaseDetails = release.value(QStringLiteral("release_details")).toString();
+    if (m_releaseDetails.isEmpty())
+        m_releaseDetails = release.value(QStringLiteral("releaseDetails")).toString();
+    if (m_releaseDetails.isEmpty())
+        m_releaseDetails = release.value(QStringLiteral("release_notes")).toString();
+    m_oneLineSummary = release.value(QStringLiteral("one_line_summary")).toString();
+    if (m_oneLineSummary.isEmpty())
+        m_oneLineSummary = release.value(QStringLiteral("oneLineSummary")).toString();
+    if (m_oneLineSummary.isEmpty())
+        m_oneLineSummary = release.value(QStringLiteral("summary")).toString();
     m_downloadUrl = resolveDownloadUrl(release);
     m_fileName = release.value(QStringLiteral("file_name")).toString();
     m_sha256 = release.value(QStringLiteral("sha256")).toString().trimmed().toLower();
     m_fileSize = release.value(QStringLiteral("file_size")).toLongLong();
+    m_publishDate = release.value(QStringLiteral("published_at")).toString().trimmed();
+    if (m_publishDate.isEmpty())
+        m_publishDate = release.value(QStringLiteral("publish_date")).toString().trimmed();
+    if (m_publishDate.isEmpty())
+        m_publishDate = release.value(QStringLiteral("publish_time")).toString().trimmed();
+    if (m_publishDate.isEmpty())
+        m_publishDate = release.value(QStringLiteral("release_date")).toString().trimmed();
+    if (m_publishDate.isEmpty())
+        m_publishDate = release.value(QStringLiteral("created_at")).toString().trimmed();
     m_forceUpdate = release.value(QStringLiteral("force_update")).toBool();
     const QString minimum = release.value(QStringLiteral("min_required_version")).toString();
     const bool belowMinimum = !minimum.isEmpty() && isNewerVersion(minimum, clientVersion);

@@ -457,8 +457,9 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("updateController"), &updateController);
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
-    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Regular.ttf");
-    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-85-Regular.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-85-Bold.ttf");
+    QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-95-ExtraBold.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlimamaShuHeiTi-Bold.ttf");
 
     // --test 启动 WebSocket 测试页。

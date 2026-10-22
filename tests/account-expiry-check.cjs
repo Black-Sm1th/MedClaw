@@ -50,16 +50,21 @@ const groups = accountCreditGroups(
     subscription_id: 'package-subscription',
     status: 'ACTIVE',
     end_time: '2027-03-31T15:59:59Z',
+  }, {
+    code: 'standard-monthly',
+    subscription_id: 'renewed-package-subscription',
+    status: 'ACTIVE',
+    end_time: '2028-03-31T15:59:59Z',
   }],
 );
 
 assert.equal(groups.length, 1);
 assert.equal(
   groups[0].expiresAt,
-  '2027-03-31T15:59:59Z',
-  'the matched package end_time should replace the monthly credit-lot expiry',
+  '2028-03-31T15:59:59Z',
+  'the latest matching package end_time should replace the monthly credit-lot expiry',
 );
-assert.equal(accountExpiry(groups), '2027-03-31T15:59:59Z');
+assert.equal(accountExpiry(groups), '2028-03-31T15:59:59Z');
 
 const unmatchedGroups = accountCreditGroups(
   [{

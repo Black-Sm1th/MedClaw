@@ -128,7 +128,7 @@ ApplicationWindow {
                 if (!currentEndTime
                         || (packageStatus === "ACTIVE" && currentStatus !== "ACTIVE")
                         || (packageStatus === currentStatus && isFinite(candidateEnd)
-                            && (!isFinite(currentEnd) || candidateEnd < currentEnd))) {
+                            && (!isFinite(currentEnd) || candidateEnd > currentEnd))) {
                     packageEndTimes[packageCode] = packageEndTime
                     packageEndStatuses[packageCode] = packageStatus
                 }
@@ -183,7 +183,7 @@ ApplicationWindow {
             // subscription expiry must come from the matching package instead.
             var expiresAt = String(packageEndTimes[code] || "")
             if (expiresAt && (!bucket.expiresAt
-                    || new Date(expiresAt).getTime() < new Date(bucket.expiresAt).getTime()))
+                    || new Date(expiresAt).getTime() > new Date(bucket.expiresAt).getTime()))
                 bucket.expiresAt = expiresAt
         }
 
@@ -226,7 +226,7 @@ ApplicationWindow {
         for (var i = 0; i < groups.length; ++i) {
             var value = String(groups[i].expiresAt || "")
             if (value && (!earliest
-                    || new Date(value).getTime() < new Date(earliest).getTime()))
+                    || new Date(value).getTime() > new Date(earliest).getTime()))
                 earliest = value
         }
         return earliest
@@ -275,180 +275,345 @@ ApplicationWindow {
     Popup {
         id: updateDialog
         anchors.centerIn: parent
-        width: parent.width
-        height: parent.height
+        width: updateController.downloading ? 600 : 800
+        height: updateController.downloading ? 320 : 440
         modal: true
         padding: 0
-        closePolicy: updateController.forceUpdate ? Popup.NoAutoClose
+        closePolicy: updateController.forceUpdate || updateController.downloading ? Popup.NoAutoClose
                                                    : Popup.CloseOnEscape
         Overlay.modal: Rectangle {
             color: "#40000000"
         }
         background: Rectangle { color: "transparent" }
         contentItem: Item {
+            id: updateDialogContent
             anchors.fill: parent
+            function updateDetailsText() {
+                var note = String(updateController.changeList || "").trim()
+                if (!note)
+                    note = String(updateController.releaseDetails || "").trim()
+                if (!note)
+                    note = String(updateController.oneLineSummary || "").trim()
+                return note.replace(/\r/g, "")
+            }
+            function releaseNoteItems() {
+                var notes = updateDetailsText()
+                var lines = notes.split("\n")
+                var items = []
+                for (var i = 0; i < lines.length; ++i) {
+                    var line = lines[i].trim()
+                    if (line.length > 0) {
+                        line = line.replace(/^[•·●▪*-]\s*/, "")
+                        if (line.length > 0)
+                            items.push(line)
+                    }
+                }
+                return items
+            }
 
             MouseArea {
                 anchors.fill: parent
-                enabled: !updateController.forceUpdate
+                enabled: !updateController.forceUpdate && !updateController.downloading
                 onClicked: updateDialog.close()
             }
 
             Rectangle {
-                width: Math.min(560, parent.width - 32)
-                height: Math.min(320, parent.height - 32)
+                id: updateCard
+                width: parent.width
+                height: parent.height
                 anchors.centerIn: parent
-                radius: 16
+                radius: 10
                 color: "#FFFFFF"
+                clip: true
+                visible: !updateController.downloading
 
                 MouseArea { anchors.fill: parent; onClicked: {} }
 
-                Item {
-                    id: updateTitleBar
-                    width: parent.width
-                    height: 64
-                    Label {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: updateController.forceUpdate ? "需要更新" : "发现新版本"
-                        color: "#D9000000"
-                        font.pixelSize: 18
-                        font.weight: Font.Bold
+                readonly property real leftPanelWidth: width * 0.58
+                readonly property real contentInset: 40
+
+                Rectangle {
+                    id: updateArtworkPanel
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    width: updateCard.width - updateCard.leftPanelWidth
+                    color: "#EAF4FF"
+                    layer.enabled: true
+                    layer.effect: OpacityMask {
+                        maskSource: Item {
+                            width: updateArtworkPanel.width
+                            height: updateArtworkPanel.height
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 10
+                                color: "white"
+                            }
+                            Rectangle { width: 10; height: 10; color: "white" }
+                            Rectangle { width: 10; height: 10; y: parent.height - height; color: "white" }
+                        }
                     }
-                    ImageButton {
-                        visible: !updateController.forceUpdate
-                        btnHeight: 20
-                        btnWidth: 20
-                        source: "qrc:/images/close.png"
-                        anchors.right: parent.right
-                        anchors.rightMargin: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        onClicked: updateDialog.close()
+
+                    Image {
+                        anchors.fill: parent
+                        source: "qrc:/images/updateImage.png"
+                        fillMode: Image.PreserveAspectCrop
+                        horizontalAlignment: Image.AlignRight
+                        smooth: true
                     }
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: "#14000000"
-                        anchors.bottom: parent.bottom
+                }
+
+                Rectangle {
+                    x: updateCard.leftPanelWidth - 1
+                    y: 0
+                    width: 40
+                    height: parent.height
+                    z: 1
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "#FFFFFFFF" }
+                        GradientStop { position: 1.0; color: "#00FFFFFF" }
+                    }
+                }
+
+                Flickable {
+                    id: updateDetailsFlickable
+                    x: updateCard.contentInset
+                    y: updateHeaderColumn.y + updateHeaderColumn.implicitHeight + 18
+                    width: updateCard.leftPanelWidth - updateCard.contentInset * 2
+                    height: Math.max(40, updateActions.y - y - 18)
+                    clip: true
+                    contentWidth: width
+                    contentHeight: updateNotesColumn.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    flickableDirection: Flickable.VerticalFlick
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AsNeeded
+                        minimumSize: 0.12
+                    }
+
+                    Column {
+                        id: updateNotesColumn
+                        width: updateDetailsFlickable.width
+                        Column {
+                            width: parent.width
+                            spacing: 8
+                            Repeater {
+                                model: updateDialogContent.releaseNoteItems()
+                                delegate: Row {
+                                    width: updateNotesColumn.width
+                                    spacing: 8
+                                    Rectangle {
+                                        width: 8
+                                        height: 8
+                                        radius: 4
+                                        color: "#08A1FF"
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 8
+                                    }
+                                    Label {
+                                        width: parent.width - 16
+                                        text: modelData
+                                        color: "#D9000000"
+                                        font.pixelSize: 16
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                            }
+                        }
+
+                        Label {
+                            width: parent.width
+                            visible: updateController.errorMessage.length > 0
+                            text: updateController.errorMessage
+                            color: "#C62828"
+                            font.pixelSize: 13
+                            wrapMode: Text.Wrap
+                        }
                     }
                 }
 
                 Column {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: updateTitleBar.bottom
-                    anchors.bottom: updateFooter.top
-                    padding: 24
-                    spacing: 10
-
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.latestTitle.length > 0
-                        text: updateController.latestTitle
-                        color: "#D9000000"
-                        font.pixelSize: 24
-                        font.weight: Font.DemiBold
-                        wrapMode: Text.Wrap
-                    }
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.latestSummary.length > 0
-                        text: updateController.latestSummary
-                        color: "#73000000"
-                        font.pixelSize: 16
-                        wrapMode: Text.Wrap
-                    }
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.errorMessage.length > 0
-                        text: updateController.errorMessage
-                        color: "#C62828"
-                        font.pixelSize: 14
-                        wrapMode: Text.Wrap
-                    }
-                    Label {
-                        width: parent.width - 48
-                        visible: updateController.checking || updateController.downloading
-                        text: updateController.checking
-                              ? "正在检查更新..."
-                              : (updateController.downloadTotalBytes > 0
-                                 ? "正在下载安装包 " + Math.round(updateController.downloadProgress * 100) + "%"
-                                 : "正在下载安装包...")
-                        color: "#006BFF"
-                        font.pixelSize: 14
-                    }
+                    id: updateHeaderColumn
+                    x: updateCard.contentInset
+                    y: updateCard.contentInset
+                    width: updateCard.leftPanelWidth - updateCard.contentInset * 2
+                    spacing: 8
                     Rectangle {
-                        width: parent.width - 48
-                        height: 6
-                        radius: 3
-                        visible: updateController.downloading
-                        color: "#E6EAF0"
-                        Rectangle {
-                            width: parent.width * updateController.downloadProgress
-                            height: parent.height
-                            radius: 3
-                            color: "#006BFF"
+                        width: versionBadgeContent.implicitWidth + 16
+                        height: 25
+                        radius: 13
+                        color: "#1F0080FF"
+                        Row {
+                            id: versionBadgeContent
+                            anchors.centerIn: parent
+                            spacing: 4
+                            Label {
+                                text: updateController.latestVersion
+                                color: "#0080FF"
+                                font.pixelSize: 14
+                                font.weight: Font.Medium
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            Image {
+                                source: "qrc:/images/updateStar.png"
+                                width: 12
+                                height: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+                    }
+                    Label {
+                        width: parent.width
+                        text: "发现新版本"
+                        color: "#D9000000"
+                        font.pixelSize: 36
+                        font.weight: Font.ExtraBold
+                    }
+                    Label {
+                        width: parent.width
+                        text: {
+                            var size = Number(updateController.fileSize || 0)
+                            var sizeText = size > 0 ? (size / (1024 * 1024)).toFixed(0) + "M" : "--"
+                            var dateText = String(updateController.publishDate || "").trim()
+                            if (dateText.length >= 10)
+                                dateText = dateText.substring(0, 10)
+                            return "约 " + sizeText + "  " + (dateText ? dateText + " 发布" : "")
+                        }
+                        color: "#73000000"
+                        font.pixelSize: 14
+                        elide: Text.ElideRight
+                    }
+                }
+
+                Row {
+                    id: updateActions
+                    x: updateCard.contentInset
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: updateCard.contentInset
+                    spacing: 32
+
+                    CustomButton {
+                        buttonWidth: 200
+                        buttonHeight: 56
+                        buttonRadius: 28
+                        textColor: "#FFFFFF"
+                        borderWidth: 0
+                        useGradient: true
+                        gradientStartColor: "#05ABFF"
+                        gradientEndColor: "#1678FF"
+                        text: updateController.downloading
+                              ? "下载中 " + Math.round(updateController.downloadProgress * 100) + "%"
+                              : "立即更新"
+                        fontSize: 21
+                        enabled: !updateController.downloading && !updateController.checking
+                        onClicked: updateController.installUpdate()
+                    }
+                    Label {
+                        text: "稍后提醒"
+                        visible: !updateController.forceUpdate
+                        opacity: updateController.downloading ? 0.5 : 1
+                        color: "#73000000"
+                        font.pixelSize: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !updateController.downloading
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: updateDialog.close()
                         }
                     }
                 }
 
-                Item {
-                    id: updateFooter
-                    anchors.left: parent.left
+                ImageButton {
+                    z: 3
+                    visible: !updateController.forceUpdate && !updateController.downloading
+                    btnHeight: 20
+                    btnWidth: 20
+                    padding: 0
+                    source: "qrc:/images/close.png"
+                    anchors.top: parent.top
+                    anchors.topMargin: 20
                     anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: 64
-                    Rectangle {
+                    anchors.rightMargin: 20
+                    onClicked: updateDialog.close()
+                }
+            }
+
+            Rectangle {
+                id: updateProgressCard
+                anchors.fill: parent
+                radius: 12
+                color: "#FFFFFF"
+                visible: updateController.downloading
+                Column {
+                    anchors.centerIn: parent
+                    width: 440
+                    spacing: 12
+                    AnimatedImage {
+                        width: 128
+                        height: 84
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        source: "qrc:/images/loading.gif"
+                        playing: updateController.downloading
+                    }
+                    Label {
                         width: parent.width
-                        height: 1
-                        color: "#14000000"
-                        anchors.top: parent.top
+                        text: updateController.downloadProgress >= 1
+                              ? "正在安装更新" : "正在下载更新 " + Math.round(updateController.downloadProgress * 100) + "%"
+                        horizontalAlignment: Text.AlignHCenter
+                        color: "#D9000000"
+                        font.pixelSize: 20
+                        font.weight: Font.Medium
                     }
-                    Row {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 12
-                        layoutDirection: Qt.RightToLeft
-                        CustomButton {
-                            width: 96
-                            height: 40
-                            visible: !updateController.forceUpdate
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
-                            borderWidth: 0
-                            text: updateController.downloading ? "处理中..." : "立即更新"
-                            fontSize: 14
-                            enabled: !updateController.downloading && !updateController.checking
-                            onClicked: updateController.installUpdate()
-                        }
-                        CustomButton {
-                            width: 96
-                            height: 40
-                            visible: !updateController.forceUpdate
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
-                            borderWidth: 1
-                            text: "稍后提醒"
-                            fontSize: 14
-                            enabled: !updateController.downloading
-                            onClicked: updateDialog.close()
-                        }
-                        CustomButton {
-                            width: 96
-                            height: 40
-                            visible: updateController.forceUpdate
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
-                            borderWidth: 0
-                            text: updateController.downloading ? "处理中..." : "立即更新"
-                            fontSize: 14
-                            enabled: !updateController.downloading && !updateController.checking
-                            onClicked: updateController.installUpdate()
+                    Label {
+                        width: parent.width
+                        text: updateController.downloadProgress >= 1
+                              ? "更新即将完成，应用将自动重启，请稍候..."
+                              : "正在下载更新，完成后将自动安装并重启，请稍候..."
+                        horizontalAlignment: Text.AlignHCenter
+                        color: "#A6000000"
+                        font.pixelSize: 14
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        id: updateDownloadProgressTrack
+                        width: parent.width
+                        height: 8
+                        radius: 4
+                        color: "#E8E9ED"
+                        Rectangle {
+                            width: updateController.downloadTotalBytes > 0
+                                   ? parent.width * updateController.downloadProgress
+                                   : parent.width * 0.28
+                            height: parent.height
+                            x: updateController.downloadTotalBytes > 0
+                               ? 0 : updateDownloadProgressTrack.width * updateProgressSweep.progress
+                            radius: parent.radius
+                            color: "#0080FF"
+                            visible: updateController.downloadTotalBytes > 0 || updateController.downloadProgress < 1
                         }
                     }
+                    Label {
+                        width: parent.width
+                        text: updateController.downloadTotalBytes > 0
+                              ? Math.round(updateController.downloadProgress * 100) + "%"
+                              : "正在获取下载进度..."
+                        horizontalAlignment: Text.AlignHCenter
+                        color: "#73000000"
+                        font.pixelSize: 14
+                    }
+                }
+                NumberAnimation {
+                    id: updateProgressSweep
+                    target: updateProgressSweep
+                    property: "progress"
+                    from: 0
+                    to: 0.72
+                    duration: 1000
+                    loops: Animation.Infinite
+                    running: updateController.downloading && updateController.downloadTotalBytes <= 0
+                    property real progress: 0
                 }
             }
         }
@@ -11775,138 +11940,180 @@ ApplicationWindow {
                     Item {
                         id: kbTopBar
                         width: parent.width
-                        height: 40
+                        height: 46
 
                         Item {
                             id: kbTabsCluster
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            height: 40
+                            height: 46
+                            HoverHandler { id: kbTabsClusterHover }
                             readonly property real availableWidth: Math.max(
                                 44, kbSearchInput.x - x - 24)
                             width: Math.min(availableWidth,
                                             Math.max(44, kbCollectionTabs.contentWidth + 48))
 
-                            ListView {
+                            Flickable {
                                 id: kbCollectionTabs
                                 anchors.left: parent.left
                                 anchors.right: kbAddCollectionButton.left
                                 anchors.rightMargin: 8
                                 anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                orientation: ListView.Horizontal
-                                spacing: 4
+                                height: 38
                                 clip: true
                                 interactive: contentWidth > width
                                 boundsBehavior: Flickable.StopAtBounds
                                 flickableDirection: Flickable.HorizontalFlick
-                                model: window.kbCollections
                                 onMovementStarted: kbCollectionActionPopup.close()
+                                contentWidth: kbCollectionTabsRow.childrenRect.width
+                                contentHeight: kbCollectionTabsRow.height
 
-                                delegate: Rectangle {
-                                    id: kbCollectionTab
-                                    readonly property string collectionId: String(modelData.id || "")
-                                    readonly property bool selected: collectionId === window.kbSelectedCollection
-                                    readonly property bool hovered: kbCollectionTabMouse.containsMouse
-                                                                             || kbCollectionTabMoreMouse.containsMouse
-                                    readonly property bool actionMenuOpen: kbCollectionActionPopup.visible
-                                                                                 && knowledgeBaseRec.pendingDeleteCollectionId === collectionId
-                                    width: Math.min(180, Math.max(94, kbCollectionTabTextMetrics.advanceWidth + 52))
+                                Row {
+                                    id: kbCollectionTabsRow
                                     height: 40
-                                    radius: 4
-                                    color: selected ? "#F2F3F5"
-                                                    : hovered || actionMenuOpen ? "#F7F8FA" : "transparent"
+                                    spacing: 4
 
-                                    TextMetrics {
-                                        id: kbCollectionTabTextMetrics
-                                        text: String(modelData.name || "")
-                                        font.pixelSize: 20
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                    }
+                                    Repeater {
+                                        model: window.kbCollections
+                                        delegate: Rectangle {
+                                            id: kbCollectionTab
+                                            readonly property string collectionId: String(modelData.id || "")
+                                            readonly property bool selected: collectionId === window.kbSelectedCollection
+                                            readonly property bool hovered: kbCollectionTabMouse.containsMouse
+                                                                             || kbCollectionTabMoreMouse.containsMouse
+                                            readonly property bool actionMenuOpen: kbCollectionActionPopup.visible
+                                                                                 && knowledgeBaseRec.pendingDeleteCollectionId === collectionId
+                                            width: Math.min(180, Math.max(94, kbCollectionTabTextMetrics.advanceWidth + 52))
+                                            height: 40
+                                            radius: 4
+                                            color: selected ? "#F2F3F5"
+                                                            : hovered || actionMenuOpen ? "#F7F8FA" : "transparent"
 
-                                    Label {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 14
-                                        anchors.right: kbCollectionTabMore.left
-                                        anchors.rightMargin: 4
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: String(modelData.name || "")
-                                        elide: Text.ElideRight
-                                        font.pixelSize: 20
-                                        font.weight: kbCollectionTab.selected ? Font.Bold : Font.Medium
-                                        color: kbCollectionTab.selected ? "#D9000000" : "#A6000000"
-                                    }
-
-                                    MouseArea {
-                                        id: kbCollectionTabMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        enabled: !window.kbLoading
-                                        onClicked: {
-                                            kbCollectionActionPopup.close()
-                                            window.kbSelectCollection(kbCollectionTab.collectionId)
-                                        }
-                                        onWheel: {
-                                            var delta = wheel.angleDelta.y !== 0
-                                                    ? wheel.angleDelta.y : wheel.angleDelta.x
-                                            var maxContentX = Math.max(0,
-                                                kbCollectionTabs.contentWidth - kbCollectionTabs.width)
-                                            kbCollectionTabs.contentX = Math.max(0, Math.min(maxContentX,
-                                                kbCollectionTabs.contentX - delta * 0.5))
-                                            wheel.accepted = true
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        id: kbCollectionTabMore
-                                        width: 28
-                                        height: 28
-                                        radius: 4
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 4
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        z: 2
-                                        visible: kbCollectionTab.hovered || kbCollectionTab.actionMenuOpen
-                                        color: kbCollectionTabMoreMouse.containsMouse ? "#14000000" : "#0A000000"
-
-                                        Image {
-                                            anchors.centerIn: parent
-                                            width: 20
-                                            height: 20
-                                            source: "qrc:/images/more.png"
-                                        }
-
-                                        MouseArea {
-                                            id: kbCollectionTabMoreMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            enabled: !window.kbLoading
-                                            onClicked: {
-                                                knowledgeBaseRec.pendingDeleteCollectionId = kbCollectionTab.collectionId
-                                                knowledgeBaseRec.pendingDeleteCollectionName = String(modelData.name || "")
-                                                var point = kbCollectionTabMore.mapToItem(
-                                                    kbTopBar,
-                                                    kbCollectionTabMore.width - kbCollectionActionPopup.width,
-                                                    kbCollectionTabMore.height + 6)
-                                                kbCollectionActionPopup.popupX = Math.max(0, Math.min(
-                                                    kbTopBar.width - kbCollectionActionPopup.width, point.x))
-                                                kbCollectionActionPopup.popupY = point.y
-                                                kbCollectionActionPopup.open()
+                                            TextMetrics {
+                                                id: kbCollectionTabTextMetrics
+                                                text: String(modelData.name || "")
+                                                font.pixelSize: 20
+                                                font.family: "Alibaba PuHuiTi 3.0"
                                             }
-                                            onWheel: {
-                                                var delta = wheel.angleDelta.y !== 0
-                                                        ? wheel.angleDelta.y : wheel.angleDelta.x
-                                                var maxContentX = Math.max(0,
-                                                    kbCollectionTabs.contentWidth - kbCollectionTabs.width)
-                                                kbCollectionTabs.contentX = Math.max(0, Math.min(maxContentX,
-                                                    kbCollectionTabs.contentX - delta * 0.5))
-                                                wheel.accepted = true
+
+                                            Label {
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 14
+                                                anchors.right: kbCollectionTabMore.left
+                                                anchors.rightMargin: 4
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: String(modelData.name || "")
+                                                elide: Text.ElideRight
+                                                font.pixelSize: 20
+                                                font.weight: kbCollectionTab.selected ? Font.Bold : Font.Medium
+                                                color: kbCollectionTab.selected ? "#D9000000" : "#A6000000"
                                             }
+
+                                            MouseArea {
+                                                id: kbCollectionTabMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                enabled: !window.kbLoading
+                                                onClicked: {
+                                                    kbCollectionActionPopup.close()
+                                                    window.kbSelectCollection(kbCollectionTab.collectionId)
+                                                }
+                                                onWheel: {
+                                                    var delta = wheel.angleDelta.y !== 0
+                                                            ? wheel.angleDelta.y : wheel.angleDelta.x
+                                                    var maxContentX = Math.max(0,
+                                                        kbCollectionTabs.contentWidth - kbCollectionTabs.width)
+                                                    kbCollectionTabs.contentX = Math.max(0, Math.min(maxContentX,
+                                                        kbCollectionTabs.contentX - delta * 0.5))
+                                                    wheel.accepted = true
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                id: kbCollectionTabMore
+                                                width: 28
+                                                height: 28
+                                                radius: 4
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 4
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                z: 2
+                                                visible: kbCollectionTab.hovered || kbCollectionTab.actionMenuOpen
+                                                color: kbCollectionTabMoreMouse.containsMouse ? "#14000000" : "#0A000000"
+
+                                                Image {
+                                                    anchors.centerIn: parent
+                                                    width: 20
+                                                    height: 20
+                                                    source: "qrc:/images/more.png"
+                                                }
+
+                                                MouseArea {
+                                                    id: kbCollectionTabMoreMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    enabled: !window.kbLoading
+                                                    onClicked: {
+                                                        knowledgeBaseRec.pendingDeleteCollectionId = kbCollectionTab.collectionId
+                                                        knowledgeBaseRec.pendingDeleteCollectionName = String(modelData.name || "")
+                                                        var point = kbCollectionTabMore.mapToItem(
+                                                            kbTopBar,
+                                                            kbCollectionTabMore.width - kbCollectionActionPopup.width,
+                                                            kbCollectionTabMore.height + 6)
+                                                        kbCollectionActionPopup.popupX = Math.max(0, Math.min(
+                                                            kbTopBar.width - kbCollectionActionPopup.width, point.x))
+                                                        kbCollectionActionPopup.popupY = point.y
+                                                        kbCollectionActionPopup.open()
+                                                    }
+                                                    onWheel: {
+                                                        var delta = wheel.angleDelta.y !== 0
+                                                                ? wheel.angleDelta.y : wheel.angleDelta.x
+                                                        var maxContentX = Math.max(0,
+                                                            kbCollectionTabs.contentWidth - kbCollectionTabs.width)
+                                                        kbCollectionTabs.contentX = Math.max(0, Math.min(maxContentX,
+                                                            kbCollectionTabs.contentX - delta * 0.5))
+                                                        wheel.accepted = true
+                                                }
+                                            }
+                                        }
                                         }
                                     }
                                 }
+                            }
+
+                            ScrollBar {
+                                id: kbCollectionTabsScrollBar
+                                parent: kbTabsCluster
+                                x: kbCollectionTabs.x
+                                y: kbCollectionTabs.y + kbCollectionTabs.height
+                                width: kbCollectionTabs.width
+                                height: 8
+                                orientation: Qt.Horizontal
+                                size: kbCollectionTabs.contentWidth > 0
+                                      ? Math.min(1, kbCollectionTabs.width / kbCollectionTabs.contentWidth) : 1
+                                position: kbCollectionTabs.contentWidth > 0
+                                          ? kbCollectionTabs.contentX / kbCollectionTabs.contentWidth : 0
+                                policy: kbCollectionTabs.contentWidth > kbCollectionTabs.width
+                                        ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                                active: true
+                                opacity: kbTabsClusterHover.hovered || hovered || pressed ? 1 : 0
+                                Behavior on opacity { NumberAnimation { duration: 120 } }
+                                background: Rectangle {
+                                    radius: height / 2
+                                    color: "#F7F9FA"
+                                }
+                                contentItem: Rectangle {
+                                    implicitHeight: 8
+                                    radius: height / 2
+                                    color: "#E6E7EB"
+                                }
+                                onPositionChanged: {
+                                    if (pressed)
+                                        kbCollectionTabs.contentX = position * kbCollectionTabs.contentWidth
+                                }
+                                z: 10
                             }
 
                             Rectangle {
@@ -16419,9 +16626,6 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         initializing: authController.loggedIn
                      && (!authController.modelConfigReady || window.userSessionInitializing)
-        initializingText: !authController.modelConfigReady
-                          ? qsTr("正在更新模型配置...")
-                          : wsClient.knowledgeBaseDataDirMessage
         // A document preview is intentionally usable while the session is
         // reconnecting. Do not let the login overlay's full-window MouseArea
         // swallow clicks inside the embedded WebEngine document.

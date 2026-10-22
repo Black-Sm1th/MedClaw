@@ -278,5 +278,9 @@
         <file>images/project-red.png</file>
         <file>images/magicpen.png</file>
         <file>images/bottomArrow.png</file>
+        <file>images/waiting.gif</file>
+        <file>images/updateImage.png</file>
+        <file>images/updateStar.png</file>
+        <file>fonts/AlibabaPuHuiTi-3-95-ExtraBold.ttf</file>
     </qresource>
 </RCC>

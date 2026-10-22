@@ -19,6 +19,11 @@ class UpdateController : public QObject
     Q_PROPERTY(QString latestTitle READ latestTitle NOTIFY latestVersionChanged)
     Q_PROPERTY(QString latestSummary READ latestSummary NOTIFY latestVersionChanged)
     Q_PROPERTY(QString releaseNotes READ releaseNotes NOTIFY latestVersionChanged)
+    Q_PROPERTY(QString changeList READ changeList NOTIFY latestVersionChanged)
+    Q_PROPERTY(QString releaseDetails READ releaseDetails NOTIFY latestVersionChanged)
+    Q_PROPERTY(QString oneLineSummary READ oneLineSummary NOTIFY latestVersionChanged)
+    Q_PROPERTY(qint64 fileSize READ fileSize NOTIFY latestVersionChanged)
+    Q_PROPERTY(QString publishDate READ publishDate NOTIFY latestVersionChanged)
     Q_PROPERTY(QString downloadUrl READ downloadUrl NOTIFY latestVersionChanged)
     Q_PROPERTY(bool updateAvailable READ updateAvailable NOTIFY updateAvailableChanged)
     Q_PROPERTY(bool forceUpdate READ forceUpdate NOTIFY latestVersionChanged)
@@ -37,6 +42,11 @@ public:
     QString latestTitle() const;
     QString latestSummary() const;
     QString releaseNotes() const;
+    QString changeList() const;
+    QString releaseDetails() const;
+    QString oneLineSummary() const;
+    qint64 fileSize() const;
+    QString publishDate() const;
     QString downloadUrl() const;
     bool updateAvailable() const;
     bool forceUpdate() const;
@@ -80,6 +90,10 @@ private:
     QString m_latestTitle;
     QString m_latestSummary;
     QString m_releaseNotes;
+    QString m_changeList;
+    QString m_releaseDetails;
+    QString m_oneLineSummary;
+    QString m_publishDate;
     QString m_downloadUrl;
     QString m_fileName;
     QString m_sha256;

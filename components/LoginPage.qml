@@ -8,7 +8,6 @@ Item {
     property bool showPhoneForm: false
     property int resendSeconds: 0
     property bool initializing: false
-    property string initializingText: ""
     readonly property real contentWidth: Math.min(709, Math.max(280, width - 48))
     readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
     readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
@@ -303,8 +302,7 @@ Item {
         width: loginPage.contentWidth
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
-        anchors.verticalCenterOffset: -56
-        spacing: 32
+        spacing: 12
         visible: loginPage.initializing
 
         Column {
@@ -338,24 +336,25 @@ Item {
                 wrapMode: Text.Wrap
             }
         }
-        BusyIndicator {
-            id: initializingIndicator
-            width: 48
-            height: 48
-            running: loginPage.initializing
+        AnimatedImage {
+            width: Math.min(480, loginPage.contentWidth)
+            height: width * 0.75
             anchors.horizontalCenter: parent.horizontalCenter
+            source: "qrc:/images/waiting.gif"
+            fillMode: Image.PreserveAspectFit
+            playing: loginPage.initializing
         }
         Label {
             width: parent.width
-            text: loginPage.initializingText || qsTr("正在初始化当前用户的知识库...")
+            text: qsTr("启动中...")
             horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
             color: "#A6000000"
-            font.pixelSize: 16
+            font.family: "Alibaba PuHuiTi 3.0"
+            font.pixelSize: 18
         }
     }
 
-    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: "#73000000"; font.pixelSize: 16 }
+    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: "#73000000"; font.pixelSize: 16; visible: !loginPage.initializing}
     Timer { interval: 1000; repeat: true; running: loginPage.resendSeconds > 0; onTriggered: loginPage.resendSeconds-- }
     Connections {
         target: authController
