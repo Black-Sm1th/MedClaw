@@ -74,6 +74,7 @@ CMakeLists.txt.user*
 *.exe
 
 # Directories with generated files
+.tmp_aether_classification/
 .moc/
 .obj/
 .pch/
