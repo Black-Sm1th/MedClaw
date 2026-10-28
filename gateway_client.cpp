@@ -21,6 +21,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -34,6 +35,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStandardPaths>
+#include <QTcpSocket>
 #include <QTextStream>
 #include <algorithm>
 #include <functional>
@@ -41,6 +43,7 @@
 #include <QVariantMap>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+#include <shellapi.h>
 #endif
 
 namespace {
@@ -67,6 +70,312 @@ QString knowledgeBaseDiagnosticDirectoryTag(const QString &dataDir)
     const QRegularExpressionMatch match = userDirectoryPattern.match(
         dataDir.trimmed().replace(QLatin1Char('\\'), QLatin1Char('/')));
     return match.hasMatch() ? match.captured(1).left(12) : QStringLiteral("<unscoped>");
+}
+
+struct ElevatedGatewayRestartState {
+    void *process = nullptr;
+    bool commandFinished = false;
+    bool commandSucceeded = false;
+    bool completed = false;
+    int elapsedMs = 0;
+    int lastProgressLogMs = 0;
+    bool hasPortState = false;
+    bool lastPortListening = false;
+
+    ~ElevatedGatewayRestartState()
+    {
+#ifdef Q_OS_WIN
+        if (process)
+            CloseHandle(static_cast<HANDLE>(process));
+#endif
+    }
+};
+
+QString sanitizeGatewayDiagnostic(QString text)
+{
+    static const QList<QRegularExpression> redactionPatterns{
+        QRegularExpression(QString::fromLatin1(
+            R"RX((?i)(\bBearer\s+)[^\s,;]+)RX")),
+        QRegularExpression(QString::fromLatin1(
+            R"RX((?i)(["']?\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|password|secret|token)\b["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+))RX")),
+        QRegularExpression(QString::fromLatin1(
+            R"RX((?i)(--(?:api[-_]?key|access[-_]?token|refresh[-_]?token|client[-_]?secret|authorization|password|secret|token)(?:=|\s+))(?:"[^"]*"|'[^']*'|[^\s,;]+))RX"))
+    };
+    for (const QRegularExpression &pattern : redactionPatterns) {
+        QRegularExpressionMatchIterator matches = pattern.globalMatch(text);
+        QString redacted;
+        qsizetype offset = 0;
+        while (matches.hasNext()) {
+            const QRegularExpressionMatch match = matches.next();
+            redacted += text.mid(offset, match.capturedStart() - offset);
+            redacted += match.captured(1) + QStringLiteral("[REDACTED]");
+            offset = match.capturedEnd();
+        }
+        if (offset > 0)
+            text = redacted + text.mid(offset);
+    }
+    return text;
+}
+
+void appendGatewayRecoveryLog(const QString &logPath, const QString &event,
+                             const QString &details = QString())
+{
+    QDir().mkpath(QFileInfo(logPath).absolutePath());
+    QFile file(logPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        return;
+
+    const QString timestamp = QDateTime::currentDateTime().toString(
+        QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
+    QByteArray entry = QStringLiteral("%1 [AetherStudy] %2")
+        .arg(timestamp, sanitizeGatewayDiagnostic(event)).toUtf8();
+    const QString safeDetails = sanitizeGatewayDiagnostic(details).trimmed();
+    if (!safeDetails.isEmpty()) {
+        entry += QByteArrayLiteral("\n");
+        entry += safeDetails.right(8192).toUtf8();
+    }
+    entry += QByteArrayLiteral("\n");
+    file.write(entry);
+}
+
+QString gatewayServiceSnapshot()
+{
+#ifdef Q_OS_WIN
+    wchar_t systemDirectory[MAX_PATH] = {};
+    const UINT systemDirectoryLength = GetSystemDirectoryW(
+        systemDirectory, static_cast<UINT>(MAX_PATH));
+    if (systemDirectoryLength == 0
+        || systemDirectoryLength >= static_cast<UINT>(MAX_PATH)) {
+        return QStringLiteral("GetSystemDirectoryW failed: %1").arg(GetLastError());
+    }
+    const QString program = QDir(QString::fromWCharArray(systemDirectory))
+        .absoluteFilePath(QStringLiteral("sc.exe"));
+    QProcess process;
+    process.setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) {
+            args->flags |= CREATE_NO_WINDOW;
+        });
+    const QStringList queryArguments{
+        QStringLiteral("queryex"), QStringLiteral("AetherClawGateway")
+    };
+    process.start(program, queryArguments);
+    if (!process.waitForStarted(2000))
+        return QStringLiteral("sc.exe queryex could not start: %1").arg(process.errorString());
+    if (!process.waitForFinished(4000)) {
+        process.kill();
+        process.waitForFinished(1000);
+        return QStringLiteral("sc.exe queryex timed out");
+    }
+    QString output = QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed();
+    const QString error = QString::fromLocal8Bit(process.readAllStandardError()).trimmed();
+    if (output.isEmpty() && !error.isEmpty())
+        output = error;
+    if (output.isEmpty())
+        output = QStringLiteral("sc.exe queryex returned no output");
+
+    QProcess configProcess;
+    configProcess.setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) {
+            args->flags |= CREATE_NO_WINDOW;
+        });
+    configProcess.start(program,
+        {QStringLiteral("qc"), QStringLiteral("AetherClawGateway")});
+    if (configProcess.waitForStarted(2000) && configProcess.waitForFinished(4000)) {
+        const QString config = QString::fromLocal8Bit(
+            configProcess.readAllStandardOutput()).trimmed();
+        if (!config.isEmpty())
+            output += QStringLiteral("\nService configuration:\n%1").arg(config);
+    } else if (configProcess.state() != QProcess::NotRunning) {
+        configProcess.kill();
+        configProcess.waitForFinished(1000);
+        output += QStringLiteral("\nsc.exe qc timed out");
+    }
+    return output;
+#else
+    return QStringLiteral("service diagnostics are only available on Windows");
+#endif
+}
+
+void logGatewayProcessStart(QProcess *process, const QString &program,
+                            const QStringList &arguments,
+                            const QString &workingDirectory,
+                            const QString &logPath,
+                            const QString &event)
+{
+    const QString safeArguments = sanitizeGatewayDiagnostic(arguments.join(QLatin1Char(' ')));
+    appendGatewayRecoveryLog(logPath, event,
+        QStringLiteral("program=%1 arguments=%2 workingDirectory=%3")
+            .arg(QFileInfo(program).fileName(), safeArguments, workingDirectory));
+    QObject::connect(process, &QProcess::errorOccurred, process,
+        [logPath, event](QProcess::ProcessError error) {
+            appendGatewayRecoveryLog(logPath, event + QStringLiteral(".process-error"),
+                QStringLiteral("error=%1").arg(static_cast<int>(error)));
+        });
+    QObject::connect(process,
+        QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), process,
+        [logPath, event](int exitCode, QProcess::ExitStatus status) {
+            appendGatewayRecoveryLog(logPath, event + QStringLiteral(".process-finished"),
+                QStringLiteral("exitCode=%1 exitStatus=%2")
+                    .arg(exitCode)
+                    .arg(status == QProcess::NormalExit
+                             ? QStringLiteral("normal") : QStringLiteral("crashed")));
+        });
+    process->start(program, arguments);
+}
+
+QString gatewayRuntimeLogInventory(const QString &stateDir)
+{
+    const QDir logDir(QDir(stateDir).absoluteFilePath(QStringLiteral("logs")));
+    QFileInfoList logs = logDir.entryInfoList(
+        {QStringLiteral("*.log")}, QDir::Files, QDir::Time);
+    if (logs.isEmpty())
+        return QStringLiteral("No *.log files found under %1").arg(logDir.absolutePath());
+
+    QStringList entries;
+    const qsizetype limit = std::min<qsizetype>(logs.size(), 8);
+    for (qsizetype i = 0; i < limit; ++i) {
+        const QFileInfo &info = logs.at(i);
+        entries.append(QStringLiteral("%1 (%2 bytes, modified %3)")
+            .arg(info.fileName())
+            .arg(info.size())
+            .arg(info.lastModified().toString(Qt::ISODate)));
+    }
+    return entries.join(QLatin1Char('\n'));
+}
+
+QString gatewayRuntimeLogTails(const QString &stateDir)
+{
+    const QDir logDir(QDir(stateDir).absoluteFilePath(QStringLiteral("logs")));
+    const QFileInfoList logs = logDir.entryInfoList(
+        {QStringLiteral("*.log")}, QDir::Files, QDir::Time);
+    QStringList entries;
+    for (const QFileInfo &info : logs) {
+        if (info.fileName().compare(QStringLiteral("manual-start.log"),
+                                    Qt::CaseInsensitive) == 0) {
+            continue;
+        }
+        QFile file(info.absoluteFilePath());
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        constexpr qint64 maxTailBytes = 65536;
+        const qint64 fileSize = file.size();
+        const qint64 offset = std::max<qint64>(0, fileSize - maxTailBytes);
+        if (offset > 0 && !file.seek(offset))
+            continue;
+        QByteArray tail = file.read(maxTailBytes);
+        QString contents = QString::fromUtf8(tail);
+        if (offset > 0) {
+            const qsizetype firstLine = contents.indexOf(QLatin1Char('\n'));
+            contents = firstLine >= 0 ? contents.mid(firstLine + 1) : QString();
+        }
+        const QStringList allLines = contents.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        QStringList lines;
+        static const QRegularExpression diagnosticPattern(
+            QStringLiteral("(?i)(error|fatal|exception|failed|crash|listen|port|unhandled|permission|denied|eaddr|spawn|exit code|exited)"));
+        for (const QString &line : allLines) {
+            if (diagnosticPattern.match(line).hasMatch())
+                lines.append(line);
+        }
+        constexpr qsizetype maxLines = 30;
+        if (lines.size() > maxLines)
+            lines = lines.mid(lines.size() - maxLines);
+        const QString safeTail = sanitizeGatewayDiagnostic(
+            lines.join(QLatin1Char('\n'))).trimmed();
+        if (!safeTail.isEmpty()) {
+            entries.append(QStringLiteral("--- %1 (tail; %2 bytes) ---\n%3")
+                .arg(info.fileName())
+                .arg(fileSize)
+                .arg(safeTail));
+        }
+        qsizetype accumulatedSize = 0;
+        for (const QString &entry : entries)
+            accumulatedSize += entry.size();
+        if (accumulatedSize >= 12000)
+            break;
+    }
+    return entries.isEmpty()
+        ? QStringLiteral("No readable Gateway *.log tails found under %1")
+              .arg(logDir.absolutePath())
+        : entries.join(QLatin1Char('\n')).right(12000);
+}
+
+bool isLocalTcpPortListening(int port)
+{
+    QTcpSocket socket;
+    socket.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
+    const bool connected = socket.waitForConnected(300);
+    if (connected)
+        socket.abort();
+    return connected;
+}
+
+void *requestElevatedGatewayServiceRestart(const QString &logFile, QString *error)
+{
+#ifdef Q_OS_WIN
+    SHELLEXECUTEINFOW executeInfo{};
+    executeInfo.cbSize = sizeof(executeInfo);
+    executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+    executeInfo.lpVerb = L"runas";
+    wchar_t systemDirectory[MAX_PATH] = {};
+    const UINT systemDirectoryLength = GetSystemDirectoryW(
+        systemDirectory, static_cast<UINT>(std::size(systemDirectory)));
+    if (systemDirectoryLength == 0
+        || systemDirectoryLength >= static_cast<UINT>(MAX_PATH)) {
+        if (error)
+            *error = QStringLiteral("无法定位 Windows 系统目录，不能安全重启 Gateway 服务。");
+        return nullptr;
+    }
+    const QString powerShellPath = QDir(QString::fromWCharArray(systemDirectory))
+        .absoluteFilePath(QStringLiteral("WindowsPowerShell/v1.0/powershell.exe"));
+    if (!QFileInfo(powerShellPath).isFile()) {
+        if (error)
+            *error = QStringLiteral("未找到 Windows PowerShell，无法重启 Gateway 服务。");
+        return nullptr;
+    }
+    const std::wstring powerShellPathWide = powerShellPath.toStdWString();
+    executeInfo.lpFile = powerShellPathWide.c_str();
+    QString escapedLogFile = logFile;
+    escapedLogFile.replace(QLatin1Char(0x27), QStringLiteral("''"));
+    const QString script = QStringLiteral(
+        "$ErrorActionPreference = 'Stop'; $logPath = '%1'; "
+        "function Write-Diag([string]$message) { "
+        "[System.IO.File]::AppendAllText($logPath, "
+        "((Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') + ' [AetherStudy] ' + $message + [Environment]::NewLine), "
+        "[System.Text.UTF8Encoding]::new($false)) }; "
+        "try { $svc = Get-CimInstance Win32_Service -Filter 'Name=''AetherClawGateway'''; "
+        "if ($null -eq $svc) { throw 'Gateway service was not found' }; "
+        "Write-Diag ('elevated.restart.begin state=' + $svc.State + ' pid=' + $svc.ProcessId + ' image=' + $svc.PathName); "
+        "Restart-Service -Name 'AetherClawGateway' -Force; "
+        "$svc = Get-CimInstance Win32_Service -Filter 'Name=''AetherClawGateway'''; "
+        "Write-Diag ('elevated.restart.succeeded state=' + $svc.State + ' pid=' + $svc.ProcessId); exit 0 } "
+        "catch { $safe = $_.Exception.Message -replace '(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)(\\s*[:=]\\s*)[^\\s,;]+', '$1$2[REDACTED]'; "
+        "Write-Diag ('elevated.restart.failed error=' + $safe); exit 1 }")
+        .arg(escapedLogFile);
+    const QByteArray scriptUtf16(
+        reinterpret_cast<const char *>(script.utf16()),
+        script.size() * static_cast<qsizetype>(sizeof(ushort)));
+    const std::wstring parameters = QStringLiteral(
+        "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass "
+        "-EncodedCommand %1")
+        .arg(QString::fromLatin1(scriptUtf16.toBase64())).toStdWString();
+    executeInfo.lpParameters = parameters.c_str();
+    executeInfo.nShow = SW_HIDE;
+    if (!ShellExecuteExW(&executeInfo)) {
+        const DWORD errorCode = GetLastError();
+        if (error) {
+            *error = errorCode == ERROR_CANCELLED
+                ? QStringLiteral("用户取消了管理员授权，无法重启 Gateway 服务。")
+                : QStringLiteral("无法请求管理员权限重启 Gateway 服务（Windows 错误 %1）。")
+                      .arg(errorCode);
+        }
+        return nullptr;
+    }
+    return static_cast<void *>(executeInfo.hProcess);
+#else
+    if (error)
+        *error = QStringLiteral("当前平台不支持自动重启本机 Gateway 服务。");
+    return nullptr;
+#endif
 }
 
 QString stripInternalPolicyBlocks(QString text)
@@ -4781,29 +5090,46 @@ void GatewayClient::ensureLocalGatewayRunning(const QString &url, bool connectAf
         QStringLiteral("tools/start-backend.ps1"));
     const QString stateDir = QDir::home().absoluteFilePath(QStringLiteral(".openclaw"));
     const int port = QUrl(url).port(18789);
+    const QString recoveryLogDir = QDir(stateDir).absoluteFilePath(
+        QStringLiteral("logs"));
+    const QString recoveryLog = QDir(recoveryLogDir).absoluteFilePath(
+        QStringLiteral("manual-start.log"));
+    QDir().mkpath(recoveryLogDir);
+    appendGatewayRecoveryLog(recoveryLog, QStringLiteral("recovery.begin"),
+        QStringLiteral("url=%1 port=%2 installRoot=%3 stateDir=%4 service={\n%5\n} runtimeLogs={\n%6\n}")
+            .arg(url)
+            .arg(port)
+            .arg(installRoot.absolutePath(), stateDir,
+                 gatewayServiceSnapshot(), gatewayRuntimeLogInventory(stateDir)));
+    QElapsedTimer recoveryElapsed;
+    recoveryElapsed.start();
 
     auto *proc = new QProcess(this);
     configureBackgroundProcess(proc);
     proc->setProcessChannelMode(QProcess::MergedChannels);
     proc->setWorkingDirectory(installRoot.absolutePath());
     proc->setProgram(QStringLiteral("powershell.exe"));
-    proc->setArguments({
+    const QStringList recoveryArguments{
         QStringLiteral("-NoLogo"), QStringLiteral("-NoProfile"),
         QStringLiteral("-NonInteractive"), QStringLiteral("-ExecutionPolicy"),
         QStringLiteral("Bypass"), QStringLiteral("-File"), script,
         QStringLiteral("-InstallRoot"), installRoot.absolutePath(),
         QStringLiteral("-StateDir"), stateDir,
         QStringLiteral("-Port"), QString::number(port)
-    });
+    };
 
-    connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc]() {
-        m_gatewayRecoveryOutput.append(proc->readAllStandardOutput());
+    connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, recoveryLog]() {
+        const QByteArray output = proc->readAllStandardOutput();
+        m_gatewayRecoveryOutput.append(output);
+        appendGatewayRecoveryLog(recoveryLog, QStringLiteral("recovery.script-output"),
+                                QString::fromUtf8(output));
         constexpr qsizetype maxDiagnosticBytes = 32768;
         if (m_gatewayRecoveryOutput.size() > maxDiagnosticBytes)
             m_gatewayRecoveryOutput = m_gatewayRecoveryOutput.right(maxDiagnosticBytes);
     });
 
-    const auto reportFailure = [this, proc, stateDir](const QString &reason) {
+    const auto reportFailure = [this, proc, stateDir, recoveryLog,
+                                recoveryElapsed](const QString &reason) {
         if (proc->property("gatewayRecoveryHandled").toBool())
             return;
         proc->setProperty("gatewayRecoveryHandled", true);
@@ -4812,6 +5138,12 @@ void GatewayClient::ensureLocalGatewayRunning(const QString &url, bool connectAf
         m_localGatewayAvailable = false;
         m_connectAfterGatewayRecovery = false;
         const QString logDir = QDir(stateDir).absoluteFilePath(QStringLiteral("logs"));
+        appendGatewayRecoveryLog(recoveryLog, QStringLiteral("recovery.failed"),
+            QStringLiteral("elapsedMs=%1 reason=%2 service={\n%3\n} runtimeLogs={\n%4\n} diagnosticTails={\n%5\n}")
+                .arg(recoveryElapsed.elapsed())
+                .arg(reason, gatewayServiceSnapshot(),
+                     gatewayRuntimeLogInventory(stateDir),
+                     gatewayRuntimeLogTails(stateDir)));
         QString diagnostic = QString::fromUtf8(m_gatewayRecoveryOutput).trimmed();
         if (diagnostic.size() > 1800)
             diagnostic = diagnostic.right(1800);
@@ -4833,19 +5165,209 @@ void GatewayClient::ensureLocalGatewayRunning(const QString &url, bool connectAf
             reportFailure(QStringLiteral("无法启动 Gateway 恢复脚本。"));
     });
     connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-            [this, proc, reportFailure](int exitCode,
-                                        QProcess::ExitStatus exitStatus) {
+            [this, proc, reportFailure, port, stateDir, recoveryLog, recoveryLogDir,
+             recoveryElapsed](
+                int exitCode, QProcess::ExitStatus exitStatus) {
         if (proc->property("gatewayRecoveryHandled").toBool())
             return;
         m_gatewayRecoveryOutput.append(proc->readAllStandardOutput());
-        if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+        const bool portListeningAfterScript = isLocalTcpPortListening(port);
+        appendGatewayRecoveryLog(recoveryLog, QStringLiteral("recovery.script-finished"),
+            QStringLiteral("elapsedMs=%1 exitCode=%2 exitStatus=%3 port=%4 listening=%5 service={\n%6\n} runtimeLogs={\n%7\n}")
+                .arg(recoveryElapsed.elapsed())
+                .arg(exitCode)
+                .arg(exitStatus == QProcess::NormalExit
+                         ? QStringLiteral("normal") : QStringLiteral("crashed"))
+                .arg(port)
+                .arg(portListeningAfterScript ? QStringLiteral("true")
+                                              : QStringLiteral("false"))
+                .arg(gatewayServiceSnapshot(), gatewayRuntimeLogInventory(stateDir)));
+        const QByteArray staleServiceMarker = QByteArrayLiteral(
+            "Gateway service is already running; waiting for its existing listener.");
+        const bool staleRunningService = m_gatewayRecoveryOutput.contains(
+            staleServiceMarker);
+        if ((exitStatus != QProcess::NormalExit || exitCode != 0)
+            && !staleRunningService) {
             reportFailure(QStringLiteral("Gateway 恢复命令退出码：%1").arg(exitCode));
             return;
         }
+
+        // A service manager can report Running while its child process has
+        // stopped serving requests. The recovery script detects the open port
+        // and logs this exact stale-service case; request an elevated restart
+        // instead of showing a generic reinstall error after its 60s wait.
+        if (staleRunningService && !portListeningAfterScript) {
+            QString restartError;
+            appendGatewayRecoveryLog(recoveryLog,
+                QStringLiteral("service.restart.requested"),
+                QStringLiteral("reason=service marked Running but port %1 is not listening service-before={\n%2\n}")
+                    .arg(port).arg(gatewayServiceSnapshot()));
+            void *nativeProcess = requestElevatedGatewayServiceRestart(
+                recoveryLog, &restartError);
+            if (!nativeProcess) {
+                if (!restartError.isEmpty())
+                    m_gatewayRecoveryOutput += QByteArrayLiteral("\n")
+                        + restartError.toUtf8();
+                appendGatewayRecoveryLog(recoveryLog,
+                    QStringLiteral("service.restart.not-started"),
+                    restartError.isEmpty()
+                        ? QStringLiteral("ShellExecuteEx did not return a process handle")
+                        : restartError);
+                reportFailure(restartError.isEmpty()
+                    ? QStringLiteral("无法请求管理员权限重启 Gateway 服务。")
+                    : restartError);
+                return;
+            }
+
+            const auto restartState =
+                std::make_shared<ElevatedGatewayRestartState>();
+            restartState->process = nativeProcess;
+            appendGatewayRecoveryLog(recoveryLog,
+                QStringLiteral("service.restart.elevation-started"),
+                QStringLiteral("Waiting for administrator PowerShell and Gateway listener."));
+            const QString initialDiagnostic = QString::fromUtf8(
+                m_gatewayRecoveryOutput).trimmed();
+            m_gatewayRecoveryInProgress = true;
+            auto *restartTimer = new QTimer(this);
+            restartTimer->setInterval(500);
+            connect(restartTimer, &QTimer::timeout, this,
+                    [this, proc, port, stateDir, recoveryLog, recoveryLogDir,
+                     restartState, restartTimer, initialDiagnostic]() {
+                const auto finishRestart = [this, proc, restartState, restartTimer,
+                                            port, stateDir, recoveryLog, recoveryLogDir,
+                                            initialDiagnostic](bool success) {
+                    if (restartState->completed)
+                        return;
+                    restartState->completed = true;
+                    restartTimer->stop();
+                    restartTimer->deleteLater();
+                    proc->setProperty("gatewayRecoveryHandled", true);
+                    proc->deleteLater();
+                    m_gatewayRecoveryInProgress = false;
+                    appendGatewayRecoveryLog(recoveryLog,
+                        success ? QStringLiteral("service.restart.recovered")
+                                : QStringLiteral("service.restart.failed"),
+                        QStringLiteral("elapsedMs=%1 commandFinished=%2 commandSucceeded=%3 port=%4 listening=%5 service-after={\n%6\n} runtimeLogs={\n%7\n} diagnosticTails={\n%8\n}")
+                            .arg(restartState->elapsedMs)
+                            .arg(restartState->commandFinished
+                                     ? QStringLiteral("true") : QStringLiteral("false"))
+                            .arg(restartState->commandSucceeded
+                                     ? QStringLiteral("true") : QStringLiteral("false"))
+                            .arg(port)
+                            .arg(isLocalTcpPortListening(port)
+                                     ? QStringLiteral("true") : QStringLiteral("false"))
+                            .arg(gatewayServiceSnapshot(),
+                                 gatewayRuntimeLogInventory(stateDir),
+                                 success ? QString() : gatewayRuntimeLogTails(stateDir)));
+
+                    if (success) {
+                        m_localGatewayAvailable = true;
+                        const QString pendingUrl = m_pendingGatewayConnectUrl;
+                        const bool shouldConnect = m_connectAfterGatewayRecovery;
+                        m_pendingGatewayConnectUrl.clear();
+                        m_connectAfterGatewayRecovery = false;
+                        if (shouldConnect && !pendingUrl.isEmpty())
+                            beginGatewayConnection(pendingUrl);
+                        return;
+                    }
+
+                    m_localGatewayAvailable = false;
+                    m_connectAfterGatewayRecovery = false;
+                    QString diagnostic = initialDiagnostic;
+                    QFile logFile(QDir(stateDir).absoluteFilePath(
+                        QStringLiteral("logs/manual-start.log")));
+                    if (logFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                        const QString logText = QString::fromUtf8(
+                            logFile.readAll()).trimmed();
+                        const int lastNewline = logText.lastIndexOf(QLatin1Char('\n'));
+                        const int previousNewline = lastNewline > 0
+                            ? logText.lastIndexOf(QLatin1Char('\n'), lastNewline - 1)
+                            : -1;
+                        if (previousNewline >= 0)
+                            diagnostic += QLatin1Char('\n') + logText.mid(previousNewline + 1);
+                    }
+                    const QString message = QStringLiteral(
+                        "本机 Gateway 服务无法恢复。请检查日志中的提权重启结果；"
+                        "若已取消管理员授权，请重新尝试并允许重启服务。"
+                        "\n\n错误：%1\n\n日志目录：%2")
+                        .arg(diagnostic, QDir::toNativeSeparators(recoveryLogDir));
+                    emit gatewayRecoveryFailed(message, recoveryLogDir);
+                    emit errorOccurred(message);
+                };
+
+#ifdef Q_OS_WIN
+                if (!restartState->commandFinished) {
+                    const DWORD waitResult = WaitForSingleObject(
+                        static_cast<HANDLE>(restartState->process), 0);
+                    if (waitResult == WAIT_OBJECT_0) {
+                        DWORD exitCode = 1;
+                        if (GetExitCodeProcess(
+                                static_cast<HANDLE>(restartState->process), &exitCode)) {
+                            restartState->commandFinished = true;
+                            restartState->commandSucceeded = exitCode == 0;
+                            appendGatewayRecoveryLog(recoveryLog,
+                                QStringLiteral("service.restart.command-finished"),
+                                QStringLiteral("exitCode=%1").arg(exitCode));
+                        }
+                    } else if (waitResult == WAIT_FAILED) {
+                        restartState->commandFinished = true;
+                        restartState->commandSucceeded = false;
+                        appendGatewayRecoveryLog(recoveryLog,
+                            QStringLiteral("service.restart.wait-failed"),
+                            QStringLiteral("GetLastError=%1").arg(GetLastError()));
+                    }
+                }
+#endif
+                const bool listening = isLocalTcpPortListening(port);
+                restartState->elapsedMs += restartTimer->interval();
+                if (!restartState->hasPortState
+                    || listening != restartState->lastPortListening) {
+                    restartState->hasPortState = true;
+                    restartState->lastPortListening = listening;
+                    appendGatewayRecoveryLog(recoveryLog,
+                        QStringLiteral("service.restart.port-state"),
+                        QStringLiteral("elapsedMs=%1 port=%2 listening=%3")
+                            .arg(restartState->elapsedMs)
+                            .arg(port)
+                            .arg(listening ? QStringLiteral("true")
+                                           : QStringLiteral("false")));
+                } else if (restartState->elapsedMs
+                           - restartState->lastProgressLogMs >= 5000) {
+                    restartState->lastProgressLogMs = restartState->elapsedMs;
+                    appendGatewayRecoveryLog(recoveryLog,
+                        QStringLiteral("service.restart.waiting"),
+                        QStringLiteral("elapsedMs=%1 port=%2 listening=%3")
+                            .arg(restartState->elapsedMs)
+                            .arg(port)
+                            .arg(listening ? QStringLiteral("true")
+                                           : QStringLiteral("false")));
+                }
+                if ((restartState->commandFinished
+                     && !restartState->commandSucceeded)
+                    || (restartState->commandFinished && listening)) {
+                    finishRestart(restartState->commandSucceeded && listening);
+                    return;
+                }
+                if (restartState->elapsedMs >= 90000) {
+                    finishRestart(false);
+                    return;
+                }
+            });
+            restartTimer->start();
+            return;
+        }
+
         proc->setProperty("gatewayRecoveryHandled", true);
         proc->deleteLater();
         m_gatewayRecoveryInProgress = false;
         m_localGatewayAvailable = true;
+        appendGatewayRecoveryLog(recoveryLog, QStringLiteral("recovery.succeeded"),
+            QStringLiteral("elapsedMs=%1 port=%2 listening=%3 service={\n%4\n}")
+                .arg(recoveryElapsed.elapsed())
+                .arg(port)
+                .arg(portListeningAfterScript ? QStringLiteral("true")
+                                              : QStringLiteral("false"))
+                .arg(gatewayServiceSnapshot()));
         const QString pendingUrl = m_pendingGatewayConnectUrl;
         const bool shouldConnect = m_connectAfterGatewayRecovery;
         m_pendingGatewayConnectUrl.clear();
@@ -4853,7 +5375,9 @@ void GatewayClient::ensureLocalGatewayRunning(const QString &url, bool connectAf
         if (shouldConnect && !pendingUrl.isEmpty())
             beginGatewayConnection(pendingUrl);
     });
-    proc->start();
+    logGatewayProcessStart(proc, QStringLiteral("powershell.exe"), recoveryArguments,
+                           installRoot.absolutePath(), recoveryLog,
+                           QStringLiteral("recovery.script"));
 }
 
 void GatewayClient::ensureLocalGatewayService(const QString &url)
