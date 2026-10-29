@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -15,6 +16,7 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QSettings>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
@@ -68,8 +70,20 @@ QString apiBaseUrl()
     const QString environment = apiEnvironment();
     if (environment == QStringLiteral("test"))
         return QString::fromLatin1(testApiBaseUrl);
-    if (environment == QStringLiteral("internal"))
+    if (environment == QStringLiteral("internal")) {
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+        const QString configuredHost
+            = QSettings().value(QStringLiteral("auth/internalApiHost"),
+                                QStringLiteral("192.168.0.83"))
+                  .toString()
+                  .trimmed();
+        QHostAddress address;
+        if (address.setAddress(configuredHost)
+            && address.protocol() == QAbstractSocket::IPv4Protocol)
+            return QStringLiteral("http://%1:8002").arg(address.toString());
+#endif
         return QString::fromLatin1(internalApiBaseUrl);
+    }
     return QString::fromLatin1(productionApiBaseUrl);
 }
 

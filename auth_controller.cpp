@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
+#include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -23,6 +24,8 @@ namespace {
 const char kProductionApiBaseUrl[] = "https://www.aethermind.cn/aether";
 const char kTestApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 const char kInternalApiBaseUrl[] = "http://192.168.0.83:8002";
+const char kDefaultInternalApiHost[] = "192.168.0.83";
+const int kInternalApiPort = 8002;
 #ifdef MEDCLAW_EDITION_GOVERNMENT
 const char kGovernmentEnterpriseCode[] = "gov-01";
 #endif
@@ -65,6 +68,11 @@ QString apiBaseUrlForEnvironment(const QString &environment)
     if (environment == QStringLiteral("internal"))
         return QString::fromLatin1(kInternalApiBaseUrl);
     return QString::fromLatin1(kProductionApiBaseUrl);
+}
+
+QString internalApiBaseUrlForHost(const QString &host)
+{
+    return QStringLiteral("http://%1:%2").arg(host).arg(kInternalApiPort);
 }
 
 QString apiRoutePath(const QString &route, const QString &environment)
@@ -370,6 +378,24 @@ AuthController::AuthController(QObject *parent)
     // editions continue to default to production unless explicitly overridden.
     m_apiEnvironment = apiEnvironmentFromEnvironment();
     m_apiBaseUrl = normalizedBaseUrl(apiBaseUrlForEnvironment(m_apiEnvironment));
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    if (m_apiEnvironment == QStringLiteral("internal")) {
+        const QString configuredHost = settings
+                                           .value(QStringLiteral("auth/internalApiHost"),
+                                                  QString::fromLatin1(kDefaultInternalApiHost))
+                                           .toString()
+                                           .trimmed();
+        QHostAddress address;
+        if (address.setAddress(configuredHost)
+            && address.protocol() == QAbstractSocket::IPv4Protocol) {
+            m_internalApiHost = address.toString();
+        } else {
+            m_internalApiHost = QString::fromLatin1(kDefaultInternalApiHost);
+            settings.setValue(QStringLiteral("auth/internalApiHost"), m_internalApiHost);
+        }
+        m_apiBaseUrl = internalApiBaseUrlForHost(m_internalApiHost);
+    }
+#endif
     settings.remove(QStringLiteral("auth/apiBaseUrl"));
     qInfo().noquote() << "[API] environment:" << m_apiEnvironment
                       << "baseUrl:" << m_apiBaseUrl;
@@ -464,6 +490,61 @@ bool AuthController::enterpriseCredentialLoginEnabled() const
     return m_apiEnvironment == QStringLiteral("internal")
            || m_apiEnvironment == QStringLiteral("test");
 #else
+    return false;
+#endif
+}
+
+bool AuthController::internalApiHostInputEnabled() const
+{
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    return m_apiEnvironment == QStringLiteral("internal");
+#else
+    return false;
+#endif
+}
+
+QString AuthController::internalApiHost() const
+{
+    return m_internalApiHost;
+}
+
+bool AuthController::setInternalApiHost(const QString &host)
+{
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    if (!internalApiHostInputEnabled())
+        return false;
+
+    QHostAddress address;
+    const QString candidate = host.trimmed();
+    if (!address.setAddress(candidate)
+        || address.protocol() != QAbstractSocket::IPv4Protocol) {
+        setErrorMessage(QStringLiteral("请输入有效的内网IPv4地址"));
+        return false;
+    }
+
+    const QString normalizedHost = address.toString();
+    QSettings settings;
+    settings.setValue(QStringLiteral("auth/internalApiHost"), normalizedHost);
+    settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        setErrorMessage(QStringLiteral("无法保存内网IP地址设置"));
+        return false;
+    }
+
+    const bool hostChanged = m_internalApiHost != normalizedHost;
+    const QString newBaseUrl = internalApiBaseUrlForHost(normalizedHost);
+    const bool baseUrlChanged = m_apiBaseUrl != newBaseUrl;
+    m_internalApiHost = normalizedHost;
+    m_apiBaseUrl = newBaseUrl;
+    if (hostChanged)
+        emit internalApiHostChanged();
+    if (baseUrlChanged)
+        emit apiBaseUrlChanged();
+    clearError();
+    qInfo().noquote() << "[API] internal host updated to" << m_internalApiHost;
+    return true;
+#else
+    Q_UNUSED(host);
     return false;
 #endif
 }
@@ -841,7 +922,7 @@ void AuthController::requestWebLogin()
 
         const QByteArray webBaseUrl
             = m_apiEnvironment == QStringLiteral("internal")
-                  ? QByteArrayLiteral("http://192.168.0.83:8081")
+                  ? QStringLiteral("http://%1:8081").arg(m_internalApiHost).toUtf8()
                   : m_apiBaseUrl.toUtf8();
         const QByteArray callback
             = webBaseUrl + QByteArrayLiteral("/#/auth/callback?login_ticket=")

@@ -22,10 +22,16 @@ Item {
 
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
     function submitLogin() {
-        if (loginPage.useEnterpriseCredentials)
+        if (loginPage.useEnterpriseCredentials) {
+            if (authController.internalApiHostInputEnabled
+                    && !authController.setInternalApiHost(internalIpInput.text)) {
+                internalIpInput.forceActiveFocus()
+                return
+            }
             authController.loginWithCredentials(usernameInput.text, passwordInput.text)
-        else
+        } else {
             authController.loginWithPhone(phoneInput.text, codeInput.text)
+        }
     }
 
     Rectangle { anchors.fill: parent; color: "#FFFFFF" }
@@ -266,6 +272,27 @@ Item {
                 echoMode: TextInput.Password
                 onAccepted: loginPage.submitLogin()
                 onTextChanged: authController.clearError()
+            }
+            SingleLineTextInput {
+                id: internalIpInput
+                anchors.horizontalCenter: parent.horizontalCenter
+                inputWidth: loginPage.formWidth
+                inputHeight: 56
+                backgroundColor: "#F7F8FA"
+                borderWidth: 0
+                inputRadius: 7
+                fontSize: 16
+                textColor: "#262626"
+                placeholderColor: "#BFBFBF"
+                placeholderText: "请输入内网IP地址"
+                text: authController.internalApiHost
+                maximumLength: 15
+                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                visible: authController.internalApiHostInputEnabled
+                onEditingFinished: {
+                    if (!authController.setInternalApiHost(text))
+                        text = authController.internalApiHost
+                }
             }
         }
         Item { width: 1; height: 24; visible: loginPage.showPhoneForm}
