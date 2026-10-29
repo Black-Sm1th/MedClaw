@@ -243,6 +243,14 @@ QString gatewayRuntimeLogInventory(const QString &stateDir)
     return entries.join(QLatin1Char('\n'));
 }
 
+QString defaultOpenClawStateDir()
+{
+    QString stateDir = qEnvironmentVariable("OPENCLAW_STATE_DIR").trimmed();
+    if (!stateDir.isEmpty())
+        return stateDir;
+    return QDir::home().absoluteFilePath(QStringLiteral(".openclaw"));
+}
+
 QString gatewayRuntimeLogTails(const QString &stateDir)
 {
     const QDir logDir(QDir(stateDir).absoluteFilePath(QStringLiteral("logs")));
@@ -444,8 +452,13 @@ QString defaultTaskWorkspaceRoot()
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     if (dataRoot.trimmed().isEmpty())
         dataRoot = QDir::homePath();
-    return QDir(dataRoot).absoluteFilePath(
-        QStringLiteral("AetherStudy/workspace"));
+    const QString editionDirectory
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+        = QStringLiteral("hospital-chang2");
+#else
+        = QStringLiteral("AetherStudy");
+#endif
+    return QDir(dataRoot).absoluteFilePath(editionDirectory + QStringLiteral("/workspace"));
 }
 
 QString resolvedBackendRoot()
@@ -5064,8 +5077,8 @@ bool GatewayClient::isPackagedLocalGateway(const QString &url) const
 
 void GatewayClient::openGatewayRecoveryLogDirectory()
 {
-    const QString logDir = QDir::home().absoluteFilePath(
-        QStringLiteral(".openclaw/logs"));
+    const QString logDir = QDir(defaultOpenClawStateDir()).absoluteFilePath(
+        QStringLiteral("logs"));
     QDir().mkpath(logDir);
     QDesktopServices::openUrl(QUrl::fromLocalFile(logDir));
 }
@@ -5088,7 +5101,7 @@ void GatewayClient::ensureLocalGatewayRunning(const QString &url, bool connectAf
     const QDir installRoot = applicationInstallRoot();
     const QString script = installRoot.absoluteFilePath(
         QStringLiteral("tools/start-backend.ps1"));
-    const QString stateDir = QDir::home().absoluteFilePath(QStringLiteral(".openclaw"));
+    const QString stateDir = defaultOpenClawStateDir();
     const int port = QUrl(url).port(18789);
     const QString recoveryLogDir = QDir(stateDir).absoluteFilePath(
         QStringLiteral("logs"));
@@ -7670,10 +7683,10 @@ void GatewayClient::summonAgent(const QString &agentId)
         return;
     }
 
-    QString stateDir = qEnvironmentVariable("OPENCLAW_STATE_DIR").trimmed();
+    QString stateDir = defaultOpenClawStateDir();
     if (stateDir.isEmpty())
         stateDir = QDir(QDir::homePath()).filePath(QStringLiteral(".openclaw"));
-    else
+    else if (stateDir.startsWith(QLatin1Char('~')))
         stateDir = expandTildePath(stateDir);
 
     m_agentInstallBusy = true;
@@ -9600,10 +9613,10 @@ void GatewayClient::setAgentToolEnabled(const QString &agentId, const QString &t
                 return;
             }
 
-            QString stateDir = qEnvironmentVariable("OPENCLAW_STATE_DIR").trimmed();
+            QString stateDir = defaultOpenClawStateDir();
             if (stateDir.isEmpty())
                 stateDir = QDir(QDir::homePath()).filePath(QStringLiteral(".openclaw"));
-            else
+            else if (stateDir.startsWith(QLatin1Char('~')))
                 stateDir = expandTildePath(stateDir);
 
             m_toolInstallBusy = true;

@@ -75,6 +75,7 @@ private:
     QString m_accessToken;
     QString m_refreshToken;
     QString m_errorMessage;
+    QString m_apiEnvironment;
     QString m_apiBaseUrl;
     QString m_creditsBalance;
     QVariantList m_creditLots;

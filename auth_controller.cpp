@@ -22,6 +22,7 @@
 namespace {
 const char kProductionApiBaseUrl[] = "https://www.aethermind.cn/aether";
 const char kTestApiBaseUrl[] = "http://111.6.178.34:23212/aether";
+const char kInternalApiBaseUrl[] = "http://192.168.0.83:8002";
 #ifdef MEDCLAW_EDITION_GOVERNMENT
 const char kGovernmentEnterpriseCode[] = "gov-01";
 #endif
@@ -34,17 +35,44 @@ QString normalizedBaseUrl(QString url)
     return url;
 }
 
-QString apiBaseUrlFromEnvironment()
+QString apiEnvironmentFromEnvironment()
 {
-    const QString environment = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
+    const QString configuredEnvironment
+        = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
+    if (configuredEnvironment == QStringLiteral("test")
+        || configuredEnvironment == QStringLiteral("prod")
+        || configuredEnvironment == QStringLiteral("internal"))
+        return configuredEnvironment;
+    if (!configuredEnvironment.isEmpty()) {
+        qWarning().noquote()
+            << "[API] Unsupported MEDCLAW_API_ENV value" << configuredEnvironment
+            << "- using the edition default";
+    }
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    return QStringLiteral("internal");
+#else
+    return QStringLiteral("prod");
+#endif
+}
+
+QString apiBaseUrlForEnvironment(const QString &environment)
+{
     if (environment == QStringLiteral("test"))
         return QString::fromLatin1(kTestApiBaseUrl);
-    if (!environment.isEmpty() && environment != QStringLiteral("prod")) {
-        qWarning().noquote()
-            << "[API] Unsupported MEDCLAW_API_ENV value" << environment
-            << "- falling back to prod";
-    }
+    if (environment == QStringLiteral("prod"))
+        return QString::fromLatin1(kProductionApiBaseUrl);
+    // The internal API exposes routes directly from this root; there is no /aether prefix.
+    if (environment == QStringLiteral("internal"))
+        return QString::fromLatin1(kInternalApiBaseUrl);
     return QString::fromLatin1(kProductionApiBaseUrl);
+}
+
+QString apiRoutePath(const QString &route, const QString &environment)
+{
+    if (environment == QStringLiteral("internal")
+        && route.startsWith(QStringLiteral("/api/")))
+        return route.mid(4);
+    return route;
 }
 
 bool isSecretJsonKey(const QString &key)
@@ -224,6 +252,12 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     QJsonObject modelsConfig = config.value(QStringLiteral("models")).toObject();
     QJsonObject providers = modelsConfig.value(QStringLiteral("providers")).toObject();
     QJsonObject provider;
+    const QString managedProviderName
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+        = QStringLiteral("hospital-chang2-primary");
+#else
+        = QStringLiteral("medclaw-primary");
+#endif
     QString providerBaseUrl = normalizedBaseUrl(apiBaseUrl);
     if (!providerBaseUrl.endsWith(QStringLiteral("/v1")))
         providerBaseUrl += QStringLiteral("/v1");
@@ -231,7 +265,7 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     provider[QStringLiteral("apiKey")] = stableToken;
     provider[QStringLiteral("api")] = QStringLiteral("openai-completions");
     provider[QStringLiteral("models")] = models;
-    providers[QStringLiteral("medclaw-primary")] = provider;
+    providers[managedProviderName] = provider;
     // The old image provider is managed by this client; remove it so stale
     // models cannot remain selectable after the server catalog changes.
     providers.remove(QStringLiteral("qwen-vl"));
@@ -241,7 +275,7 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
 
     QJsonObject agents = config.value(QStringLiteral("agents")).toObject();
     QJsonObject defaults = agents.value(QStringLiteral("defaults")).toObject();
-    const QString primaryRef = QStringLiteral("medclaw-primary/%1").arg(firstModelId);
+    const QString primaryRef = QStringLiteral("%1/%2").arg(managedProviderName, firstModelId);
     QJsonObject defaultModel = defaults.value(QStringLiteral("model")).toObject();
     defaultModel[QStringLiteral("primary")] = primaryRef;
     defaults[QStringLiteral("model")] = defaultModel;
@@ -249,6 +283,7 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     QStringList staleManagedRefs;
     for (auto it = defaultModels.constBegin(); it != defaultModels.constEnd(); ++it) {
         if (it.key().startsWith(QStringLiteral("medclaw-primary/"))
+            || it.key().startsWith(QStringLiteral("hospital-chang2-primary/"))
             || it.key().startsWith(QStringLiteral("qwen-vl/")))
             staleManagedRefs.append(it.key());
     }
@@ -256,13 +291,13 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
         defaultModels.remove(key);
     for (const QJsonValue &value : models) {
         const QString id = value.toObject().value(QStringLiteral("id")).toString();
-        defaultModels[QStringLiteral("medclaw-primary/%1").arg(id)] = QJsonObject();
+        defaultModels[QStringLiteral("%1/%2").arg(managedProviderName, id)] = QJsonObject();
     }
     defaults[QStringLiteral("models")] = defaultModels;
     if (!firstImageModelId.isEmpty()) {
         QJsonObject imageModel = defaults.value(QStringLiteral("imageModel")).toObject();
-        imageModel[QStringLiteral("primary")] = QStringLiteral("medclaw-primary/%1")
-                                                    .arg(firstImageModelId);
+        imageModel[QStringLiteral("primary")]
+            = QStringLiteral("%1/%2").arg(managedProviderName, firstImageModelId);
         defaults[QStringLiteral("imageModel")] = imageModel;
     } else {
         defaults.remove(QStringLiteral("imageModel"));
@@ -297,6 +332,9 @@ AuthController::AuthController(QObject *parent)
     // Government and main editions have separate accounts. Never import the
     // legacy main-edition token into the government settings namespace.
     const bool allowLegacyCredentialMigration = false;
+#elif defined(MEDCLAW_EDITION_HOSPITAL_CHANG2)
+    // This edition uses a separate account namespace; don't inherit main-edition credentials.
+    const bool allowLegacyCredentialMigration = false;
 #else
     const bool allowLegacyCredentialMigration = true;
 #endif
@@ -328,12 +366,12 @@ AuthController::AuthController(QObject *parent)
         settings.setValue(migrationKey, true);
         settings.sync();
     }
-    // Runtime selection is intentionally limited to prod/test. The default is
-    // always prod, so build and packaging environments cannot bake in test URLs.
-    m_apiBaseUrl = normalizedBaseUrl(apiBaseUrlFromEnvironment());
+    // The hospital-chang2 edition defaults to the internal API. Main and government
+    // editions continue to default to production unless explicitly overridden.
+    m_apiEnvironment = apiEnvironmentFromEnvironment();
+    m_apiBaseUrl = normalizedBaseUrl(apiBaseUrlForEnvironment(m_apiEnvironment));
     settings.remove(QStringLiteral("auth/apiBaseUrl"));
-    qInfo().noquote() << "[API] environment:"
-                      << (m_apiBaseUrl == QString::fromLatin1(kTestApiBaseUrl) ? "test" : "prod")
+    qInfo().noquote() << "[API] environment:" << m_apiEnvironment
                       << "baseUrl:" << m_apiBaseUrl;
     m_accessToken = settings.value(QStringLiteral("auth/accessToken")).toString();
     m_refreshToken = settings.value(QStringLiteral("auth/refreshToken")).toString();
@@ -421,7 +459,10 @@ QString AuthController::apiBaseUrl() const
 bool AuthController::enterpriseCredentialLoginEnabled() const
 {
 #ifdef MEDCLAW_EDITION_GOVERNMENT
-    return m_apiBaseUrl == QString::fromLatin1(kTestApiBaseUrl);
+    return m_apiEnvironment == QStringLiteral("test");
+#elif defined(MEDCLAW_EDITION_HOSPITAL_CHANG2)
+    return m_apiEnvironment == QStringLiteral("internal")
+           || m_apiEnvironment == QStringLiteral("test");
 #else
     return false;
 #endif
@@ -545,7 +586,9 @@ void AuthController::sendSmsCode(const QString &phone)
 
     setBusy(true);
     clearError();
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/sms/send")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl
+                                 + apiRoutePath(QStringLiteral("/api/auth/sms/send"),
+                                                m_apiEnvironment)));
     disableHttp2(request);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
@@ -585,7 +628,9 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
 
     setBusy(true);
     clearError();
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/sms/agent-login")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl
+                                 + apiRoutePath(QStringLiteral("/api/auth/sms/agent-login"),
+                                                m_apiEnvironment)));
     disableHttp2(request);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
@@ -674,7 +719,10 @@ void AuthController::loginWithCredentials(const QString &username, const QString
 
     setBusy(true);
     clearError();
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/enterprise/auth/agent-login")));
+    QNetworkRequest request(
+        QUrl(m_apiBaseUrl
+             + apiRoutePath(QStringLiteral("/api/enterprise/auth/agent-login"),
+                            m_apiEnvironment)));
     disableHttp2(request);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QJsonObject payload;
@@ -758,7 +806,9 @@ void AuthController::requestWebLogin()
 
     m_webLoginRequestInFlight = true;
     const QString token = m_accessToken;
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/auth/web-login-ticket")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl
+                                 + apiRoutePath(QStringLiteral("/api/auth/web-login-ticket"),
+                                                m_apiEnvironment)));
     disableHttp2(request);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
     request.setRawHeader("Accept", "application/json");
@@ -789,8 +839,12 @@ void AuthController::requestWebLogin()
             return;
         }
 
+        const QByteArray webBaseUrl
+            = m_apiEnvironment == QStringLiteral("internal")
+                  ? QByteArrayLiteral("http://192.168.0.83:8081")
+                  : m_apiBaseUrl.toUtf8();
         const QByteArray callback
-            = m_apiBaseUrl.toUtf8() + QByteArrayLiteral("/#/auth/callback?login_ticket=")
+            = webBaseUrl + QByteArrayLiteral("/#/auth/callback?login_ticket=")
               + QUrl::toPercentEncoding(ticket);
         emit webLoginUrlReady(QUrl::fromEncoded(callback).toString(QUrl::FullyEncoded));
         reply->deleteLater();
@@ -804,7 +858,9 @@ void AuthController::refreshCredits()
 
     m_creditsRefreshInFlight = true;
     const QString token = m_accessToken;
-    QNetworkRequest request(QUrl(m_apiBaseUrl + QStringLiteral("/api/credits/me")));
+    QNetworkRequest request(QUrl(m_apiBaseUrl
+                                 + apiRoutePath(QStringLiteral("/api/credits/me"),
+                                                m_apiEnvironment)));
     disableHttp2(request);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
     logApiRequest("GET", request);

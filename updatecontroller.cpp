@@ -28,6 +28,7 @@
 namespace {
 const char productionApiBaseUrl[] = "https://www.aethermind.cn/aether";
 const char testApiBaseUrl[] = "http://111.6.178.34:23212/aether";
+const char internalApiBaseUrl[] = "http://192.168.0.83:8002";
 #ifdef MEDCLAW_EDITION_GOVERNMENT
 const char governmentEnterpriseCode[] = "gov-01";
 #endif
@@ -37,6 +38,8 @@ QString clientDisplayVersion()
 {
 #ifdef MEDCLAW_EDITION_GOVERNMENT
     return clientVersion + QStringLiteral("-gov");
+#elif defined(MEDCLAW_EDITION_HOSPITAL_CHANG2)
+    return clientVersion + QStringLiteral("-chang2");
 #else
     return clientVersion;
 #endif
@@ -45,27 +48,49 @@ QString clientDisplayVersion()
 QString apiEnvironment()
 {
     const QString environment = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
-    if (environment == QStringLiteral("test"))
+    if (environment == QStringLiteral("test") || environment == QStringLiteral("prod")
+        || environment == QStringLiteral("internal"))
         return environment;
-    if (!environment.isEmpty() && environment != QStringLiteral("prod")) {
+    if (!environment.isEmpty()) {
         qWarning().noquote()
             << "[Update API] Unsupported MEDCLAW_API_ENV value" << environment
-            << "- falling back to prod";
+            << "- using the edition default";
     }
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    return QStringLiteral("internal");
+#else
     return QStringLiteral("prod");
+#endif
 }
 
 QString apiBaseUrl()
 {
-    return apiEnvironment() == QStringLiteral("test") ? QString::fromLatin1(testApiBaseUrl)
-                                                       : QString::fromLatin1(productionApiBaseUrl);
+    const QString environment = apiEnvironment();
+    if (environment == QStringLiteral("test"))
+        return QString::fromLatin1(testApiBaseUrl);
+    if (environment == QStringLiteral("internal"))
+        return QString::fromLatin1(internalApiBaseUrl);
+    return QString::fromLatin1(productionApiBaseUrl);
+}
+
+QString apiRoutePath(const QString &route)
+{
+    if (apiEnvironment() == QStringLiteral("internal")
+        && route.startsWith(QStringLiteral("/api/")))
+        return route.mid(4);
+    return route;
 }
 
 QUrl releaseUrl()
 {
-    QUrl url(apiBaseUrl() + QStringLiteral("/api/app/releases/latest"));
+    QUrl url(apiBaseUrl() + apiRoutePath(QStringLiteral("/api/app/releases/latest")));
     QUrlQuery query;
-    query.addQueryItem(QStringLiteral("app_key"), QStringLiteral("aether-study"));
+    query.addQueryItem(QStringLiteral("app_key"),
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+                       QStringLiteral("hospital-chang2"));
+#else
+                       QStringLiteral("aether-study"));
+#endif
     query.addQueryItem(QStringLiteral("channel"), QStringLiteral("STABLE"));
     query.addQueryItem(QStringLiteral("platform"), QStringLiteral("WINDOWS"));
     query.addQueryItem(QStringLiteral("arch"), QStringLiteral("x64"));
@@ -308,10 +333,15 @@ QString UpdateController::resolveDownloadUrl(const QVariantMap &release)
     const QString relative = release.value(QStringLiteral("download_url")).toString().trimmed();
     if (relative.isEmpty())
         return QString();
-    // Older release records return /downloads/... while the production gateway
-    // serves the same file under /aether/api/downloads/....
+    // Older records use /downloads/...; production exposes it below /aether/api,
+    // while the internal API serves it below /api.
     if (relative.startsWith(QStringLiteral("/downloads/")))
-        return downloadOrigin().resolved(QUrl(QStringLiteral("/aether/api") + relative)).toString();
+        return downloadOrigin()
+            .resolved(QUrl((apiEnvironment() == QStringLiteral("internal")
+                                ? QString()
+                                : QStringLiteral("/aether/api"))
+                           + relative))
+            .toString();
     return downloadOrigin().resolved(QUrl(relative)).toString();
 }
 
@@ -381,7 +411,8 @@ void UpdateController::installUpdate()
     emit downloadingChanged();
     emit downloadProgressChanged();
     const QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    const QString fileName = m_fileName.isEmpty() ? QStringLiteral("AetherStudy-update.exe")
+    QString defaultFileName = QStringLiteral("AetherStudy-update.exe");
+    const QString fileName = m_fileName.isEmpty() ? defaultFileName
                                                   : QFileInfo(m_fileName).fileName();
     const QString target = QDir(tempDir).filePath(fileName);
     const QString curlPath = QStandardPaths::findExecutable(QStringLiteral("curl.exe"));

@@ -11,8 +11,7 @@ Item {
     readonly property real contentWidth: Math.min(709, Math.max(280, width - 48))
     readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
     readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
-    readonly property bool useEnterpriseCredentials: governmentEdition
-                                                     && authController.enterpriseCredentialLoginEnabled
+    readonly property bool useEnterpriseCredentials: authController.enterpriseCredentialLoginEnabled
     readonly property string welcomeTitle: governmentEdition
                                          ? qsTr("你好，欢迎来到 政务智能体")
                                          : qsTr("你好，欢迎来到 汇小智 Aether study")

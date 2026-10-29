@@ -280,7 +280,11 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
     QApplication app(argc, argv);
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    QCoreApplication::setOrganizationName(QStringLiteral("AetherMED hospital-chang2"));
+#else
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
+#endif
 #ifdef MEDCLAW_EDITION_GOVERNMENT
     QCoreApplication::setApplicationName(QStringLiteral("Aether study Government"));
 #else
@@ -291,6 +295,11 @@ int main(int argc, char *argv[])
     // Keep relative runtime data paths stable and carry existing installs forward.
     const QString genericDataRoot = QStandardPaths::writableLocation(
         QStandardPaths::GenericDataLocation);
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    const QString preferredDataRoot
+        = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy-hospital-chang2"));
+    QString dataRoot = preferredDataRoot;
+#else
     const QString preferredDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy"));
     const QString legacyDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("Aether_ClawDESK"));
     QString dataRoot = preferredDataRoot;
@@ -299,6 +308,7 @@ int main(int argc, char *argv[])
                 .rename(QStringLiteral("Aether_ClawDESK"), QStringLiteral("AetherStudy"))) {
         dataRoot = legacyDataRoot;
     }
+#endif
     if (!QDir().mkpath(dataRoot) || !QDir::setCurrent(dataRoot))
         qWarning() << "Unable to use application data directory:" << dataRoot;
     installClientInitFileLogging(dataRoot);
