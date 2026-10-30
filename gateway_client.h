@@ -877,6 +877,8 @@ private:
     void setTaskSessionRunning(const QString &sessionKey, bool running);
     void setTaskSessionFailed(const QString &sessionKey);
     void setTaskSessionState(const QString &sessionKey, const QString &status);
+    bool hasRunningCollaborationChildren(const QString &taskSessionKey) const;
+    void syncCollaborationTaskStatus(const QString &sessionKey);
     void markTaskSessionRead(const QString &sessionKey);
     void updateTaskSessionRuntimeFromEvent(const QJsonObject &payload);
     bool isLocalOnlyCronTaskSession(const QString &sessionKey) const;
