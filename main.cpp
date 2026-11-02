@@ -121,11 +121,17 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     const QString qtLibExec = QLibraryInfo::path(QLibraryInfo::LibraryExecutablesPath);
     const QString qtData = QLibraryInfo::path(QLibraryInfo::DataPath);
     const QString qtTranslations = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
+    const QString webEngineProcessName =
+#ifdef Q_OS_WIN
+        QStringLiteral("QtWebEngineProcess.exe");
+#else
+        QStringLiteral("QtWebEngineProcess");
+#endif
 
     const QString processPath = firstExistingPath({
-        QDir(appDir).filePath(QStringLiteral("QtWebEngineProcess.exe")),
-        QDir(qtLibExec).filePath(QStringLiteral("QtWebEngineProcess.exe")),
-        QDir(qtBin).filePath(QStringLiteral("QtWebEngineProcess.exe")),
+        QDir(appDir).filePath(webEngineProcessName),
+        QDir(qtLibExec).filePath(webEngineProcessName),
+        QDir(qtBin).filePath(webEngineProcessName),
     });
     const QString resourcesPath = firstExistingPath({
         QDir(appDir).filePath(QStringLiteral("resources")),
