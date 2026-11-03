@@ -5024,6 +5024,19 @@ ApplicationWindow {
                     anchors.right: newTaskRec.artifactSidebarVisible ? artifactSidebar.left : parent.right
                     model: chatModel
                     conversationRunning: wsClient.chatRunning
+                    conversationEndLabel: {
+                        var sessionKey = String(wsClient.currentTaskSessionKey || "")
+                        var tasks = wsClient.taskSessionList || []
+                        for (var i = 0; i < tasks.length; ++i) {
+                            if (String(tasks[i].session_id || "") === sessionKey) {
+                                if (tasks[i].taskStatus === "cancelled")
+                                    return "用户主动结束任务"
+                                if (tasks[i].taskStatus === "aborted")
+                                    return "任务已中止"
+                            }
+                        }
+                        return ""
+                    }
                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
                     onArtifactsRequested: function(row) { newTaskRec.openTurnArtifacts(row) }
                     onArtifactRequested: function(path) { newTaskRec.openArtifactPath(path) }

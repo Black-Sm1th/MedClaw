@@ -2760,6 +2760,16 @@ void GatewayClient::setTaskSessionFailed(const QString &sessionKey)
     setTaskSessionState(sessionKey, QStringLiteral("failed"));
 }
 
+void GatewayClient::setTaskSessionCancelled(const QString &sessionKey)
+{
+    setTaskSessionState(sessionKey, QStringLiteral("cancelled"));
+}
+
+void GatewayClient::setTaskSessionAborted(const QString &sessionKey)
+{
+    setTaskSessionState(sessionKey, QStringLiteral("aborted"));
+}
+
 bool GatewayClient::hasRunningCollaborationChildren(const QString &taskSessionKey) const
 {
     const QString taskKey = taskSessionKey.trimmed();
@@ -2872,8 +2882,21 @@ void GatewayClient::setTaskSessionState(const QString &sessionKey,
 
     QString normalizedStatus = status.trimmed().toLower();
     if (normalizedStatus != QLatin1String("running")
-        && normalizedStatus != QLatin1String("failed")) {
+        && normalizedStatus != QLatin1String("failed")
+        && normalizedStatus != QLatin1String("cancelled")
+        && normalizedStatus != QLatin1String("aborted")) {
         normalizedStatus = QStringLiteral("completed");
+    }
+    const QString currentStatus =
+        current.value(QStringLiteral("taskStatus"), QStringLiteral("completed"))
+            .toString();
+    // Late completion events (including collaboration status refreshes) must
+    // not erase the fact that the user stopped this task. A new run explicitly
+    // moves the status back to running.
+    if (normalizedStatus == QLatin1String("completed")
+        && (currentStatus == QLatin1String("cancelled")
+            || currentStatus == QLatin1String("aborted"))) {
+        normalizedStatus = currentStatus;
     }
     const bool hasCollaborators =
         !taskSessionAgentIds(current).isEmpty()
@@ -2893,9 +2916,6 @@ void GatewayClient::setTaskSessionState(const QString &sessionKey,
         }
     }
 
-    const QString currentStatus =
-        current.value(QStringLiteral("taskStatus"), QStringLiteral("completed"))
-            .toString();
     QString viewedKey = m_currentViewSessionKey.trimmed();
     if (viewedKey.isEmpty())
         viewedKey = m_currentTaskSessionKey.trimmed();
@@ -2982,24 +3002,25 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
         && (state == QLatin1String("failed")
         || state == QLatin1String("failure")
         || state == QLatin1String("error")
-        || state == QLatin1String("aborted")
-        || state == QLatin1String("cancelled")
         || dataState == QLatin1String("failed")
         || dataState == QLatin1String("failure")
         || dataState == QLatin1String("error")
-        || dataState == QLatin1String("aborted")
-        || dataState == QLatin1String("cancelled")
         || phase == QLatin1String("failed")
         || phase == QLatin1String("failure")
         || phase == QLatin1String("error")
-        || phase == QLatin1String("aborted")
-        || phase == QLatin1String("cancelled")
         || subEvent.contains(QLatin1String("failed"))
         || subEvent.contains(QLatin1String("failure"))
-        || subEvent.contains(QLatin1String("error"))
+        || subEvent.contains(QLatin1String("error")));
+    const bool marksCancelled = !isToolStream
+        && (state == QLatin1String("aborted")
+        || state == QLatin1String("cancelled")
+        || dataState == QLatin1String("aborted")
+        || dataState == QLatin1String("cancelled")
+        || phase == QLatin1String("aborted")
+        || phase == QLatin1String("cancelled")
         || subEvent.contains(QLatin1String("abort"))
         || subEvent.contains(QLatin1String("cancel")));
-    const bool marksComplete = !isToolStream && !marksFailed
+    const bool marksComplete = !isToolStream && !marksFailed && !marksCancelled
         && (phase == QLatin1String("complete")
         || phase == QLatin1String("done")
         || phase == QLatin1String("end")
@@ -3007,14 +3028,15 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
         || subEvent.contains(QLatin1String("done"))
         || subEvent.contains(QLatin1String("finish"))
         || subEvent.contains(QLatin1String("end")));
-    const bool marksRunning = !isToolStream && !marksFailed && !marksComplete
+    const bool marksRunning = !isToolStream && !marksFailed && !marksCancelled
+        && !marksComplete
         && (phase == QLatin1String("start")
             || data.contains(QStringLiteral("delta"))
             || subEvent.contains(QLatin1String("start"))
             || subEvent.contains(QLatin1String("delta"))
             || subEvent.contains(QLatin1String("chunk"))
             || dataType == QLatin1String("message_start"));
-    if (!marksFailed && !marksComplete && !marksRunning)
+    if (!marksFailed && !marksCancelled && !marksComplete && !marksRunning)
         return;
 
     const QString eventKey = extractPayloadSessionKey(payload).trimmed();
@@ -3023,7 +3045,7 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
     // Events without an explicit session key may be normalized to
     // agent:<id>:main. Resolve them only when exactly one running task uses
     // that controller agent; child-agent events then cannot stop the parent.
-    if (taskKey.isEmpty() && (marksComplete || marksFailed)
+    if (taskKey.isEmpty() && (marksComplete || marksFailed || marksCancelled)
         && !eventKey.contains(QLatin1String(":subagent:"))
         && !eventKey.contains(QLatin1String(":acp:"))) {
         const QString agentId = agentIdFromSessionKey(eventKey);
@@ -3046,9 +3068,15 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
     if (!taskKey.isEmpty()) {
         if (marksFailed)
             setTaskSessionFailed(taskKey);
+        else if (marksCancelled) {
+            const QString currentStatus =
+                taskSessionInfoByKey(taskKey).value(QStringLiteral("taskStatus")).toString();
+            if (currentStatus != QLatin1String("cancelled"))
+                setTaskSessionAborted(taskKey);
+        }
         else if (marksRunning)
             setTaskSessionRunning(taskKey, marksRunning);
-        if (marksFailed || marksComplete) {
+        if (marksFailed || marksCancelled || marksComplete) {
             m_chatRunningSessionKeys.remove(taskKey);
             updateChatRunningForCurrentSession();
             if (marksComplete)
@@ -5731,7 +5759,7 @@ void GatewayClient::abortChat(const QString &sessionKey)
 
     // Reflect the user's stop action immediately in the local task list;
     // the server's aborted event remains the authoritative cleanup path.
-    setTaskSessionFailed(key);
+    setTaskSessionCancelled(key);
     m_chatRunningSessionKeys.remove(key);
     updateChatRunningForCurrentSession();
 
@@ -6108,12 +6136,12 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         && (chatState.compare(QStringLiteral("aborted"), Qt::CaseInsensitive) == 0
             || chatDataState.compare(QStringLiteral("aborted"), Qt::CaseInsensitive) == 0)) {
         const QString eventKey = extractPayloadSessionKey(payload).trimmed();
-        if (!eventKey.isEmpty())
-            setTaskSessionFailed(eventKey);
-        else
-            setTaskSessionFailed(m_activeChatSessionKey);
         const QString abortedKey = eventKey.isEmpty()
             ? m_activeChatSessionKey : eventKey;
+        if (taskSessionInfoByKey(abortedKey).value(QStringLiteral("taskStatus")).toString()
+            != QLatin1String("cancelled")) {
+            setTaskSessionAborted(abortedKey);
+        }
         m_chatRunningSessionKeys.remove(abortedKey);
         updateChatRunningForCurrentSession();
         syncCollaborationTaskStatus(abortedKey);
@@ -7321,7 +7349,7 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
     // 其余 chat.send：只更新当前 agent 侧栏首句标题
     if (method == QLatin1String("chat.abort")) {
         const QString abortedSession = m_chatAbortReqSession.take(id);
-        setTaskSessionFailed(abortedSession);
+        setTaskSessionCancelled(abortedSession);
         m_chatRunningSessionKeys.remove(abortedSession);
         syncCollaborationTaskStatus(abortedSession);
         if (!abortedSession.isEmpty())

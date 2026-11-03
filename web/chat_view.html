@@ -669,6 +669,12 @@
       font-size: 16px;
       font-weight: bold;
     }
+    .task-ended-icon {
+      width: 10px;
+      height: 10px;
+      border-radius: 5px;
+      background: #737373;
+    }
   </style>
 </head>
 <body>
@@ -687,6 +693,7 @@
       var renderToken = 0;
       var hoveredFile = null;
       var conversationRunning = false;
+      var conversationEndLabel = '';
       var turnNav = document.getElementById('turn-nav');
       var turnNavTooltip = document.getElementById('turn-nav-tooltip');
       var scrollToBottomButton = document.getElementById('scroll-to-bottom');
@@ -1086,7 +1093,12 @@
         return '<div class="message ' + (isUser ? 'user' : 'assistant') + '" data-row="' + index + '">'
           + '<div class="' + classes + '" data-content-row="' + index + '">' + body + '</div>'
           + (!isUser && shouldRenderTaskComplete(index)
-              ? '<div class="task-complete"><span class="status-slot"><img class="status-icon" src="qrc:///images/missonSuccess.png" alt=""></span><span>任务完成</span></div>'
+              ? '<div class="task-complete"><span class="status-slot">'
+                + (conversationEndLabel
+                    ? '<span class="task-ended-icon" aria-hidden="true"></span>'
+                    : '<img class="status-icon" src="qrc:///images/missonSuccess.png" alt="">')
+                + '</span><span>'
+                + (conversationEndLabel || '任务完成') + '</span></div>'
               : '')
           + (!isUser ? renderArtifacts(msg.artifacts, index) : '')
           + '</div>';
@@ -1096,7 +1108,7 @@
         if (conversationRunning || !messages[index]
             || messages[index].msgRole !== 'assistant'
             || messages[index].msgType !== 'text'
-            || messages[index].isIntermediate)
+            || (messages[index].isIntermediate && !conversationEndLabel))
           return false;
         var lastUser = -1;
         var lastFinalAssistant = -1;
@@ -1110,12 +1122,14 @@
           } else if (i > lastUser && item.msgType === 'toolCall') {
             if (!item.hasToolResult) allToolsFinished = false;
           } else if (i > lastUser && item.msgRole === 'assistant'
-                     && item.msgType === 'text' && !item.isIntermediate
+                     && item.msgType === 'text'
+                     && (!item.isIntermediate || conversationEndLabel)
                      && String(item.content || '').trim().length > 0) {
             lastFinalAssistant = i;
           }
         }
-        return lastUser >= 0 && allToolsFinished && index === lastFinalAssistant;
+        return lastUser >= 0 && (conversationEndLabel || allToolsFinished)
+          && index === lastFinalAssistant;
       }
 
       function renderMessage(msg, index) {
@@ -1449,16 +1463,19 @@
       }
 
       window.MedClawChat = {
-        setMessages: function (items, forceFullRender, isConversationRunning) {
+        setMessages: function (items, forceFullRender, isConversationRunning, endLabel) {
           var nextMessages = Array.isArray(items) ? items : [];
           var nextRunning = isConversationRunning === true;
           var runningChanged = conversationRunning !== nextRunning;
+          var nextEndLabel = String(endLabel || '');
+          var endLabelChanged = conversationEndLabel !== nextEndLabel;
           conversationRunning = nextRunning;
+          conversationEndLabel = nextEndLabel;
           if (forceFullRender || (runningChanged && !nextRunning))
             expandedTools = {};
           var followBottom = messages.length === 0 || isNearBottom();
           var viewport = followBottom ? null : captureViewport();
-          if (forceFullRender || runningChanged
+          if (forceFullRender || runningChanged || endLabelChanged
               || !patchMessages(nextMessages, followBottom)) {
             messages = nextMessages;
             renderAll(followBottom, viewport);

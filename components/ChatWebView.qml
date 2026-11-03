@@ -6,6 +6,7 @@ Item {
 
     property var model: null
     property bool conversationRunning: false
+    property string conversationEndLabel: ""
     property bool webReady: false
     property bool forceFullSyncPending: false
     property bool fileTipVisible: false
@@ -32,7 +33,8 @@ Item {
         webView.runJavaScript("window.MedClawChat.setMessages("
                               + JSON.stringify(model.messages()) + ","
                               + (forceFullSync ? "true" : "false") + ","
-                              + (root.conversationRunning ? "true" : "false") + ");")
+                              + (root.conversationRunning ? "true" : "false") + ","
+                              + JSON.stringify(root.conversationEndLabel) + ");")
     }
 
     function scheduleSyncMessages(forceFullSync) {
@@ -67,6 +69,7 @@ Item {
     Component.onCompleted: scheduleSyncMessages(true)
     onModelChanged: scheduleSyncMessages(true)
     onConversationRunningChanged: scheduleSyncMessages()
+    onConversationEndLabelChanged: scheduleSyncMessages()
 
     Timer {
         id: syncTimer
