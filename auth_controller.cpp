@@ -312,6 +312,26 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     }
     agents[QStringLiteral("defaults")] = defaults;
     config[QStringLiteral("agents")] = agents;
+#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+    // 内网版：影像工具的两个服务跟 API 在同一台盒子上，只是端口不同。
+    // 以前这两个地址要人工改每台机器的 ~/.openclaw/openclaw.json，漏改就会
+    // 退回插件内置的公网默认值（111.6.178.34:22301/22302），内网必然失败。
+    const QString internalHost = QUrl(apiBaseUrl).host();
+    if (!internalHost.isEmpty()) {
+        QJsonObject plugins = config.value(QStringLiteral("plugins")).toObject();
+        QJsonObject pluginEntries = plugins.value(QStringLiteral("entries")).toObject();
+        QJsonObject imaging = pluginEntries.value(QStringLiteral("imaging-skills")).toObject();
+        QJsonObject imagingConfig = imaging.value(QStringLiteral("config")).toObject();
+        imagingConfig[QStringLiteral("radarBaseUrl")]
+            = QStringLiteral("http://%1:19000").arg(internalHost);
+        imagingConfig[QStringLiteral("nvReasonCtBaseUrl")]
+            = QStringLiteral("http://%1:19001").arg(internalHost);
+        imaging[QStringLiteral("config")] = imagingConfig;
+        pluginEntries[QStringLiteral("imaging-skills")] = imaging;
+        plugins[QStringLiteral("entries")] = pluginEntries;
+        config[QStringLiteral("plugins")] = plugins;
+    }
+#endif
 
     QDir().mkpath(QFileInfo(configPath).absolutePath());
     QSaveFile output(configPath);
