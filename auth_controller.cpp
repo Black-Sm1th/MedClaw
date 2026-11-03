@@ -70,6 +70,22 @@ QString apiBaseUrlForEnvironment(const QString &environment)
     return QString::fromLatin1(kProductionApiBaseUrl);
 }
 
+QString tavilyBaseUrlForEnvironment(const QString &apiBaseUrl, const QString &environment)
+{
+    QString baseUrl = normalizedBaseUrl(apiBaseUrl);
+    if (environment == QStringLiteral("prod"))
+        return baseUrl + QStringLiteral("/api/tavily");
+
+    // The test Tavily gateway is exposed at the host root, unlike the API
+    // routes that are mounted below /aether. Internal deployments also use
+    // their configured host directly.
+    const QString aetherPath = QStringLiteral("/aether");
+    if (environment == QStringLiteral("test")
+        && baseUrl.endsWith(aetherPath, Qt::CaseInsensitive))
+        baseUrl.chop(aetherPath.size());
+    return baseUrl + QStringLiteral("/tavily");
+}
+
 QString internalApiBaseUrlForHost(const QString &host)
 {
     return QStringLiteral("http://%1:%2").arg(host).arg(kInternalApiPort);
@@ -197,6 +213,7 @@ QString userIdFromLoginData(const QJsonObject &data, const QString &phone)
 bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
                               const QString &stableToken,
                               const QString &apiBaseUrl,
+                              const QString &apiEnvironment,
                               QString *errorMessage)
 {
     QJsonArray models;
@@ -280,6 +297,38 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     modelsConfig[QStringLiteral("mode")] = QStringLiteral("merge");
     modelsConfig[QStringLiteral("providers")] = providers;
     config[QStringLiteral("models")] = modelsConfig;
+
+    // Update plugin credentials and endpoints alongside the model provider.
+    // Keep plugin enablement, KB dataDir, OCR settings, and other values intact.
+    QJsonObject plugins = config.value(QStringLiteral("plugins")).toObject();
+    QJsonObject entries = plugins.value(QStringLiteral("entries")).toObject();
+    if (entries.contains(QStringLiteral("tavily"))) {
+        QJsonObject tavily = entries.value(QStringLiteral("tavily")).toObject();
+        QJsonObject tavilyConfig = tavily.value(QStringLiteral("config")).toObject();
+        QJsonObject webSearch = tavilyConfig.value(QStringLiteral("webSearch")).toObject();
+        webSearch[QStringLiteral("baseUrl")]
+            = tavilyBaseUrlForEnvironment(apiBaseUrl, apiEnvironment);
+        webSearch[QStringLiteral("apiKey")] = stableToken;
+        tavilyConfig[QStringLiteral("webSearch")] = webSearch;
+        tavily[QStringLiteral("config")] = tavilyConfig;
+        entries[QStringLiteral("tavily")] = tavily;
+    }
+    if (entries.contains(QStringLiteral("kb"))) {
+        QJsonObject kb = entries.value(QStringLiteral("kb")).toObject();
+        QJsonObject kbConfig = kb.value(QStringLiteral("config")).toObject();
+        QJsonObject embedding = kbConfig.value(QStringLiteral("embedding")).toObject();
+        embedding[QStringLiteral("apiKey")] = stableToken;
+        embedding[QStringLiteral("baseUrl")] = providerBaseUrl;
+        embedding[QStringLiteral("dimensions")] = 1024;
+        embedding[QStringLiteral("model")] = QStringLiteral("bge-m3");
+        kbConfig[QStringLiteral("embedding")] = embedding;
+        kb[QStringLiteral("config")] = kbConfig;
+        entries[QStringLiteral("kb")] = kb;
+    }
+    if (plugins.contains(QStringLiteral("entries"))) {
+        plugins[QStringLiteral("entries")] = entries;
+        config[QStringLiteral("plugins")] = plugins;
+    }
 
     QJsonObject agents = config.value(QStringLiteral("agents")).toObject();
     QJsonObject defaults = agents.value(QStringLiteral("defaults")).toObject();
@@ -653,7 +702,8 @@ void AuthController::fetchAndApplyModelConfig(const QString &token,
                                                           : reply->errorString());
         } else {
             if (current) {
-                ok = writeOpenClawModelConfig(modelArray, token, m_apiBaseUrl, &message);
+                ok = writeOpenClawModelConfig(
+                    modelArray, token, m_apiBaseUrl, m_apiEnvironment, &message);
                 qInfo().noquote() << "[KB-INIT][Auth] model configuration applied"
                                   << "generation=" << generation
                                   << "success=" << ok
