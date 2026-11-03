@@ -3644,6 +3644,12 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6
                 property bool hasMessages: chatModel.count > 0
+                // 待答的 ask_user 问题：提问卡由 QML 渲染（见 AskUserCard），
+                // 这样卡片才能盖住下面的输入框。模型侧任何变更都要重算。
+                property var pendingQuestions: []
+                function refreshPendingQuestions() {
+                    pendingQuestions = chatModel.pendingQuestions()
+                }
                 readonly property bool hasActiveTask: String(wsClient.currentTaskSessionKey || "").length > 0
                 property bool isNewTaskWelcome: window.leftSelectedIndex === 0
                                                 && !hasActiveTask && !hasMessages
@@ -3675,6 +3681,16 @@ ApplicationWindow {
                 }
                 readonly property bool viewingControllerSession: (wsClient.currentViewSessionKey || "") === ""
                                                              || (wsClient.currentViewSessionKey || "") === (wsClient.currentTaskSessionKey || "")
+
+                Connections {
+                    target: wsClient
+                    function onViewerOpenRequested(path, add) {
+                        // Agent asked imaging_viewer to open/add an image. Open
+                        // the medical viewer tab now; the tool waits briefly
+                        // for the viewer endpoint to appear.
+                        newTaskRec.openArtifactPath(path)
+                    }
+                }
                 property bool artifactSidebarVisible: false
                 property var sessionInputFiles: []
                 property var sessionArtifacts: []
@@ -3953,6 +3969,8 @@ ApplicationWindow {
                         return true
                     if (/\.nii(?:\.gz)?$/.test(name))
                         return true
+                    if (/\.mgz$/.test(name))
+                        return true
                     if (name === "result.json" || ext === "npy")
                         return true
                     if (/^(dcm|dicom|ima|nii|jpg|jpeg|png|gif|bmp|webp|tif|tiff)$/.test(ext))
@@ -3997,6 +4015,7 @@ ApplicationWindow {
                     if (!path)
                         return
                     var family = medicalViewerFamily(file)
+                    console.log("[MedicalOpen] path=" + path + " family=" + family)
                     var tabIndex = family === "jbrowse" ? findSessionViewerTab("jbrowse") : -1
                     var mergingJbrowse = tabIndex >= 0
                     var reloadExistingPreview = tabIndex >= 0
@@ -4066,7 +4085,11 @@ ApplicationWindow {
                     var path = String((file && file.path) || "")
                     if (!path)
                         return
-                    if (isMedicalImage(file)) {
+                    var medical = isMedicalImage(file)
+                    console.log("[OpenFile] path=" + path
+                                + " ext=" + String((file && file.extension) || fileExtension(path))
+                                + " medical=" + medical)
+                    if (medical) {
                         openMedicalImageFile(file)
                         return
                     }
@@ -4381,14 +4404,38 @@ ApplicationWindow {
                 }
 
                 /** 点「查看全部」：记住这一轮问答的产物用于置顶 + 异色，再打开产物列表 */
-                function openTurnArtifacts(row) {
+                function openTurnArtifacts(row, paths) {
                     var rows = chatModel.messages ? chatModel.messages() : []
                     var highlights = ({})
                     var index = Number(row)
+                    // 页面会把「本轮真正变动/新增的文件」一起送过来，优先用它：
+                    // 侧边栏只对这些文件异色（闲聊轮次不会误标历史产物）。
+                    var given = paths || []
+                    if (given.length > 0) {
+                        for (var k = 0; k < given.length; k++)
+                            highlights[artifactHighlightKey({ path: given[k] })] = true
+                        artifactHighlights = highlights
+                        toggleArtifactSidebar()
+                        return
+                    }
+                    // 产物清单现在按「轮」渲染，row 是该轮最后一条消息（可能是工具卡片而
+                    // 不是 assistant 文本），所以往前找本轮起点、聚合整轮产物。
                     if (index >= 0 && index < rows.length) {
-                        var artifacts = rows[index].artifacts || []
-                        for (var i = 0; i < artifacts.length; i++)
-                            highlights[artifactHighlightKey(artifacts[i])] = true
+                        var start = -1
+                        for (var s = index; s >= 0; s--) {
+                            if (String((rows[s] || {}).role || "") === "user") {
+                                start = s
+                                break
+                            }
+                        }
+                        for (var i = start + 1; i < rows.length; i++) {
+                            var current = rows[i] || {}
+                            if (String(current.role || "") === "user")
+                                break
+                            var artifacts = current.artifacts || []
+                            for (var j = 0; j < artifacts.length; j++)
+                                highlights[artifactHighlightKey(artifacts[j])] = true
+                        }
                     }
                     artifactHighlights = highlights
                     toggleArtifactSidebar()
@@ -4968,6 +5015,7 @@ ApplicationWindow {
                     target: chatModel
                     function onMessagePayloadChanged() {
                         newTaskRec.rebuildSessionArtifacts()
+                        newTaskRec.refreshPendingQuestions()
                     }
                 }
                 Connections {
@@ -4979,12 +5027,14 @@ ApplicationWindow {
                     function onHistoryLoaded(messages) {
                         newTaskRec.restoreChatSelectionState(messages)
                         newTaskRec.finishSidebarSessionLoad()
+                        newTaskRec.refreshPendingQuestions()
                     }
                 }
                 Connections {
                     target: chatModel
                     function onCountChanged() {
                         newTaskRec.rebuildSessionArtifacts()
+                        newTaskRec.refreshPendingQuestions()
                         if (chatModel.count === 0 && !newTaskRec.sessionHistoryLoading) {
                             newTaskRec.sessionInputFiles = []
                             newTaskRec.closeOfficeDocument()
@@ -5038,8 +5088,34 @@ ApplicationWindow {
                         return ""
                     }
                     onLinkActivated: function(link) { window.openMarkdownLink(link) }
-                    onArtifactsRequested: function(row) { newTaskRec.openTurnArtifacts(row) }
+                    onArtifactsRequested: function(row, paths) { newTaskRec.openTurnArtifacts(row, paths) }
                     onArtifactRequested: function(path) { newTaskRec.openArtifactPath(path) }
+                }
+
+                // ask_user 提问卡：必须画在 QML 层，才能盖住下面的输入框。
+                // 聊天正文是 WebEngineView（底边停在 chatInputContainer 上方），
+                // 把卡片放进页面里永远只会贴在 WebView 自己的底部，两个框必然并存。
+                AskUserCard {
+                    id: askUserCard
+                    visible: newTaskRec.pendingQuestions.length > 0
+                    // chatInputSurface 是 chatInputContainer 的子项，跨层级不能用 anchors，
+                    // 这里按坐标换算。底边取整个输入容器的底部：模型选择器那一行在容器里、
+                    // 输入框外，只贴输入框底边会把那一条露在卡片下面。
+                    x: chatInputContainer.x
+                    y: chatInputContainer.y + chatInputContainer.height - height
+                    width: chatInputContainer.width
+                    z: 30
+                    questions: newTaskRec.pendingQuestions
+                    onAnswered: function(id, answer) {
+                        // 先本地标记为已提交，卡片立刻切到下一题；
+                        // 网关回包后会再把它改成 answered。
+                        chatModel.resolveQuestion(id, "submitted", answer)
+                        wsClient.resolveQuestion(id, answer)
+                    }
+                    onSkipped: function(id) {
+                        chatModel.resolveQuestion(id, "skipped", "")
+                        wsClient.skipQuestion(id)
+                    }
                 }
 
                 Rectangle {
@@ -16742,4 +16818,27 @@ ApplicationWindow {
             onPressed: window.startSystemResize(Qt.RightEdge | Qt.BottomEdge)
         }
     }
+
+    Shortcut {
+        sequence: fileTreePopup.shortcutText
+        context: Qt.ApplicationShortcut
+        onActivated: fileTreePopup.toggle()
+    }
+
+    FileTreePopup {
+        id: fileTreePopup
+
+        Component.onCompleted: {
+            // 诊断入口：MEDCLAW_TREE_OPEN 非空时自动弹出并载入该路径
+            if (fileTreeAutoOpen && String(fileTreeAutoOpen).length > 0) {
+                open()
+                openPaths(String(fileTreeAutoOpen).split(";"))
+            }
+        }
+        onFileSelected: function(path) {
+            newTaskRec.openArtifactPath(path)
+            fileTreePopup.close()
+        }
+    }
+
 }

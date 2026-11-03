@@ -14,15 +14,19 @@
         <file>fonts/AlibabaPuHuiTi-3-55-Regular.ttf</file>
         <file>fonts/AlibabaPuHuiTi-3-65-Medium.ttf</file>
         <file>fonts/AlibabaPuHuiTi-3-85-Bold.ttf</file>
+        <file>fonts/Poppins-SemiBold.ttf</file>
         <file>images/add-square.png</file>
         <file>images/close.png</file>
         <file>images/minus.png</file>
         <file>components/ImageButton.qml</file>
         <file>components/ChatWebView.qml</file>
+        <file>components/FileTreePopup.qml</file>
+        <file>components/AskUserCard.qml</file>
         <file>components/PromptComposer.qml</file>
         <file>components/FilePathToolTip.qml</file>
         <file>components/MarkdownWebView.qml</file>
         <file>web/chat_view.html</file>
+        <file>web/file-tree.html</file>
         <file>web/prompt_composer.html</file>
         <file>web/markdown_renderer.html</file>
         <file>web/webgl-compat.js</file>

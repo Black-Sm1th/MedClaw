@@ -1,4 +1,4 @@
-QT += quick quickcontrols2 websockets sql network webenginequick widgets core5compat pdf pdfquick
+QT += concurrent quick quickcontrols2 websockets sql network webenginequick widgets core5compat pdf pdfquick
 
 include(viewer-host-qt/viewer-host-qt.pri)
 
@@ -43,7 +43,9 @@ HEADERS += \
     ws_scheduled_task.h \
     session_reader.h \
     auth_controller.h \
-    updatecontroller.h
+    updatecontroller.h \
+    filetreeprovider.h \
+    thumbnailer.h
 
 SOURCES += \
     main.cpp \
@@ -58,7 +60,9 @@ SOURCES += \
     ws_scheduled_task.cpp \
     session_reader.cpp \
     auth_controller.cpp \
-    updatecontroller.cpp
+    updatecontroller.cpp \
+    filetreeprovider.cpp \
+    thumbnailer.cpp
 
 RESOURCES += qml.qrc
 

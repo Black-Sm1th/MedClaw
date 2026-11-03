@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件树</title>
+<style>
+  :root {
+    --accent: #006BFF;
+    --border: #E6E7EB;
+    --text: rgba(0, 0, 0, .9);
+    --text-2: rgba(0, 0, 0, .45);
+    --hover: #F4F6F9;
+    --selected: #EAF2FF;
+    --row-h: 60px;
+    --font: "Alibaba PuHuiTi Regular", "Microsoft YaHei", "PingFang SC", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  /* 关键：.empty 用了 display:flex，会盖掉 UA 的 [hidden]{display:none} */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font); font-size: 13px; color: var(--text);
+    background: transparent; overflow: hidden; user-select: none;
+  }
+  .panel {
+    display: flex; flex-direction: column; height: 100%;
+    background: #FFFFFF; border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden;
+  }
+
+  /* ── 头部 ───────────────────────────────────────────── */
+  .head {
+    display: flex; align-items: center; gap: 8px;
+    height: 52px; padding: 0 14px; border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  .title { font-size: 15px; font-weight: 700; }
+  .subtitle { color: var(--text-2); font-size: 12px; }
+  .spacer { flex: 1 1 auto; }
+  .btn {
+    height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    font-family: var(--font); font-size: 12px;
+  }
+  .btn:hover { background: var(--hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.icon { width: 30px; padding: 0; font-size: 16px; line-height: 1; }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  /* ── 主体 ───────────────────────────────────────────── */
+  .body { flex: 1 1 auto; display: flex; min-height: 0; }
+  .tree-pane {
+    flex: 1 1 auto; min-width: 0; overflow: auto; position: relative;
+    padding: 8px 0 16px 0;
+  }
+  .preview-pane {
+    flex: 0 0 auto; width: 46%; min-width: 280px;
+    border-left: 1px solid var(--border); display: flex; flex-direction: column;
+    background: #FBFCFD; min-height: 0;
+    transition: width .16s ease, opacity .16s ease;
+  }
+  body.preview-collapsed .preview-pane { width: 0; min-width: 0; opacity: 0; border-left: 0; }
+  .preview-head {
+    display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px;
+    border-bottom: 1px solid var(--border); flex: 0 0 auto;
+  }
+  .preview-name { font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preview-meta { color: var(--text-2); font-size: 11px; margin-left: auto; white-space: nowrap; }
+  .preview-body { flex: 1 1 auto; overflow: auto; padding: 12px; min-height: 0; }
+  .preview-body pre {
+    margin: 0; font: 12px/1.6 "Cascadia Mono", Consolas, "Courier New", monospace;
+    white-space: pre-wrap; word-break: break-word; user-select: text;
+  }
+  .preview-body img { max-width: 100%; display: block; margin: 0 auto; }
+  .preview-empty, .preview-blocked {
+    color: var(--text-2); font-size: 12px; line-height: 1.7; text-align: center; padding: 24px 12px;
+  }
+
+  /* ── 树（虚拟滚动：只渲染视口内的行） ─────────────── */
+  #spacer { position: relative; width: 100%; }
+  #viewport { position: absolute; left: 0; right: 0; top: 0; }
+  #links { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .node-row {
+    display: flex; align-items: center;
+    height: var(--row-h); white-space: nowrap;
+  }
+  /* 卡片：188x48 / r8 / #F7F9FA，选中 #006BFF —— 取自设计稿 */
+  .card {
+    display: flex; align-items: center; gap: 6px;
+    width: 188px; height: 48px; padding: 0 10px;
+    border-radius: 8px; background: #F7F9FA; cursor: default;
+    box-sizing: border-box;
+  }
+  .card:hover { background: #EFF1F4; }
+  .node-row.selected .card { background: #006BFF; }
+  .node-row.selected .node-name { color: #FFFFFF; }
+  .node-row.selected .node-size { color: rgba(255,255,255,.7); }
+  .check {
+    width: 20px; height: 20px; flex: 0 0 20px; box-sizing: border-box;
+    border-radius: 5px; border: 1px solid #D9DCE1; background: #FFFFFF;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .node-row.selected .check { border-color: #FFFFFF; background: #FFFFFF; }
+  .check svg { width: 12px; height: 12px; display: none; }
+  .node-row.selected .check svg { display: block; }
+  .chev {
+    width: 14px; flex: 0 0 14px; text-align: center; color: var(--text-2);
+    font-size: 10px; transition: transform .12s ease;
+  }
+  .chev.expanded { transform: rotate(90deg); }
+  .chev.leaf { visibility: hidden; }
+  .node-icon { width: 16px; flex: 0 0 16px; display: flex; align-items: center; justify-content: center; }
+  .node-icon svg { width: 14px; height: 14px; display: block; }
+  /* 缩略图占位：拿到图后替换成 <img>，尺寸固定不跳动 */
+  .thumb {
+    width: 24px; height: 24px; flex: 0 0 24px; border-radius: 4px;
+    background: #F2F3F5; display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb.pending { background: linear-gradient(90deg,#F2F3F5 25%,#E9EBEF 37%,#F2F3F5 63%); background-size: 400% 100%; animation: shimmer 1.2s ease infinite; }
+  @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+  .node-name { overflow: hidden; text-overflow: ellipsis; }
+  .node-size { color: var(--text-2); font-size: 11px; margin-left: 6px; flex: 0 0 auto; }
+  .node-row.placeholder .node-name { color: var(--text-2); font-style: italic; }
+
+  /* ── 空态 / 拖拽 ────────────────────────────────────── */
+  .empty {
+    height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; color: var(--text-2);
+    border: 2px dashed var(--border); border-radius: 10px; margin: 8px;
+  }
+  .empty .big { font-size: 34px; }
+  body.dragging .empty { border-color: var(--accent); background: #F3F8FF; color: var(--accent); }
+  .drop-veil {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(0, 107, 255, .06); border: 2px dashed var(--accent);
+    border-radius: 12px; color: var(--accent); font-size: 15px; font-weight: 700;
+  }
+  body.dragging .drop-veil { display: flex; }
+
+  .foot {
+    flex: 0 0 auto; height: 32px; display: flex; align-items: center; gap: 12px;
+    padding: 0 14px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 11px;
+  }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="head">
+    <div class="title">文件树</div>
+    <div class="subtitle">拖一个文件夹进来</div>
+    <div class="spacer"></div>
+    <button class="btn" id="pickBtn">选择文件夹…</button>
+    <button class="btn" id="collapseBtn" disabled>全部折叠</button>
+    <button class="btn" id="previewBtn">隐藏预览</button>
+    <button class="btn icon" id="closeBtn" title="关闭 (Esc)">×</button>
+  </div>
+
+  <div class="body">
+    <div class="tree-pane" id="treePane">
+      <div class="empty" id="empty">
+        <div class="big">📂</div>
+        <div>把文件夹拖到这里</div>
+        <div style="font-size:11px">也可以点右上角「选择文件夹」</div>
+      </div>
+      <div id="spacer" hidden><svg id="links"></svg><div id="viewport"></div></div>
+    </div>
+    <div class="preview-pane" id="previewPane">
+      <div class="preview-head">
+        <div class="preview-name" id="previewName">未选择文件</div>
+        <div class="preview-meta" id="previewMeta"></div>
+      </div>
+      <div class="preview-body" id="previewBody">
+        <div class="preview-empty">点击左侧文件查看内容</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span id="statText">未加载</span>
+    <span style="flex:1"></span>
+    <span>Esc 关闭</span>
+  </div>
+</div>
+
+<div class="drop-veil">松手即可载入</div>
+
+<input type="file" id="dirInput" webkitdirectory multiple style="display:none">
+
+<script>
+(function () {
+  'use strict';
+
+  var ROW_H = 60;        // 卡片 48 + 间距 12
+  var CARD_H = 48;
+  var CARD_W = 188;      // 设计稿卡片宽度
+  var INDENT = 208;      // 子卡片从父卡片右缘再往右 20px，连接线才不会被卡片压住
+  var OVERSCAN = 6;          // 视口上下各多渲染几行，滚动时不露白
+  var BATCH_YIELD = 400;     // 每读这么多条就让出一次主线程
+
+  var treePane = document.getElementById('treePane');
+  var spacer = document.getElementById('spacer');
+  var viewport = document.getElementById('viewport');
+  var links = document.getElementById('links');
+  var emptyState = document.getElementById('empty');
+  var previewName = document.getElementById('previewName');
+  var previewMeta = document.getElementById('previewMeta');
+  var previewBody = document.getElementById('previewBody');
+  var statText = document.getElementById('statText');
+  var collapseBtn = document.getElementById('collapseBtn');
+  var previewBtn = document.getElementById('previewBtn');
+
+  var TEXT_EXT = /^(txt|md|markdown|json|js|mjs|cjs|ts|jsx|tsx|css|scss|html|htm|xml|yml|yaml|toml|ini|cfg|conf|log|csv|tsv|py|r|m|sh|bat|ps1|c|h|cpp|hpp|java|go|rs|sql|qml)$/i;
+  var IMAGE_EXT = /^(png|jpe?g|gif|bmp|webp|svg)$/i;
+  var PREVIEW_LIMIT = 512 * 1024;
+
+  var HOST_CHUNK = 300;      // 每次向宿主请求多少条（流式加载的粒度）
+
+  var root = null;
+  var hostMode = false;
+  var nextListId = 1;
+  var pendingList = new Map();   // id -> node（等待宿主返回这一块）
+  var pendingFile = new Map();   // id -> node（等待宿主返回文本预览）
+  var thumbCache = new Map();     // path -> dataUrl
+  var thumbAsked = new Map();     // requestId -> path
+  var thumbBusy = new Set();      // 已发过请求、还没回来的 path
+  var thumbFailed = new Set();
+  var nextThumbId = 1;
+  var flat = [];             // 扁平化的可见行，虚拟列表的数据源
+  var selectedPath = null;
+  var selectedSet = new Set();   // 复选框勾选的卡片（蓝底）
+  var fileCount = 0;
+  var dirCount = 0;
+  var nodeIndex = new Map(); // path -> node（点击回查，避免每次遍历树）
+
+  var SVG = {
+    dir: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.6 4.3a1 1 0 0 1 1-1h3l1.2 1.4h5.6a1 1 0 0 1 1 1v6.1a1 1 0 0 1-1 1H2.6a1 1 0 0 1-1-1z" fill="#F3C64B" stroke="#DFAE33" stroke-width=".8"/></svg>',
+    file: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.6 1.9h5l3.8 3.8v8.4H3.6z" fill="#FFFFFF" stroke="#B9BEC7" stroke-width=".9"/><path d="M8.6 1.9v3.8h3.8" fill="none" stroke="#B9BEC7" stroke-width=".9"/></svg>',
+    image: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.2" y="3.2" width="11.6" height="9.6" rx="1.2" fill="#FFFFFF" stroke="#B9BEC7" stroke-width=".9"/><circle cx="5.6" cy="6.4" r="1.1" fill="#7FB2FF"/><path d="M3.3 11.6l3.2-3 2.4 2.2 2-1.7 1.8 2.5z" fill="#9BD3A6"/></svg>',
+    volume: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.6" fill="#E8F0FF" stroke="#5B8DEF" stroke-width=".9"/><path d="M4.9 7.4c1.1-1.3 2.2 1.3 3.2 0s2.1 1.4 3 0" fill="none" stroke="#5B8DEF" stroke-width=".9"/></svg>',
+    data: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.4" y="3" width="11.2" height="10" rx="1" fill="#FFFFFF" stroke="#B9BEC7" stroke-width=".9"/><path d="M2.4 6.4h11.2M2.4 9.6h11.2M6.2 3v10M9.9 3v10" stroke="#C9CED8" stroke-width=".7"/></svg>'
+  };
+
+  function ext(name) {
+    var i = String(name).lastIndexOf('.');
+    return i >= 0 ? name.slice(i + 1).toLowerCase() : '';
+  }
+  function fmtSize(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(2) + ' GB';
+  }
+  function iconFor(node) {
+    if (node.kind === 'dir') return SVG.dir;
+    var e = ext(node.name);
+    if (IMAGE_EXT.test(e)) return SVG.image;
+    if (/^(mgz|nii|dcm|npy)$/i.test(e) || /\.nii\.gz$/i.test(node.name)) return SVG.volume;
+    if (/^(csv|tsv|xlsx?|parquet)$/i.test(e)) return SVG.data;
+    return SVG.file;
+  }
+  function setStat(text) { statText.textContent = text; }
+
+  // ── 节点 ────────────────────────────────────────────
+  function newNode(name, parentPath, kind) {
+    var path = parentPath ? parentPath + '/' + name : name;
+    var node = {
+      name: name, path: path, kind: kind,
+      entry: null, file: null, size: 0,
+      expanded: false, loaded: kind === 'file', reading: false,
+      children: []
+    };
+    nodeIndex.set(path, node);
+    return node;
+  }
+  function nodeFromEntry(entry, parentPath) {
+    var node = newNode(entry.name, parentPath, entry.isDirectory ? 'dir' : 'file');
+    node.entry = entry;
+    return node;
+  }
+  function nodeFromFile(file, parentPath) {
+    var node = newNode(file.name, parentPath, 'file');
+    node.file = file;
+    node.size = file.size || 0;
+    return node;
+  }
+
+  // ── 虚拟列表 ────────────────────────────────────────
+  function rebuildFlat() {
+    var out = [];
+    if (root) {
+      (function push(node, depth, parentIndex) {
+        var index = out.length;
+        out.push({ node: node, depth: depth, parentIndex: parentIndex });
+        if (node.kind !== 'dir' || !node.expanded) return;
+        for (var i = 0; i < node.children.length; i++)
+          push(node.children[i], depth + 1, index);
+        if (node.reading)
+          out.push({ node: node, depth: depth + 1, placeholder: true, parentIndex: index });
+      })(root, 0, -1);
+    }
+    flat = out;
+  }
+
+  var renderScheduled = false;
+  function scheduleRender() {
+    if (renderScheduled) return;
+    renderScheduled = true;
+    requestAnimationFrame(function () {
+      renderScheduled = false;
+      renderWindow();
+    });
+  }
+
+  function sizeSpan(bytes) {
+    var s = document.createElement('span');
+    s.className = 'node-size';
+    s.textContent = fmtSize(bytes);
+    return s;
+  }
+
+  function rowFor(item) {
+    var node = item.node;
+    var row = document.createElement('div');
+    row.className = 'node-row' + (item.placeholder ? ' placeholder' : '');
+    row.title = node.path;
+    if (!item.placeholder) row.dataset.path = node.path;
+
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.style.marginLeft = (8 + item.depth * INDENT) + 'px';
+
+    // 复选框（设计稿里的 Check Square）：点击切换卡片的蓝底选中态
+    var check = document.createElement('span');
+    check.className = 'check';
+    check.innerHTML = '<svg viewBox="0 0 12 12"><path d="M2 6.2l2.6 2.6L10 3.4" fill="none" stroke="#006BFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    var thumb = document.createElement('span');
+    thumb.className = 'thumb';
+    var cached = !item.placeholder && thumbCache.get(node.path);
+    if (cached) {
+      var img = document.createElement('img');
+      img.src = cached;
+      thumb.appendChild(img);
+    } else {
+      if (!item.placeholder && wantsThumb(node) && !thumbFailed.has(node.path))
+        thumb.classList.add('pending');   // 解不出来的文件不再闪骨架屏
+      thumb.innerHTML = item.placeholder ? SVG.file : iconFor(node);
+      if (cached) thumb.appendChild(document.createElement('img'));
+    }
+
+    var name = document.createElement('span');
+    name.className = 'node-name';
+    name.textContent = item.placeholder ? '读取中…' : node.name;
+
+    card.appendChild(check);
+    card.appendChild(thumb);
+    card.appendChild(name);
+    // 设计稿的卡片里只有名称，文件大小放到悬停提示里
+    if (!item.placeholder && node.kind === 'file' && node.size)
+      row.title = node.path + '  ·  ' + fmtSize(node.size);
+    row.appendChild(card);
+
+    if (!item.placeholder
+            && (node.path === selectedPath || selectedSet.has(node.path)))
+      row.classList.add('selected');
+    return row;
+  }
+
+  var VOLUME_EXT = /^(mgz|mgh|nii|nii\.gz|dcm|ima)$/i;
+
+  /** 哪些行值得去生成缩略图：图片 / 体数据 / DICOM 序列目录 */
+  function wantsThumb(node) {
+    if (!node) return false;
+    if (node.isSeriesPart) return false;
+    if (node.kind === 'dir') return node.isSeries === true;
+    var e = ext(node.name);
+    if (IMAGE_EXT.test(e) || VOLUME_EXT.test(e)) return true;
+    return /\.nii\.gz$/i.test(node.name);
+  }
+
+  function requestThumb(node) {
+    if (!node || thumbCache.has(node.path) || thumbBusy.has(node.path)
+        || thumbFailed.has(node.path) || !wantsThumb(node))
+      return;
+    thumbBusy.add(node.path);
+    var id = String(nextThumbId++);
+    thumbAsked.set(id, node.path);
+    post({ type: 'thumb', id: id, path: node.path });
+  }
+
+  function onThumbResult(id, dataUrl, width, height, reason) {
+    var path = thumbAsked.get(String(id));
+    if (!path) return;
+    thumbAsked.delete(String(id));
+    thumbBusy.delete(path);
+    if (!dataUrl) {
+      thumbFailed.add(path);
+      var row = findRow(path);
+      if (row) {
+        var slot = row.querySelector('.thumb');
+        if (slot) slot.classList.remove('pending');
+      }
+      void reason;
+      return;
+    }
+    thumbCache.set(path, dataUrl);
+    var target = findRow(path);
+    if (target) {
+      var box = target.querySelector('.thumb');
+      if (box) {
+        box.classList.remove('pending');
+        box.textContent = '';
+        var img = document.createElement('img');
+        img.src = dataUrl;
+        box.appendChild(img);
+      }
+    }
+  }
+
+  function findRow(path) {
+    var rows = viewport.children;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].dataset && rows[i].dataset.path === path) return rows[i];
+    }
+    return null;
+  }
+
+  function renderWindow() {
+    if (!root) return;
+    spacer.style.height = (flat.length * ROW_H) + 'px';
+
+    var top = treePane.scrollTop;
+    var height = treePane.clientHeight || 400;
+    var first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN);
+    var last = Math.min(flat.length, Math.ceil((top + height) / ROW_H) + OVERSCAN);
+
+    viewport.style.transform = 'translateY(' + (first * ROW_H) + 'px)';
+    var frag = document.createDocumentFragment();
+    for (var i = first; i < last; i++) frag.appendChild(rowFor(flat[i]));
+    viewport.textContent = '';
+    viewport.appendChild(frag);
+
+    drawLinks(first, last);
+
+    // 只为当前视口内的行请求缩略图（滚动离开的不再请求）
+    for (var k = first; k < last; k++) {
+      var it = flat[k];
+      if (!it.placeholder) requestThumb(it.node);
+    }
+  }
+
+  /** 父子连接线：从父卡片右缘弯到子卡片左缘（设计稿里的 #EEEEEE 细线） */
+  function drawLinks(first, last) {
+    links.setAttribute('width', '100%');
+    links.setAttribute('height', (flat.length * ROW_H) + 'px');
+    var parts = [];
+    for (var i = first; i < last; i++) {
+      var item = flat[i];
+      if (item.placeholder || item.parentIndex === null || item.parentIndex < 0)
+        continue;
+      var parent = flat[item.parentIndex];
+      if (!parent)
+        continue;
+      var x0 = 8 + parent.depth * INDENT + CARD_W;
+      var y0 = item.parentIndex * ROW_H + ROW_H / 2;
+      var x1 = 8 + item.depth * INDENT;
+      var y1 = i * ROW_H + ROW_H / 2;
+      var bulge = Math.max(12, Math.min(28, (x1 - x0) / 2));
+      parts.push('M' + x0 + ',' + y0
+                 + ' C' + (x0 + bulge) + ',' + y0 + ' '
+                 + (x1 - bulge) + ',' + y1 + ' '
+                 + x1 + ',' + y1);
+    }
+    links.innerHTML = parts.length
+      ? '<path d="' + parts.join(' ') + '" fill="none" stroke="#EEEEEE" stroke-width="1.5"/>'
+      : '';
+  }
+
+  // 行高固定 + 事件委托：不给每行挂监听，滚动时也不累积
+  viewport.addEventListener('click', function (ev) {
+    var row = ev.target.closest('.node-row');
+    if (!row || !row.dataset.path) return;
+    // 复选框：只切换蓝底选中，不触发展开/预览
+    if (ev.target.closest('.check')) {
+      var checkNode = nodeIndex.get(row.dataset.path);
+      if (checkNode) {
+        if (selectedSet.has(checkNode.path)) selectedSet.delete(checkNode.path);
+        else selectedSet.add(checkNode.path);
+        row.classList.toggle('selected');
+      }
+      return;
+    }
+    var node = nodeIndex.get(row.dataset.path);
+    if (!node) return;
+    if (node.isError) {
+      blocked(node.name);
+      return;
+    }
+    if (node.kind === 'dir') {
+      toggleDir(node);
+    } else {
+      selectedPath = node.path;
+      showPreview(node);
+      renderWindow();
+    }
+  });
+
+  // ── 展开 / 折叠 ─────────────────────────────────────
+  function mountRoot(node) {
+    root = node;
+    emptyState.hidden = true;
+    spacer.hidden = false;
+    collapseBtn.disabled = false;
+    treePane.scrollTop = 0;
+    expandDir(node);
+  }
+
+  function toggleDir(node) {
+    if (node.expanded) {
+      node.expanded = false;
+      rebuildFlat();
+      scheduleRender();
+      updateStat();
+      return;
+    }
+    expandDir(node);
+  }
+
+  function expandDir(node) {
+    node.expanded = true;
+    if (node.host && !node.loaded) {
+      node.reading = true;
+      rebuildFlat();
+      scheduleRender();
+      requestHostChunk(node);
+      return;
+    }
+    if (node.loaded || !node.entry) {
+      node.loaded = true;
+      rebuildFlat();
+      scheduleRender();
+      updateStat();
+      return;
+    }
+    readDirChunked(node);
+  }
+
+  /**
+   * 分批读取目录：readEntries 每次最多给 100 条，这里累积到一定量就
+   * 让出主线程（setTimeout 0），所以几十万文件的目录也不会把界面卡死；
+   * 配合虚拟滚动，DOM 行数始终只有视口那几十个。
+   */
+  function readDirChunked(node) {
+    node.reading = true;
+    node.loaded = true;
+    node.children = [];
+    var reader = node.entry.createReader();
+    var buffered = 0;
+
+    function finish() {
+      node.reading = false;
+      sortChildren(node);
+      rebuildFlat();
+      scheduleRender();
+      updateStat();
+    }
+
+    function step() {
+      reader.readEntries(function (batch) {
+        if (!batch.length) { finish(); return; }
+        for (var i = 0; i < batch.length; i++)
+          node.children.push(nodeFromEntry(batch[i], node.path));
+        buffered += batch.length;
+        rebuildFlat();
+        scheduleRender();
+        if (buffered >= BATCH_YIELD) {
+          buffered = 0;
+          updateStat();
+          setTimeout(step, 0);
+        } else {
+          step();
+        }
+      }, function (err) {
+        node.reading = false;
+        var bad = newNode('（读取失败：' + ((err && err.message) || err) + '）',
+                          node.path, 'file');
+        node.children.push(bad);
+        finish();
+      });
+    }
+    step();
+  }
+
+  function sortChildren(node) {
+    node.children.sort(function (a, b) {
+      if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
+      return a.name.localeCompare(b.name, 'zh-CN');
+    });
+  }
+
+  function updateStat() {
+    if (root && root.kind === 'file') {
+      setStat('1 个文件');
+      return;
+    }
+    fileCount = 0;
+    dirCount = 0;
+    (function walk(n) {
+      for (var i = 0; i < n.children.length; i++) {
+        var c = n.children[i];
+        if (c.kind === 'dir') { dirCount++; walk(c); }
+        else fileCount++;
+      }
+    })(root || { children: [] });
+    setStat(root ? ('已读取 ' + fileCount + ' 个文件 / ' + dirCount + ' 个目录') : '未加载');
+  }
+
+  // ── 宿主模式：目录由宿主逐层/分块提供 ───────────────
+  function baseName(pathText) {
+    var text = String(pathText).replace(/\\/g, '/').replace(/\/+$/, '');
+    var parts = text.split('/');
+    return parts[parts.length - 1] || text || pathText;
+  }
+
+  function setHostRoot(path) {
+    hostMode = true;
+    pendingList.clear();
+    pendingFile.clear();
+    nodeIndex.clear();
+    selectedPath = null;
+    var node = newNode(baseName(path), '', 'dir');
+    node.path = path;
+    node.expanded = false;
+    node.loaded = false;
+    node.host = true;
+    node.received = 0;
+    mountRoot(node);   // 立刻展开 → 立即请求第一块
+  }
+
+  /**
+   * 宿主给出的一组路径：单个目录 → 直接作为根；文件或多选 → 包一个虚拟根。
+   * items: [{name, path, isDir, size}]
+   */
+  function setHostPaths(items) {
+    if (!items || items.length === 0)
+      return;
+    if (items.length === 1 && items[0].isDir) {
+      setHostRoot(items[0].path);
+      return;
+    }
+    hostMode = true;
+    pendingList.clear();
+    pendingFile.clear();
+    nodeIndex.clear();
+    selectedPath = null;
+
+    // 拖进来的是单个文件：直接把文件本身作为根（否则会出现"根 + 同名子项"两行）
+    if (items.length === 1 && !items[0].isDir) {
+      var fileNode = newNode(items[0].name, '', 'file');
+      fileNode.path = items[0].path;
+      fileNode.host = true;
+      fileNode.size = items[0].size || 0;
+      nodeIndex.set(fileNode.path, fileNode);
+      mountRoot(fileNode);
+      rebuildFlat();
+      renderWindow();
+      setStat('1 个文件');
+      return;
+    }
+
+    var rootNode = newNode(items.length === 1
+        ? items[0].name
+        : '（已拖入 ' + items.length + ' 项）', '', 'dir');
+    rootNode.loaded = true;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var child = newNode(item.name, '', item.isDir ? 'dir' : 'file');
+      child.path = item.path;
+      child.host = true;
+      if (item.isDir) {
+        child.loaded = false;
+        child.received = 0;
+      } else {
+        child.size = item.size || 0;
+      }
+      nodeIndex.set(item.path, child);
+      rootNode.children.push(child);
+    }
+    if (rootNode.children.length === 1 && rootNode.children[0].kind === 'dir') {
+      // 单个目录被包了一层：直接用那个目录做根
+      var only = rootNode.children[0];
+      nodeIndex.delete(only.path);
+      setHostRoot(only.path);
+      return;
+    }
+    mountRoot(rootNode);
+  }
+
+  function requestHostChunk(node) {
+    if (!node.host || node.loaded || node.pending)
+      return;
+    node.pending = true;
+    var id = nextListId++;
+    pendingList.set(id, node);
+    post({
+      type: 'listDir',
+      id: id,
+      path: node.path,
+      offset: node.received || 0,
+      limit: HOST_CHUNK
+    });
+  }
+
+  function onDirChunk(id, result) {
+    var node = pendingList.get(id);
+    if (!node)
+      return;
+    pendingList.delete(id);
+    node.pending = false;
+
+    if (result && result.error) {
+      node.reading = false;
+      node.loaded = true;
+      var bad = newNode('（' + result.error + '）', node.path, 'file');
+      bad.isError = true;          // 错误占位行：不参与预览
+      node.children.push(bad);
+      rebuildFlat();
+      scheduleRender();
+      updateStat();
+      return;
+    }
+
+    var entries = (result && result.entries) || [];
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var child = newNode(e.name, node.path, e.isDir ? 'dir' : 'file');
+      child.path = e.path;
+      child.host = true;          // 文件也要标：预览要回宿主读内容
+      nodeIndex.set(e.path, child);
+      if (e.isDir) {
+        child.loaded = false;
+        child.received = 0;
+      } else {
+        child.size = e.size || 0;
+      }
+      node.children.push(child);
+    }
+    if (!node.isSeries) {
+      var dicomCount = 0;
+      for (var d = 0; d < node.children.length && dicomCount < 3; d++) {
+        if (/\.(dcm|ima)$/i.test(node.children[d].name)) dicomCount++;
+      }
+      if (dicomCount >= 3) {
+        node.isSeries = true;                       // 整个目录 = 一个序列，只出一张
+        for (var s2 = 0; s2 < node.children.length; s2++) {
+          if (/\.(dcm|ima)$/i.test(node.children[s2].name))
+            node.children[s2].isSeriesPart = true;   // 单层文件不再各自出图
+        }
+      }
+    }
+    node.received = (node.received || 0) + entries.length;
+    var total = (result && result.total) || 0;
+    node.reading = node.received < total;
+    if (!node.reading)
+      node.loaded = true;
+
+    // 边读边显示：每收到一块就重排 + 重绘（宿主回调本身已经让出过事件循环）
+    rebuildFlat();
+    scheduleRender();
+    updateStat();
+
+    if (node.reading && node.expanded)
+      requestHostChunk(node);
+  }
+
+  function requestHostFile(node) {
+    var id = nextListId++;
+    pendingFile.set(id, node);
+    post({ type: 'readFile', id: id, path: node.path, maxBytes: PREVIEW_LIMIT });
+  }
+
+  function onFileRead(id, result) {
+    var node = pendingFile.get(id);
+    if (!node)
+      return;
+    pendingFile.delete(id);
+    if (!result || result.error) {
+      blocked((result && result.error) || '无法读取文件');
+      return;
+    }
+    previewMeta.textContent = fmtSize(result.size || 0);
+    var pre = document.createElement('pre');
+    pre.textContent = result.text || '';
+    previewBody.textContent = '';
+    previewBody.appendChild(pre);
+  }
+
+  // ── 预览 ────────────────────────────────────────────
+  function showPreview(node) {
+    if (!node.file && !node.entry && !node.host) {
+      blocked('无法读取该条目');
+      return;
+    }
+    previewName.textContent = node.name;
+    previewBody.textContent = '';
+    previewMeta.textContent = '';
+    document.body.classList.remove('preview-collapsed');
+    previewBtn.textContent = '隐藏预览';
+
+    var e = ext(node.name);
+    if (node.host && !node.file && !node.entry) {
+      if (IMAGE_EXT.test(e)) {
+        blocked('图片预览暂未接入，请在主界面打开：' + node.path);
+        return;
+      }
+      requestHostFile(node);
+      return;
+    }
+    var filePromise = node.file ? Promise.resolve(node.file)
+      : new Promise(function (res, rej) { node.entry.file(res, rej); });
+
+    filePromise.then(function (file) {
+      previewMeta.textContent = fmtSize(file.size);
+      if (IMAGE_EXT.test(e) && e !== 'svg') {
+        var img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.onload = function () { URL.revokeObjectURL(img.src); };
+        previewBody.appendChild(img);
+        return;
+      }
+      if (file.size > PREVIEW_LIMIT) {
+        blocked('文件较大（' + fmtSize(file.size) + '），不在此处加载');
+        return;
+      }
+      file.text().then(function (text) {
+        var pre = document.createElement('pre');
+        pre.textContent = text;
+        previewBody.appendChild(pre);
+      });
+    }).catch(function (err) {
+      blocked('无法读取文件：' + ((err && err.message) || err));
+    });
+  }
+
+  function blocked(text) {
+    previewBody.textContent = '';
+    var div = document.createElement('div');
+    div.className = 'preview-blocked';
+    div.textContent = text;
+    previewBody.appendChild(div);
+  }
+
+  // ── 拖拽 ────────────────────────────────────────────
+  var dragDepth = 0;
+  document.addEventListener('dragenter', function (ev) {
+    ev.preventDefault(); dragDepth++; document.body.classList.add('dragging');
+  });
+  document.addEventListener('dragover', function (ev) { ev.preventDefault(); });
+  document.addEventListener('dragleave', function () {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) document.body.classList.remove('dragging');
+  });
+  document.addEventListener('drop', function (ev) {
+    ev.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove('dragging');
+    var dt = ev.dataTransfer;
+    if (!dt) return;
+    var items = dt.items ? Array.prototype.slice.call(dt.items) : [];
+    var entries = [];
+    for (var i = 0; i < items.length; i++) {
+      var entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+      if (entry) entries.push(entry);
+    }
+    if (entries.length) { loadEntries(entries); return; }
+    if (dt.files && dt.files.length) { loadFileList(dt.files); return; }
+    setStat('未识别到文件夹');
+  });
+
+  function loadEntries(entries) {
+    var dirs = entries.filter(function (e) { return e.isDirectory; });
+    if (dirs.length === 1) {
+      mountRoot(nodeFromEntry(dirs[0], ''));
+      return;
+    }
+    var virtualRoot = newNode(dirs.length ? '（已拖入 ' + entries.length + ' 项）' : '（拖入的文件）', '', 'dir');
+    virtualRoot.loaded = true;
+    for (var i = 0; i < entries.length; i++)
+      virtualRoot.children.push(nodeFromEntry(entries[i], ''));
+    mountRoot(virtualRoot);
+  }
+
+  function loadFileList(files) {
+    var list = Array.prototype.slice.call(files);
+    if (!list.length) return;
+    var roots = [];
+    var byPath = {};
+    function ensureDir(parts) {
+      var key = parts.join('/');
+      if (byPath[key]) return byPath[key];
+      var node = newNode(parts[parts.length - 1], parts.slice(0, -1).join('/'), 'dir');
+      node.path = key;
+      node.loaded = true;
+      nodeIndex.set(key, node);
+      byPath[key] = node;
+      if (parts.length === 1) roots.push(node);
+      else ensureDir(parts.slice(0, -1)).children.push(node);
+      return node;
+    }
+    for (var i = 0; i < list.length; i++) {
+      var rel = list[i].webkitRelativePath || list[i].name;
+      var parts = rel.split('/');
+      var parent = parts.length > 1 ? ensureDir(parts.slice(0, -1)) : null;
+      var leaf = nodeFromFile(list[i], parent ? parent.path : '');
+      if (parent) parent.children.push(leaf); else roots.push(leaf);
+    }
+    if (roots.length === 1 && roots[0].kind === 'dir') { mountRoot(roots[0]); return; }
+    var virtualRoot = newNode('（拖入的文件）', '', 'dir');
+    virtualRoot.loaded = true;
+    virtualRoot.children = roots;
+    mountRoot(virtualRoot);
+  }
+
+  // ── 按钮 ────────────────────────────────────────────
+  var dirInput = document.getElementById('dirInput');
+  document.getElementById('pickBtn').addEventListener('click', function () {
+    // 交给宿主弹原生目录选择器：这样拿到的是绝对路径，和拖拽走同一条懒加载链路
+    post({ type: 'pickFolder' });
+  });
+  dirInput.addEventListener('change', function () {
+    if (dirInput.files && dirInput.files.length) loadFileList(dirInput.files);
+  });
+
+  collapseBtn.addEventListener('click', function () {
+    if (!root) return;
+    (function walk(n) {
+      if (n.kind !== 'dir') return;
+      n.expanded = false;
+      for (var i = 0; i < n.children.length; i++) walk(n.children[i]);
+    })(root);
+    if (root.kind === 'dir') root.expanded = true;   // 根保持展开，否则只剩一行
+    rebuildFlat();
+    scheduleRender();
+  });
+
+  previewBtn.addEventListener('click', function () {
+    var collapsed = document.body.classList.toggle('preview-collapsed');
+    previewBtn.textContent = collapsed ? '显示预览' : '隐藏预览';
+  });
+
+  function closePanel() { post({ type: 'close' }); }
+  document.getElementById('closeBtn').addEventListener('click', closePanel);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') { ev.preventDefault(); closePanel(); }
+  });
+
+  function post(payload) {
+    console.log('MEDCLAW_TREE:' + JSON.stringify(payload));
+  }
+
+  treePane.addEventListener('scroll', scheduleRender, { passive: true });
+  window.addEventListener('resize', scheduleRender);
+
+  window.__fileTree = {
+    /** 测试钩子：构造一棵树，走与真实拖拽相同的代码路径 */
+    loadDemo: function (spec) {
+      nodeIndex.clear();
+      function convert(item, parentPath, isRoot) {
+        var path = parentPath ? parentPath + '/' + item.name : item.name;
+        if (item.children) {
+          var dir = newNode(item.name, parentPath === '' ? '' : parentPath, 'dir');
+          dir.path = path;
+          dir.expanded = !!isRoot;
+          dir.loaded = true;
+          for (var i = 0; i < item.children.length; i++)
+            dir.children.push(convert(item.children[i], path, false));
+          sortChildren(dir);
+          return dir;
+        }
+        var file = new File([item.content || ''], item.name, { type: 'text/plain' });
+        var node = nodeFromFile(file, parentPath);
+        node.path = path;
+        nodeIndex.set(path, node);
+        return node;
+      }
+      var node = convert(spec, '', true);
+      mountRoot(node);
+      rebuildFlat();
+      renderWindow();
+      updateStat();
+      return { rows: flat.length };
+    },
+    stats: function () {
+      return {
+        flatRows: flat.length,
+        domRows: viewport.children.length,
+        files: fileCount,
+        dirs: dirCount
+      };
+    },
+    setHostRoot: setHostRoot,
+    setHostPaths: setHostPaths,
+    onDirChunk: onDirChunk,
+    onFileRead: onFileRead,
+    onThumbResult: onThumbResult,
+    thumbStats: function () { return { cached: thumbCache.size, busy: thumbBusy.size, failed: thumbFailed.size }; },
+    selected: function () { return selectedPath; },
+    close: closePanel
+  };
+})();
+</script>
+</body>
+</html>

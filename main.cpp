@@ -17,11 +17,15 @@
 #include <QQuickWindow>
 #include <QRegion>
 #include <QScreen>
+#include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QSurfaceFormat>
 #include <QTextStream>
+#include <QDateTime>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QTimer>
 #include <QWebEngineProfile>
 #include <QWebEngineScript>
@@ -31,6 +35,8 @@
 #include <cstdio>
 #include "CommonFunc.h"
 #include "auth_controller.h"
+#include "filetreeprovider.h"
+#include "thumbnailer.h"
 #include "chatmodel.h"
 #include "gateway_client.h"
 #include "mainviewcontroller.h"
@@ -270,6 +276,73 @@ static void updateRoundedWindowMask(QWindow *window)
     window->setMask(QRegion(path.toFillPolygon().toPolygon()));
 }
 
+namespace {
+// 客户端是 /SUBSYSTEM:WINDOWS 的 GUI 程序，没有控制台，qDebug/qWarning 平时看不到。
+// 远程排查（同事机器上出问题）需要能直接拿日志，所以把消息同时落盘：
+//   %LOCALAPPDATA%/AetherStudy/logs/client-YYYYMMDD.log
+// 单文件上限 16MB：客户端会打印完整消息体，长时间运行不设上限会撑爆磁盘。
+// 注意：这里只用静态 QFile + 互斥锁，不能用 qDebug，否则会递归。
+constexpr qint64 kClientLogMaxBytes = 16 * 1024 * 1024;
+QMutex g_logMutex;
+QFile *g_logFile = nullptr;
+qint64 g_logWritten = 0;
+
+void fileMessageHandler(QtMsgType type, const QMessageLogContext &, const QString &msg)
+{
+    static const char *const labels[] = {"debug", "warn", "crit", "fatal", "info"};
+    const QString text =
+        QStringLiteral("[%1] [%2] %3\n")
+            .arg(QDateTime::currentDateTime().toString(
+                     QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")),
+                 QString::fromLatin1(labels[qBound(0, static_cast<int>(type), 4)]),
+                 msg);
+    // 日志文件统一 UTF-8；stderr 要给 Qt Creator / 控制台看，它们按系统代码页
+    // （中文 Windows 是 GBK）解码，写 UTF-8 就会显示成 "鏀跺埌鏂囨湰鍒嗙墖"。
+    const QByteArray fileBytes = text.toUtf8();
+    const QByteArray consoleBytes = text.toLocal8Bit();
+
+    QMutexLocker locker(&g_logMutex);
+    if (g_logFile && g_logFile->isOpen() && g_logWritten < kClientLogMaxBytes) {
+        g_logFile->write(fileBytes);
+        g_logFile->flush();
+        g_logWritten += fileBytes.size();
+        if (g_logWritten >= kClientLogMaxBytes) {
+            g_logFile->write("--- log size limit reached, further lines go to stderr only ---\n");
+            g_logFile->flush();
+        }
+    }
+    fwrite(consoleBytes.constData(), 1, static_cast<size_t>(consoleBytes.size()), stderr);
+}
+
+void installFileMessageHandler()
+{
+    const QString root = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    if (root.trimmed().isEmpty())
+        return;
+    QDir dir(QDir(root).filePath(QStringLiteral("AetherStudy/logs")));
+    if (!dir.exists() && !dir.mkpath(QStringLiteral(".")))
+        return;
+    const QString name = QStringLiteral("client-%1.log")
+                             .arg(QDateTime::currentDateTime().toString(
+                                 QStringLiteral("yyyyMMdd")));
+    auto *file = new QFile(dir.filePath(name));
+    if (!file->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        delete file;
+        return;
+    }
+    // 日志本身是 UTF-8，但中文 Windows 默认按 GBK 打开，没有 BOM 时中文会显示成
+    // "鏀跺埌鏂囨湰鍒嗙墖" 这种乱码。新文件直接写 BOM；老文件整体重写一次补上
+    // （一天一次，代价可接受），这样同一份日志在任何编辑器/粘贴里都能正常显示。
+    // 新文件写 UTF-8 BOM：日志是 UTF-8，中文 Windows 记事本/Excel 默认按 GBK 读，
+    // 没有 BOM 会乱码。已有文件不动（避免每天重写整份日志）。
+    if (file->size() == 0)
+        file->write(QByteArray::fromHex("efbbbf"));
+    g_logFile = file;
+    g_logWritten = file->size();
+    qInstallMessageHandler(fileMessageHandler);
+}
+} // namespace
+
 int main(int argc, char *argv[])
 {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
@@ -291,6 +364,8 @@ int main(int argc, char *argv[])
 #else
     QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
 #endif
+    // 尽早装上：后面的网关/会话/产物采集日志都要能落盘
+    installFileMessageHandler();
 #ifdef MEDCLAW_EDITION_GOVERNMENT
     QCoreApplication::setApplicationName(QStringLiteral("Aether study Government"));
 #else
@@ -388,6 +463,24 @@ int main(int argc, char *argv[])
                          chatModel.addToolResult(name, content, id, isError);
                      });
 
+    // ask_user：提问卡与回答结果
+    QObject::connect(&wsClient,
+                     &GatewayClient::questionAsked,
+                     [&chatModel](const QString &id,
+                                  const QString &question,
+                                  const QVariantList &options,
+                                  bool multi,
+                                  bool allowText,
+                                  const QString &header) {
+                         if (!chatModel.hasQuestionId(id))
+                             chatModel.addQuestion(id, question, options, multi, allowText, header);
+                     });
+    QObject::connect(&wsClient,
+                     &GatewayClient::questionResolved,
+                     [&chatModel](const QString &id, const QString &status, const QString &answer) {
+                         chatModel.resolveQuestion(id, status, answer);
+                     });
+
     // 工具结果补拉完成：原地合并完整文本（不清空聊天模型，避免闪烁）
     // 同时补插实时事件中漏掉的 toolCall 条目
     QObject::connect(
@@ -400,16 +493,28 @@ int main(int argc, char *argv[])
                     continue;
 
                 if (mtype == QLatin1String("toolCall")) {
+                    const QString toolName = m.value(QStringLiteral("toolName")).toString();
+                    if (toolName == QLatin1String("ask_user")) {
+                        // 提问卡由实时事件或历史加载创建，这里不要再补一张普通工具卡。
+                        continue;
+                    }
                     if (!chatModel.hasToolCallId(tcId))
-                        chatModel.addToolCall(m.value(QStringLiteral("toolName")).toString(),
+                        chatModel.addToolCall(toolName,
                                               m.value(QStringLiteral("toolArgs")).toString(),
                                               tcId);
                 } else if (mtype == QLatin1String("toolResult")) {
+                    const QString toolName = m.value(QStringLiteral("toolName")).toString();
+                    if (toolName == QLatin1String("ask_user")) {
+                        if (chatModel.hasQuestionId(tcId))
+                            chatModel.resolveQuestionFromContent(
+                                tcId, m.value(QStringLiteral("content")).toString());
+                        continue;
+                    }
                     if (!chatModel.hasToolCallId(tcId))
-                        chatModel.addToolCall(m.value(QStringLiteral("toolName")).toString(),
+                        chatModel.addToolCall(toolName,
                                               QString(),
                                               tcId);
-                    chatModel.addToolResult(m.value(QStringLiteral("toolName")).toString(),
+                    chatModel.addToolResult(toolName,
                                             m.value(QStringLiteral("content")).toString(),
                                             tcId,
                                             m.value(QStringLiteral("isError")).toBool());
@@ -471,12 +576,21 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("sessionReader"), &sessionReader);
     engine.rootContext()->setContextProperty(QStringLiteral("authController"), &authController);
     engine.rootContext()->setContextProperty(QStringLiteral("updateController"), &updateController);
+    FileTreeProvider fileTreeProvider;
+    engine.rootContext()->setContextProperty(QStringLiteral("fileTreeProvider"), &fileTreeProvider);
+    Thumbnailer thumbnailer;
+    engine.rootContext()->setContextProperty(QStringLiteral("thumbnailer"), &thumbnailer);
+    // 诊断用：MEDCLAW_TREE_OPEN=<路径或 file:// URL> 启动时自动打开文件树
+    engine.rootContext()->setContextProperty(QStringLiteral("fileTreeAutoOpen"),
+                                             qEnvironmentVariable("MEDCLAW_TREE_OPEN"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-85-Bold.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-95-ExtraBold.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlimamaShuHeiTi-Bold.ttf");
+    // 提问卡选项序号用 Poppins SemiBold（设计稿 5305-58906）
+    QFontDatabase::addApplicationFont(":/fonts/Poppins-SemiBold.ttf");
 
     // --test 启动 WebSocket 测试页。
     const bool testMode = app.arguments().contains(QStringLiteral("--test"));

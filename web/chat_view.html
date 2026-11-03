@@ -453,6 +453,7 @@
       margin-left: 4px;
       color: rgba(0, 0, 0, 0.45);
     }
+    .message.artifact-turn { margin-top: -4px; }
     .artifact-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -567,6 +568,19 @@
       margin: 0 auto 12px;
       color: rgba(0, 0, 0, .86);
     }
+
+    /* ask_user 提问卡已迁到 QML（components/AskUserCard.qml）：
+       聊天正文是 WebEngineView，底边停在输入框上方，卡片放在页面里
+       永远盖不住 QML 的输入框，必然出现"两个框同时存在"。
+       这里只保留"已回答/已跳过"的结果行样式。 */
+    .question-result {
+      margin-top: 4px;
+      font-size: 13px;
+      color: #374151;
+    }
+    .question-result.ok { color: #15803D; }
+    .question-result.warn { color: #B45309; }
+    .question-result.err { color: #B91C1C; }
     .tool-header {
       display: flex;
       align-items: center;
@@ -1049,6 +1063,42 @@
         return '<img class="status-icon" src="qrc:///images/toolSuccess.png" alt="">';
       }
 
+      // 提问卡的渲染与交互都在 QML（components/AskUserCard.qml）。
+      // 页面只负责：待答时不渲染任何内容；处理完后渲染一行「已回答/已跳过」。
+      function renderQuestion(msg, index) {
+        var status = String(msg.questionStatus || 'pending').toLowerCase();
+        var interactive = status === '' || status === 'pending';
+        // 待答问题由 QML 的悬浮卡片承载，消息流里不出现
+        if (interactive)
+          return '';
+
+        var resultClass = 'question-result';
+        var resultLabel = '已回答';
+        if (status === 'submitted') {
+          resultLabel = '已提交，等待继续';
+        } else if (status === 'skipped') {
+          resultLabel = '已跳过';
+          resultClass += ' warn';
+        } else if (status === 'timeout') {
+          resultLabel = '等待超时';
+          resultClass += ' warn';
+        } else if (status === 'aborted') {
+          resultLabel = '已取消';
+          resultClass += ' warn';
+        } else if (status === 'error') {
+          resultLabel = '提交失败';
+          resultClass += ' err';
+        } else {
+          resultClass += ' ok';
+        }
+        return '<div class="' + resultClass + '" data-row="' + index + '">'
+          + escapeHtml(resultLabel)
+          + (msg.questionAnswer
+            ? '：' + escapeHtml(String(msg.questionAnswer))
+            : '')
+          + '</div>';
+      }
+
       function renderToolCall(msg, index) {
         var completed = toolVisuallyComplete(messages, index, conversationRunning);
         var detail = completed ? msg.toolResultText : msg.toolArgs;
@@ -1092,55 +1142,138 @@
           body = renderMarkdown(msg.content || '');
         return '<div class="message ' + (isUser ? 'user' : 'assistant') + '" data-row="' + index + '">'
           + '<div class="' + classes + '" data-content-row="' + index + '">' + body + '</div>'
-          + (!isUser && shouldRenderTaskComplete(index)
-              ? '<div class="task-complete"><span class="status-slot">'
-                + (conversationEndLabel
-                    ? '<span class="task-ended-icon" aria-hidden="true"></span>'
-                    : '<img class="status-icon" src="qrc:///images/missonSuccess.png" alt="">')
-                + '</span><span>'
-                + (conversationEndLabel || '任务完成') + '</span></div>'
-              : '')
-          + (!isUser ? renderArtifacts(msg.artifacts, index) : '')
           + '</div>';
       }
 
-      function shouldRenderTaskComplete(index) {
-        if (conversationRunning || !messages[index]
-            || messages[index].msgRole !== 'assistant'
-            || messages[index].msgType !== 'text'
-            || (messages[index].isIntermediate && !conversationEndLabel))
-          return false;
-        var lastUser = -1;
-        var lastFinalAssistant = -1;
-        var allToolsFinished = true;
-        for (var i = 0; i < messages.length; i++) {
-          var item = messages[i] || {};
-          if (item.msgRole === 'user') {
-            lastUser = i;
-            lastFinalAssistant = -1;
-            allToolsFinished = true;
-          } else if (i > lastUser && item.msgType === 'toolCall') {
-            if (!item.hasToolResult) allToolsFinished = false;
-          } else if (i > lastUser && item.msgRole === 'assistant'
-                     && item.msgType === 'text'
-                     && (!item.isIntermediate || conversationEndLabel)
-                     && String(item.content || '').trim().length > 0) {
-            lastFinalAssistant = i;
-          }
+      // 产物清单按「轮」渲染，而不是挂在哪条 assistant 消息上：
+      //   1) 位置：挂在**本轮最后一条消息**之后 —— 否则产物是在轮次中途被检测到的，
+      //      会停在半截（后面还跟着 process/exec 之类的工具卡片）；
+      //   2) 时机：本轮还在跑就先不显示，等 conversationRunning 变回 false 再显示；
+      //   3) 内容：聚合整轮内所有消息上的 artifacts。
+      function turnStartIndex(index) {
+        for (var i = index; i >= 0; i--) {
+          if (messages[i] && messages[i].msgRole === 'user')
+            return i;
         }
-        return lastUser >= 0 && (conversationEndLabel || allToolsFinished)
-          && index === lastFinalAssistant;
+        return -1;
       }
 
-      function renderMessage(msg, index) {
+      function lastUserMessageIndex() {
+        for (var i = messages.length - 1; i >= 0; i--) {
+          if (messages[i] && messages[i].msgRole === 'user')
+            return i;
+        }
+        return -1;
+      }
+
+      function artifactsForTurn(index) {
+        var start = turnStartIndex(index);
+        var out = [];
+        var seen = {};
+        for (var i = start + 1; i < messages.length; i++) {
+          var m = messages[i] || {};
+          if (m.msgRole === 'user')
+            break;
+          var list = Array.isArray(m.artifacts) ? m.artifacts : [];
+          for (var j = 0; j < list.length; j++) {
+            var file = list[j] || {};
+            var key = String(file.path || file.name || (i + ':' + j));
+            if (seen[key])
+              continue;
+            seen[key] = true;
+            out.push(file);
+          }
+        }
+        return out;
+      }
+
+      /** 本轮之前已经出现过的产物路径（用于判断"本轮到底有没有新东西"） */
+      function priorArtifactPaths(startIndex) {
+        var seen = {};
+        for (var i = 0; i < startIndex; i++) {
+          var list = (messages[i] && messages[i].artifacts) || [];
+          for (var j = 0; j < list.length; j++) {
+            var key = String((list[j] || {}).path || '');
+            if (key)
+              seen[key] = true;
+          }
+        }
+        return seen;
+      }
+
+      /** 本轮工具是否都已返回（有未完成的 toolCall 就先不收盘） */
+      function turnToolsFinished(startIndex) {
+        for (var i = startIndex + 1; i < messages.length; i++) {
+          var item = messages[i] || {};
+          if (item.msgRole === 'user')
+            break;
+          if (item.msgType === 'toolCall' && !item.hasToolResult)
+            return false;
+        }
+        return true;
+      }
+
+      /**
+       * 本轮「值得显示」的产物：只保留本轮新增或被改动的文件。
+       * 客户端偶尔会把同一批产物重复挂到后续轮次（检测快照未按轮刷新），
+       * 这里再兜一层：全都在更早轮次出现过、且没有 modified 标记的，一律不算。
+       */
+      function turnArtifactsForDisplay(index) {
+        var artifacts = artifactsForTurn(index);
+        if (artifacts.length === 0)
+          return [];
+        var prior = priorArtifactPaths(turnStartIndex(index));
+        var fresh = [];
+        for (var i = 0; i < artifacts.length; i++) {
+          var file = artifacts[i] || {};
+          var path = String(file.path || '');
+          var changeType = String(file.changeType || '');
+          if (!prior[path] || changeType === 'modified')
+            fresh.push(file);
+        }
+        return fresh;
+      }
+
+      /**
+       * 轮尾块：「✓ 任务完成」+ 产物清单。
+       * 两者都只在**本轮真的有产物**时出现——闲聊轮次既不打完成标记，也不出清单。
+       */
+      function turnTailHtml(index) {
+        var next = messages[index + 1];
+        if (next && next.msgRole !== 'user')
+          return '';
+        var start = turnStartIndex(index);
+        if (conversationRunning && start === lastUserMessageIndex())
+          return '';
+        if (!turnToolsFinished(start))
+          return '';
+        var artifacts = turnArtifactsForDisplay(index);
+        // 上游的 conversationEndLabel：任务被结束/中止时给的是另一句文案与图标
+        var label = conversationEndLabel || '';
+        if (artifacts.length === 0 && !label)
+          return '';
+        var icon = label
+          ? '<span class="task-ended-icon" aria-hidden="true"></span>'
+          : '<img class="status-icon" src="qrc:///images/missonSuccess.png" alt="">';
+        // 必须包在 .message 里：它带 max-width:840px 与居中，块才和正文同宽。
+        return '<div class="message assistant artifact-turn">'
+          + '<div class="task-complete"><span class="status-slot">' + icon + '</span>'
+          + '<span>' + (label || '任务完成') + '</span></div>'
+          + (artifacts.length ? renderArtifacts(artifacts, index) : '')
+          + '</div>';
+      }
+
+            function renderMessage(msg, index) {
         msg = msg || {};
         if (isCompactionMarker(msg))
           return '<div class="message compaction" data-row="' + index + '"></div>';
+        if (msg.msgType === 'question')
+          return renderQuestion(msg, index) + turnTailHtml(index);
         if (msg.msgType === 'toolCall')
-          return renderToolCall(msg, index);
+          return renderToolCall(msg, index) + turnTailHtml(index);
         if (msg.msgType === 'toolResult')
-          return renderOrphanToolResult(msg, index);
-        return renderTextMessage(msg, index);
+          return renderOrphanToolResult(msg, index) + turnTailHtml(index);
+        return renderTextMessage(msg, index) + turnTailHtml(index);
       }
 
       function scrollToBottom() {
@@ -1302,7 +1435,15 @@
           && a.hasToolResult === b.hasToolResult
           && a.isStreaming === b.isStreaming
           && a.isIntermediate === b.isIntermediate
-          && JSON.stringify(a.artifacts || []) === JSON.stringify(b.artifacts || []);
+          && JSON.stringify(a.artifacts || []) === JSON.stringify(b.artifacts || [])
+          && a.questionId === b.questionId
+          && a.questionText === b.questionText
+          && a.questionHeader === b.questionHeader
+          && JSON.stringify(a.questionOptions || []) === JSON.stringify(b.questionOptions || [])
+          && a.questionMulti === b.questionMulti
+          && a.questionAllowText === b.questionAllowText
+          && a.questionStatus === b.questionStatus
+          && a.questionAnswer === b.questionAnswer;
       }
 
       function replaceMessageRow(row) {
@@ -1463,8 +1604,31 @@
       }
 
       window.MedClawChat = {
+        debugRenderQuestion: function (msg) { return renderQuestion(msg, 1); },
+        debugState: function () {
+          return {
+            msgCount: messages.length,
+            types: messages.map(function (m) { return m && m.msgType; }),
+          };
+        },
         setMessages: function (items, forceFullRender, isConversationRunning, endLabel) {
           var nextMessages = Array.isArray(items) ? items : [];
+          // Keep the optimistic "submitted" state while the server is still
+          // reporting "pending" (the answer round-trip hasn't landed yet).
+          var previousQuestions = {};
+          for (var qi = 0; qi < messages.length; qi++) {
+            var previous = messages[qi] || {};
+            if (previous.questionId)
+              previousQuestions[previous.questionId] = previous;
+          }
+          for (var qj = 0; qj < nextMessages.length; qj++) {
+            var incoming = nextMessages[qj] || {};
+            if (!incoming.questionId) continue;
+            var local = previousQuestions[incoming.questionId];
+            if (local && local.questionStatus === 'submitted'
+                && (!incoming.questionStatus || incoming.questionStatus === 'pending'))
+              incoming.questionStatus = 'submitted';
+          }
           var nextRunning = isConversationRunning === true;
           var runningChanged = conversationRunning !== nextRunning;
           var nextEndLabel = String(endLabel || '');
@@ -1573,9 +1737,17 @@
           // 侧边栏列表据此把这一轮问答的产物排在最前并异色显示。
           var artifactKey = String(artifactToggle.getAttribute('data-artifact-key') || '');
           var artifactRow = Number(artifactKey.split(':').pop());
+          // 把「本轮真正变动的文件」路径一并送出：侧边栏只对这些异色。
+          var turnFiles = [];
+          if (Number.isFinite(artifactRow) && artifactRow >= 0) {
+            var list = turnArtifactsForDisplay(artifactRow);
+            for (var ti = 0; ti < list.length; ti++)
+              turnFiles.push(String((list[ti] || {}).path || ''));
+          }
           console.log('MEDCLAW_CHAT:' + JSON.stringify({
             type: 'openArtifacts',
-            row: Number.isFinite(artifactRow) ? artifactRow : -1
+            row: Number.isFinite(artifactRow) ? artifactRow : -1,
+            paths: turnFiles
           }));
           return;
         }

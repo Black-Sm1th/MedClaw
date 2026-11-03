@@ -1,5 +1,9 @@
 #include "chatmodel.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
 static QString chatDisplayContent(const QString &content)
 {
     QString display = content;
@@ -18,6 +22,97 @@ static QString chatDisplayContent(const QString &content)
         }
     }
     return display.trimmed();
+}
+
+static bool parseAskUserArgs(const QString &argsJson,
+                             QString *question,
+                             QVariantList *options,
+                             bool *multi,
+                             bool *allowText,
+                             QString *header)
+{
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(argsJson.toUtf8(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+        return false;
+
+    QJsonObject object = document.object();
+    const QJsonArray grouped = object.value(QStringLiteral("questions")).toArray();
+    if (!grouped.isEmpty()) {
+        // 第一版只渲染分组里的第一个问题；其余问题仍会由 ask_user 工具
+        // 一次性收齐答案，这里保证卡片至少能显示并提交。
+        object = grouped.at(0).toObject();
+    }
+
+    const QString text = object.value(QStringLiteral("question")).toString().trimmed();
+    if (text.isEmpty())
+        return false;
+    if (question)
+        *question = text;
+    if (header)
+        *header = object.value(QStringLiteral("header")).toString().trimmed();
+    if (multi)
+        *multi = object.value(QStringLiteral("multi")).toBool(false);
+    if (allowText)
+        *allowText = object.value(QStringLiteral("allow_text")).toBool(true);
+    if (options) {
+        options->clear();
+        const QJsonArray rawOptions = object.value(QStringLiteral("options")).toArray();
+        for (const QJsonValue &value : rawOptions) {
+            QVariantMap option;
+            if (value.isString()) {
+                const QString label = value.toString().trimmed();
+                if (label.isEmpty())
+                    continue;
+                option.insert(QStringLiteral("label"), label);
+            } else if (value.isObject()) {
+                const QJsonObject entry = value.toObject();
+                const QString label =
+                    entry.value(QStringLiteral("label")).toString().trimmed();
+                if (label.isEmpty())
+                    continue;
+                option.insert(QStringLiteral("label"), label);
+                const QString description =
+                    entry.value(QStringLiteral("description")).toString().trimmed();
+                if (!description.isEmpty())
+                    option.insert(QStringLiteral("description"), description);
+                if (entry.value(QStringLiteral("recommended")).toBool(false))
+                    option.insert(QStringLiteral("recommended"), true);
+            } else {
+                continue;
+            }
+            options->append(option);
+        }
+    }
+    return true;
+}
+
+static QString formatQuestionAnswer(const QJsonValue &value)
+{
+    if (value.isString())
+        return value.toString();
+    if (value.isArray()) {
+        QStringList parts;
+        for (const QJsonValue &entry : value.toArray()) {
+            const QString text = entry.isString() ? entry.toString() : formatQuestionAnswer(entry);
+            if (!text.isEmpty())
+                parts.append(text);
+        }
+        return parts.join(QStringLiteral("、"));
+    }
+    if (value.isObject()) {
+        QStringList parts;
+        const QJsonObject object = value.toObject();
+        for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
+            const QString text = formatQuestionAnswer(it.value());
+            if (!text.isEmpty())
+                parts.append(QStringLiteral("%1: %2").arg(it.key(), text));
+        }
+        return parts.join(QStringLiteral("；"));
+    }
+    if (value.isNull() || value.isUndefined())
+        return QString();
+    return value.toVariant().toString();
 }
 
 ChatModel::ChatModel(QObject *parent)
@@ -81,6 +176,22 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         return msg.isIntermediate;
     case ArtifactsRole:
         return msg.artifacts;
+    case QuestionIdRole:
+        return msg.questionId;
+    case QuestionTextRole:
+        return msg.questionText;
+    case QuestionHeaderRole:
+        return msg.questionHeader;
+    case QuestionOptionsRole:
+        return msg.questionOptions;
+    case QuestionMultiRole:
+        return msg.questionMulti;
+    case QuestionAllowTextRole:
+        return msg.questionAllowText;
+    case QuestionStatusRole:
+        return msg.questionStatus;
+    case QuestionAnswerRole:
+        return msg.questionAnswer;
     }
     return QVariant();
 }
@@ -99,7 +210,15 @@ QHash<int, QByteArray> ChatModel::roleNames() const
             {HasToolResultRole, "hasToolResult"},
             {IsStreamingRole, "isStreaming"},
             {IsIntermediateRole, "isIntermediate"},
-            {ArtifactsRole, "artifacts"}};
+            {ArtifactsRole, "artifacts"},
+            {QuestionIdRole, "questionId"},
+            {QuestionTextRole, "questionText"},
+            {QuestionHeaderRole, "questionHeader"},
+            {QuestionOptionsRole, "questionOptions"},
+            {QuestionMultiRole, "questionMulti"},
+            {QuestionAllowTextRole, "questionAllowText"},
+            {QuestionStatusRole, "questionStatus"},
+            {QuestionAnswerRole, "questionAnswer"}};
 }
 
 // ── 文本消息 ─────────────────────────────────────────────────────────
@@ -304,6 +423,102 @@ bool ChatModel::hasToolCallId(const QString &toolCallId) const
     return false;
 }
 
+bool ChatModel::hasQuestionId(const QString &toolCallId) const
+{
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        if (m_messages[i].msgType == QStringLiteral("question")
+            && m_messages[i].questionId == toolCallId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ChatModel::addQuestion(const QString &toolCallId,
+                            const QString &question,
+                            const QVariantList &options,
+                            bool multi,
+                            bool allowText,
+                            const QString &header)
+{
+    // 提问卡也是过程的一部分：它前面的助手文本属于中间说明，不当作最终回答。
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        const ChatMessage &m = m_messages[i];
+        if (m.msgType == QStringLiteral("toolCall") || m.msgType == QStringLiteral("toolResult")
+            || m.msgType == QStringLiteral("question")) {
+            continue;
+        }
+        if (m.msgType == QStringLiteral("text") && m.role == QStringLiteral("assistant")
+            && !m.isIntermediate) {
+            m_messages[i].isIntermediate = true;
+            const QModelIndex midx = index(i);
+            emit dataChanged(midx, midx, {IsIntermediateRole});
+        }
+        break;
+    }
+
+    const int idx = m_messages.count();
+    beginInsertRows(QModelIndex(), idx, idx);
+    ChatMessage msg;
+    msg.role = QStringLiteral("assistant");
+    msg.timestamp = QDateTime::currentDateTime();
+    msg.msgType = QStringLiteral("question");
+    msg.questionId = toolCallId;
+    msg.questionText = question;
+    msg.questionHeader = header;
+    msg.questionOptions = options;
+    msg.questionMulti = multi;
+    msg.questionAllowText = allowText;
+    msg.questionStatus = QStringLiteral("pending");
+    msg.isError = false;
+    m_messages.append(msg);
+    endInsertRows();
+    emit countChanged();
+    emit messagePayloadChanged();
+}
+
+void ChatModel::resolveQuestion(const QString &toolCallId,
+                                const QString &status,
+                                const QString &answer)
+{
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        ChatMessage &msg = m_messages[i];
+        if (msg.msgType != QStringLiteral("question") || msg.questionId != toolCallId)
+            continue;
+        msg.questionStatus = status.isEmpty() ? QStringLiteral("answered") : status;
+        msg.questionAnswer = answer;
+        const QModelIndex idx = index(i);
+        emit dataChanged(idx, idx, {QuestionStatusRole, QuestionAnswerRole});
+        emit messagePayloadChanged();
+        return;
+    }
+}
+
+void ChatModel::resolveQuestionFromContent(const QString &toolCallId,
+                                           const QString &content)
+{
+    QString status = QStringLiteral("answered");
+    QString answer = content;
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(content.toUtf8(), &parseError);
+    if (parseError.error == QJsonParseError::NoError && document.isObject()) {
+        const QJsonObject object = document.object();
+        const QString reported = object.value(QStringLiteral("status")).toString();
+        if (!reported.isEmpty())
+            status = reported;
+        answer = formatQuestionAnswer(object.value(QStringLiteral("answer")));
+    }
+    if (status == QLatin1String("skipped") && answer.isEmpty())
+        answer = QStringLiteral("已跳过");
+    if (status == QLatin1String("timeout") && answer.isEmpty())
+        answer = QStringLiteral("等待超时");
+    if (status == QLatin1String("aborted") && answer.isEmpty())
+        answer = QStringLiteral("已取消");
+    if (answer.isEmpty())
+        answer = content;
+    resolveQuestion(toolCallId, status, answer);
+}
+
 QVariantList ChatModel::messages() const
 {
     QVariantList out;
@@ -323,6 +538,36 @@ QVariantList ChatModel::messages() const
         item.insert(QStringLiteral("isStreaming"), msg.isStreaming);
         item.insert(QStringLiteral("isIntermediate"), msg.isIntermediate);
         item.insert(QStringLiteral("artifacts"), msg.artifacts);
+        item.insert(QStringLiteral("questionId"), msg.questionId);
+        item.insert(QStringLiteral("questionText"), msg.questionText);
+        item.insert(QStringLiteral("questionHeader"), msg.questionHeader);
+        item.insert(QStringLiteral("questionOptions"), msg.questionOptions);
+        item.insert(QStringLiteral("questionMulti"), msg.questionMulti);
+        item.insert(QStringLiteral("questionAllowText"), msg.questionAllowText);
+        item.insert(QStringLiteral("questionStatus"), msg.questionStatus);
+        item.insert(QStringLiteral("questionAnswer"), msg.questionAnswer);
+        out.append(item);
+    }
+    return out;
+}
+
+QVariantList ChatModel::pendingQuestions() const
+{
+    QVariantList out;
+    for (const ChatMessage &msg : m_messages) {
+        if (msg.msgType != QLatin1String("question"))
+            continue;
+        const QString status = msg.questionStatus.toLower();
+        if (!status.isEmpty() && status != QLatin1String("pending"))
+            continue;
+        QVariantMap item;
+        item.insert(QStringLiteral("questionId"), msg.questionId);
+        item.insert(QStringLiteral("questionText"), msg.questionText);
+        item.insert(QStringLiteral("questionHeader"), msg.questionHeader);
+        item.insert(QStringLiteral("questionOptions"), msg.questionOptions);
+        item.insert(QStringLiteral("questionMulti"), msg.questionMulti);
+        item.insert(QStringLiteral("questionAllowText"), msg.questionAllowText);
+        item.insert(QStringLiteral("questionStatus"), msg.questionStatus);
         out.append(item);
     }
     return out;
@@ -381,6 +626,48 @@ void ChatModel::loadHistory(const QVariantList &messages)
         const QString mtype = m.value(QStringLiteral("msgType")).toString();
 
         if (mtype == QLatin1String("toolCall")) {
+            const QString toolName = m.value(QStringLiteral("toolName")).toString();
+            const QString toolCallId = m.value(QStringLiteral("toolCallId")).toString();
+            if (toolName == QLatin1String("ask_user")) {
+                QString question;
+                QString header;
+                QVariantList options;
+                bool multi = false;
+                bool allowText = true;
+                if (parseAskUserArgs(m.value(QStringLiteral("toolArgs")).toString(), &question,
+                                     &options, &multi, &allowText, &header)) {
+                    for (int i = m_messages.count() - 1; i >= 0; --i) {
+                        const ChatMessage &prev = m_messages[i];
+                        if (prev.msgType == QStringLiteral("toolCall")
+                            || prev.msgType == QStringLiteral("toolResult")
+                            || prev.msgType == QStringLiteral("question")) {
+                            continue;
+                        }
+                        if (prev.msgType == QStringLiteral("text")
+                            && prev.role == QStringLiteral("assistant")
+                            && !prev.isIntermediate) {
+                            m_messages[i].isIntermediate = true;
+                        }
+                        break;
+                    }
+
+                    ChatMessage questionMsg;
+                    questionMsg.role = QStringLiteral("assistant");
+                    questionMsg.timestamp = QDateTime::currentDateTime();
+                    questionMsg.msgType = QStringLiteral("question");
+                    questionMsg.questionId = toolCallId;
+                    questionMsg.questionText = question;
+                    questionMsg.questionHeader = header;
+                    questionMsg.questionOptions = options;
+                    questionMsg.questionMulti = multi;
+                    questionMsg.questionAllowText = allowText;
+                    questionMsg.questionStatus = QStringLiteral("pending");
+                    questionMsg.isError = false;
+                    m_messages.append(questionMsg);
+                    continue;
+                }
+            }
+
             for (int i = m_messages.count() - 1; i >= 0; --i) {
                 const ChatMessage &prev = m_messages[i];
                 if (prev.msgType == QStringLiteral("toolCall")
@@ -409,6 +696,46 @@ void ChatModel::loadHistory(const QVariantList &messages)
 
         if (mtype == QLatin1String("toolResult")) {
             const QString toolCallId = m.value(QStringLiteral("toolCallId")).toString();
+            const QString toolName = m.value(QStringLiteral("toolName")).toString();
+            const QString content = m.value(QStringLiteral("content")).toString();
+
+            if (toolName == QLatin1String("ask_user")) {
+                bool mergedQuestion = false;
+                for (int i = m_messages.count() - 1; i >= 0; --i) {
+                    if (m_messages[i].msgType != QStringLiteral("question")
+                        || m_messages[i].questionId != toolCallId) {
+                        continue;
+                    }
+                    QString status = QStringLiteral("answered");
+                    QString answer = content;
+                    QJsonParseError parseError;
+                    const QJsonDocument document =
+                        QJsonDocument::fromJson(content.toUtf8(), &parseError);
+                    if (parseError.error == QJsonParseError::NoError && document.isObject()) {
+                        const QJsonObject object = document.object();
+                        const QString reported =
+                            object.value(QStringLiteral("status")).toString();
+                        if (!reported.isEmpty())
+                            status = reported;
+                        answer = formatQuestionAnswer(object.value(QStringLiteral("answer")));
+                    }
+                    if (status == QLatin1String("skipped") && answer.isEmpty())
+                        answer = QStringLiteral("已跳过");
+                    if (status == QLatin1String("timeout") && answer.isEmpty())
+                        answer = QStringLiteral("等待超时");
+                    if (status == QLatin1String("aborted") && answer.isEmpty())
+                        answer = QStringLiteral("已取消");
+                    if (answer.isEmpty())
+                        answer = content;
+                    m_messages[i].questionStatus = status;
+                    m_messages[i].questionAnswer = answer;
+                    mergedQuestion = true;
+                    break;
+                }
+                if (mergedQuestion)
+                    continue;
+            }
+
             bool merged = false;
             for (int i = m_messages.count() - 1; i >= 0; --i) {
                 if (m_messages[i].msgType == QStringLiteral("toolCall")

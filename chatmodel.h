@@ -35,6 +35,16 @@ struct ChatMessage
     /// 在新增 toolCall 时把紧邻之前的助手文本消息标记为中间态。
     bool isIntermediate = false;
     QVariantList artifacts; ///< Files created or modified during this turn.
+
+    // ── ask_user 提问卡 ───────────────────────────────────────────────
+    QString questionId;      ///< 与 toolCallId 相同，用于 question.resolve
+    QString questionText;    ///< 问题正文
+    QString questionHeader;  ///< 短标签（可选）
+    QVariantList questionOptions; ///< [{label, description, recommended}]
+    bool questionMulti = false;
+    bool questionAllowText = true;
+    QString questionStatus;  ///< pending | submitted | answered | skipped | timeout | aborted | error
+    QString questionAnswer;  ///< 用户答案的展示文本
 };
 
 class ChatModel : public QAbstractListModel
@@ -58,7 +68,15 @@ public:
         HasToolResultRole,
         IsStreamingRole,
         IsIntermediateRole,
-        ArtifactsRole
+        ArtifactsRole,
+        QuestionIdRole,
+        QuestionTextRole,
+        QuestionHeaderRole,
+        QuestionOptionsRole,
+        QuestionMultiRole,
+        QuestionAllowTextRole,
+        QuestionStatusRole,
+        QuestionAnswerRole
     };
 
     explicit ChatModel(QObject *parent = nullptr);
@@ -78,10 +96,26 @@ public:
                                    const QString &content,
                                    const QString &toolCallId,
                                    bool isError = false);
+    Q_INVOKABLE void addQuestion(const QString &toolCallId,
+                                 const QString &question,
+                                 const QVariantList &options,
+                                 bool multi,
+                                 bool allowText,
+                                 const QString &header = QString());
+    Q_INVOKABLE void resolveQuestion(const QString &toolCallId,
+                                     const QString &status,
+                                     const QString &answer);
+    /// 从 ask_user 的工具结果 JSON（{status, answer}）直接更新提问卡
+    Q_INVOKABLE void resolveQuestionFromContent(const QString &toolCallId,
+                                                const QString &content);
+    Q_INVOKABLE bool hasQuestionId(const QString &toolCallId) const;
     Q_INVOKABLE void appendToLastMessage(const QString &text);
     Q_INVOKABLE void clear();
     Q_INVOKABLE bool hasToolCallId(const QString &toolCallId) const;
     Q_INVOKABLE QVariantList messages() const;
+    /// 待答问题（questionStatus 为空或 pending），按出现顺序返回。
+    /// QML 侧的提问卡要盖在输入框上方，必须由 QML 渲染（WebView 在输入框之上）。
+    Q_INVOKABLE QVariantList pendingQuestions() const;
     Q_INVOKABLE bool setArtifactsForLastAssistant(const QVariantList &artifacts);
     void loadHistory(const QVariantList &messages);
 

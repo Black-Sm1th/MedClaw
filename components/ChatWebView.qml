@@ -17,8 +17,10 @@ Item {
     property real fileTipHeight: 0
 
     signal linkActivated(string link)
-    signal artifactsRequested(int row)
+    signal artifactsRequested(int row, var paths)
     signal artifactRequested(string path)
+    signal questionAnswered(string id, string answer)
+    signal questionSkipped(string id)
 
     function js(value) {
         return JSON.stringify(value === undefined ? null : value)
@@ -165,9 +167,13 @@ Item {
             } else if (payload.type === "fileHoverEnd") {
                 root.fileTipVisible = false
             } else if (payload.type === "openArtifacts") {
-                root.artifactsRequested(Number(payload.row))
+                root.artifactsRequested(Number(payload.row), payload.paths || [])
             } else if (payload.type === "openArtifact") {
                 root.artifactRequested(payload.path || "")
+            } else if (payload.type === "questionAnswer") {
+                root.questionAnswered(String(payload.id || ""), String(payload.answer || ""))
+            } else if (payload.type === "questionSkip") {
+                root.questionSkipped(String(payload.id || ""))
             }
         }
     }
