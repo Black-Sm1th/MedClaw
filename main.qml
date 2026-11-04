@@ -5134,10 +5134,13 @@ ApplicationWindow {
                     z: 5
 
                     onEntered: function(drag) {
-                        if (drag.hasUrls)
+                        if (drag.hasUrls) {
                             drag.accepted = true
+                            console.log("[SplitDrop] entered, urls=" + drag.urls.length)
+                        }
                     }
                     onDropped: function(drop) {
+                        console.log("[SplitDrop] dropped hasUrls=" + drop.hasUrls)
                         if (!drop.hasUrls || !drop.urls || drop.urls.length === 0)
                             return
                         var locals = []
@@ -7218,6 +7221,9 @@ ApplicationWindow {
                             }
                             onLinkActivated: function(link) {
                                 window.openMarkdownLink(link)
+                            }
+                            onFolderDropped: function(paths) {
+                                newTaskRec.enterSplit(paths)
                             }
                         }
                         Rectangle{
@@ -17077,6 +17083,55 @@ ApplicationWindow {
             newTaskRec.openArtifactPath(path)
             fileTreePopup.close()
         }
+    }
+
+    // 兜底：整窗接收文件夹拖放。输入框有自己的 DropArea（z 更高）会先接管普通文件；
+    // 这里只处理"含目录"的拖放，任何位置拖进来都能进入并排视图。
+    DropArea {
+        anchors.fill: parent
+        z: -1
+
+        onEntered: function(drag) {
+            if (drag.hasUrls)
+                drag.accepted = true
+        }
+        onDropped: function(drop) {
+            if (!drop.hasUrls || !drop.urls || drop.urls.length === 0)
+                return
+            var locals = []
+            for (var i = 0; i < drop.urls.length; ++i) {
+                var local = drop.urls[i].toLocalFile()
+                if (local && local.length > 0)
+                    locals.push(local)
+            }
+            if (locals.length === 0)
+                return
+            var described = fileTreeProvider.describeAll(locals)
+            var dirs = []
+            for (var j = 0; j < described.length; ++j) {
+                if (described[j].isDir)
+                    dirs.push(String(described[j].path || ""))
+            }
+            if (dirs.length === 0)
+                return
+            console.log("[SplitDrop] window drop " + JSON.stringify(dirs))
+            newTaskRec.enterSplit(dirs)
+            drop.acceptProposedAction()
+        }
+    }
+
+    // 并排视图的第二个入口：Ctrl+Shift+W 直接选文件夹。
+    // 拖拽在部分环境里可能被 WebEngine 吃掉，留一个确定性入口。
+    Shortcut {
+        sequence: "Ctrl+Shift+W"
+        context: Qt.ApplicationShortcut
+        onActivated: splitFolderDialog.open()
+    }
+
+    FolderDialog {
+        id: splitFolderDialog
+        title: "选择要在右侧显示的文件夹"
+        onAccepted: newTaskRec.enterSplit([selectedFolder.toString()])
     }
 
     // 诊断入口：MEDCLAW_SPLIT_OPEN=<目录> 启动即进入并排模式，便于截图核对

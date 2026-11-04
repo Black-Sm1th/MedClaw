@@ -32,6 +32,8 @@ Rectangle {
 
     signal submitRequested(string message, var files)
     signal linkActivated(string link)
+    /// 拖进来的是文件夹：交回给主界面（进入并排视图），不当作普通附件
+    signal folderDropped(var paths)
 
     color: backgroundColor
     border.color: activeFocus && !readOnly ? focusedBorderColor : borderColor
@@ -205,9 +207,34 @@ Rectangle {
             if (!drop.hasUrls)
                 return
             var urls = drop.urls || []
+            var locals = []
             for (var i = 0; i < urls.length; i++) {
-                var path = root.localPathFromUrl(urls[i])
-                if (!path)
+                var localPath = root.localPathFromUrl(urls[i])
+                if (localPath && localPath.length > 0)
+                    locals.push(localPath)
+            }
+            // 文件夹不是附件：交给主界面进入并排视图（对话缩左 + 输入文件树）
+            var dirs = []
+            var files = []
+            if (typeof fileTreeProvider !== "undefined" && fileTreeProvider) {
+                var described = fileTreeProvider.describeAll(locals)
+                for (var d = 0; d < described.length; d++) {
+                    var entry = described[d] || {}
+                    if (entry.isDir)
+                        dirs.push(String(entry.path || ""))
+                    else
+                        files.push(String(entry.path || ""))
+                }
+            } else {
+                files = locals
+            }
+            if (dirs.length > 0) {
+                console.log("[Composer] folderDropped " + JSON.stringify(dirs))
+                root.folderDropped(dirs)
+            }
+            for (var f = 0; f < files.length; f++) {
+                var path = files[f]
+                if (!path || path.length === 0)
                     continue
                 var parts = path.split(/[\\\/]/)
                 var name = parts[parts.length - 1] || path
