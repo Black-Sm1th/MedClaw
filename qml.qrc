@@ -22,6 +22,7 @@
         <file>components/ChatWebView.qml</file>
         <file>components/FileTreePopup.qml</file>
         <file>components/AskUserCard.qml</file>
+        <file>components/InputFileTree.qml</file>
         <file>components/PromptComposer.qml</file>
         <file>components/FilePathToolTip.qml</file>
         <file>components/MarkdownWebView.qml</file>

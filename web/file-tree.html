@@ -28,6 +28,13 @@
     overflow: hidden;
   }
 
+  /* 嵌入模式：宿主只要树本身（工作区浮层用），去掉头部按钮、预览区和底栏 */
+  body.embed .panel { border: 0; border-radius: 0; background: transparent; }
+  body.embed .head,
+  body.embed .foot,
+  body.embed .preview-pane { display: none; }
+  body.embed .tree-pane { padding: 0; }
+
   /* ── 头部 ───────────────────────────────────────────── */
   .head {
     display: flex; align-items: center; gap: 8px;
@@ -1008,6 +1015,11 @@
     onThumbResult: onThumbResult,
     thumbStats: function () { return { cached: thumbCache.size, busy: thumbBusy.size, failed: thumbFailed.size }; },
     selected: function () { return selectedPath; },
+    /** 嵌入模式：隐藏头部/预览/底栏，只留树本身 */
+    setEmbedMode: function (on) {
+      document.body.classList.toggle('embed', !!on);
+      return true;
+    },
     close: closePanel
   };
 })();

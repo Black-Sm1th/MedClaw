@@ -583,6 +583,10 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_TREE_OPEN=<路径或 file:// URL> 启动时自动打开文件树
     engine.rootContext()->setContextProperty(QStringLiteral("fileTreeAutoOpen"),
                                              qEnvironmentVariable("MEDCLAW_TREE_OPEN"));
+    // 诊断用：MEDCLAW_SPLIT_OPEN=<目录> 启动即进入并排模式
+    // （正式的触发方式是往对话区里拖一个文件夹）
+    engine.rootContext()->setContextProperty(QStringLiteral("splitAutoOpen"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_OPEN"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");

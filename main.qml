@@ -3739,10 +3739,36 @@ ApplicationWindow {
                     }
                 }
                 readonly property int officePreviewWidth: Math.min(680, Math.max(420, width - 360))
+                // 并排模式：往对话里拖了文件夹后，对话缩到左边，
+                // 右侧把「输入文件」树和「产物」一起摊开。
+                property bool splitMode: false
+                property var splitRoots: []
+                readonly property int splitPanelWidth: Math.max(420, Math.min(760, Math.round(width * 0.46)))
                 readonly property int artifactSidebarWidth: artifactSidebarVisible
-                    ? (officePanelMaximized ? width
-                       : (officeDocumentVisible ? officePreviewWidth : 300))
+                    ? (splitMode ? splitPanelWidth
+                       : (officePanelMaximized ? width
+                          : (officeDocumentVisible ? officePreviewWidth : 300)))
                     : 0
+
+                function enterSplit(paths) {
+                    var list = []
+                    for (var i = 0; i < (paths || []).length; ++i) {
+                        var p = String(paths[i] || "")
+                        if (p.length > 0)
+                            list.push(p)
+                    }
+                    if (list.length === 0)
+                        return
+                    splitRoots = list
+                    splitMode = true
+                    artifactSidebarMode = "list"
+                    artifactSidebarVisible = true
+                }
+
+                function exitSplit() {
+                    splitMode = false
+                    splitRoots = []
+                }
 
                 function sortedSidebarFiles(files) {
                     var sorted = (files || []).slice(0)
@@ -4976,6 +5002,9 @@ ApplicationWindow {
                     anchors.topMargin: 80
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
+                    // 并排模式下对话列被右侧面板挤窄，这里跟着左移半个面板宽
+                    anchors.horizontalCenterOffset: newTaskRec.splitMode
+                                                 ? -newTaskRec.artifactSidebarWidth / 2 : 0
                     Row {
                         width: Math.min(390, parent.width)
                         spacing: 8
@@ -5092,6 +5121,47 @@ ApplicationWindow {
                     onArtifactRequested: function(path) { newTaskRec.openArtifactPath(path) }
                 }
 
+                // 往对话区里拖文件夹 → 进入并排模式（对话缩左，右侧摊开输入文件与产物）。
+                // 单个文件不触发，仍然走输入框的附件流程。
+                DropArea {
+                    id: chatFolderDropArea
+
+                    // 覆盖整个对话区（不依赖 chatWebView 是否可见：空对话时它是隐藏的）
+                    anchors.left: parent.left
+                    anchors.right: artifactSidebar.left
+                    anchors.top: parent.top
+                    anchors.bottom: chatInputContainer.top
+                    z: 5
+
+                    onEntered: function(drag) {
+                        if (drag.hasUrls)
+                            drag.accepted = true
+                    }
+                    onDropped: function(drop) {
+                        if (!drop.hasUrls || !drop.urls || drop.urls.length === 0)
+                            return
+                        var locals = []
+                        for (var i = 0; i < drop.urls.length; ++i) {
+                            var local = drop.urls[i].toLocalFile()
+                            if (local && local.length > 0)
+                                locals.push(local)
+                        }
+                        if (locals.length === 0)
+                            return
+                        // 有目录才进入并排模式；纯文件交给输入框自己处理
+                        var described = fileTreeProvider.describeAll(locals)
+                        var dirs = []
+                        for (var j = 0; j < described.length; ++j) {
+                            if (described[j].isDir)
+                                dirs.push(String(described[j].path || ""))
+                        }
+                        if (dirs.length === 0)
+                            return
+                        newTaskRec.enterSplit(dirs)
+                        drop.acceptProposedAction()
+                    }
+                }
+
                 // ask_user 提问卡：必须画在 QML 层，才能盖住下面的输入框。
                 // 聊天正文是 WebEngineView（底边停在 chatInputContainer 上方），
                 // 把卡片放进页面里永远只会贴在 WebView 自己的底部，两个框必然并存。
@@ -5139,7 +5209,7 @@ ApplicationWindow {
 
                     Rectangle {
                         id: artifactListToolbar
-                        visible: newTaskRec.artifactSidebarMode === "list"
+                        visible: newTaskRec.artifactSidebarMode === "list" && !newTaskRec.splitMode
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
@@ -5238,7 +5308,7 @@ ApplicationWindow {
                     }
 
                     Flickable {
-                        visible: newTaskRec.artifactSidebarMode === "list"
+                        visible: newTaskRec.artifactSidebarMode === "list" && !newTaskRec.splitMode
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: artifactListToolbar.bottom
@@ -5383,6 +5453,169 @@ ApplicationWindow {
                                 implicitWidth: 4
                                 radius: 2
                                 color: "#40000000"
+                            }
+                        }
+                    }
+
+                    // ── 并排模式：左侧对话已缩窄，这里摊开输入文件（树）与产物 ──
+                    Item {
+                        id: splitPanel
+
+                        visible: newTaskRec.splitMode
+                        anchors.fill: parent
+
+                        Item {
+                            id: splitHeader
+
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            height: 52
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("输入文件")
+                                color: "#D9000000"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 15
+                                font.weight: Font.DemiBold
+                            }
+
+                            Rectangle {
+                                id: splitCloseButton
+
+                                anchors.right: parent.right
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 32
+                                height: 32
+                                radius: 8
+                                color: splitCloseMouse.containsMouse ? "#0A000000" : "transparent"
+
+                                Canvas {
+                                    anchors.centerIn: parent
+                                    width: 16
+                                    height: 16
+
+                                    onPaint: {
+                                        var ctx = getContext("2d")
+                                        ctx.reset()
+                                        ctx.strokeStyle = "#D9000000"
+                                        ctx.lineWidth = 1.4
+                                        ctx.lineCap = "round"
+                                        ctx.beginPath()
+                                        ctx.moveTo(3.5, 3.5)
+                                        ctx.lineTo(12.5, 12.5)
+                                        ctx.moveTo(12.5, 3.5)
+                                        ctx.lineTo(3.5, 12.5)
+                                        ctx.stroke()
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: splitCloseMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.exitSplit()
+                                }
+
+                                ToolTip.visible: splitCloseMouse.containsMouse
+                                ToolTip.text: qsTr("退出并排视图")
+                            }
+                        }
+
+                        // 输入文件树
+                        Rectangle {
+                            id: splitTreeCard
+
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: splitHeader.bottom
+                            anchors.bottom: splitArtifactsTitle.top
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            anchors.bottomMargin: 12
+                            radius: 12
+                            color: "#FFFFFF"
+                            border.width: 1
+                            border.color: "#E6E7EB"
+                            clip: true
+
+                            InputFileTree {
+                                id: splitTree
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                onFileSelected: function(path) {
+                                    newTaskRec.openArtifactPath(path)
+                                }
+                                onFileTreeReady: {
+                                    openPaths(newTaskRec.splitRoots)
+                                }
+                            }
+
+                            Component.onCompleted: {
+                                // 并排模式可能已经开着（诊断入口），补一次喂路径
+                                if (newTaskRec.splitMode)
+                                    Qt.callLater(function() {
+                                        splitTree.openPaths(newTaskRec.splitRoots)
+                                    })
+                            }
+
+                            Connections {
+                                target: newTaskRec
+                                function onSplitRootsChanged() {
+                                    if (newTaskRec.splitMode)
+                                        splitTree.openPaths(newTaskRec.splitRoots)
+                                }
+                            }
+                        }
+
+                        // 产物
+                        Text {
+                            id: splitArtifactsTitle
+
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.bottom: splitArtifactList.top
+                            anchors.bottomMargin: 8
+                            text: qsTr("产物") + (newTaskRec.sessionArtifacts.length > 0
+                                                  ? " (" + newTaskRec.sessionArtifacts.length + ")" : "")
+                            color: "#D9000000"
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                        }
+
+                        ListView {
+                            id: splitArtifactList
+
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            anchors.bottomMargin: 12
+                            // 至少留 72 高，否则空列表时 contentHeight=0 会把「还没有产物」压没
+                            height: Math.max(72, Math.min(contentHeight, parent.height * 0.3))
+                            clip: true
+                            spacing: 2
+                            model: newTaskRec.sortedSidebarFiles(newTaskRec.sessionArtifacts)
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                            delegate: artifactSidebarFileDelegate
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: splitArtifactList.count === 0
+                                text: qsTr("还没有产物")
+                                color: "#40000000"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 13
                             }
                         }
                     }
@@ -6318,7 +6551,7 @@ ApplicationWindow {
                     anchors.topMargin: 16
                     anchors.bottom: chatInputContainer.top
                     anchors.left: parent.left
-                    anchors.right: parent.right
+                    anchors.right: newTaskRec.splitMode ? artifactSidebar.left : parent.right
 
                     Column {
                         width: Math.max(0, Math.min(parent.width - 32, 440))
@@ -9266,7 +9499,11 @@ ApplicationWindow {
                 Item {
                     id: welcomeShortcutLayer
                     visible: newTaskRec.isNewTaskWelcome
-                    anchors.fill: parent
+                    // 显式四条边：anchors.fill 之后再改 right 不生效（并排时内容会被右栏盖住）
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.right: newTaskRec.splitMode ? artifactSidebar.left : parent.right
                     z: 2
 
                     Row {
@@ -16825,6 +17062,7 @@ ApplicationWindow {
         onActivated: fileTreePopup.toggle()
     }
 
+
     FileTreePopup {
         id: fileTreePopup
 
@@ -16841,4 +17079,10 @@ ApplicationWindow {
         }
     }
 
+    // 诊断入口：MEDCLAW_SPLIT_OPEN=<目录> 启动即进入并排模式，便于截图核对
+    Timer {
+        running: splitAutoOpen !== undefined && String(splitAutoOpen).length > 0
+        interval: 1200
+        onTriggered: newTaskRec.enterSplit([String(splitAutoOpen)])
+    }
 }
