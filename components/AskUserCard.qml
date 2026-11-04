@@ -49,6 +49,10 @@ Item {
         var hasText = String(d.text || "").trim().length > 0
         return hasSel || hasText
     }
+    /// 输入框里有没有内容（只有空白算没有）
+    readonly property bool draftHasText: String(activeDraft.text || "").trim().length > 0
+    /// 输入框空着才显示「跳过」；一打字就让位给发送键
+    readonly property bool skipVisible: !draftHasText
 
     implicitWidth: 798
     implicitHeight: body.implicitHeight + 24
@@ -389,7 +393,9 @@ Item {
             }
         }
 
-        // ── 输入行 + 发送 ──
+        // ── 输入行 + 跳过 + 发送 ──
+        // 「跳过」只在输入框空着时出现：一旦开始打字，这个位置让给发送键，
+        // 避免用户手上有明确答案时还看得见"放弃作答"的入口。
         Item {
             width: parent.width
             height: 36
@@ -400,7 +406,8 @@ Item {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: parent.width - 32 - 8
+                // 输入框让出右侧：发送键 32 + 间距 8，跳过可见时再让出 56 + 8
+                width: parent.width - 32 - 8 - (root.skipVisible ? 56 + 8 : 0)
                 visible: root.activeAllowText
                 radius: 8
                 color: "#FFFFFF"
@@ -465,7 +472,43 @@ Item {
                 }
             }
 
+            // 「跳过」胶囊：输入框为空时才出现，样式取自设计稿
+            // （56×32、圆角 111、描边 #EBEDF0、14px）
             Rectangle {
+                id: skipButton
+
+                anchors.right: sendButton.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                width: 56
+                height: 32
+                radius: 111
+                color: skipMouse.containsMouse ? "#F7F9FA" : "transparent"
+                border.width: 1
+                border.color: "#EBEDF0"
+                visible: root.skipVisible
+
+                Text {
+                    anchors.centerIn: parent
+                    text: qsTr("跳过")
+                    color: "#D9000000"
+                    font.family: "Alibaba PuHuiTi 3.0"
+                    font.pixelSize: 14
+                }
+
+                MouseArea {
+                    id: skipMouse
+
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.skip()
+                }
+            }
+
+            Rectangle {
+                id: sendButton
+
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 width: 32
