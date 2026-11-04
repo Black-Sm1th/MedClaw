@@ -8,6 +8,7 @@ Item {
     property bool showPhoneForm: false
     property int resendSeconds: 0
     property bool initializing: false
+    property int startupEllipsisCount: 0
     readonly property real contentWidth: Math.min(709, Math.max(280, width - 48))
     readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
     readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
@@ -372,7 +373,7 @@ Item {
         }
         Label {
             width: parent.width
-            text: qsTr("启动中...")
+            text: qsTr("启动中") + Array(startupEllipsisCount + 1).join(".")
             horizontalAlignment: Text.AlignHCenter
             color: "#A6000000"
             font.family: "Alibaba PuHuiTi 3.0"
@@ -381,6 +382,12 @@ Item {
     }
 
     Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: "#73000000"; font.pixelSize: 16; visible: !loginPage.initializing}
+    Timer {
+        interval: 450
+        repeat: true
+        running: loginPage.visible && loginPage.initializing
+        onTriggered: loginPage.startupEllipsisCount = (loginPage.startupEllipsisCount + 1) % 4
+    }
     Timer { interval: 1000; repeat: true; running: loginPage.resendSeconds > 0; onTriggered: loginPage.resendSeconds-- }
     Connections {
         target: authController

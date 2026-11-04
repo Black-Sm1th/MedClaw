@@ -34,7 +34,7 @@ const char internalApiBaseUrl[] = "http://192.168.0.83:8002";
 #ifdef MEDCLAW_EDITION_GOVERNMENT
 const char governmentEnterpriseCode[] = "gov-01";
 #endif
-const QString clientVersion(QStringLiteral("v1.2.14"));
+const QString clientVersion(QStringLiteral("v1.2.15"));
 
 QString clientDisplayVersion()
 {
