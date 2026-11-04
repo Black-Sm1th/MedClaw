@@ -3763,6 +3763,9 @@ ApplicationWindow {
                         window.sidebarCollapsed = false
                     }
                 }
+                // 并排视图总开关：代码保留，暂时不在界面上启用。
+                // 需要恢复时把这里改成 true（拖文件夹 / Ctrl+Shift+W 会重新生效）。
+                readonly property bool splitViewEnabled: false
                 // 设计稿 1440 宽：对话 360、右栏 1080。
                 // 对话列按固定宽度（封顶 360），右栏吃掉剩余空间——这样收起左侧导航时
                 // 多出来的宽度全给右侧文件面板，而不是聊天区跟着变宽。
@@ -3777,6 +3780,8 @@ ApplicationWindow {
                     : 0
 
                 function enterSplit(paths) {
+                    if (!splitViewEnabled)
+                        return
                     var list = []
                     for (var i = 0; i < (paths || []).length; ++i) {
                         var p = String(paths[i] || "")
@@ -5183,6 +5188,7 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.bottom: chatInputContainer.top
                     z: 5
+                    enabled: newTaskRec.splitViewEnabled
 
                     onEntered: function(drag) {
                         if (drag.hasUrls) {
@@ -7425,7 +7431,20 @@ ApplicationWindow {
                                 window.openMarkdownLink(link)
                             }
                             onFolderDropped: function(paths) {
-                                newTaskRec.enterSplit(paths)
+                                if (newTaskRec.splitViewEnabled) {
+                                    newTaskRec.enterSplit(paths)
+                                    return
+                                }
+                                // 并排视图关闭时退回原有行为：文件夹也当附件插进去
+                                for (var i = 0; i < (paths || []).length; ++i) {
+                                    var p = String(paths[i] || "")
+                                    if (p.length === 0)
+                                        continue
+                                    var cut = Math.max(p.lastIndexOf("/"),
+                                                       p.lastIndexOf(String.fromCharCode(92)))
+                                    var name = cut >= 0 ? p.slice(cut + 1) : p
+                                    textInputArea.insertFile(name, p, true)
+                                }
                             }
                         }
                         Rectangle{
@@ -17292,6 +17311,7 @@ ApplicationWindow {
     DropArea {
         anchors.fill: parent
         z: -1
+        enabled: newTaskRec.splitViewEnabled
 
         onEntered: function(drag) {
             if (drag.hasUrls)
@@ -17327,6 +17347,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Shift+W"
         context: Qt.ApplicationShortcut
+        enabled: newTaskRec.splitViewEnabled
         onActivated: splitFolderDialog.open()
     }
 
