@@ -48,6 +48,8 @@ ApplicationWindow {
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     property bool sidebarCollapsed: false
+    // 进入并排时自动收起左侧导航；退出时恢复（只在是我们收起的情况下）
+    property bool splitAutoCollapsedSidebar: false
     property string notifiedUpdateVersion: ""
     property string gatewayRecoveryErrorText: ""
     property string gatewayRecoveryLogDirectory: ""
@@ -3748,6 +3750,18 @@ ApplicationWindow {
                 onArtifactSidebarVisibleChanged: {
                     if (!artifactSidebarVisible && splitMode)
                         exitSplit()
+                }
+                // 右栏占满剩余宽度时，左侧导航留着只会挤占对话列
+                onSplitModeChanged: {
+                    if (splitMode) {
+                        if (!window.sidebarCollapsed) {
+                            window.splitAutoCollapsedSidebar = true
+                            window.sidebarCollapsed = true
+                        }
+                    } else if (window.splitAutoCollapsedSidebar) {
+                        window.splitAutoCollapsedSidebar = false
+                        window.sidebarCollapsed = false
+                    }
                 }
                 // 设计稿 1440 宽：对话 360、右栏 1080。
                 // 对话列按固定宽度（封顶 360），右栏吃掉剩余空间——这样收起左侧导航时
