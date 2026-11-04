@@ -104,11 +104,14 @@
   .node-row.selected .node-size { color: rgba(255,255,255,.7); }
   .check {
     width: 20px; height: 20px; flex: 0 0 20px; box-sizing: border-box;
-    border-radius: 5px; border: 1px solid #D9DCE1; background: #FFFFFF;
+    border-radius: 5px; border: 1px solid rgba(0, 0, 0, .12); background: #FFFFFF;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
   }
+  /* 勾选状态只看复选框本身，不再把整张卡片染蓝 */
+  .check.checked { background: #006BFF; border-color: #006BFF; }
   .node-row.selected .check { border-color: #FFFFFF; background: #FFFFFF; }
   .check svg { width: 12px; height: 12px; display: none; }
+  .check.checked svg { display: block; }
   .node-row.selected .check svg { display: block; }
   .chev {
     width: 14px; flex: 0 0 14px; text-align: center; color: var(--text-2);
@@ -341,8 +344,8 @@
 
     // 复选框（设计稿里的 Check Square）：点击切换卡片的蓝底选中态
     var check = document.createElement('span');
-    check.className = 'check';
-    check.innerHTML = '<svg viewBox="0 0 12 12"><path d="M2 6.2l2.6 2.6L10 3.4" fill="none" stroke="#006BFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    check.className = 'check' + (!item.placeholder && selectedSet.has(node.path) ? ' checked' : '');
+    check.innerHTML = '<svg viewBox="0 0 12 12"><path d="M2 6.2l2.6 2.6L10 3.4" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
     var thumb = document.createElement('span');
     thumb.className = 'thumb';
@@ -494,9 +497,15 @@
     if (ev.target.closest('.check')) {
       var checkNode = nodeIndex.get(row.dataset.path);
       if (checkNode) {
-        if (selectedSet.has(checkNode.path)) selectedSet.delete(checkNode.path);
-        else selectedSet.add(checkNode.path);
-        row.classList.toggle('selected');
+        var box = ev.target.closest('.check');
+        if (selectedSet.has(checkNode.path)) {
+          selectedSet.delete(checkNode.path);
+          box.classList.remove('checked');
+        } else {
+          selectedSet.add(checkNode.path);
+          box.classList.add('checked');
+        }
+        post({ type: 'selection', paths: Array.from(selectedSet) });
       }
       return;
     }
@@ -651,9 +660,16 @@
    * 宿主给出的一组路径：单个目录 → 直接作为根；文件或多选 → 包一个虚拟根。
    * items: [{name, path, isDir, size}]
    */
+  function clearSelection() {
+    if (selectedSet.size === 0) return;
+    selectedSet.clear();
+    post({ type: 'selection', paths: [] });
+  }
+
   function setHostPaths(items) {
     if (!items || items.length === 0)
       return;
+    clearSelection();
     if (items.length === 1 && items[0].isDir) {
       setHostRoot(items[0].path);
       return;

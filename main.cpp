@@ -587,6 +587,8 @@ int main(int argc, char *argv[])
     // （正式的触发方式是往对话区里拖一个文件夹）
     engine.rootContext()->setContextProperty(QStringLiteral("splitAutoOpen"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_OPEN"));
+    engine.rootContext()->setContextProperty(QStringLiteral("splitAutoSelect"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_SELECT"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");

@@ -3743,7 +3743,10 @@ ApplicationWindow {
                 // 右侧把「输入文件」树和「产物」一起摊开。
                 property bool splitMode: false
                 property var splitRoots: []
-                readonly property int splitPanelWidth: Math.max(420, Math.min(760, Math.round(width * 0.46)))
+                // 设计稿 1440 宽：对话 360、右栏 1080 → 25% : 75%
+                readonly property int splitPanelWidth: Math.max(420, Math.min(1120, Math.round(width * 0.72)))
+                property string splitTab: "files"        // files | artifacts
+                property var splitSelection: []          // 勾选的文件路径
                 readonly property int artifactSidebarWidth: artifactSidebarVisible
                     ? (splitMode ? splitPanelWidth
                        : (officePanelMaximized ? width
@@ -3760,6 +3763,8 @@ ApplicationWindow {
                     if (list.length === 0)
                         return
                     splitRoots = list
+                    splitSelection = []
+                    splitTab = "files"
                     splitMode = true
                     artifactSidebarMode = "list"
                     artifactSidebarVisible = true
@@ -3768,6 +3773,28 @@ ApplicationWindow {
                 function exitSplit() {
                     splitMode = false
                     splitRoots = []
+                    splitSelection = []
+                }
+
+                /// 把勾选的文件塞进输入框（「在对话框中引用」）
+                function referenceSplitSelection() {
+                    for (var i = 0; i < splitSelection.length; ++i) {
+                        var path = String(splitSelection[i] || "")
+                        if (path.length === 0)
+                            continue
+                        var cut = Math.max(path.lastIndexOf("/"),
+                                           path.lastIndexOf(String.fromCharCode(92)))
+                        var name = cut >= 0 ? path.slice(cut + 1) : path
+                        textInputArea.insertFile(name, path, false)
+                    }
+                    exitSplit()
+                }
+
+                /// 在阅片台（影像查看器）里打开勾选的第一项
+                function openSplitSelectionInViewer() {
+                    if (splitSelection.length === 0)
+                        return
+                    openArtifactPath(String(splitSelection[0]))
                 }
 
                 function sortedSidebarFiles(files) {
@@ -4996,7 +5023,8 @@ ApplicationWindow {
 
                 Column{
                     id: titleCol
-                    visible: newTaskRec.isNewTaskWelcome
+                    // 并排模式左栏是"对话列"，不再显示启动页（25% 宽放不下）
+                    visible: newTaskRec.isNewTaskWelcome && !newTaskRec.splitMode
                     width: Math.min(840, Math.max(320, parent.width - 48))
                     spacing: 12
                     anchors.topMargin: 80
@@ -5460,7 +5488,8 @@ ApplicationWindow {
                         }
                     }
 
-                    // ── 并排模式：左侧对话已缩窄，这里摊开输入文件（树）与产物 ──
+                    // ── 并排模式（Figma 5068-48030）──
+                    // 左：对话缩窄；右：输入文件 / 产物 两个标签页 + 底部选择操作条
                     Item {
                         id: splitPanel
 
@@ -5475,22 +5504,67 @@ ApplicationWindow {
                             anchors.top: parent.top
                             height: 52
 
-                            Text {
+                            Rectangle {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 16
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: "#0F000000"
+                            }
+
+                            Row {
+                                id: splitTabs
+
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("输入文件")
-                                color: "#D9000000"
-                                font.family: "Alibaba PuHuiTi 3.0"
-                                font.pixelSize: 15
-                                font.weight: Font.DemiBold
+                                spacing: 12
+
+                                Repeater {
+                                    model: [
+                                        { key: "files", label: qsTr("输入文件") },
+                                        { key: "artifacts", label: qsTr("产物") }
+                                    ]
+
+                                    delegate: Rectangle {
+                                        id: splitTabItem
+
+                                        required property var modelData
+
+                                        readonly property bool active: newTaskRec.splitTab === modelData.key
+
+                                        width: splitTabLabel.implicitWidth + 32
+                                        height: 32
+                                        radius: 4
+                                        color: active ? "#EBEDF0"
+                                                      : (splitTabMouse.containsMouse ? "#F4F6F9" : "transparent")
+
+                                        Text {
+                                            id: splitTabLabel
+                                            anchors.centerIn: parent
+                                            text: splitTabItem.modelData.label
+                                            color: splitTabItem.active ? "#D9000000" : "#73000000"
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 16
+                                            font.weight: Font.Medium
+                                        }
+
+                                        MouseArea {
+                                            id: splitTabMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: newTaskRec.splitTab = splitTabItem.modelData.key
+                                        }
+                                    }
+                                }
                             }
 
                             Rectangle {
                                 id: splitCloseButton
 
                                 anchors.right: parent.right
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 32
                                 height: 32
@@ -5530,41 +5604,29 @@ ApplicationWindow {
                             }
                         }
 
-                        // 输入文件树
-                        Rectangle {
-                            id: splitTreeCard
+                        // 输入文件（树）
+                        Item {
+                            id: splitFilesPage
 
+                            visible: newTaskRec.splitTab === "files"
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: splitHeader.bottom
-                            anchors.bottom: splitArtifactsTitle.top
+                            anchors.bottom: parent.bottom
                             anchors.leftMargin: 12
                             anchors.rightMargin: 12
                             anchors.bottomMargin: 12
-                            radius: 12
-                            color: "#FFFFFF"
-                            border.width: 1
-                            border.color: "#E6E7EB"
-                            clip: true
 
                             InputFileTree {
                                 id: splitTree
                                 anchors.fill: parent
-                                anchors.margins: 8
                                 onFileSelected: function(path) {
                                     newTaskRec.openArtifactPath(path)
                                 }
-                                onFileTreeReady: {
-                                    openPaths(newTaskRec.splitRoots)
+                                onSelectionChanged: function(paths) {
+                                    newTaskRec.splitSelection = paths
                                 }
-                            }
-
-                            Component.onCompleted: {
-                                // 并排模式可能已经开着（诊断入口），补一次喂路径
-                                if (newTaskRec.splitMode)
-                                    Qt.callLater(function() {
-                                        splitTree.openPaths(newTaskRec.splitRoots)
-                                    })
+                                onFileTreeReady: openPaths(newTaskRec.splitRoots)
                             }
 
                             Connections {
@@ -5574,35 +5636,30 @@ ApplicationWindow {
                                         splitTree.openPaths(newTaskRec.splitRoots)
                                 }
                             }
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: newTaskRec.splitRoots.length === 0
+                                text: qsTr("把一个文件夹拖到对话里，或按 Ctrl+Shift+W 选择")
+                                color: "#40000000"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 13
+                            }
                         }
 
                         // 产物
-                        Text {
-                            id: splitArtifactsTitle
-
-                            anchors.left: parent.left
-                            anchors.leftMargin: 16
-                            anchors.bottom: splitArtifactList.top
-                            anchors.bottomMargin: 8
-                            text: qsTr("产物") + (newTaskRec.sessionArtifacts.length > 0
-                                                  ? " (" + newTaskRec.sessionArtifacts.length + ")" : "")
-                            color: "#D9000000"
-                            font.family: "Alibaba PuHuiTi 3.0"
-                            font.pixelSize: 15
-                            font.weight: Font.DemiBold
-                        }
-
                         ListView {
                             id: splitArtifactList
 
+                            visible: newTaskRec.splitTab === "artifacts"
                             anchors.left: parent.left
                             anchors.right: parent.right
+                            anchors.top: splitHeader.bottom
                             anchors.bottom: parent.bottom
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            anchors.topMargin: 8
                             anchors.bottomMargin: 12
-                            // 至少留 72 高，否则空列表时 contentHeight=0 会把「还没有产物」压没
-                            height: Math.max(72, Math.min(contentHeight, parent.height * 0.3))
                             clip: true
                             spacing: 2
                             model: newTaskRec.sortedSidebarFiles(newTaskRec.sessionArtifacts)
@@ -5619,6 +5676,128 @@ ApplicationWindow {
                                 color: "#40000000"
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 13
+                            }
+                        }
+
+                        // 底部选择操作条（有勾选才出现）
+                        Rectangle {
+                            id: splitActionBar
+
+                            visible: newTaskRec.splitSelection.length > 0
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 20
+                            width: splitActionRow.implicitWidth + 24
+                            height: 48
+                            radius: 8
+                            color: "#FFFFFF"
+                            border.width: 1
+                            border.color: "#E6E7EB"
+
+                            Row {
+                                id: splitActionRow
+
+                                anchors.centerIn: parent
+                                spacing: 12
+
+                                Item {
+                                    width: splitCountLabel.implicitWidth + 24
+                                    height: 32
+
+                                    Rectangle {
+                                        id: splitCountBadge
+                                        anchors.left: parent.left
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 20
+                                        height: 20
+                                        radius: 4
+                                        color: "#006BFF"
+
+                                        Canvas {
+                                            anchors.centerIn: parent
+                                            width: 12
+                                            height: 12
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.reset()
+                                                ctx.strokeStyle = "#FFFFFF"
+                                                ctx.lineWidth = 2
+                                                ctx.lineCap = "round"
+                                                ctx.lineJoin = "round"
+                                                ctx.beginPath()
+                                                ctx.moveTo(2, 6.2)
+                                                ctx.lineTo(4.6, 8.8)
+                                                ctx.lineTo(10, 3.4)
+                                                ctx.stroke()
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        id: splitCountLabel
+                                        anchors.left: splitCountBadge.right
+                                        anchors.leftMargin: 8
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("已选 %1 个").arg(newTaskRec.splitSelection.length)
+                                        color: "#D9000000"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 14
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: splitOpenInViewerButton
+
+                                    width: splitOpenLabel.implicitWidth + 28
+                                    height: 32
+                                    radius: 8
+                                    color: splitOpenMouse.containsMouse ? "#F4F6F9" : "#FFFFFF"
+                                    border.width: 1
+                                    border.color: "#E6E7EB"
+
+                                    Text {
+                                        id: splitOpenLabel
+                                        anchors.centerIn: parent
+                                        text: qsTr("在阅片台打开")
+                                        color: "#D9000000"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 14
+                                    }
+
+                                    MouseArea {
+                                        id: splitOpenMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.openSplitSelectionInViewer()
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: splitReferenceButton
+
+                                    width: splitReferenceLabel.implicitWidth + 28
+                                    height: 32
+                                    radius: 8
+                                    color: splitReferenceMouse.containsMouse ? "#0058D6" : "#006BFF"
+
+                                    Text {
+                                        id: splitReferenceLabel
+                                        anchors.centerIn: parent
+                                        text: qsTr("在对话框中引用")
+                                        color: "#FFFFFF"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 14
+                                    }
+
+                                    MouseArea {
+                                        id: splitReferenceMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.referenceSplitSelection()
+                                    }
+                                }
                             }
                         }
                     }
@@ -9504,7 +9683,7 @@ ApplicationWindow {
 
                 Item {
                     id: welcomeShortcutLayer
-                    visible: newTaskRec.isNewTaskWelcome
+                    visible: newTaskRec.isNewTaskWelcome && !newTaskRec.splitMode
                     // 显式四条边：anchors.fill 之后再改 right 不生效（并排时内容会被右栏盖住）
                     anchors.left: parent.left
                     anchors.top: parent.top
@@ -17134,10 +17313,15 @@ ApplicationWindow {
         onAccepted: newTaskRec.enterSplit([selectedFolder.toString()])
     }
 
-    // 诊断入口：MEDCLAW_SPLIT_OPEN=<目录> 启动即进入并排模式，便于截图核对
+    // 诊断入口：MEDCLAW_SPLIT_OPEN=<目录> 启动即进入并排模式，便于截图核对；
+    // 再用 MEDCLAW_SPLIT_SELECT=<文件1;文件2> 预置勾选，核对底部操作条
     Timer {
         running: splitAutoOpen !== undefined && String(splitAutoOpen).length > 0
         interval: 1200
-        onTriggered: newTaskRec.enterSplit([String(splitAutoOpen)])
+        onTriggered: {
+            newTaskRec.enterSplit([String(splitAutoOpen)])
+            if (splitAutoSelect !== undefined && String(splitAutoSelect).length > 0)
+                newTaskRec.splitSelection = String(splitAutoSelect).split(";")
+        }
     }
 }

@@ -17,6 +17,8 @@ Item {
     signal fileSelected(string path)
     /// 页面加载完成、嵌入模式已生效（宿主可以在这之后喂路径）
     signal fileTreeReady()
+    /// 勾选集合变化（路径数组）
+    signal selectionChanged(var paths)
 
     property string pageUrl: "qrc:/web/file-tree.html"
     /// 页面还没加载完时先记下来，加载完成后再送过去
@@ -108,6 +110,8 @@ Item {
                 }
                 if (payload.type === "openFile") {
                     root.fileSelected(String(payload.path || ""))
+                } else if (payload.type === "selection") {
+                    root.selectionChanged(payload.paths || [])
                 } else if (payload.type === "listDir") {
                     var result = fileTreeProvider.list(String(payload.path || ""),
                                                        Number(payload.offset) || 0,
