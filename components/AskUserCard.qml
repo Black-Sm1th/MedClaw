@@ -355,11 +355,12 @@ Item {
                 border.width: 1
                 border.color: selected ? "#006BFF" : "#E6E7EB"
 
+                // 单选：蓝序号（Poppins 14 w600 #006BFF）
                 Text {
                     id: optionIndex
 
-                    anchors.left: parent.left
-                    anchors.leftMargin: 8
+                    visible: !root.activeMulti
+                    x: 8
                     anchors.verticalCenter: parent.verticalCenter
                     text: String(optionRow.index + 1)
                     color: "#006BFF"
@@ -368,12 +369,56 @@ Item {
                     font.weight: Font.DemiBold
                 }
 
-                Text {
-                    anchors.left: optionIndex.right
-                    anchors.leftMargin: 8
-                    anchors.right: parent.right
-                    anchors.rightMargin: 8
+                // 多选：复选框（Figma 5305-59218）。槽位 24×24，方块 20×20 r5；
+                // 未选白底 + 1px 黑 @12% 描边，选中蓝底 + 白勾。
+                Item {
+                    id: checkSlot
+
+                    visible: root.activeMulti
+                    x: 8
                     anchors.verticalCenter: parent.verticalCenter
+                    width: 24
+                    height: 24
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 20
+                        height: 20
+                        radius: 5
+                        color: optionRow.selected ? "#006BFF" : "#FFFFFF"
+                        border.width: optionRow.selected ? 0 : 1
+                        border.color: "#1F000000"
+
+                        Canvas {
+                            anchors.centerIn: parent
+                            width: 12
+                            height: 12
+                            visible: optionRow.selected
+
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.reset()
+                                ctx.strokeStyle = "#FFFFFF"
+                                ctx.lineWidth = 1.6
+                                ctx.lineCap = "round"
+                                ctx.lineJoin = "round"
+                                ctx.beginPath()
+                                ctx.moveTo(1.5, 6.2)
+                                ctx.lineTo(4.6, 9.3)
+                                ctx.lineTo(10.5, 2.8)
+                                ctx.stroke()
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    // 起点留给序号/复选框，宽度撑到行尾（只锚右边界会让文字贴右）
+                    x: root.activeMulti
+                       ? checkSlot.x + checkSlot.width + 4
+                       : optionIndex.x + optionIndex.width + 8
+                    width: parent.width - x - 8
                     text: optionRow.label
                     color: "#D9000000"
                     font.family: "Alibaba PuHuiTi 3.0"
