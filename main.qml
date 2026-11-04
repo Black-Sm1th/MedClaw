@@ -7381,7 +7381,11 @@ ApplicationWindow {
                     x: Math.max(0, (availableWidth - width) / 2)
                     readonly property real devicePixelRatio: Screen.devicePixelRatio > 0
                                                                ? Screen.devicePixelRatio : 1.0
-                    readonly property real targetY: newTaskRec.isNewTaskWelcome
+                    // 新建任务页把输入框放在快捷卡片下方；并排视图里欢迎页是隐藏的，
+                    // 那套坐标就没有意义了，必须按对话布局压到底部。
+                    readonly property bool welcomeLayout: newTaskRec.isNewTaskWelcome
+                                                         && !newTaskRec.splitMode
+                    readonly property real targetY: welcomeLayout
                                                     ? shortcutTopRow.y + shortcutTopRow.height + 20
                                                     : newTaskRec.height - height - 24
                     // Keep the WebEngine-backed editor on physical-pixel boundaries.
