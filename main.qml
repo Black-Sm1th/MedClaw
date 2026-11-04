@@ -3763,9 +3763,9 @@ ApplicationWindow {
                         window.sidebarCollapsed = false
                     }
                 }
-                // 并排视图总开关：代码保留，暂时不在界面上启用。
-                // 需要恢复时把这里改成 true（拖文件夹 / Ctrl+Shift+W 会重新生效）。
-                readonly property bool splitViewEnabled: false
+                // 并排视图总开关：改 false 可以整套停用（代码保留），
+                // 拖文件夹 / Ctrl+Shift+W / 自动收起左侧导航都跟着一起失效。
+                readonly property bool splitViewEnabled: true
                 // 设计稿 1440 宽：对话 360、右栏 1080。
                 // 对话列按固定宽度（封顶 360），右栏吃掉剩余空间——这样收起左侧导航时
                 // 多出来的宽度全给右侧文件面板，而不是聊天区跟着变宽。
