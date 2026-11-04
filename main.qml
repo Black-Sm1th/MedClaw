@@ -3749,8 +3749,11 @@ ApplicationWindow {
                     if (!artifactSidebarVisible && splitMode)
                         exitSplit()
                 }
-                // 设计稿 1440 宽：对话 360、右栏 1080 → 25% : 75%
-                readonly property int splitPanelWidth: Math.max(420, Math.min(1120, Math.round(width * 0.72)))
+                // 设计稿 1440 宽：对话 360、右栏 1080。
+                // 对话列按固定宽度（封顶 360），右栏吃掉剩余空间——这样收起左侧导航时
+                // 多出来的宽度全给右侧文件面板，而不是聊天区跟着变宽。
+                readonly property int splitChatWidth: Math.max(280, Math.min(360, Math.round(width * 0.28)))
+                readonly property int splitPanelWidth: Math.max(360, width - splitChatWidth)
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
                 readonly property int artifactSidebarWidth: artifactSidebarVisible
