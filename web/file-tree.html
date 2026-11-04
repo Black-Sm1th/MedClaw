@@ -239,6 +239,10 @@
   var nextThumbId = 1;
   var flat = [];             // 扁平化的可见行，虚拟列表的数据源
   var selectedPath = null;
+  // 嵌入模式（工作区并排）与独立弹层（Ctrl+Shift+E）的点击语义不同：
+  //   嵌入：点文件夹=展开、点文件=勾选、点复选框=勾选
+  //   弹层：点文件=看预览（保持原有行为）
+  var embedMode = false;
   var selectedSet = new Set();   // 复选框勾选的卡片（蓝底）
   var fileCount = 0;
   var dirCount = 0;
@@ -369,13 +373,18 @@
     card.appendChild(thumb);
     card.appendChild(name);
     // 设计稿的卡片里只有名称，文件大小放到悬停提示里
-    if (!item.placeholder && node.kind === 'file' && node.size)
-      row.title = node.path + '  ·  ' + fmtSize(node.size);
+    // 名称已在行内，路径提示只在需要时给：嵌入模式下系统 tooltip 太吵，去掉
+
     row.appendChild(card);
 
-    if (!item.placeholder
-            && (node.path === selectedPath || selectedSet.has(node.path)))
-      row.classList.add('selected');
+    // 嵌入模式：勾选只体现在复选框上，整行不变蓝；
+    // 独立弹层保留原来的蓝底选中（设计稿 5263-58459）
+    if (!item.placeholder) {
+      var rowSelected = embedMode ? (node.path === selectedPath)
+                                  : (node.path === selectedPath || selectedSet.has(node.path));
+      if (rowSelected)
+        row.classList.add('selected');
+    }
     return row;
   }
 
@@ -493,20 +502,11 @@
   viewport.addEventListener('click', function (ev) {
     var row = ev.target.closest('.node-row');
     if (!row || !row.dataset.path) return;
-    // 复选框：只切换蓝底选中，不触发展开/预览
+    // 复选框：只切换勾选，不触发展开/预览
     if (ev.target.closest('.check')) {
       var checkNode = nodeIndex.get(row.dataset.path);
-      if (checkNode) {
-        var box = ev.target.closest('.check');
-        if (selectedSet.has(checkNode.path)) {
-          selectedSet.delete(checkNode.path);
-          box.classList.remove('checked');
-        } else {
-          selectedSet.add(checkNode.path);
-          box.classList.add('checked');
-        }
-        post({ type: 'selection', paths: Array.from(selectedSet) });
-      }
+      if (checkNode)
+        toggleCheck(checkNode.path, ev.target.closest('.check'));
       return;
     }
     var node = nodeIndex.get(row.dataset.path);
@@ -516,13 +516,31 @@
       return;
     }
     if (node.kind === 'dir') {
+      // 点文件夹 = 展开/折叠（要勾选文件夹请点它的复选框）
       toggleDir(node);
+    } else if (embedMode) {
+      // 并排里点文件 = 勾选/取消勾选
+      toggleCheck(node.path, row.querySelector('.check'));
     } else {
       selectedPath = node.path;
       showPreview(node);
       renderWindow();
     }
   });
+
+  /** 切换某个节点的勾选状态，并通知宿主 */
+  function toggleCheck(path, box) {
+    if (!path) return;
+    box = box || null;
+    if (selectedSet.has(path)) {
+      selectedSet.delete(path);
+      if (box) box.classList.remove('checked');
+    } else {
+      selectedSet.add(path);
+      if (box) box.classList.add('checked');
+    }
+    post({ type: 'selection', paths: Array.from(selectedSet) });
+  }
 
   // ── 展开 / 折叠 ─────────────────────────────────────
   function mountRoot(node) {
@@ -1033,7 +1051,8 @@
     selected: function () { return selectedPath; },
     /** 嵌入模式：隐藏头部/预览/底栏，只留树本身 */
     setEmbedMode: function (on) {
-      document.body.classList.toggle('embed', !!on);
+      embedMode = !!on;
+      document.body.classList.toggle('embed', embedMode);
       return true;
     },
     close: closePanel
