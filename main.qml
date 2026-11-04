@@ -3743,6 +3743,12 @@ ApplicationWindow {
                 // 右侧把「输入文件」树和「产物」一起摊开。
                 property bool splitMode: false
                 property var splitRoots: []
+                // 侧栏收起（例如切到新建任务、空会话自动收起）就等于退出并排，
+                // 否则 welcome 页会继续被隐藏，界面只剩一个输入框
+                onArtifactSidebarVisibleChanged: {
+                    if (!artifactSidebarVisible && splitMode)
+                        exitSplit()
+                }
                 // 设计稿 1440 宽：对话 360、右栏 1080 → 25% : 75%
                 readonly property int splitPanelWidth: Math.max(420, Math.min(1120, Math.round(width * 0.72)))
                 property string splitTab: "files"        // files | artifacts
@@ -5024,7 +5030,7 @@ ApplicationWindow {
                 Column{
                     id: titleCol
                     // 并排模式左栏是"对话列"，不再显示启动页（25% 宽放不下）
-                    visible: newTaskRec.isNewTaskWelcome && !newTaskRec.splitMode
+                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactSidebarVisible)
                     width: Math.min(840, Math.max(320, parent.width - 48))
                     spacing: 12
                     anchors.topMargin: 80
@@ -9683,7 +9689,7 @@ ApplicationWindow {
 
                 Item {
                     id: welcomeShortcutLayer
-                    visible: newTaskRec.isNewTaskWelcome && !newTaskRec.splitMode
+                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactSidebarVisible)
                     // 显式四条边：anchors.fill 之后再改 right 不生效（并排时内容会被右栏盖住）
                     anchors.left: parent.left
                     anchors.top: parent.top
