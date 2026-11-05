@@ -3833,7 +3833,8 @@ ApplicationWindow {
                         var files = group.files || []
                         for (var f = 0; f < files.length; ++f) {
                             rows.push({ name: files[f].name, path: files[f].path,
-                                        isDir: false, depth: 1 })
+                                        isDir: false, depth: 1,
+                                        last: f === files.length - 1 })
                         }
                     }
                     splitArtifactRows = rows
@@ -5615,9 +5616,7 @@ ApplicationWindow {
                                 anchors.left: parent.left
                                 anchors.leftMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: newTaskRec.splitArtifactRows.length > 0
-                                      ? qsTr("产物 (%1)").arg(newTaskRec.splitArtifactFileCount)
-                                      : qsTr("产物")
+                                text: qsTr("产物")
                                 color: "#D9000000"
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 16
@@ -5746,7 +5745,8 @@ ApplicationWindow {
                             anchors.topMargin: 12
                             anchors.bottomMargin: 12
                             clip: true
-                            spacing: 2
+                            // 设计稿：行高 24、行距 36（间距 12）
+                            spacing: 12
                             model: newTaskRec.splitArtifactRows
                             boundsBehavior: Flickable.StopAtBounds
 
@@ -5763,9 +5763,48 @@ ApplicationWindow {
                                 width: splitArtifactList.width
                                 height: 24
                                 radius: 8
-                                color: artifactRowMouse.containsMouse ? "#F4F6F9" : "transparent"
+                                color: "transparent"
 
-                                // 图标 20×20 + 名称 16px，左缩进每级 20（设计稿 5323-25666）
+                                // 缩进引导线（设计稿里每级一条细竖线，末项拐成 └）
+                                Repeater {
+                                    model: artifactRowItem.depth
+
+                                    delegate: Rectangle {
+                                        required property int index
+
+                                        readonly property bool isLastLevel:
+                                            index === artifactRowItem.depth - 1
+                                        readonly property bool lastChild:
+                                            artifactRowItem.modelData.last === true
+
+                                        x: 12 + index * 20
+                                        width: 1
+                                        y: 0
+                                        height: isLastLevel && lastChild
+                                                ? parent.height / 2 : parent.height
+                                        color: "#1F000000"
+                                    }
+                                }
+
+                                // 横向小尾巴，连到图标
+                                Rectangle {
+                                    visible: artifactRowItem.depth > 0
+                                    x: 12 + (artifactRowItem.depth - 1) * 20
+                                    width: 8
+                                    height: 1
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: "#1F000000"
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    anchors.topMargin: 0
+                                    radius: 8
+                                    color: artifactRowMouse.containsMouse ? "#F4F6F9" : "transparent"
+                                }
+
                                 Row {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 4 + artifactRowItem.depth * 20
@@ -5795,7 +5834,6 @@ ApplicationWindow {
                                     }
                                 }
 
-                                // 展开箭头在右侧（折叠 ›，展开 ˅）
                                 Canvas {
                                     visible: artifactRowItem.isDir
                                     anchors.right: parent.right
