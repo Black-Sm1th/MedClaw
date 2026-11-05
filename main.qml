@@ -3776,7 +3776,9 @@ ApplicationWindow {
                     ? 0
                     : Math.max(300, width - splitChatWidth - splitArtifactsWidth)
                 readonly property int splitPanelWidth: splitArtifactsWidth
-                property string splitMiddleTab: "files"   // files | reader
+                // 默认落在阅片台：工作区一打开就是 DICOM 查看器
+                property string splitMiddleTab: "reader"  // files | reader
+                readonly property bool splitReaderPage: splitMiddleTab === "reader"
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
                 property string splitArtifactFilter: "all"   // all | report | image
@@ -4290,6 +4292,8 @@ ApplicationWindow {
                     console.log("[MedicalOpen] path=" + path + " family=" + family)
                     var tabIndex = family === "jbrowse" ? findSessionViewerTab("jbrowse") : -1
                     var mergingJbrowse = tabIndex >= 0
+                    if (tabIndex < 0 && family !== "jbrowse")
+                        tabIndex = findMedicalHostTab()
                     var reloadExistingPreview = tabIndex >= 0
                     if (tabIndex < 0)
                         tabIndex = findOfficeTab(path)
@@ -4308,6 +4312,16 @@ ApplicationWindow {
                         tabIndex = officeTabs.count - 1
                         reloadExistingPreview = false
                         mergingJbrowse = false
+                    } else if (String(officeTabs.get(tabIndex).kind || "office") === "medical"
+                               && family !== "jbrowse") {
+                        // 复用同一个影像宿主：换文件而不是再开一个标签
+                        officeTabs.setProperty(tabIndex, "name",
+                                               String(file.name
+                                                      || path.split("/").pop()))
+                        officeTabs.setProperty(tabIndex, "path", path)
+                        officeTabs.setProperty(tabIndex, "extension",
+                                               String(file.extension || fileExtension(path)))
+                        reloadExistingPreview = true
                     } else if (String(officeTabs.get(tabIndex).kind || "office") !== "medical") {
                         // Keep a path unique per session while allowing a file
                         // previously opened by the office viewer to switch to
@@ -4318,6 +4332,7 @@ ApplicationWindow {
                         officeTabs.setProperty(tabIndex, "viewerFamily", "jbrowse")
                         officeTabs.setProperty(tabIndex, "name", "JBrowse 2")
                     }
+                    rememberMedicalPath(path, String(file.name || ""))
                     activateOfficeTab(tabIndex)
                     if (reloadExistingPreview) {
                         var reloadIndex = tabIndex
@@ -4336,6 +4351,62 @@ ApplicationWindow {
                                 officePreviewPending = false
                         })
                     }
+                }
+
+                /// 当前会话里那个"影像宿主"标签（DICOM 共用同一个查看器）
+                function findMedicalHostTab() {
+                    var key = currentSidebarSessionKey()
+                    for (var i = 0; i < officeTabs.count; ++i) {
+                        var tab = officeTabs.get(i)
+                        if (String(tab.kind || "") !== "medical")
+                            continue
+                        if (String(tab.viewerFamily || "") === "jbrowse")
+                            continue
+                        if (String(tab.sessionKey || "") !== key)
+                            continue
+                        return i
+                    }
+                    return -1
+                }
+
+                /// 中栏标签条要显示的标签：影像走阅片台，不在这里出标签
+                readonly property var visibleOfficeTabs: {
+                    var out = []
+                    for (var i = 0; i < officeTabs.count; ++i) {
+                        var tab = officeTabs.get(i)
+                        if (String(tab.kind || "") === "medical")
+                            continue
+                        if (String(tab.sessionKey || "")
+                                !== currentSidebarSessionKey())
+                            continue
+                        out.push({ index: i,
+                                   name: String(tab.name || ""),
+                                   path: String(tab.path || ""),
+                                   extension: String(tab.extension || "") })
+                    }
+                    return out
+                }
+
+                /// 阅片台里打开过的影像（喂给查看器内部缩略图条）
+                property var medicalHistory: []
+
+                function rememberMedicalPath(path, name) {
+                    var target = String(path || "")
+                    if (target.length === 0)
+                        return
+                    var list = (medicalHistory || []).slice(0)
+                    var found = -1
+                    for (var i = 0; i < list.length; ++i) {
+                        if (String(list[i].path || "") === target) {
+                            found = i
+                            break
+                        }
+                    }
+                    var entry = { path: target, name: String(name || target) }
+                    if (found >= 0)
+                        list.splice(found, 1)
+                    list.unshift(entry)
+                    medicalHistory = list
                 }
 
                 function isNeverOpenFile(file) {
@@ -4521,6 +4592,101 @@ ApplicationWindow {
                     return -1
                 }
 
+                /// 阅片台用：只挑出 kind==="medical" 的标签（带原下标）
+                readonly property var medicalTabs: {
+                    var out = []
+                    for (var i = 0; i < officeTabs.count; ++i) {
+                        var tab = officeTabs.get(i)
+                        if (String(tab.kind || "") !== "medical")
+                            continue
+                        if (String(tab.sessionKey || "") !== currentSidebarSessionKey())
+                            continue
+                        out.push({ index: i, name: String(tab.name || ""), path: String(tab.path || "") })
+                    }
+                    return out
+                }
+                readonly property int medicalTabCount: medicalTabs.length
+                property var readerThumbs: ({})
+
+                Connections {
+                    target: thumbnailer
+                    function onReady(requestId, path, dataUrl, width, height) {
+                        // 注意：Connections 里没有外层对象的隐式作用域，必须写 newTaskRec
+                        var key = String(path || "")
+                        if (key.length === 0)
+                            return
+                        var copy = {}
+                        for (var k in newTaskRec.readerThumbs)
+                            copy[k] = newTaskRec.readerThumbs[k]
+                        copy[key] = String(dataUrl || "")
+                        newTaskRec.readerThumbs = copy
+                    }
+                }
+
+                /// 喂给查看器内部缩略图条的数据（缩略图来自宿主 Thumbnailer）
+                function seriesStripItems() {
+                    var out = []
+                    var list = medicalHistory || []
+                    for (var i = 0; i < list.length; ++i) {
+                        out.push({ path: String(list[i].path || ""),
+                                   name: String(list[i].name || ""),
+                                   thumb: String(readerThumbs[String(list[i].path || "")] || "") })
+                    }
+                    return out
+                }
+
+                /// 把「已打开影像」列表推给当前激活的影像查看器
+                function syncReaderSeriesStrip() {
+                    var idx = activeOfficeTabIndex
+                    if (idx < 0 || idx >= officeTabs.count)
+                        return
+                    var tab = officeTabs.get(idx)
+                    if (String(tab.kind || "") !== "medical")
+                        return
+                    var host = officeViewsRepeater.itemAt(idx)
+                    if (!host || !host.officeView || !host.officeView.setSeriesStrip)
+                        return
+                    var items = seriesStripItems()
+                    console.log("[ReaderStrip] push " + items.length + " items, active="
+                                + String(tab.path || ""))
+                    host.officeView.setSeriesStrip(items, String(tab.path || ""))
+                }
+
+                /// 查看器内部缩略图被点击：在同一个查看器里打开那个文件
+                function activateMedicalPath(path) {
+                    var target = String(path || "")
+                    if (target.length === 0)
+                        return
+                    openMedicalImageFile({ path: target,
+                                           name: target.split("/").pop(),
+                                           extension: fileExtension(target) })
+                }
+
+                function requestReaderThumbs() {
+                    var list = medicalHistory || []
+                    for (var i = 0; i < list.length; ++i) {
+                        var path = String(list[i].path || "")
+                        if (path.length === 0 || readerThumbs[path])
+                            continue
+                        thumbnailer.request(path, path)
+                    }
+                }
+
+                onMedicalHistoryChanged: {
+                    requestReaderThumbs()
+                    Qt.callLater(syncReaderSeriesStrip)
+                }
+                onMedicalTabCountChanged: {
+                    requestReaderThumbs()
+                    Qt.callLater(syncReaderSeriesStrip)
+                }
+                onReaderThumbsChanged: Qt.callLater(syncReaderSeriesStrip)
+                onActiveOfficeTabIndexChanged: Qt.callLater(syncReaderSeriesStrip)
+                onSplitReaderPageChanged: {
+                    if (splitReaderPage && !splitMiddleCollapsed)
+                        requestReaderThumbs()
+                }
+
                 /// 确保三栏工作区已经展开（预览要显示在中栏，中栏得先在）
                 function ensureWorkspace() {
                     if (!splitViewEnabled || splitMode)
@@ -4545,7 +4711,11 @@ ApplicationWindow {
                     ensureWorkspace()
                     // 中栏收起时打开文件要自动展开，否则预览没有落点
                     splitMiddleCollapsed = false
+                    // DICOM/体数据统一走阅片台，其它文件走预览页
+                    splitMiddleTab = file.kind === "medical" ? "reader" : "files"
                     activeOfficeTabIndex = index
+                    if (file.kind === "medical")
+                        Qt.callLater(syncReaderSeriesStrip)
                     selectedOfficeFile = file
                     officeMoreMenuVisible = false
                     officeEditPending = false
@@ -5570,21 +5740,23 @@ ApplicationWindow {
                                 }
                             }
 
-                            // 已打开文件的标签（和右侧预览共用 officeTabs）
+                            // 已打开文件的标签（影像走阅片台，不在这里出标签）
                             Repeater {
-                                model: newTaskRec.officeTabs
+                                model: newTaskRec.visibleOfficeTabs
 
                                 delegate: Rectangle {
                                     id: middleFileTab
 
-                                    required property int index
-                                    required property string name
-                                    required property string path
-                                    required property string extension
-                                    required property string kind
+                                    required property var modelData
+
+                                    readonly property int tabIndex: modelData.index
+                                    readonly property string name: String(modelData.name || "")
+                                    readonly property string path: String(modelData.path || "")
+                                    readonly property string extension:
+                                        String(modelData.extension || "")
 
                                     readonly property bool active:
-                                        newTaskRec.activeOfficeTabIndex === index
+                                        newTaskRec.activeOfficeTabIndex === tabIndex
 
                                     width: Math.min(200, middleFileLabel.implicitWidth + 62)
                                     height: 28
@@ -5626,7 +5798,7 @@ ApplicationWindow {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: newTaskRec.activateOfficeTab(middleFileTab.index)
+                                        onClicked: newTaskRec.activateOfficeTab(middleFileTab.tabIndex)
                                     }
 
                                     Text {
@@ -5642,7 +5814,7 @@ ApplicationWindow {
                                             anchors.margins: -6
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
-                                                newTaskRec.closeOfficeTab(middleFileTab.index)
+                                                newTaskRec.closeOfficeTab(middleFileTab.tabIndex)
                                                 if (newTaskRec.activeOfficeTabIndex < 0)
                                                     newTaskRec.artifactSidebarMode = "list"
                                             }
@@ -5719,18 +5891,47 @@ ApplicationWindow {
                         onFileTreeReady: openPaths(newTaskRec.splitRoots)
                     }
 
-                    Text {
+                    Column {
                         anchors.centerIn: parent
-                        width: parent.width - 48
+                        width: Math.min(360, parent.width - 48)
+                        spacing: 12
                         visible: newTaskRec.splitMiddleTab === "reader"
                                  && newTaskRec.activeOfficeTabIndex < 0
-                        text: qsTr("还没有打开影像
-在「输入文件」里双击 DICOM 序列或 .nii/.mgz 即可在右侧查看")
-                        color: "#40000000"
-                        font.family: "Alibaba PuHuiTi 3.0"
-                        font.pixelSize: 13
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.Wrap
+
+                        Text {
+                            width: parent.width
+                            text: qsTr("还没有打开影像
+在「输入文件」里双击 DICOM 序列或 .nii/.mgz，就会在这里打开")
+                            color: "#40000000"
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                        }
+
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 132
+                            height: 32
+                            radius: 8
+                            color: openFilesMouse.containsMouse ? "#0058D6" : "#006BFF"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: qsTr("去输入文件选择")
+                                color: "#FFFFFF"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                id: openFilesMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: newTaskRec.splitMiddleTab = "files"
+                            }
+                        }
                     }
 
                     Connections {
@@ -5744,6 +5945,7 @@ ApplicationWindow {
                     Text {
                         anchors.centerIn: parent
                         visible: newTaskRec.splitRoots.length === 0
+                                 && newTaskRec.splitMiddleTab === "files"
                         text: qsTr("把一个文件夹拖到对话里，或按 Ctrl+Shift+W 选择")
                         color: "#40000000"
                         font.family: "Alibaba PuHuiTi 3.0"
@@ -6044,6 +6246,8 @@ ApplicationWindow {
 
                         Rectangle {
                             id: officeTitleBar
+                            // 阅片台页顶上是序列条，不再显示文件名标题栏
+                            visible: !newTaskRec.splitReaderPage
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
@@ -6326,7 +6530,29 @@ ApplicationWindow {
                                 anchors.top: officeTitleBar.bottom
                                 anchors.bottom: parent.bottom
                                 clip: true
+                                // 阅片台页只显示影像，预览页只显示文档
                                 visible: active
+                                         && (newTaskRec.splitReaderPage
+                                             ? kind === "medical"
+                                             : kind !== "medical")
+
+                                Connections {
+                                    target: officeViewHost.officeView
+                                    function onSeriesPicked(path) {
+                                        newTaskRec.activateMedicalPath(path)
+                                    }
+                                }
+
+                                // 查看器实例就绪后补推一次缩略图条
+                                // （激活标签那一刻 officeView 可能还是 null）
+                                Connections {
+                                    target: officeViewHost
+                                    function onOfficeViewChanged() {
+                                        if (officeViewHost.active
+                                                && String(officeViewHost.kind || "") === "medical")
+                                            newTaskRec.syncReaderSeriesStrip()
+                                    }
+                                }
 
                                 Rectangle {
                                     id: staleFileBanner
@@ -17758,8 +17984,15 @@ ApplicationWindow {
             }
             if (splitAutoTab !== undefined && String(splitAutoTab).length > 0)
                 newTaskRec.splitTab = String(splitAutoTab)
-            if (splitAutoOpenFile !== undefined && String(splitAutoOpenFile).length > 0)
-                newTaskRec.openArtifactPath(String(splitAutoOpenFile))
+            if (splitAutoOpenFile !== undefined && String(splitAutoOpenFile).length > 0) {
+                // 支持用「;」一次打开多个，便于核对阅片台里的缩略图条
+                var openParts = String(splitAutoOpenFile).split(";")
+                for (var op = 0; op < openParts.length; ++op) {
+                    var opPath = String(openParts[op] || "")
+                    if (opPath.length > 0)
+                        newTaskRec.openArtifactPath(opPath)
+                }
+            }
 
         }
     }

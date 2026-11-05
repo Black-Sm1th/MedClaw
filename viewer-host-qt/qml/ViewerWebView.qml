@@ -10,6 +10,8 @@ WebEngineView {
     signal viewerLoadFailed(string message)
     signal viewerLoaded()
     signal saveAsUnavailable()
+    /// 查看器内部（例如顶部序列缩略图条）要求切换文件
+    signal medviewPicked(string path)
     property var popupViews: []
     property int currentPopupTab: -1
 
@@ -181,6 +183,17 @@ WebEngineView {
     }
 
     onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceId) {
+        var pickPrefix = "MEDCLAW_MEDVIEW:"
+        if (message.indexOf(pickPrefix) === 0) {
+            try {
+                var payload = JSON.parse(message.substring(pickPrefix.length))
+                if (payload && payload.type === "select")
+                    viewer.medviewPicked(String(payload.path || ""))
+            } catch (error) {
+                console.log("[ViewerWeb] bad medview payload", message)
+            }
+            return
+        }
         console.log("[ViewerWeb]", level, sourceId, lineNumber, message)
     }
 
