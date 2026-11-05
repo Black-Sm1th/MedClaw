@@ -5825,42 +5825,6 @@ ApplicationWindow {
                             }
                         }
 
-                        // 产物面板开关（关掉后可以从这里再打开）
-                        Rectangle {
-                            id: artifactsPanelToggle
-
-                            anchors.right: splitMiddleLayoutButton.left
-                            anchors.rightMargin: 4
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: artifactsToggleLabel.implicitWidth + 20
-                            height: 28
-                            radius: 6
-                            color: newTaskRec.artifactPanelVisible ? "#EBEDF0"
-                                 : (artifactsToggleMouse.containsMouse ? "#F4F6F9" : "transparent")
-
-                            Text {
-                                id: artifactsToggleLabel
-                                anchors.centerIn: parent
-                                text: qsTr("产物")
-                                color: newTaskRec.artifactPanelVisible ? "#D9000000" : "#73000000"
-                                font.family: "Alibaba PuHuiTi 3.0"
-                                font.pixelSize: 13
-                            }
-
-                            MouseArea {
-                                id: artifactsToggleMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: newTaskRec.artifactSidebarVisible
-                                           = !newTaskRec.artifactSidebarVisible
-                            }
-
-                            ToolTip.visible: artifactsToggleMouse.containsMouse
-                            ToolTip.text: newTaskRec.artifactPanelVisible
-                                          ? qsTr("收起产物面板") : qsTr("展开产物面板")
-                        }
-
                         // 右侧：分栏图标（当前用于退出并排）
                         Rectangle {
                             id: splitMiddleLayoutButton
