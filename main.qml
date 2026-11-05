@@ -3745,10 +3745,9 @@ ApplicationWindow {
                 // 右侧把「输入文件」树和「产物」一起摊开。
                 property bool splitMode: false
                 property var splitRoots: []
-                // 侧栏收起（例如切到新建任务、空会话自动收起）就等于退出并排，
-                // 否则 welcome 页会继续被隐藏，界面只剩一个输入框
-                onArtifactSidebarVisibleChanged: {
-                    if (!artifactSidebarVisible && splitMode)
+                // 只有"回到新建任务页"才退出并排；面板被历史快照临时关掉不算
+                onIsNewTaskWelcomeChanged: {
+                    if (isNewTaskWelcome && splitMode)
                         exitSplit()
                 }
                 // 右栏占满剩余宽度时，左侧导航留着只会挤占对话列
@@ -3773,7 +3772,11 @@ ApplicationWindow {
                 readonly property int splitPanelWidth: Math.max(360, width - splitChatWidth)
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
-                readonly property int artifactSidebarWidth: artifactSidebarVisible
+                // 回答结束会重载历史，并按"离开会话时的快照"重放面板可见性，
+                // 那一下会把 artifactSidebarVisible 改回 false。并排期间不能让它生效，
+                // 否则刚展开的文件面板会被收掉、聊天区自动变回大屏。
+                readonly property bool artifactPanelVisible: artifactSidebarVisible || splitMode
+                readonly property int artifactSidebarWidth: artifactPanelVisible
                     ? (splitMode ? splitPanelWidth
                        : (officePanelMaximized ? width
                           : (officeDocumentVisible ? officePreviewWidth : 300)))
@@ -3924,6 +3927,13 @@ ApplicationWindow {
                     sidebarStateSessionKey = key
                     sessionInputFiles = wsClient.currentSessionInputFiles()
                     rebuildSessionArtifacts()
+                    // 并排视图期间：只刷新数据，不重放面板快照。
+                    // 回答结束会触发一次历史重载，重放会把面板切走/收起，
+                    // 表现就是"AI 答完又跳回大屏"。
+                    if (splitMode) {
+                        sessionHistoryLoading = false
+                        return
+                    }
                     if (showingOpenFile) {
                         sessionHistoryLoading = false
                         return
@@ -5052,7 +5062,7 @@ ApplicationWindow {
                 Column{
                     id: titleCol
                     // 并排模式左栏是"对话列"，不再显示启动页（25% 宽放不下）
-                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactSidebarVisible)
+                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactPanelVisible)
                     width: Math.min(840, Math.max(320, parent.width - 48))
                     spacing: 12
                     anchors.topMargin: 80
@@ -5156,7 +5166,7 @@ ApplicationWindow {
                     anchors.bottom: chatInputContainer.top
                     anchors.bottomMargin: 8
                     anchors.left: parent.left
-                    anchors.right: newTaskRec.artifactSidebarVisible ? artifactSidebar.left : parent.right
+                    anchors.right: newTaskRec.artifactPanelVisible ? artifactSidebar.left : parent.right
                     model: chatModel
                     conversationRunning: wsClient.chatRunning
                     conversationEndLabel: {
@@ -5250,7 +5260,7 @@ ApplicationWindow {
 
                 Rectangle {
                     id: artifactSidebar
-                    visible: newTaskRec.artifactSidebarVisible
+                    visible: newTaskRec.artifactPanelVisible
                     width: newTaskRec.artifactSidebarWidth
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
@@ -9729,7 +9739,7 @@ ApplicationWindow {
 
                 Item {
                     id: welcomeShortcutLayer
-                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactSidebarVisible)
+                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactPanelVisible)
                     // 显式四条边：anchors.fill 之后再改 right 不生效（并排时内容会被右栏盖住）
                     anchors.left: parent.left
                     anchors.top: parent.top
