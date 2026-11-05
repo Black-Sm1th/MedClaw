@@ -6607,7 +6607,7 @@ ApplicationWindow {
                                 id: splitCloseButton
 
                                 anchors.right: parent.right
-                                anchors.rightMargin: 16
+                                anchors.rightMargin: 14
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 20
                                 height: 20
@@ -6616,8 +6616,8 @@ ApplicationWindow {
 
                                 Canvas {
                                     anchors.centerIn: parent
-                                    width: 20
-                                    height: 20
+                                    width: 16
+                                    height: 16
 
                                     onPaint: {
                                         var ctx = getContext("2d")
@@ -6626,10 +6626,10 @@ ApplicationWindow {
                                         ctx.lineWidth = 1.4
                                         ctx.lineCap = "round"
                                         ctx.beginPath()
-                                        ctx.moveTo(3.5, 3.5)
-                                        ctx.lineTo(12.5, 12.5)
-                                        ctx.moveTo(12.5, 3.5)
-                                        ctx.lineTo(3.5, 12.5)
+                                        ctx.moveTo(2.5, 2.5)
+                                        ctx.lineTo(13.5, 13.5)
+                                        ctx.moveTo(13.5, 2.5)
+                                        ctx.lineTo(2.5, 13.5)
                                         ctx.stroke()
                                     }
                                 }
@@ -6658,7 +6658,7 @@ ApplicationWindow {
                             id: artifactFilters
 
                             anchors.left: parent.left
-                            anchors.leftMargin: 12
+                            anchors.leftMargin: 16
                             anchors.top: splitArtifactsHeader.bottom
                             spacing: 8
 
@@ -6720,7 +6720,7 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.top: artifactFilters.bottom
                             anchors.bottom: parent.bottom
-                            anchors.leftMargin: 8
+                            anchors.leftMargin: 16
                             anchors.rightMargin: 8
                             anchors.topMargin: 12
                             anchors.bottomMargin: 12
@@ -6757,7 +6757,7 @@ ApplicationWindow {
                                         readonly property bool lastChild:
                                             artifactRowItem.modelData.last === true
 
-                                        x: 12 + index * 20
+                                        x: 4 + index * 20
                                         width: 1
                                         y: 0
                                         height: isLastLevel && lastChild
@@ -6769,8 +6769,8 @@ ApplicationWindow {
                                 // 横向小尾巴，连到图标
                                 Rectangle {
                                     visible: artifactRowItem.depth > 0
-                                    x: 12 + (artifactRowItem.depth - 1) * 20
-                                    width: 8
+                                    x: 4 + (artifactRowItem.depth - 1) * 20
+                                    width: 16
                                     height: 1
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: "#1F000000"
@@ -6787,7 +6787,7 @@ ApplicationWindow {
 
                                 Row {
                                     anchors.left: parent.left
-                                    anchors.leftMargin: 4 + artifactRowItem.depth * 20
+                                    anchors.leftMargin: artifactRowItem.depth * 20
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: 4
 
