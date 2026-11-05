@@ -3773,6 +3773,7 @@ ApplicationWindow {
                 readonly property int splitArtifactsWidth: Math.max(260, Math.min(360, Math.round(width * 0.2)))
                 readonly property int splitFilesWidth: Math.max(300, width - splitChatWidth - splitArtifactsWidth)
                 readonly property int splitPanelWidth: splitArtifactsWidth
+                property string splitMiddleTab: "files"   // files | reader
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
                 property string splitArtifactFilter: "all"   // all | report | image
@@ -5447,15 +5448,195 @@ ApplicationWindow {
                         anchors.top: parent.top
                         height: 52
 
-                        Text {
+                        Row {
+                            id: splitMiddleTabs
+
                             anchors.left: parent.left
-                            anchors.leftMargin: 16
+                            anchors.leftMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("输入文件")
-                            color: "#D9000000"
-                            font.family: "Alibaba PuHuiTi 3.0"
-                            font.pixelSize: 15
-                            font.weight: Font.DemiBold
+                            spacing: 4
+
+                            // 固定标签：输入文件 / 阅片台
+                            Repeater {
+                                model: [
+                                    { key: "files", label: qsTr("输入文件") },
+                                    { key: "reader", label: qsTr("阅片台") }
+                                ]
+
+                                delegate: Rectangle {
+                                    id: middleFixedTab
+
+                                    required property var modelData
+
+                                    readonly property bool active:
+                                        newTaskRec.splitMiddleTab === modelData.key
+                                        && newTaskRec.activeOfficeTabIndex < 0
+
+                                    width: middleFixedLabel.implicitWidth + 24
+                                    height: 28
+                                    radius: 6
+                                    color: active ? "#EBEDF0"
+                                                  : (middleFixedMouse.containsMouse ? "#F4F6F9" : "transparent")
+
+                                    Text {
+                                        id: middleFixedLabel
+                                        anchors.centerIn: parent
+                                        text: middleFixedTab.modelData.label
+                                        color: middleFixedTab.active ? "#D9000000" : "#73000000"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 14
+                                        font.weight: middleFixedTab.active
+                                                     ? Font.Medium : Font.Normal
+                                    }
+
+                                    MouseArea {
+                                        id: middleFixedMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            var key = middleFixedTab.modelData.key
+                                            newTaskRec.splitMiddleTab = key
+                                            if (key === "reader") {
+                                                // 有影像标签就切到最近一个，右侧显示查看器
+                                                var last = -1
+                                                for (var i = 0; i < newTaskRec.officeTabs.count; ++i) {
+                                                    if (String(newTaskRec.officeTabs.get(i).kind
+                                                               || "") === "medical")
+                                                        last = i
+                                                }
+                                                if (last >= 0)
+                                                    newTaskRec.activateOfficeTab(last)
+                                                else
+                                                    newTaskRec.activeOfficeTabIndex = -1
+                                            } else {
+                                                newTaskRec.activeOfficeTabIndex = -1
+                                                newTaskRec.artifactSidebarMode = "list"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 已打开文件的标签（和右侧预览共用 officeTabs）
+                            Repeater {
+                                model: newTaskRec.officeTabs
+
+                                delegate: Rectangle {
+                                    id: middleFileTab
+
+                                    required property int index
+                                    required property string name
+                                    required property string path
+                                    required property string extension
+                                    required property string kind
+
+                                    readonly property bool active:
+                                        newTaskRec.activeOfficeTabIndex === index
+
+                                    width: Math.min(200, middleFileLabel.implicitWidth + 62)
+                                    height: 28
+                                    radius: 6
+                                    color: active ? "#EBEDF0"
+                                                  : (middleFileMouse.containsMouse ? "#F4F6F9" : "transparent")
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 8
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 4
+
+                                        Image {
+                                            width: 16
+                                            height: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            source: newTaskRec.artifactIcon(
+                                                        { name: middleFileTab.name,
+                                                          path: middleFileTab.path,
+                                                          extension: middleFileTab.extension })
+                                            fillMode: Image.PreserveAspectFit
+                                        }
+
+                                        Text {
+                                            id: middleFileLabel
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: Math.max(0, middleFileTab.width - 54)
+                                            text: middleFileTab.name
+                                            color: "#D9000000"
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 14
+                                            elide: Text.ElideMiddle
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: middleFileMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.activateOfficeTab(middleFileTab.index)
+                                    }
+
+                                    Text {
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 8
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "×"
+                                        color: "#73000000"
+                                        font.pixelSize: 15
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            anchors.margins: -6
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                newTaskRec.closeOfficeTab(middleFileTab.index)
+                                                if (newTaskRec.activeOfficeTabIndex < 0)
+                                                    newTaskRec.artifactSidebarMode = "list"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 右侧：分栏图标（当前用于退出并排）
+                        Rectangle {
+                            id: splitMiddleLayoutButton
+
+                            anchors.right: parent.right
+                            anchors.rightMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 28
+                            height: 28
+                            radius: 6
+                            color: splitLayoutMouse.containsMouse ? "#F4F6F9" : "transparent"
+
+                            Canvas {
+                                anchors.centerIn: parent
+                                width: 16
+                                height: 16
+
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = "#8A000000"
+                                    ctx.lineWidth = 1.2
+                                    ctx.strokeRect(2.5, 3.5, 11, 9)
+                                    ctx.beginPath()
+                                    ctx.moveTo(8, 3.5)
+                                    ctx.lineTo(8, 12.5)
+                                    ctx.stroke()
+                                }
+                            }
+
+                            MouseArea {
+                                id: splitLayoutMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: newTaskRec.exitSplit()
+                            }
                         }
 
                         Rectangle {
@@ -5465,6 +5646,7 @@ ApplicationWindow {
                             height: 1
                             color: "#0F000000"
                         }
+
                     }
 
                     InputFileTree {
@@ -5484,7 +5666,22 @@ ApplicationWindow {
                         onSelectionChanged: function(paths) {
                             newTaskRec.splitSelection = paths
                         }
+                        visible: newTaskRec.splitMiddleTab === "files"
                         onFileTreeReady: openPaths(newTaskRec.splitRoots)
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 48
+                        visible: newTaskRec.splitMiddleTab === "reader"
+                                 && newTaskRec.activeOfficeTabIndex < 0
+                        text: qsTr("还没有打开影像
+在「输入文件」里双击 DICOM 序列或 .nii/.mgz 即可在右侧查看")
+                        color: "#40000000"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 13
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
                     }
 
                     Connections {
@@ -5906,10 +6103,13 @@ ApplicationWindow {
 
                         Rectangle {
                             id: officeTabsBar
+                            // 标签已经移到中栏头部（输入文件 / 阅片台 / 已打开文件），
+                            // 右侧只留预览内容，不再重复一套标签
+                            visible: false
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            height: 52
+                            height: 0
                             color: "#FFFFFF"
 
                             Rectangle {
@@ -6188,7 +6388,7 @@ ApplicationWindow {
                             id: officeTitleBar
                             anchors.left: parent.left
                             anchors.right: parent.right
-                            anchors.top: officeTabsBar.bottom
+                            anchors.top: parent.top
                             height: 52
                             color: "#FFFFFF"
 
@@ -17455,6 +17655,8 @@ ApplicationWindow {
             }
             if (splitAutoTab !== undefined && String(splitAutoTab).length > 0)
                 newTaskRec.splitTab = String(splitAutoTab)
+            if (splitAutoOpenFile !== undefined && String(splitAutoOpenFile).length > 0)
+                newTaskRec.openArtifactPath(String(splitAutoOpenFile))
         }
     }
 }

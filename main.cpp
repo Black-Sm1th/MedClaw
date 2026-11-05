@@ -595,6 +595,9 @@ int main(int argc, char *argv[])
                                              qEnvironmentVariable("MEDCLAW_SPLIT_TAB"));
     engine.rootContext()->setContextProperty(QStringLiteral("splitAutoArtifacts"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_ARTIFACTS"));
+    // 诊断用：MEDCLAW_SPLIT_OPEN_FILE=<文件> 启动后在并排里打开这个文件（核对标签与预览）
+    engine.rootContext()->setContextProperty(QStringLiteral("splitAutoOpenFile"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_OPEN_FILE"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");
