@@ -3769,9 +3769,152 @@ ApplicationWindow {
                 // 对话列按固定宽度（封顶 360），右栏吃掉剩余空间——这样收起左侧导航时
                 // 多出来的宽度全给右侧文件面板，而不是聊天区跟着变宽。
                 readonly property int splitChatWidth: Math.max(280, Math.min(360, Math.round(width * 0.28)))
-                readonly property int splitPanelWidth: Math.max(360, width - splitChatWidth)
+                // 三栏：对话（固定）| 输入文件 | 产物（右侧栏）
+                readonly property int splitArtifactsWidth: Math.max(260, Math.min(360, Math.round(width * 0.2)))
+                readonly property int splitFilesWidth: Math.max(300, width - splitChatWidth - splitArtifactsWidth)
+                readonly property int splitPanelWidth: splitArtifactsWidth
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
+                property string splitArtifactFilter: "all"   // all | report | image
+                property var splitArtifactGroups: []         // 产物按文件夹分组的数据
+                property var splitArtifactCollapsed: ({})    // 折叠的产物文件夹
+                property var splitArtifactRows: []           // 展平后的列表行
+
+                readonly property int splitArtifactFileCount: {
+                    var n = 0
+                    var groups = splitArtifactGroups || []
+                    for (var g = 0; g < groups.length; ++g)
+                        n += (groups[g].files || []).length
+                    return n
+                }
+
+                /// 只有真的存在该类产物时才显示对应筛选胶囊
+                readonly property var splitArtifactFilterChips: {
+                    var chips = [{ key: "all", label: qsTr("全部") }]
+                    if (countArtifactsByFilter("report") > 0)
+                        chips.push({ key: "report", label: qsTr("报告") })
+                    if (countArtifactsByFilter("image") > 0)
+                        chips.push({ key: "image", label: qsTr("关键图像") })
+                    return chips
+                }
+
+                function artifactEntryName(entry) {
+                    var path = String((entry && entry.path) || "")
+                    var cut = Math.max(path.lastIndexOf("/"),
+                                       path.lastIndexOf(String.fromCharCode(92)))
+                    var name = String((entry && entry.name) || "")
+                    if (name.length === 0)
+                        name = cut >= 0 ? path.slice(cut + 1) : path
+                    return name
+                }
+
+                function countArtifactsByFilter(filter) {
+                    var items = sessionArtifacts || []
+                    var n = 0
+                    for (var i = 0; i < items.length; ++i) {
+                        var name = artifactEntryName(items[i])
+                        if (name.length > 0 && artifactMatchesFilter(name, filter))
+                            ++n
+                    }
+                    return n
+                }
+
+                function rebuildArtifactRows() {
+                    var rows = []
+                    var groups = splitArtifactGroups || []
+                    for (var g = 0; g < groups.length; ++g) {
+                        var group = groups[g]
+                        var key = String(group.path || group.name)
+                        var collapsed = splitArtifactCollapsed[key] === true
+                        rows.push({ name: group.name, path: key, isDir: true,
+                                    depth: 0, collapsed: collapsed })
+                        if (collapsed)
+                            continue
+                        var files = group.files || []
+                        for (var f = 0; f < files.length; ++f) {
+                            rows.push({ name: files[f].name, path: files[f].path,
+                                        isDir: false, depth: 1 })
+                        }
+                    }
+                    splitArtifactRows = rows
+                }
+
+                function toggleArtifactFolder(path) {
+                    var copy = {}
+                    for (var key in splitArtifactCollapsed)
+                        copy[key] = splitArtifactCollapsed[key]
+                    copy[path] = !(splitArtifactCollapsed[path] === true)
+                    splitArtifactCollapsed = copy
+                    rebuildArtifactRows()
+                }
+
+                /// 产物的分组：按所在目录归类，交给文件树页面按"文件夹形式"渲染
+                function buildArtifactGroups(filter) {
+                    var items = sessionArtifacts || []
+                    var groups = []
+                    var byDir = ({})
+                    for (var i = 0; i < items.length; ++i) {
+                        var entry = items[i] || {}
+                        var path = String(entry.path || "")
+                        if (path.length === 0)
+                            continue
+                        var sep = String.fromCharCode(92)
+                        var cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf(sep))
+                        var name = String(entry.name || "")
+                        if (name.length === 0)
+                            name = cut >= 0 ? path.slice(cut + 1) : path
+                        if (!artifactMatchesFilter(name, filter))
+                            continue
+                        var dir = cut > 0 ? path.slice(0, cut) : ""
+                        var dirCut = Math.max(dir.lastIndexOf("/"), dir.lastIndexOf(sep))
+                        var dirName = dir.length > 0
+                                ? (dirCut >= 0 ? dir.slice(dirCut + 1) : dir)
+                                : qsTr("产物")
+                        if (!byDir[dir]) {
+                            byDir[dir] = { name: dirName,
+                                           path: dir.length > 0 ? dir : dirName,
+                                           files: [] }
+                            groups.push(byDir[dir])
+                        }
+                        byDir[dir].files.push({ name: name, path: path })
+                    }
+                    return groups
+                }
+
+                function artifactExtension(name) {
+                    var lower = String(name).toLowerCase()
+                    if (lower.slice(-7) === ".nii.gz")
+                        return "nii.gz"
+                    var dot = lower.lastIndexOf(".")
+                    return dot >= 0 ? lower.slice(dot + 1) : ""
+                }
+
+                function artifactMatchesFilter(name, filter) {
+                    if (filter === "all" || !filter)
+                        return true
+                    var ext = artifactExtension(name)
+                    if (filter === "report")
+                        return ["md", "doc", "docx", "pdf", "html", "htm",
+                                "txt", "ppt", "pptx", "xls", "xlsx"].indexOf(ext) >= 0
+                    if (filter === "image")
+                        return ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg",
+                                "nii", "nii.gz", "mgz", "mgh", "dcm", "dicom", "npy"].indexOf(ext) >= 0
+                    return true
+                }
+
+                function refreshArtifactGroups() {
+                    // 当前筛选项已经没有内容了（例如换了会话）→ 回到「全部」
+                    if (splitArtifactFilter !== "all"
+                            && countArtifactsByFilter(splitArtifactFilter) === 0) {
+                        splitArtifactFilter = "all"
+                        return
+                    }
+                    splitArtifactGroups = buildArtifactGroups(splitArtifactFilter)
+                    rebuildArtifactRows()
+                }
+
+                onSplitArtifactFilterChanged: refreshArtifactGroups()
+                onSessionArtifactsChanged: refreshArtifactGroups()
                 // 回答结束会重载历史，并按"离开会话时的快照"重放面板可见性，
                 // 那一下会把 artifactSidebarVisible 改回 false。并排期间不能让它生效，
                 // 否则刚展开的文件面板会被收掉、聊天区自动变回大屏。
@@ -3796,6 +3939,7 @@ ApplicationWindow {
                     splitRoots = list
                     splitSelection = []
                     splitTab = "files"
+                    refreshArtifactGroups()
                     splitMode = true
                     artifactSidebarMode = "list"
                     artifactSidebarVisible = true
@@ -5166,7 +5310,9 @@ ApplicationWindow {
                     anchors.bottom: chatInputContainer.top
                     anchors.bottomMargin: 8
                     anchors.left: parent.left
-                    anchors.right: newTaskRec.artifactPanelVisible ? artifactSidebar.left : parent.right
+                    anchors.right: newTaskRec.splitMode
+                                    ? splitFilesPanel.left
+                                    : (newTaskRec.artifactPanelVisible ? artifactSidebar.left : parent.right)
                     model: chatModel
                     conversationRunning: wsClient.chatRunning
                     conversationEndLabel: {
@@ -5255,6 +5401,174 @@ ApplicationWindow {
                     onSkipped: function(id) {
                         chatModel.resolveQuestion(id, "skipped", "")
                         wsClient.skipQuestion(id)
+                    }
+                }
+
+                // ── 中间栏：输入文件（文件夹树，带连接线）─────────────────
+                Rectangle {
+                    id: splitFilesPanel
+
+                    visible: newTaskRec.splitMode
+                    width: newTaskRec.splitFilesWidth
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.right: artifactSidebar.left
+                    color: "#FFFFFF"
+
+                    Rectangle {
+                        width: 1
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        color: "#14000000"
+                    }
+
+                    Item {
+                        id: splitFilesHeader
+
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: 52
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("输入文件")
+                            color: "#D9000000"
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 1
+                            color: "#0F000000"
+                        }
+                    }
+
+                    InputFileTree {
+                        id: splitTree
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: splitFilesHeader.bottom
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        anchors.topMargin: 4
+                        anchors.bottomMargin: 76
+
+                        onFileSelected: function(path) {
+                            newTaskRec.openArtifactPath(path)
+                        }
+                        onSelectionChanged: function(paths) {
+                            newTaskRec.splitSelection = paths
+                        }
+                        onFileTreeReady: openPaths(newTaskRec.splitRoots)
+                    }
+
+                    Connections {
+                        target: newTaskRec
+                        function onSplitRootsChanged() {
+                            if (newTaskRec.splitMode)
+                                splitTree.openPaths(newTaskRec.splitRoots)
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: newTaskRec.splitRoots.length === 0
+                        text: qsTr("把一个文件夹拖到对话里，或按 Ctrl+Shift+W 选择")
+                        color: "#40000000"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 13
+                    }
+
+                    // 选择操作条
+                    Rectangle {
+                        id: splitActionBar
+
+                        visible: newTaskRec.splitSelection.length > 0
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 16
+                        width: Math.min(parent.width - 24, splitActionRow.implicitWidth + 24)
+                        height: 48
+                        radius: 8
+                        color: "#FFFFFF"
+                        border.width: 1
+                        border.color: "#E6E7EB"
+
+                        Row {
+                            id: splitActionRow
+
+                            anchors.centerIn: parent
+                            spacing: 12
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("已选 %1 个").arg(newTaskRec.splitSelection.length)
+                                color: "#D9000000"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 14
+                            }
+
+                            Rectangle {
+                                width: splitOpenLabel.implicitWidth + 28
+                                height: 32
+                                radius: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: splitOpenMouse.containsMouse ? "#F4F6F9" : "#FFFFFF"
+                                border.width: 1
+                                border.color: "#E6E7EB"
+
+                                Text {
+                                    id: splitOpenLabel
+                                    anchors.centerIn: parent
+                                    text: qsTr("在阅片台打开")
+                                    color: "#D9000000"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 14
+                                }
+
+                                MouseArea {
+                                    id: splitOpenMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.openSplitSelectionInViewer()
+                                }
+                            }
+
+                            Rectangle {
+                                width: splitReferenceLabel.implicitWidth + 28
+                                height: 32
+                                radius: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: splitReferenceMouse.containsMouse ? "#0058D6" : "#006BFF"
+
+                                Text {
+                                    id: splitReferenceLabel
+                                    anchors.centerIn: parent
+                                    text: qsTr("在对话框中引用")
+                                    color: "#FFFFFF"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 14
+                                }
+
+                                MouseArea {
+                                    id: splitReferenceMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.referenceSplitSelection()
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -5527,8 +5841,7 @@ ApplicationWindow {
                         }
                     }
 
-                    // ── 并排模式（Figma 5068-48030）──
-                    // 左：对话缩窄；右：输入文件 / 产物 两个标签页 + 底部选择操作条
+                    // ── 右侧栏：产物（普通列表，文件夹不连连接线）──
                     Item {
                         id: splitPanel
 
@@ -5536,74 +5849,32 @@ ApplicationWindow {
                         anchors.fill: parent
 
                         Item {
-                            id: splitHeader
+                            id: splitArtifactsHeader
 
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
                             height: 52
 
-                            Rectangle {
+                            Text {
+                                id: splitArtifactsTitle
                                 anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                height: 1
-                                color: "#0F000000"
-                            }
-
-                            Row {
-                                id: splitTabs
-
-                                anchors.left: parent.left
-                                anchors.leftMargin: 12
+                                anchors.leftMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 12
-
-                                Repeater {
-                                    model: [
-                                        { key: "files", label: qsTr("输入文件") },
-                                        { key: "artifacts", label: qsTr("产物") }
-                                    ]
-
-                                    delegate: Rectangle {
-                                        id: splitTabItem
-
-                                        required property var modelData
-
-                                        readonly property bool active: newTaskRec.splitTab === modelData.key
-
-                                        width: splitTabLabel.implicitWidth + 32
-                                        height: 32
-                                        radius: 4
-                                        color: active ? "#EBEDF0"
-                                                      : (splitTabMouse.containsMouse ? "#F4F6F9" : "transparent")
-
-                                        Text {
-                                            id: splitTabLabel
-                                            anchors.centerIn: parent
-                                            text: splitTabItem.modelData.label
-                                            color: splitTabItem.active ? "#D9000000" : "#73000000"
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            font.pixelSize: 16
-                                            font.weight: Font.Medium
-                                        }
-
-                                        MouseArea {
-                                            id: splitTabMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: newTaskRec.splitTab = splitTabItem.modelData.key
-                                        }
-                                    }
-                                }
+                                text: newTaskRec.splitArtifactRows.length > 0
+                                      ? qsTr("产物 (%1)").arg(newTaskRec.splitArtifactFileCount)
+                                      : qsTr("产物")
+                                color: "#D9000000"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 15
+                                font.weight: Font.DemiBold
                             }
 
                             Rectangle {
                                 id: splitCloseButton
 
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 32
                                 height: 32
@@ -5643,70 +5914,146 @@ ApplicationWindow {
                             }
                         }
 
-                        // 输入文件（树）
-                        Item {
-                            id: splitFilesPage
+                        // 筛选胶囊：只有真的存在该类产物时才出现
+                        Row {
+                            id: artifactFilters
 
-                            visible: newTaskRec.splitTab === "files"
                             anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: splitHeader.bottom
-                            anchors.bottom: parent.bottom
                             anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            anchors.bottomMargin: 12
+                            anchors.top: splitArtifactsHeader.bottom
+                            spacing: 8
 
-                            InputFileTree {
-                                id: splitTree
-                                anchors.fill: parent
-                                onFileSelected: function(path) {
-                                    newTaskRec.openArtifactPath(path)
-                                }
-                                onSelectionChanged: function(paths) {
-                                    newTaskRec.splitSelection = paths
-                                }
-                                onFileTreeReady: openPaths(newTaskRec.splitRoots)
-                            }
+                            Repeater {
+                                model: newTaskRec.splitArtifactFilterChips
 
-                            Connections {
-                                target: newTaskRec
-                                function onSplitRootsChanged() {
-                                    if (newTaskRec.splitMode)
-                                        splitTree.openPaths(newTaskRec.splitRoots)
-                                }
-                            }
+                                delegate: Rectangle {
+                                    id: artifactFilterChip
 
-                            Text {
-                                anchors.centerIn: parent
-                                visible: newTaskRec.splitRoots.length === 0
-                                text: qsTr("把一个文件夹拖到对话里，或按 Ctrl+Shift+W 选择")
-                                color: "#40000000"
-                                font.family: "Alibaba PuHuiTi 3.0"
-                                font.pixelSize: 13
+                                    required property var modelData
+
+                                    readonly property bool active:
+                                        newTaskRec.splitArtifactFilter === modelData.key
+
+                                    width: 74
+                                    height: 29
+                                    radius: 8
+                                    color: active ? "#006BFF"
+                                                  : (chipMouse.containsMouse ? "#EFF2F6" : "#F7F9FA")
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: artifactFilterChip.modelData.label
+                                        color: artifactFilterChip.active ? "#FFFFFF" : "#D9000000"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 14
+                                    }
+
+                                    MouseArea {
+                                        id: chipMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.splitArtifactFilter
+                                                   = artifactFilterChip.modelData.key
+                                    }
+                                }
                             }
                         }
 
-                        // 产物
                         ListView {
                             id: splitArtifactList
 
-                            visible: newTaskRec.splitTab === "artifacts"
                             anchors.left: parent.left
                             anchors.right: parent.right
-                            anchors.top: splitHeader.bottom
+                            anchors.top: artifactFilters.bottom
                             anchors.bottom: parent.bottom
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            anchors.topMargin: 8
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            anchors.topMargin: 12
                             anchors.bottomMargin: 12
                             clip: true
                             spacing: 2
-                            model: newTaskRec.sortedSidebarFiles(newTaskRec.sessionArtifacts)
+                            model: newTaskRec.splitArtifactRows
                             boundsBehavior: Flickable.StopAtBounds
 
                             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                            delegate: artifactSidebarFileDelegate
+                            delegate: Rectangle {
+                                id: artifactRowItem
+
+                                required property var modelData
+
+                                readonly property bool isDir: modelData.isDir === true
+
+                                width: splitArtifactList.width
+                                height: 32
+                                radius: 8
+                                color: artifactRowMouse.containsMouse ? "#F4F6F9" : "transparent"
+
+                                Row {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8 + (artifactRowItem.modelData.depth || 0) * 16
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 6
+
+                                    Canvas {
+                                        visible: artifactRowItem.isDir
+                                        width: 16
+                                        height: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        rotation: artifactRowItem.modelData.collapsed ? -90 : 0
+
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.reset()
+                                            ctx.strokeStyle = "#73000000"
+                                            ctx.lineWidth = 1.2
+                                            ctx.lineCap = "round"
+                                            ctx.lineJoin = "round"
+                                            ctx.beginPath()
+                                            ctx.moveTo(5, 6.5)
+                                            ctx.lineTo(8, 9.5)
+                                            ctx.lineTo(11, 6.5)
+                                            ctx.stroke()
+                                        }
+                                    }
+
+                                    Image {
+                                        width: 20
+                                        height: 20
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        source: artifactRowItem.isDir
+                                                ? "qrc:/images/folder.png"
+                                                : newTaskRec.artifactIcon(artifactRowItem.modelData)
+                                        fillMode: Image.PreserveAspectFit
+                                    }
+
+                                    Text {
+                                        width: parent.width - 42
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: artifactRowItem.modelData.name
+                                        color: "#D9000000"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 14
+                                        elide: Text.ElideMiddle
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: artifactRowMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (artifactRowItem.isDir)
+                                            newTaskRec.toggleArtifactFolder(artifactRowItem.modelData.path)
+                                        else
+                                            newTaskRec.openArtifactPath(artifactRowItem.modelData.path)
+                                    }
+                                }
+                            }
 
                             Text {
                                 anchors.centerIn: parent
@@ -5717,129 +6064,8 @@ ApplicationWindow {
                                 font.pixelSize: 13
                             }
                         }
-
-                        // 底部选择操作条（有勾选才出现）
-                        Rectangle {
-                            id: splitActionBar
-
-                            visible: newTaskRec.splitSelection.length > 0
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 20
-                            width: splitActionRow.implicitWidth + 24
-                            height: 48
-                            radius: 8
-                            color: "#FFFFFF"
-                            border.width: 1
-                            border.color: "#E6E7EB"
-
-                            Row {
-                                id: splitActionRow
-
-                                anchors.centerIn: parent
-                                spacing: 12
-
-                                Item {
-                                    width: splitCountLabel.implicitWidth + 24
-                                    height: 32
-
-                                    Rectangle {
-                                        id: splitCountBadge
-                                        anchors.left: parent.left
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 20
-                                        height: 20
-                                        radius: 4
-                                        color: "#006BFF"
-
-                                        Canvas {
-                                            anchors.centerIn: parent
-                                            width: 12
-                                            height: 12
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                ctx.reset()
-                                                ctx.strokeStyle = "#FFFFFF"
-                                                ctx.lineWidth = 2
-                                                ctx.lineCap = "round"
-                                                ctx.lineJoin = "round"
-                                                ctx.beginPath()
-                                                ctx.moveTo(2, 6.2)
-                                                ctx.lineTo(4.6, 8.8)
-                                                ctx.lineTo(10, 3.4)
-                                                ctx.stroke()
-                                            }
-                                        }
-                                    }
-
-                                    Text {
-                                        id: splitCountLabel
-                                        anchors.left: splitCountBadge.right
-                                        anchors.leftMargin: 8
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: qsTr("已选 %1 个").arg(newTaskRec.splitSelection.length)
-                                        color: "#D9000000"
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 14
-                                    }
-                                }
-
-                                Rectangle {
-                                    id: splitOpenInViewerButton
-
-                                    width: splitOpenLabel.implicitWidth + 28
-                                    height: 32
-                                    radius: 8
-                                    color: splitOpenMouse.containsMouse ? "#F4F6F9" : "#FFFFFF"
-                                    border.width: 1
-                                    border.color: "#E6E7EB"
-
-                                    Text {
-                                        id: splitOpenLabel
-                                        anchors.centerIn: parent
-                                        text: qsTr("在阅片台打开")
-                                        color: "#D9000000"
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 14
-                                    }
-
-                                    MouseArea {
-                                        id: splitOpenMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: newTaskRec.openSplitSelectionInViewer()
-                                    }
-                                }
-
-                                Rectangle {
-                                    id: splitReferenceButton
-
-                                    width: splitReferenceLabel.implicitWidth + 28
-                                    height: 32
-                                    radius: 8
-                                    color: splitReferenceMouse.containsMouse ? "#0058D6" : "#006BFF"
-
-                                    Text {
-                                        id: splitReferenceLabel
-                                        anchors.centerIn: parent
-                                        text: qsTr("在对话框中引用")
-                                        color: "#FFFFFF"
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 14
-                                    }
-
-                                    MouseArea {
-                                        id: splitReferenceMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: newTaskRec.referenceSplitSelection()
-                                    }
-                                }
-                            }
-                        }
                     }
+
 
                     Item {
                         id: officeDocumentPanel
@@ -7386,7 +7612,9 @@ ApplicationWindow {
                     border.width: 0
                     height: currentTextInputHeight + 112
                     readonly property real availableWidth: Math.max(320, parent.width
-                                                                    - newTaskRec.artifactSidebarWidth)
+                                                                    - newTaskRec.artifactSidebarWidth
+                                                                    - (newTaskRec.splitMode
+                                                                       ? newTaskRec.splitFilesWidth : 0))
                     width: Math.min(840, Math.max(320, availableWidth - 48))
                     x: Math.max(0, (availableWidth - width) / 2)
                     readonly property real devicePixelRatio: Screen.devicePixelRatio > 0
@@ -17380,6 +17608,21 @@ ApplicationWindow {
             newTaskRec.enterSplit([String(splitAutoOpen)])
             if (splitAutoSelect !== undefined && String(splitAutoSelect).length > 0)
                 newTaskRec.splitSelection = String(splitAutoSelect).split(";")
+            if (splitAutoArtifacts !== undefined && String(splitAutoArtifacts).length > 0) {
+                var arts = []
+                var parts = String(splitAutoArtifacts).split(";")
+                for (var a = 0; a < parts.length; ++a) {
+                    var ap = String(parts[a] || "")
+                    if (ap.length === 0)
+                        continue
+                    var acut = Math.max(ap.lastIndexOf("/"),
+                                        ap.lastIndexOf(String.fromCharCode(92)))
+                    arts.push({ name: acut >= 0 ? ap.slice(acut + 1) : ap, path: ap })
+                }
+                newTaskRec.sessionArtifacts = arts
+            }
+            if (splitAutoTab !== undefined && String(splitAutoTab).length > 0)
+                newTaskRec.splitTab = String(splitAutoTab)
         }
     }
 }

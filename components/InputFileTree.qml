@@ -41,6 +41,25 @@ Item {
             pushPaths()
     }
 
+    /// 产物树：直接给「文件夹 → 文件」的分组，页面按文件夹形式渲染
+    property var pendingArtifacts: []
+
+    function openArtifacts(groups) {
+        pendingArtifacts = groups || []
+        if (pageReady)
+            pushArtifacts()
+        else
+            pendingPaths = []
+    }
+
+    function pushArtifacts() {
+        if (!treeLoader.item)
+            return
+        treeLoader.item.runJavaScript(
+                    "window.__fileTree && window.__fileTree.setArtifactNodes("
+                    + JSON.stringify(pendingArtifacts || []) + ")")
+    }
+
     function pushPaths() {
         if (!treeLoader.item || !pendingPaths || pendingPaths.length === 0)
             return
@@ -50,8 +69,8 @@ Item {
                     + JSON.stringify(described) + ")")
     }
 
-    anchors.fill: parent
-
+    // 注意：这里不要写 anchors.fill: parent —— 组件自身再锚一次会覆盖调用方设置的
+    // anchors.top/bottom，导致它铺满父项、把标题栏盖住。
     Connections {
         target: thumbnailer
         function onReady(requestId, path, dataUrl, width, height) {
@@ -95,6 +114,8 @@ Item {
                 runJavaScript("window.__fileTree && window.__fileTree.setEmbedMode(true)")
                 if (root.pendingPaths && root.pendingPaths.length > 0)
                     root.pushPaths()
+                else if (root.pendingArtifacts && root.pendingArtifacts.length > 0)
+                    root.pushArtifacts()
                 root.fileTreeReady()
             }
 

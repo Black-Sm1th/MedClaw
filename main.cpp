@@ -589,6 +589,12 @@ int main(int argc, char *argv[])
                                              qEnvironmentVariable("MEDCLAW_SPLIT_OPEN"));
     engine.rootContext()->setContextProperty(QStringLiteral("splitAutoSelect"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_SELECT"));
+    // 诊断用：MEDCLAW_SPLIT_TAB=artifacts 直接落在「产物」页；
+    // MEDCLAW_SPLIT_ARTIFACTS=<path;path> 造一批假产物，便于核对产物树
+    engine.rootContext()->setContextProperty(QStringLiteral("splitAutoTab"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_TAB"));
+    engine.rootContext()->setContextProperty(QStringLiteral("splitAutoArtifacts"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_ARTIFACTS"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");

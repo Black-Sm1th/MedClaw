@@ -33,7 +33,8 @@
   body.embed .head,
   body.embed .foot,
   body.embed .preview-pane { display: none; }
-  body.embed .tree-pane { padding: 0; }
+  body.embed .tree-pane { padding: 0; scrollbar-width: none; }
+  body.embed .tree-pane::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
   /* ── 头部 ───────────────────────────────────────────── */
   .head {
@@ -659,6 +660,62 @@
     return parts[parts.length - 1] || text || pathText;
   }
 
+  /**
+   * 产物树：宿主直接给「文件夹 → 文件」的分组，不再向宿主请求目录。
+   * groups: [{ name, path, files: [{ name, path, size }] }]
+   * 用和浏览文件夹完全相同的卡片/连接线渲染（"用文件夹的形式显示"）。
+   */
+  function setArtifactNodes(groups) {
+    hostMode = true;
+    pendingList.clear();
+    pendingFile.clear();
+    nodeIndex.clear();
+    clearSelection();
+    selectedPath = null;
+
+    var list = groups || [];
+    if (list.length === 0) {
+      root = null;
+      rebuildFlat();
+      renderWindow();
+      emptyState.hidden = false;
+      spacer.hidden = true;
+      setStat('0 个产物');
+      return;
+    }
+
+    function buildFolder(group, parentPath) {
+      var dir = newNode(group.name || baseName(group.path || ''), parentPath, 'dir');
+      dir.path = '' + (group.path || dir.path);
+      dir.loaded = true;
+      dir.expanded = true;
+      var files = group.files || [];
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        var fileNode = newNode(f.name, dir.path, 'file');
+        fileNode.path = f.path;
+        fileNode.size = f.size || 0;
+        nodeIndex.set(fileNode.path, fileNode);
+        dir.children.push(fileNode);
+      }
+      nodeIndex.set(dir.path, dir);
+      return dir;
+    }
+
+    var mounted;
+    if (list.length === 1) {
+      mounted = buildFolder(list[0], '');
+    } else {
+      mounted = newNode('产物', '', 'dir');
+      mounted.loaded = true;
+      mounted.expanded = true;
+      for (var g = 0; g < list.length; g++)
+        mounted.children.push(buildFolder(list[g], ''));
+    }
+    mountRoot(mounted);
+    updateStat();
+  }
+
   function setHostRoot(path) {
     hostMode = true;
     pendingList.clear();
@@ -1044,6 +1101,7 @@
     },
     setHostRoot: setHostRoot,
     setHostPaths: setHostPaths,
+    setArtifactNodes: setArtifactNodes,
     onDirChunk: onDirChunk,
     onFileRead: onFileRead,
     onThumbResult: onThumbResult,
