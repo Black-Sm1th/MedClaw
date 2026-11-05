@@ -3771,7 +3771,10 @@ ApplicationWindow {
                 readonly property int splitChatWidth: Math.max(280, Math.min(360, Math.round(width * 0.28)))
                 // 三栏：对话（固定）| 输入文件 | 产物（右侧栏）
                 readonly property int splitArtifactsWidth: Math.max(260, Math.min(360, Math.round(width * 0.2)))
-                readonly property int splitFilesWidth: Math.max(300, width - splitChatWidth - splitArtifactsWidth)
+                property bool splitMiddleCollapsed: false
+                readonly property int splitFilesWidth: splitMiddleCollapsed
+                    ? 0
+                    : Math.max(300, width - splitChatWidth - splitArtifactsWidth)
                 readonly property int splitPanelWidth: splitArtifactsWidth
                 property string splitMiddleTab: "files"   // files | reader
                 property string splitTab: "files"        // files | artifacts
@@ -4540,6 +4543,8 @@ ApplicationWindow {
                     if (!path)
                         return
                     ensureWorkspace()
+                    // 中栏收起时打开文件要自动展开，否则预览没有落点
+                    splitMiddleCollapsed = false
                     activeOfficeTabIndex = index
                     selectedOfficeFile = file
                     officeMoreMenuVisible = false
@@ -5371,7 +5376,8 @@ ApplicationWindow {
                     anchors.bottom: chatInputContainer.top
                     anchors.bottomMargin: 8
                     anchors.left: parent.left
-                    anchors.right: newTaskRec.splitMode
+                    anchors.right: (newTaskRec.splitMode
+                                    && !newTaskRec.splitMiddleCollapsed)
                                     ? splitFilesPanel.left
                                     : (newTaskRec.artifactPanelVisible ? artifactSidebar.left : parent.right)
                     model: chatModel
@@ -5469,8 +5475,10 @@ ApplicationWindow {
                 Rectangle {
                     id: splitFilesPanel
 
-                    visible: newTaskRec.splitMode
+                    visible: newTaskRec.splitMode && !newTaskRec.splitMiddleCollapsed
                     width: newTaskRec.splitFilesWidth
+                    // WebEngine 在容器尺寸变化时会有半透明/残影，裁剪掉越界部分
+                    clip: true
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     anchors.right: artifactSidebar.left
@@ -5670,8 +5678,13 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: newTaskRec.exitSplit()
+                                onClicked: newTaskRec.splitMiddleCollapsed
+                                           = !newTaskRec.splitMiddleCollapsed
                             }
+
+                            ToolTip.visible: splitLayoutMouse.containsMouse
+                            ToolTip.text: newTaskRec.splitMiddleCollapsed
+                                          ? qsTr("展开中间栏") : qsTr("收起中间栏")
                         }
 
                         Rectangle {
@@ -7718,6 +7731,7 @@ ApplicationWindow {
                     readonly property real availableWidth: Math.max(320, parent.width
                                                                     - newTaskRec.artifactSidebarWidth
                                                                     - (newTaskRec.splitMode
+                                                                       && !newTaskRec.splitMiddleCollapsed
                                                                        ? newTaskRec.splitFilesWidth : 0))
                     width: Math.min(840, Math.max(320, availableWidth - 48))
                     x: Math.max(0, (availableWidth - width) / 2)
