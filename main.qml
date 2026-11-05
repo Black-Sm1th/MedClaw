@@ -6594,7 +6594,7 @@ ApplicationWindow {
                             Text {
                                 id: splitArtifactsTitle
                                 anchors.left: parent.left
-                                anchors.leftMargin: 16
+                                anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("产物")
                                 color: "#D9000000"
@@ -6658,7 +6658,7 @@ ApplicationWindow {
                             id: artifactFilters
 
                             anchors.left: parent.left
-                            anchors.leftMargin: 16
+                            anchors.leftMargin: 12
                             anchors.top: splitArtifactsHeader.bottom
                             spacing: 8
 
@@ -6720,7 +6720,7 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.top: artifactFilters.bottom
                             anchors.bottom: parent.bottom
-                            anchors.leftMargin: 16
+                            anchors.leftMargin: 12
                             anchors.rightMargin: 8
                             anchors.topMargin: 12
                             anchors.bottomMargin: 12
