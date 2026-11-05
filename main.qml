@@ -3798,10 +3798,15 @@ ApplicationWindow {
                 }
                 readonly property int splitArtifactChipWidth: {
                     var chips = splitArtifactFilterChips
-                    var maxW = 74
-                    for (var i = 0; i < chips.length; ++i)
-                        maxW = Math.max(maxW, artifactChipFont.advanceWidth(chips[i].label) + 32)
-                    return maxW
+                    var n = Math.max(1, chips.length)
+                    var want = 74
+                    for (var i = 0; i < n; ++i)
+                        want = Math.max(want, artifactChipFont.advanceWidth(chips[i].label) + 24)
+                    // 侧栏变窄（退出并排后是 300）时按可用宽度压缩，
+                    // 否则三个胶囊总宽超出去、最后一个被裁掉
+                    var avail = Math.max(180, artifactSidebarWidth - 24)
+                    var fit = Math.floor((avail - 8 * (n - 1)) / n)
+                    return Math.max(64, Math.min(want, fit))
                 }
 
                 /// 只有真的存在该类产物时才显示对应筛选胶囊
@@ -5623,22 +5628,13 @@ ApplicationWindow {
                             radius: 6
                             color: splitLayoutMouse.containsMouse ? "#F4F6F9" : "transparent"
 
-                            Canvas {
+                            // 现成资源：圆角矩形 + 竖分割线（images/office/sidebar-collapse.svg）
+                            Image {
                                 anchors.centerIn: parent
-                                width: 16
-                                height: 16
-
-                                onPaint: {
-                                    var ctx = getContext("2d")
-                                    ctx.reset()
-                                    ctx.strokeStyle = "#8A000000"
-                                    ctx.lineWidth = 1.2
-                                    ctx.strokeRect(2.5, 3.5, 11, 9)
-                                    ctx.beginPath()
-                                    ctx.moveTo(8, 3.5)
-                                    ctx.lineTo(8, 12.5)
-                                    ctx.stroke()
-                                }
+                                width: 20
+                                height: 20
+                                source: "qrc:/images/office/sidebar-collapse.svg"
+                                fillMode: Image.PreserveAspectFit
                             }
 
                             MouseArea {
