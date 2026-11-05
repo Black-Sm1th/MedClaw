@@ -3788,6 +3788,21 @@ ApplicationWindow {
                     return n
                 }
 
+                // 胶囊统一宽度：取最长标签 + 左右各 16 的内边距，
+                // 否则「全部」两侧空一大截、「关键图像」几乎贴边，看着长短不一。
+                FontMetrics {
+                    id: artifactChipFont
+                    font.family: "Alibaba PuHuiTi 3.0"
+                    font.pixelSize: 14
+                }
+                readonly property int splitArtifactChipWidth: {
+                    var chips = splitArtifactFilterChips
+                    var maxW = 74
+                    for (var i = 0; i < chips.length; ++i)
+                        maxW = Math.max(maxW, artifactChipFont.advanceWidth(chips[i].label) + 32)
+                    return maxW
+                }
+
                 /// 只有真的存在该类产物时才显示对应筛选胶囊
                 readonly property var splitArtifactFilterChips: {
                     var chips = [{ key: "all", label: qsTr("全部") }]
@@ -5693,7 +5708,7 @@ ApplicationWindow {
                                     readonly property bool active:
                                         newTaskRec.splitArtifactFilter === modelData.key
 
-                                    width: 74
+                                    width: newTaskRec.splitArtifactChipWidth
                                     height: 29
                                     radius: 8
                                     color: "#F7F9FA"
