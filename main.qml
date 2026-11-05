@@ -6246,12 +6246,13 @@ ApplicationWindow {
 
                         Rectangle {
                             id: officeTitleBar
-                            // 阅片台页顶上是序列条，不再显示文件名标题栏
+                            // 阅片台页不显示文件名标题栏；高度也要归零，
+                            // 否则隐藏了仍占 52px，查看器上方会留一条空白
                             visible: !newTaskRec.splitReaderPage
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            height: 52
+                            height: newTaskRec.splitReaderPage ? 0 : 52
                             color: "#FFFFFF"
 
                             Rectangle {
