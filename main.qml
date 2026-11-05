@@ -3778,6 +3778,14 @@ ApplicationWindow {
                 property var splitSelection: []          // 勾选的文件路径
                 property string splitArtifactFilter: "all"   // all | report | image
                 property var splitArtifactGroups: []         // 产物按文件夹分组的数据
+                // 「查看全部」点进来时只看这一轮变动的文件；空数组 = 显示全部
+                property var artifactTurnFilter: []
+                function artifactTurnKey(file) { return artifactHighlightKey(file || {}) }
+                function clearArtifactTurnFilter() {
+                    if (artifactTurnFilter.length === 0) return
+                    artifactTurnFilter = []
+                    refreshArtifactGroups()
+                }
                 property var splitArtifactCollapsed: ({})    // 折叠的产物文件夹
                 property var splitArtifactRows: []           // 展平后的列表行
 
@@ -3875,10 +3883,14 @@ ApplicationWindow {
                     var items = sessionArtifacts || []
                     var groups = []
                     var byDir = ({})
+                    var only = artifactTurnFilter || []
                     for (var i = 0; i < items.length; ++i) {
                         var entry = items[i] || {}
                         var path = String(entry.path || "")
                         if (path.length === 0)
+                            continue
+                        if (only.length > 0
+                                && only.indexOf(artifactTurnKey(entry)) < 0)
                             continue
                         var sep = String.fromCharCode(92)
                         var cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf(sep))
@@ -4680,10 +4692,15 @@ ApplicationWindow {
                     // 侧边栏只对这些文件异色（闲聊轮次不会误标历史产物）。
                     var given = paths || []
                     if (given.length > 0) {
-                        for (var k = 0; k < given.length; k++)
-                            highlights[artifactHighlightKey({ path: given[k] })] = true
+                        var turnKeys = []
+                        for (var k = 0; k < given.length; k++) {
+                            var key = artifactHighlightKey({ path: given[k] })
+                            highlights[key] = true
+                            turnKeys.push(key)
+                        }
                         artifactHighlights = highlights
-                        toggleArtifactSidebar()
+                        artifactTurnFilter = turnKeys
+                        showArtifactTurn()
                         return
                     }
                     // 产物清单现在按「轮」渲染，row 是该轮最后一条消息（可能是工具卡片而
@@ -4705,8 +4722,19 @@ ApplicationWindow {
                                 highlights[artifactHighlightKey(artifacts[j])] = true
                         }
                     }
+                    var fallbackKeys = []
+                    for (var hk in highlights)
+                        fallbackKeys.push(hk)
                     artifactHighlights = highlights
-                    toggleArtifactSidebar()
+                    artifactTurnFilter = fallbackKeys
+                    showArtifactTurn()
+                }
+
+                /// 打开产物面板并只显示本轮变动的文件
+                function showArtifactTurn() {
+                    artifactSidebarMode = "list"
+                    artifactSidebarVisible = true
+                    refreshArtifactGroups()
                 }
 
                 function rebuildSessionArtifacts() {
@@ -6597,6 +6625,38 @@ ApplicationWindow {
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 16
                                 font.weight: Font.Medium
+                            }
+
+                            // 只看本轮时给个清除入口
+                            Rectangle {
+                                id: turnFilterChip
+
+                                visible: newTaskRec.artifactTurnFilter.length > 0
+                                anchors.left: splitArtifactsTitle.right
+                                anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: turnFilterLabel.implicitWidth + 20
+                                height: 22
+                                radius: 11
+                                color: turnFilterMouse.containsMouse ? "#DCE8FF" : "#F0F5FF"
+
+                                Text {
+                                    id: turnFilterLabel
+                                    anchors.centerIn: parent
+                                    text: qsTr("本轮 %1 个 · 显示全部")
+                                              .arg(newTaskRec.splitArtifactFileCount)
+                                    color: "#006BFF"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 12
+                                }
+
+                                MouseArea {
+                                    id: turnFilterMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.clearArtifactTurnFilter()
+                                }
                             }
 
                             Rectangle {
@@ -17643,6 +17703,23 @@ ApplicationWindow {
         onAccepted: newTaskRec.enterSplit([selectedFolder.toString()])
     }
 
+    // 诊断：MEDCLAW_TURN_FILTER 延后模拟"查看全部"（启动瞬间 count=0 会把面板关掉）
+    Timer {
+        running: turnFilterDemo !== undefined && String(turnFilterDemo).length > 0
+        interval: 3000
+        onTriggered: {
+            var keys = []
+            var parts2 = String(turnFilterDemo).split(";")
+            for (var t = 0; t < parts2.length; ++t) {
+                var tp = String(parts2[t] || "")
+                if (tp.length > 0)
+                    keys.push(newTaskRec.artifactHighlightKey({ path: tp }))
+            }
+            newTaskRec.artifactTurnFilter = keys
+            newTaskRec.showArtifactTurn()
+        }
+    }
+
     // 诊断入口：MEDCLAW_SPLIT_OPEN=<目录> 启动即进入并排模式，便于截图核对；
     // 再用 MEDCLAW_SPLIT_SELECT=<文件1;文件2> 预置勾选，核对底部操作条
     Timer {
@@ -17669,6 +17746,7 @@ ApplicationWindow {
                 newTaskRec.splitTab = String(splitAutoTab)
             if (splitAutoOpenFile !== undefined && String(splitAutoOpenFile).length > 0)
                 newTaskRec.openArtifactPath(String(splitAutoOpenFile))
+
         }
     }
 }

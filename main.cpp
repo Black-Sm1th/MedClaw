@@ -598,6 +598,9 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_SPLIT_OPEN_FILE=<文件> 启动后在并排里打开这个文件（核对标签与预览）
     engine.rootContext()->setContextProperty(QStringLiteral("splitAutoOpenFile"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_OPEN_FILE"));
+    // 诊断用：MEDCLAW_TURN_FILTER=<path;path> 模拟"查看全部"，只显示本轮产物
+    engine.rootContext()->setContextProperty(QStringLiteral("turnFilterDemo"),
+                                             qEnvironmentVariable("MEDCLAW_TURN_FILTER"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");
