@@ -5591,261 +5591,15 @@ ApplicationWindow {
                         color: "#14000000"
                     }
 
-                    Rectangle {
-                        id: artifactListToolbar
-                        visible: newTaskRec.artifactSidebarMode === "list" && !newTaskRec.splitMode
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        height: 52
-                        color: "#FFFFFF"
-
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            height: 1
-                            color: "#14000000"
-                        }
-
-                        Rectangle {
-                            id: artifactSortButton
-                            width: 36; height: 36; radius: 8
-                            anchors.left: parent.left
-                            anchors.leftMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: artifactSortMouse.pressed ? "#14000000"
-                                 : artifactSortMouse.containsMouse ? "#F7F9FA" : "transparent"
-                            Image {
-                                anchors.centerIn: parent
-                                width: 24; height: 24
-                                source: "qrc:/images/office/sidebar-sort.svg"
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            MouseArea {
-                                id: artifactSortMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onEntered: newTaskRec.showResourcePopover()
-                                onExited: newTaskRec.scheduleResourcePopoverClose()
-                            }
-                        }
-
-                        Rectangle {
-                            id: artifactSidebarToggleButton
-                            width: 36; height: 36; radius: 8
-                            anchors.right: parent.right
-                            anchors.rightMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: artifactSidebarToggleMouse.pressed ? "#14000000"
-                                 : artifactSidebarToggleMouse.containsMouse ? "#F7F9FA" : "transparent"
-                            Image {
-                                anchors.centerIn: parent
-                                width: 20; height: 20
-                                source: "qrc:/images/office/sidebar-collapse.svg"
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            MouseArea {
-                                id: artifactSidebarToggleMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    newTaskRec.hideResourcePopover()
-                                    newTaskRec.artifactSidebarVisible = false
-                                }
-                            }
-                            ToolTip.visible: artifactSidebarToggleMouse.containsMouse
-                            ToolTip.text: qsTr("收起文件面板")
-                        }
-
-                        Rectangle {
-                            id: artifactListMaximizeButton
-                            width: 36; height: 36; radius: 8
-                            anchors.right: artifactSidebarToggleButton.left
-                            anchors.rightMargin: 4
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: artifactListMaximizeMouse.pressed ? "#14000000"
-                                 : artifactListMaximizeMouse.containsMouse ? "#F7F9FA" : "transparent"
-                            Image {
-                                anchors.centerIn: parent
-                                width: 16; height: 16
-                                source: newTaskRec.officePanelMaximized
-                                        ? "qrc:/images/office/sidebar-minimize.svg"
-                                        : "qrc:/images/office/sidebar-maximize.svg"
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            MouseArea {
-                                id: artifactListMaximizeMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    newTaskRec.officePanelMaximized = !newTaskRec.officePanelMaximized
-                                    newTaskRec.officePanelSizeManuallySet = true
-                                }
-                            }
-                            ToolTip.visible: artifactListMaximizeMouse.containsMouse
-                            ToolTip.text: newTaskRec.officePanelMaximized ? qsTr("缩小文件面板") : qsTr("放大文件面板")
-                        }
-                    }
-
-                    Flickable {
-                        visible: newTaskRec.artifactSidebarMode === "list" && !newTaskRec.splitMode
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: artifactListToolbar.bottom
-                        anchors.bottom: parent.bottom
-                        anchors.leftMargin: 1
-                        contentWidth: width
-                        contentHeight: artifactSidebarColumn.implicitHeight + 40
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-
-                        Column {
-                            id: artifactSidebarColumn
-                            x: 16
-                            y: 20
-                            width: parent.width - 32
-                            spacing: 24
-
-                            Column {
-                                width: parent.width
-                                spacing: 8
-                                visible: newTaskRec.sessionInputFiles.length > 0
-
-                                Item {
-                                    id: inputFilesHeader
-                                    width: parent.width
-                                    height: 24
-
-                                    Label {
-                                        id: inputFilesHeaderLabel
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 8
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: qsTr("输入文件")
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 16
-                                        font.weight: Font.Normal
-                                        color: "#73000000"
-                                    }
-                                    Canvas {
-                                        anchors.left: inputFilesHeaderLabel.right
-                                        anchors.leftMargin: 4
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 16; height: 16
-                                        rotation: newTaskRec.inputFilesExpanded ? 0 : -90
-                                        onPaint: {
-                                            var ctx = getContext("2d")
-                                            ctx.reset()
-                                            ctx.strokeStyle = "#73000000"
-                                            ctx.lineWidth = 1.2
-                                            ctx.lineCap = "round"
-                                            ctx.lineJoin = "round"
-                                            ctx.beginPath()
-                                            ctx.moveTo(5, 6.5)
-                                            ctx.lineTo(8, 9.5)
-                                            ctx.lineTo(11, 6.5)
-                                            ctx.stroke()
-                                        }
-                                    }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: newTaskRec.inputFilesExpanded = !newTaskRec.inputFilesExpanded
-                                    }
-                                }
-
-                                Column {
-                                    width: parent.width
-                                    spacing: 4
-                                    visible: newTaskRec.inputFilesExpanded
-                                    Repeater {
-                                        model: newTaskRec.sortedSidebarFiles(newTaskRec.sessionInputFiles)
-                                        delegate: artifactSidebarFileDelegate
-                                    }
-                                }
-                            }
-
-                            Column {
-                                width: parent.width
-                                spacing: 8
-
-                                Item {
-                                    id: artifactsHeader
-                                    width: parent.width
-                                    height: 24
-
-                                    Label {
-                                        id: artifactsHeaderLabel
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 8
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: qsTr("产物")
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 16
-                                        font.weight: Font.Normal
-                                        color: "#73000000"
-                                    }
-                                    Canvas {
-                                        anchors.left: artifactsHeaderLabel.right
-                                        anchors.leftMargin: 4
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 16; height: 16
-                                        rotation: newTaskRec.artifactsExpanded ? 0 : -90
-                                        onPaint: {
-                                            var ctx = getContext("2d")
-                                            ctx.reset()
-                                            ctx.strokeStyle = "#73000000"
-                                            ctx.lineWidth = 1.2
-                                            ctx.lineCap = "round"
-                                            ctx.lineJoin = "round"
-                                            ctx.beginPath()
-                                            ctx.moveTo(5, 6.5)
-                                            ctx.lineTo(8, 9.5)
-                                            ctx.lineTo(11, 6.5)
-                                            ctx.stroke()
-                                        }
-                                    }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: newTaskRec.artifactsExpanded = !newTaskRec.artifactsExpanded
-                                    }
-                                }
-
-                                Column {
-                                    width: parent.width
-                                    spacing: 4
-                                    visible: newTaskRec.artifactsExpanded
-                                    Repeater {
-                                        model: newTaskRec.sortedSidebarFiles(newTaskRec.sessionArtifacts)
-                                        delegate: artifactSidebarFileDelegate
-                                    }
-                                }
-                            }
-                        }
-
-                        ScrollBar.vertical: ScrollBar {
-                            policy: ScrollBar.AsNeeded
-                            width: 4
-                            contentItem: Rectangle {
-                                implicitWidth: 4
-                                radius: 2
-                                color: "#40000000"
-                            }
-                        }
-                    }
+                    // 旧的「输入文件 / 产物」列表已删除：侧栏现在直接显示产物面板
+                    // （输入文件改到并排视图的中间栏）。
 
                     // ── 右侧栏：产物（普通列表，文件夹不连连接线）──
                     Item {
                         id: splitPanel
 
-                        visible: newTaskRec.splitMode
+                        // 侧栏不管是否并排，都显示这套产物面板
+                        visible: newTaskRec.artifactSidebarMode === "list"
                         anchors.fill: parent
 
                         Item {
@@ -5906,11 +5660,17 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: newTaskRec.exitSplit()
+                                    onClicked: {
+                                        if (newTaskRec.splitMode)
+                                            newTaskRec.exitSplit()
+                                        else
+                                            newTaskRec.artifactSidebarVisible = false
+                                    }
                                 }
 
                                 ToolTip.visible: splitCloseMouse.containsMouse
-                                ToolTip.text: qsTr("退出并排视图")
+                                ToolTip.text: newTaskRec.splitMode
+                                              ? qsTr("退出并排视图") : qsTr("收起产物面板")
                             }
                         }
 
