@@ -5866,25 +5866,25 @@ ApplicationWindow {
                                       : qsTr("产物")
                                 color: "#D9000000"
                                 font.family: "Alibaba PuHuiTi 3.0"
-                                font.pixelSize: 15
-                                font.weight: Font.DemiBold
+                                font.pixelSize: 16
+                                font.weight: Font.Medium
                             }
 
                             Rectangle {
                                 id: splitCloseButton
 
                                 anchors.right: parent.right
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 32
-                                height: 32
-                                radius: 8
+                                width: 20
+                                height: 20
+                                radius: 4
                                 color: splitCloseMouse.containsMouse ? "#0A000000" : "transparent"
 
                                 Canvas {
                                     anchors.centerIn: parent
-                                    width: 16
-                                    height: 16
+                                    width: 20
+                                    height: 20
 
                                     onPaint: {
                                         var ctx = getContext("2d")
@@ -5937,13 +5937,27 @@ ApplicationWindow {
                                     width: 74
                                     height: 29
                                     radius: 8
-                                    color: active ? "#006BFF"
-                                                  : (chipMouse.containsMouse ? "#EFF2F6" : "#F7F9FA")
+                                    color: "#F7F9FA"
+
+                                    // 激活态：蓝底 6% + 蓝字（设计稿 fill #006BFF @0.06）
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: "#006BFF"
+                                        opacity: artifactFilterChip.active ? 0.06 : 0
+                                    }
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 8
+                                        color: "#0F000000"
+                                        opacity: artifactFilterChip.active || chipMouse.containsMouse ? 0 : 1
+                                    }
 
                                     Text {
                                         anchors.centerIn: parent
                                         text: artifactFilterChip.modelData.label
-                                        color: artifactFilterChip.active ? "#FFFFFF" : "#D9000000"
+                                        color: artifactFilterChip.active ? "#006BFF" : "#A6000000"
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 14
                                     }
@@ -5984,60 +5998,65 @@ ApplicationWindow {
                                 required property var modelData
 
                                 readonly property bool isDir: modelData.isDir === true
+                                readonly property int depth: modelData.depth || 0
 
                                 width: splitArtifactList.width
-                                height: 32
+                                height: 24
                                 radius: 8
                                 color: artifactRowMouse.containsMouse ? "#F4F6F9" : "transparent"
 
+                                // 图标 20×20 + 名称 16px，左缩进每级 20（设计稿 5323-25666）
                                 Row {
                                     anchors.left: parent.left
-                                    anchors.leftMargin: 8 + (artifactRowItem.modelData.depth || 0) * 16
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 8
+                                    anchors.leftMargin: 4 + artifactRowItem.depth * 20
                                     anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 6
-
-                                    Canvas {
-                                        visible: artifactRowItem.isDir
-                                        width: 16
-                                        height: 16
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        rotation: artifactRowItem.modelData.collapsed ? -90 : 0
-
-                                        onPaint: {
-                                            var ctx = getContext("2d")
-                                            ctx.reset()
-                                            ctx.strokeStyle = "#73000000"
-                                            ctx.lineWidth = 1.2
-                                            ctx.lineCap = "round"
-                                            ctx.lineJoin = "round"
-                                            ctx.beginPath()
-                                            ctx.moveTo(5, 6.5)
-                                            ctx.lineTo(8, 9.5)
-                                            ctx.lineTo(11, 6.5)
-                                            ctx.stroke()
-                                        }
-                                    }
+                                    spacing: 4
 
                                     Image {
                                         width: 20
                                         height: 20
                                         anchors.verticalCenter: parent.verticalCenter
                                         source: artifactRowItem.isDir
-                                                ? "qrc:/images/folder.png"
+                                                ? "qrc:/images/folder-orange.svg"
                                                 : newTaskRec.artifactIcon(artifactRowItem.modelData)
                                         fillMode: Image.PreserveAspectFit
                                     }
 
                                     Text {
-                                        width: parent.width - 42
                                         anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.max(0, splitArtifactList.width
+                                                        - 4 - artifactRowItem.depth * 20
+                                                        - 24 - 40)
                                         text: artifactRowItem.modelData.name
                                         color: "#D9000000"
                                         font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 14
+                                        font.pixelSize: 16
                                         elide: Text.ElideMiddle
+                                    }
+                                }
+
+                                // 展开箭头在右侧（折叠 ›，展开 ˅）
+                                Canvas {
+                                    visible: artifactRowItem.isDir
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 16
+                                    height: 16
+                                    rotation: artifactRowItem.modelData.collapsed ? 0 : 90
+
+                                    onPaint: {
+                                        var ctx = getContext("2d")
+                                        ctx.reset()
+                                        ctx.strokeStyle = "#8A000000"
+                                        ctx.lineWidth = 1.2
+                                        ctx.lineCap = "round"
+                                        ctx.lineJoin = "round"
+                                        ctx.beginPath()
+                                        ctx.moveTo(6, 4.5)
+                                        ctx.lineTo(10.5, 8)
+                                        ctx.lineTo(6, 11.5)
+                                        ctx.stroke()
                                     }
                                 }
 
