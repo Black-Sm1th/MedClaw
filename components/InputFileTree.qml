@@ -19,6 +19,8 @@ Item {
     signal fileTreeReady()
     /// 勾选集合变化（路径数组）
     signal selectionChanged(var paths)
+    /// 拖入了一批路径：由宿主决定是替换还是追加
+    signal dropPaths(var paths)
 
     property string pageUrl: "qrc:/web/file-tree.html"
     /// 页面还没加载完时先记下来，加载完成后再送过去
@@ -167,6 +169,9 @@ Item {
         anchors.fill: parent
         z: 10
         onEntered: function(drag) {
+            if (drag.hasUrls)
+                drag.accepted = true
+            console.log("[FileTreeDrop] entered urls=" + (drag.urls ? drag.urls.length : -1))
             var view = treeLoader.item
             if (view)
                 view.runJavaScript("document.body.classList.add('dragging')")
@@ -180,6 +185,8 @@ Item {
             var view = treeLoader.item
             if (view)
                 view.runJavaScript("document.body.classList.remove('dragging')")
+            console.log("[FileTreeDrop] dropped hasUrls=" + drop.hasUrls
+                        + " count=" + (drop.urls ? drop.urls.length : -1))
             if (!drop.hasUrls || drop.urls.length === 0)
                 return
             var locals = []
@@ -188,7 +195,11 @@ Item {
                 if (local && local.length > 0)
                     locals.push(local)
             }
-            root.openPaths(locals)
+            if (locals.length === 0)
+                return
+            drop.acceptProposedAction()
+            // 交给宿主：可能需要弹框问"追加还是替换"
+            root.dropPaths(locals)
         }
     }
 }

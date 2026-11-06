@@ -4695,6 +4695,55 @@ ApplicationWindow {
                         requestReaderThumbs()
                 }
 
+                /// 拖进来的路径：空的直接进入；已有根目录时问用户追加还是替换
+                property var pendingDroppedRoots: []
+
+                function handleDroppedRoots(paths) {
+                    var list = []
+                    for (var i = 0; i < (paths || []).length; ++i) {
+                        var p = String(paths[i] || "")
+                        if (p.length > 0)
+                            list.push(p)
+                    }
+                    if (list.length === 0)
+                        return
+                    if (splitRoots.length === 0) {
+                        enterSplit(list)
+                        return
+                    }
+                    pendingDroppedRoots = list
+                    dropRootsDialog.open()
+                }
+
+                function replaceDroppedRoots() {
+                    if (pendingDroppedRoots.length > 0)
+                        enterSplit(pendingDroppedRoots)
+                    pendingDroppedRoots = []
+                }
+
+                function appendDroppedRoots() {
+                    var merged = []
+                    var seen = ({})
+                    var base = splitRoots || []
+                    for (var i = 0; i < base.length; ++i) {
+                        var key = String(base[i] || "").toLowerCase()
+                        if (key.length === 0 || seen[key])
+                            continue
+                        seen[key] = true
+                        merged.push(String(base[i]))
+                    }
+                    for (var j = 0; j < pendingDroppedRoots.length; ++j) {
+                        var item = String(pendingDroppedRoots[j] || "")
+                        var k = item.toLowerCase()
+                        if (k.length === 0 || seen[k])
+                            continue
+                        seen[k] = true
+                        merged.push(item)
+                    }
+                    pendingDroppedRoots = []
+                    enterSplit(merged)
+                }
+
                 /// 确保三栏工作区已经展开（预览要显示在中栏，中栏得先在）
                 function ensureWorkspace() {
                     if (!splitViewEnabled || splitMode)
@@ -5585,7 +5634,12 @@ ApplicationWindow {
 
                     // 覆盖整个对话区（不依赖 chatWebView 是否可见：空对话时它是隐藏的）
                     anchors.left: parent.left
-                    anchors.right: artifactSidebar.left
+                    // 并排时只覆盖对话列，别把中间「输入文件」栏也盖住，
+                    // 否则拖到中间栏的文件夹会被这里吃掉（看起来"没反应"）
+                    anchors.right: (newTaskRec.splitMode
+                                    && !newTaskRec.splitMiddleCollapsed)
+                                    ? splitFilesPanel.left
+                                    : artifactSidebar.left
                     anchors.top: parent.top
                     anchors.bottom: chatInputContainer.top
                     z: 5
@@ -5893,6 +5947,9 @@ ApplicationWindow {
                         }
                         onSelectionChanged: function(paths) {
                             newTaskRec.splitSelection = paths
+                        }
+                        onDropPaths: function(paths) {
+                            newTaskRec.handleDroppedRoots(paths)
                         }
                         visible: newTaskRec.splitMiddleTab === "files"
                                  && !newTaskRec.officeDocumentVisible
@@ -17945,6 +18002,113 @@ ApplicationWindow {
         id: splitFolderDialog
         title: "选择要在右侧显示的文件夹"
         onAccepted: newTaskRec.enterSplit([selectedFolder.toString()])
+    }
+
+    // 再次拖入文件夹：问用户是追加还是替换
+    Popup {
+        id: dropRootsDialog
+
+        modal: true
+        anchors.centerIn: parent
+        width: 360
+        padding: 0
+
+        background: Rectangle {
+            radius: 12
+            color: "#FFFFFF"
+            border.width: 1
+            border.color: "#E6E7EB"
+        }
+
+        contentItem: Column {
+            spacing: 0
+            padding: 20
+
+            Text {
+                width: parent.width - 40
+                text: qsTr("当前已经在浏览 %1 个文件夹，这次拖入的怎么处理？")
+                          .arg(newTaskRec.splitRoots.length)
+                color: "#D9000000"
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 15
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                width: parent.width - 40
+                topPadding: 8
+                text: qsTr("追加：保留原来浏览的文件夹；替换：只用这次拖入的")
+                color: "#73000000"
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+            }
+
+            Row {
+                topPadding: 18
+                spacing: 8
+                layoutDirection: Qt.RightToLeft
+
+                Rectangle {
+                    width: 72; height: 32; radius: 8
+                    color: dropReplaceMouse.containsMouse ? "#0058D6" : "#006BFF"
+                    Text {
+                        anchors.centerIn: parent
+                        text: qsTr("替换")
+                        color: "#FFFFFF"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 13
+                    }
+                    MouseArea {
+                        id: dropReplaceMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { dropRootsDialog.close(); newTaskRec.replaceDroppedRoots() }
+                    }
+                }
+
+                Rectangle {
+                    width: 72; height: 32; radius: 8
+                    color: dropAppendMouse.containsMouse ? "#F0F3F7" : "#F7F9FA"
+                    border.width: 1
+                    border.color: "#E6E7EB"
+                    Text {
+                        anchors.centerIn: parent
+                        text: qsTr("追加")
+                        color: "#D9000000"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 13
+                    }
+                    MouseArea {
+                        id: dropAppendMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { dropRootsDialog.close(); newTaskRec.appendDroppedRoots() }
+                    }
+                }
+
+                Rectangle {
+                    width: 72; height: 32; radius: 8
+                    color: dropCancelMouse.containsMouse ? "#F0F3F7" : "transparent"
+                    Text {
+                        anchors.centerIn: parent
+                        text: qsTr("取消")
+                        color: "#73000000"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 13
+                    }
+                    MouseArea {
+                        id: dropCancelMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { dropRootsDialog.close(); newTaskRec.pendingDroppedRoots = [] }
+                    }
+                }
+            }
+        }
     }
 
     // 诊断：MEDCLAW_TURN_FILTER 延后模拟"查看全部"（启动瞬间 count=0 会把面板关掉）
