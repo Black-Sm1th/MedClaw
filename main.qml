@@ -4268,7 +4268,9 @@ ApplicationWindow {
                         return true
                     if (name === "result.json" || ext === "npy")
                         return true
-                    if (/^(dcm|dicom|ima|nii|jpg|jpeg|png|gif|bmp|webp|tif|tiff)$/.test(ext))
+                    // 阅片台只放医学影像：普通图片（png/jpg…）走中栏的图片预览，
+                    // 不要塞进 DICOM 查看器
+                    if (/^(dcm|dicom|ima|nii)$/.test(ext))
                         return true
                     // DICOM files frequently have no extension. The native
                     // controller checks the preamble/header without loading
