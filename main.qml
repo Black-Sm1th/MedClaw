@@ -3777,8 +3777,9 @@ ApplicationWindow {
                     : Math.max(300, width - splitChatWidth
                                - (artifactPanelVisible ? splitArtifactsWidth : 0))
                 readonly property int splitPanelWidth: splitArtifactsWidth
-                // 默认落在阅片台：工作区一打开就是 DICOM 查看器
-                property string splitMiddleTab: "reader"  // files | reader
+                // 默认停在「输入文件」：工作区一打开先能浏览/拖入文件；
+                // 打开 DICOM 时会自动切到阅片台（见 activateOfficeTab）
+                property string splitMiddleTab: "files"   // files | reader
                 readonly property bool splitReaderPage: splitMiddleTab === "reader"
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
@@ -6004,6 +6005,34 @@ ApplicationWindow {
                         function onSplitRootsChanged() {
                             if (newTaskRec.splitMode)
                                 splitTree.openPaths(newTaskRec.splitRoots)
+                        }
+                    }
+
+                    // 中栏整体接收文件夹拖放：不依赖当前是哪个标签页，
+                    // 拖进来就切到「输入文件」并按追加/替换规则处理
+                    DropArea {
+                        anchors.fill: parent
+                        z: 20
+
+                        onEntered: function(drag) {
+                            if (drag.hasUrls)
+                                drag.accepted = true
+                        }
+                        onDropped: function(drop) {
+                            if (!drop.hasUrls || !drop.urls || drop.urls.length === 0)
+                                return
+                            var locals = []
+                            for (var i = 0; i < drop.urls.length; ++i) {
+                                var local = drop.urls[i].toLocalFile()
+                                if (local && local.length > 0)
+                                    locals.push(local)
+                            }
+                            console.log("[MiddleDrop] dropped count=" + locals.length)
+                            if (locals.length === 0)
+                                return
+                            drop.acceptProposedAction()
+                            newTaskRec.splitMiddleTab = "files"
+                            newTaskRec.handleDroppedRoots(locals)
                         }
                     }
 
