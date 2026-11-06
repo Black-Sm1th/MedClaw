@@ -3993,16 +3993,23 @@ ApplicationWindow {
 
                 /// 把勾选的文件塞进输入框（「在对话框中引用」）
                 function referenceSplitSelection() {
-                    for (var i = 0; i < splitSelection.length; ++i) {
-                        var path = String(splitSelection[i] || "")
+                    var list = splitSelection || []
+                    for (var i = 0; i < list.length; ++i) {
+                        var path = String(list[i] || "")
                         if (path.length === 0)
                             continue
                         var cut = Math.max(path.lastIndexOf("/"),
                                            path.lastIndexOf(String.fromCharCode(92)))
                         var name = cut >= 0 ? path.slice(cut + 1) : path
-                        textInputArea.insertFile(name, path, false)
+                        // 文件夹按文件夹插入（图标和提示不同），文件按文件
+                        var isDir = false
+                        var described = fileTreeProvider.describeAll([path])
+                        if (described.length > 0 && described[0].isDir === true)
+                            isDir = true
+                        textInputArea.insertFile(name, path, isDir)
                     }
-                    exitSplit()
+                    // 引用完清掉勾选，但**不退出并排**：中间栏要保持
+                    splitSelection = []
                 }
 
                 /// 在阅片台（影像查看器）里打开勾选的第一项
@@ -17964,8 +17971,15 @@ ApplicationWindow {
         interval: 1200
         onTriggered: {
             newTaskRec.enterSplit([String(splitAutoOpen)])
-            if (splitAutoSelect !== undefined && String(splitAutoSelect).length > 0)
+            if (splitAutoSelect !== undefined && String(splitAutoSelect).length > 0) {
                 newTaskRec.splitSelection = String(splitAutoSelect).split(";")
+                // 诊断：MEDCLAW_SPLIT_REFERENCE=1 时自动点一次「在对话框中引用」
+                if (String(splitAutoReference || "") === "1") {
+                    Qt.callLater(function() {
+                        newTaskRec.referenceSplitSelection()
+                    })
+                }
+            }
             if (splitAutoArtifacts !== undefined && String(splitAutoArtifacts).length > 0) {
                 var arts = []
                 var parts = String(splitAutoArtifacts).split(";")

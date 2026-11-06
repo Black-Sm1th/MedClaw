@@ -601,6 +601,9 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_TURN_FILTER=<path;path> 模拟"查看全部"，只显示本轮产物
     engine.rootContext()->setContextProperty(QStringLiteral("turnFilterDemo"),
                                              qEnvironmentVariable("MEDCLAW_TURN_FILTER"));
+    // 诊断用：MEDCLAW_SPLIT_REFERENCE=1 自动触发一次「在对话框中引用」
+    engine.rootContext()->setContextProperty(QStringLiteral("splitAutoReference"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_REFERENCE"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");
