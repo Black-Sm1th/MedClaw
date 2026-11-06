@@ -4015,9 +4015,21 @@ ApplicationWindow {
 
                 /// 在阅片台（影像查看器）里打开勾选的第一项
                 function openSplitSelectionInViewer() {
-                    if (splitSelection.length === 0)
+                    var list = splitSelection || []
+                    if (list.length === 0)
                         return
-                    openArtifactPath(String(splitSelection[0]))
+                    // 把所有勾选的影像都加入阅片台（缩略图条），再打开第一张；
+                    // 其它几张在查看器顶部的缩略图里切换
+                    for (var i = list.length - 1; i >= 0; --i) {
+                        var path = String(list[i] || "")
+                        if (path.length === 0)
+                            continue
+                        var cut = Math.max(path.lastIndexOf("/"),
+                                           path.lastIndexOf(String.fromCharCode(92)))
+                        rememberMedicalPath(path, cut >= 0 ? path.slice(cut + 1) : path)
+                    }
+                    openArtifactPath(String(list[0]))
+                    splitSelection = []
                 }
 
                 function sortedSidebarFiles(files) {
@@ -4399,14 +4411,22 @@ ApplicationWindow {
                 /// 阅片台里打开过的影像（喂给查看器内部缩略图条）
                 property var medicalHistory: []
 
+                /// 同一个文件可能以 `C:/a/b` 和 `C:` 两种形式出现，比较时要归一化
+                function medicalPathKey(path) {
+                    return String(path || "")
+                            .split(String.fromCharCode(92)).join("/")
+                            .toLowerCase()
+                }
+
                 function rememberMedicalPath(path, name) {
                     var target = String(path || "")
                     if (target.length === 0)
                         return
+                    var key = medicalPathKey(target)
                     var list = (medicalHistory || []).slice(0)
                     var found = -1
                     for (var i = 0; i < list.length; ++i) {
-                        if (String(list[i].path || "") === target) {
+                        if (medicalPathKey(list[i].path) === key) {
                             found = i
                             break
                         }
@@ -4656,8 +4676,11 @@ ApplicationWindow {
                     if (!host || !host.officeView || !host.officeView.setSeriesStrip)
                         return
                     var items = seriesStripItems()
+                    var names = []
+                    for (var d = 0; d < items.length; ++d)
+                        names.push(String(items[d].name || ""))
                     console.log("[ReaderStrip] push " + items.length + " items, active="
-                                + String(tab.path || ""))
+                                + String(tab.path || "") + " list=" + names.join(" | "))
                     host.officeView.setSeriesStrip(items, String(tab.path || ""))
                 }
 
@@ -18167,9 +18190,14 @@ ApplicationWindow {
             if (splitAutoSelect !== undefined && String(splitAutoSelect).length > 0) {
                 newTaskRec.splitSelection = String(splitAutoSelect).split(";")
                 // 诊断：MEDCLAW_SPLIT_REFERENCE=1 时自动点一次「在对话框中引用」
-                if (String(splitAutoReference || "") === "1") {
+                var refMode = String(splitAutoReference || "")
+                if (refMode === "1") {
                     Qt.callLater(function() {
                         newTaskRec.referenceSplitSelection()
+                    })
+                } else if (refMode === "viewer") {
+                    Qt.callLater(function() {
+                        newTaskRec.openSplitSelectionInViewer()
                     })
                 }
             }
