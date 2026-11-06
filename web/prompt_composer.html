@@ -134,6 +134,42 @@
       background: rgba(0, 0, 0, .08);
       color: rgba(0, 0, 0, .82);
     }
+
+    /* ── 附件胶囊（设计稿 5222-39970）：中性底、32 高、r8、20 图标 ── */
+    .file-chip {
+      height: 32px;
+      /* 窄输入框里也要能横排两个，别每个占一整行 */
+      max-width: 130px;
+      margin: 0 6px 6px 0;
+      padding: 0 8px 0 6px;
+      gap: 6px;
+      border: 0;
+      border-radius: 8px;
+      background: #F2F3F7;
+      color: rgba(0, 0, 0, .85);
+      font-size: 14px;
+    }
+    .file-chip .file-icon {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      border: 0;
+      border-radius: 0;
+      background: url("qrc:///images/doc/document-text.svg") center / contain no-repeat;
+    }
+    .file-chip .file-icon:before,
+    .file-chip .file-icon:after { content: none; }
+    .file-chip.folder .file-icon {
+      background-image: url("qrc:///images/folder-orange.svg");
+    }
+    .file-chip .file-name { font-size: 14px; }
+    .file-chip .file-remove {
+      width: 16px;
+      height: 16px;
+      margin-left: 2px;
+      font: 15px/16px Arial, sans-serif;
+      color: rgba(0, 0, 0, .45);
+    }
   </style>
 </head>
 <body>
