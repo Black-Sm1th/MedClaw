@@ -952,30 +952,22 @@
   }
 
   // ── 拖拽 ────────────────────────────────────────────
+  // 这里只做视觉高亮，**不 preventDefault、也不在页面里读拖进来的东西**。
+  // WebEngine 里 webkitGetAsEntry() 对 OS 拖拽返回 null，页面既拿不到目录
+  // 也拿不到绝对路径；而一旦 preventDefault，WebEngine 就认领整次拖放，
+  // Qt 侧的 DropArea 再也收不到 ——「拖文件夹进来没反应」正是这个原因。
+  // 页面不认领 → 拖放落到宿主 QML 的 DropArea，由 FileTreeProvider 列目录。
   var dragDepth = 0;
-  document.addEventListener('dragenter', function (ev) {
-    ev.preventDefault(); dragDepth++; document.body.classList.add('dragging');
+  document.addEventListener('dragenter', function () {
+    dragDepth++; document.body.classList.add('dragging');
   });
-  document.addEventListener('dragover', function (ev) { ev.preventDefault(); });
   document.addEventListener('dragleave', function () {
     dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) document.body.classList.remove('dragging');
   });
-  document.addEventListener('drop', function (ev) {
-    ev.preventDefault();
+  document.addEventListener('drop', function () {
     dragDepth = 0;
     document.body.classList.remove('dragging');
-    var dt = ev.dataTransfer;
-    if (!dt) return;
-    var items = dt.items ? Array.prototype.slice.call(dt.items) : [];
-    var entries = [];
-    for (var i = 0; i < items.length; i++) {
-      var entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
-      if (entry) entries.push(entry);
-    }
-    if (entries.length) { loadEntries(entries); return; }
-    if (dt.files && dt.files.length) { loadFileList(dt.files); return; }
-    setStat('未识别到文件夹');
   });
 
   function loadEntries(entries) {

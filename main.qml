@@ -6211,8 +6211,10 @@ ApplicationWindow {
                         z: 20
 
                         onEntered: function(drag) {
-                            if (drag.hasUrls)
+                            if (drag.hasUrls) {
                                 drag.accepted = true
+                                console.log("[MiddleDrop] entered urls=" + drag.urls.length)
+                            }
                         }
                         onDropped: function(drop) {
                             if (!drop.hasUrls || !drop.urls || drop.urls.length === 0)
@@ -6231,14 +6233,48 @@ ApplicationWindow {
                         }
                     }
 
-                    Text {
-                        anchors.centerIn: parent
+                    // 空状态：拖进来 / 快捷键 / 直接点这个按钮
+                    Column {
                         visible: newTaskRec.splitRoots.length === 0
                                  && newTaskRec.splitMiddleTab === "files"
-                        text: qsTr("把一个文件夹拖到对话里，或按 Ctrl+Shift+W 选择")
-                        color: "#40000000"
-                        font.family: "Alibaba PuHuiTi 3.0"
-                        font.pixelSize: 13
+                        anchors.centerIn: parent
+                        width: Math.min(360, parent.width - 48)
+                        spacing: 10
+
+                        Text {
+                            width: parent.width
+                            text: qsTr("把一个文件夹拖到对话里，或按 Ctrl+Shift+W 选择")
+                            color: "#40000000"
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                        }
+
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: splitPickFolderLabel.implicitWidth + 32
+                            height: 32
+                            radius: 8
+                            color: splitPickFolderMouse.containsMouse ? "#0058D6" : "#006BFF"
+
+                            Text {
+                                id: splitPickFolderLabel
+                                anchors.centerIn: parent
+                                text: qsTr("选择文件夹")
+                                color: "#FFFFFF"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                id: splitPickFolderMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: splitFolderDialog.open()
+                            }
+                        }
                     }
 
                     // 选择操作条
