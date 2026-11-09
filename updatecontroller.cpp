@@ -33,6 +33,8 @@ const char testApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 const char internalApiBaseUrl[] = "http://192.168.0.83:8002";
 #ifdef MEDCLAW_EDITION_GOVERNMENT
 const char governmentEnterpriseCode[] = "gov-01";
+#elif defined(MEDCLAW_EDITION_IMAGING)
+const char imagingEnterpriseCode[] = "image-01";
 #endif
 const QString clientVersion(QStringLiteral("v1.2.15"));
 
@@ -111,6 +113,9 @@ QUrl releaseUrl()
 #ifdef MEDCLAW_EDITION_GOVERNMENT
     query.addQueryItem(QStringLiteral("enterprise_code"),
                        QString::fromLatin1(governmentEnterpriseCode));
+#elif defined(MEDCLAW_EDITION_IMAGING)
+    query.addQueryItem(QStringLiteral("enterprise_code"),
+                       QString::fromLatin1(imagingEnterpriseCode));
 #endif
     url.setQuery(query);
     return url;
