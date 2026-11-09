@@ -5729,6 +5729,44 @@ ApplicationWindow {
                     }
                 }
 
+                // 中间栏收起后，它的表头（连同收起按钮）一起消失，
+                // 所以在对话栏右缘留一个还原按钮，点它把中间栏叫回来。
+                Rectangle {
+                    id: splitMiddleRestoreButton
+
+                    visible: newTaskRec.splitMode && newTaskRec.splitMiddleCollapsed
+                    z: 20
+                    width: 28
+                    height: 28
+                    radius: 6
+                    color: splitRestoreMouse.containsMouse ? "#F4F6F9" : "transparent"
+                    anchors.top: parent.top
+                    anchors.topMargin: 16
+                    anchors.right: newTaskRec.artifactPanelVisible
+                                   ? artifactSidebar.left : parent.right
+                    anchors.rightMargin: 10
+
+                    // 和中间栏表头的收起按钮同一个图标（圆角矩形 + 竖分割线）
+                    Image {
+                        anchors.centerIn: parent
+                        width: 20
+                        height: 20
+                        source: "qrc:/images/office/sidebar-collapse.svg"
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    MouseArea {
+                        id: splitRestoreMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: newTaskRec.splitMiddleCollapsed = false
+                    }
+
+                    ToolTip.visible: splitRestoreMouse.containsMouse
+                    ToolTip.text: qsTr("展开中间栏")
+                }
+
                 // ── 中间栏：输入文件（文件夹树，带连接线）─────────────────
                 Rectangle {
                     id: splitFilesPanel
@@ -18218,6 +18256,12 @@ ApplicationWindow {
             }
             if (splitAutoTab !== undefined && String(splitAutoTab).length > 0)
                 newTaskRec.splitTab = String(splitAutoTab)
+            if (splitAutoCollapse !== undefined && String(splitAutoCollapse) === "1") {
+                newTaskRec.splitMiddleCollapsed = true
+                console.log("[SplitCollapse] env=" + String(splitAutoCollapse)
+                            + " splitMode=" + newTaskRec.splitMode
+                            + " collapsed=" + newTaskRec.splitMiddleCollapsed)
+            }
             if (splitAutoOpenFile !== undefined && String(splitAutoOpenFile).length > 0) {
                 // 支持用「;」一次打开多个，便于核对阅片台里的缩略图条
                 var openParts = String(splitAutoOpenFile).split(";")

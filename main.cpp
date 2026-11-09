@@ -604,6 +604,10 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_SPLIT_REFERENCE=1 自动触发一次「在对话框中引用」
     engine.rootContext()->setContextProperty(QStringLiteral("splitAutoReference"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_REFERENCE"));
+    // 诊断用：MEDCLAW_SPLIT_COLLAPSE=1 进入并排后立刻收起中间栏，
+    // 核对对话栏右缘的「展开中间栏」按钮
+    engine.rootContext()->setContextProperty(QStringLiteral("splitAutoCollapse"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_COLLAPSE"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");
