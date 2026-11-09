@@ -4947,15 +4947,22 @@ ApplicationWindow {
                     }
                     if (splitRoots.length === 0) {
                         enterSplit(list)
-                        return
+                        return "entered"
                     }
                     if (dirCount === 0) {
+                        var merged = mergeSplitRoots(list)
+                        if (merged.length === splitRoots.length) {
+                            // 全是已经在列表里的：什么都不用做，但要给个交代
+                            console.log("[DropRoots] duplicate, ignored")
+                            return "duplicate"
+                        }
                         console.log("[DropRoots] append files=" + list.length)
-                        splitRoots = mergeSplitRoots(list)
-                        return
+                        splitRoots = merged
+                        return "appended"
                     }
                     pendingDroppedRoots = list
                     dropRootsDialog.open()
+                    return "asked"
                 }
 
                 /// 中栏（含阅片台页）拖进来的东西：
@@ -4999,7 +5006,21 @@ ApplicationWindow {
                         activeOfficeTabIndex = -1
                         artifactSidebarMode = "list"
                     }
-                    handleDroppedRoots(all)
+                    var how = handleDroppedRoots(all)
+                    // 给一句明确反馈：不然"到底有没有加进去"只能靠猜
+                    if (how === "duplicate") {
+                        errorToast.text = qsTr("已经在输入文件里了")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                    } else if (how === "entered") {
+                        errorToast.text = qsTr("已打开输入文件：%1 项").arg(all.length)
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                    } else if (how === "appended") {
+                        errorToast.text = qsTr("已追加 %1 项到输入文件").arg(all.length)
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                    }
                 }
 
                 function replaceDroppedRoots() {
@@ -5010,7 +5031,14 @@ ApplicationWindow {
 
                 function appendDroppedRoots() {
                     var merged = mergeSplitRoots(pendingDroppedRoots)
+                    var unchanged = merged.length === splitRoots.length
                     pendingDroppedRoots = []
+                    if (unchanged) {
+                        errorToast.text = qsTr("这些内容已经在输入文件里了")
+                        errorToast.visible = true
+                        errorToastTimer.restart()
+                        return
+                    }
                     enterSplit(merged)
                 }
 
@@ -18658,6 +18686,18 @@ ApplicationWindow {
             }
             newTaskRec.artifactTurnFilter = keys
             newTaskRec.showArtifactTurn()
+        }
+    }
+
+    // 诊断：MEDCLAW_ROOTS_DIALOG=1 直接打开「追加 / 替换」对话框
+    Timer {
+        running: rootsDialogAuto !== undefined && String(rootsDialogAuto) === "1"
+        interval: 2500
+        repeat: false
+        onTriggered: {
+            newTaskRec.pendingDroppedRoots = ["C:/tmp/demo-root"]
+            dropRootsDialog.open()
+            console.log("[RootsDialogAuto] open, visible=" + dropRootsDialog.visible)
         }
     }
 

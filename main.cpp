@@ -286,6 +286,9 @@ constexpr qint64 kClientLogMaxBytes = 16 * 1024 * 1024;
 QMutex g_logMutex;
 QFile *g_logFile = nullptr;
 qint64 g_logWritten = 0;
+QString g_logDir;
+QString g_logBaseName;
+int g_logPart = 0;
 
 void fileMessageHandler(QtMsgType type, const QMessageLogContext &, const QString &msg)
 {
@@ -302,13 +305,23 @@ void fileMessageHandler(QtMsgType type, const QMessageLogContext &, const QStrin
     const QByteArray consoleBytes = text.toLocal8Bit();
 
     QMutexLocker locker(&g_logMutex);
-    if (g_logFile && g_logFile->isOpen() && g_logWritten < kClientLogMaxBytes) {
-        g_logFile->write(fileBytes);
-        g_logFile->flush();
-        g_logWritten += fileBytes.size();
-        if (g_logWritten >= kClientLogMaxBytes) {
-            g_logFile->write("--- log size limit reached, further lines go to stderr only ---\n");
+    if (g_logFile && g_logFile->isOpen()) {
+        // 启动时文件就已经满的（上次运行写满的）也要先滚一个
+        if (g_logWritten >= kClientLogMaxBytes && !g_logDir.isEmpty()) {
+            // 到上限就滚动成 client-YYYYMMDD.N.log 再开一个新文件。
+            // 以前是直接停写，可出问题时偏偏正是需要日志的时候。
+            g_logFile->write("--- log rotated ---\n");
             g_logFile->flush();
+            g_logFile->close();
+            g_logFile->setFileName(QDir(g_logDir).filePath(
+                QStringLiteral("%1.%2.log").arg(g_logBaseName).arg(++g_logPart)));
+            if (g_logFile->open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+                g_logWritten = 0;
+        }
+        if (g_logWritten < kClientLogMaxBytes) {
+            g_logFile->write(fileBytes);
+            g_logFile->flush();
+            g_logWritten += fileBytes.size();
         }
     }
     fwrite(consoleBytes.constData(), 1, static_cast<size_t>(consoleBytes.size()), stderr);
@@ -325,6 +338,9 @@ void installFileMessageHandler()
     const QString name = QStringLiteral("client-%1.log")
                              .arg(QDateTime::currentDateTime().toString(
                                  QStringLiteral("yyyyMMdd")));
+    g_logDir = dir.absolutePath();
+    g_logBaseName = name.left(name.length() - 4);   // 去掉 .log，轮转时拼 .N.log
+    g_logPart = 0;
     auto *file = new QFile(dir.filePath(name));
     if (!file->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         delete file;
@@ -627,6 +643,10 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_TREE_ZOOM=1.3 直接设「输入文件」树的缩放，核对 −/+ 效果
     engine.rootContext()->setContextProperty(QStringLiteral("treeZoomAuto"),
                                              qEnvironmentVariable("MEDCLAW_TREE_ZOOM"));
+    // 诊断用：MEDCLAW_ROOTS_DIALOG=1 直接把「追加 / 替换」对话框打开，
+    // 核对它会不会被中间的 WebEngine（文件树/查看器）盖住
+    engine.rootContext()->setContextProperty(QStringLiteral("rootsDialogAuto"),
+                                             qEnvironmentVariable("MEDCLAW_ROOTS_DIALOG"));
     // 诊断用：MEDCLAW_SPLIT_EMPTY=1 打开「有中栏、没有根目录」的工作区空状态
     engine.rootContext()->setContextProperty(QStringLiteral("splitEmptyAuto"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_EMPTY"));
