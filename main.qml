@@ -22,6 +22,7 @@ ApplicationWindow {
                                                    ? Screen.desktopAvailableHeight : 800
     readonly property bool accountPreviewMode: Qt.application.arguments.indexOf("--account-preview") >= 0
     readonly property bool governmentEdition: buildGovernmentEdition
+    readonly property bool imagingEdition: buildImagingEdition
     readonly property bool compactLayout: width < 1100
     readonly property bool sidebarExpanded: !sidebarCollapsed && !compactLayout
     readonly property int windowCornerRadius: 12
@@ -47,6 +48,10 @@ ApplicationWindow {
     palette.accent: "#006BFF"
     property bool isNewTask: true
     property int leftSelectedIndex: 0
+    onLeftSelectedIndexChanged: {
+        if (imagingEdition && [0, 1, 4, 7, 8].indexOf(leftSelectedIndex) < 0)
+            leftSelectedIndex = 0
+    }
     property bool sidebarCollapsed: false
     // 进入并排时自动收起左侧导航；退出时恢复（只在是我们收起的情况下）
     property bool splitAutoCollapsedSidebar: false
@@ -677,7 +682,9 @@ ApplicationWindow {
             { title: "舆情/ESG风险扫描", expr: "0 7,13,19 * * *", prompt: "搜索持仓标的负面舆情：产品安全/环境处罚/劳动纠纷/监管调查/财务造假嫌疑/高管负面，按事件严重程度1-5分评级，4分及以上立即推送预警" }
         ] }
     ]
-    readonly property var cronTemplateCategories: governmentEdition
+    readonly property var cronTemplateCategories: imagingEdition
+                                                  ? [allCronTemplateCategories[3]]
+                                                  : governmentEdition
                                                   ? [allCronTemplateCategories[1], allCronTemplateCategories[4]]
                                                   : allCronTemplateCategories
 
@@ -1967,8 +1974,19 @@ ApplicationWindow {
             var list = rows || []
             for (var i = 0; i < list.length; i++) {
                 var source = list[i] || ({})
-                if (governmentEdition && !userTemplate
-                        && String(source.category || "").replace(/\s/g, "") !== "政务类")
+                var sourceCategory = String(source.category || "").replace(/\s/g, "")
+                if (imagingEdition && !userTemplate) {
+                    var normalizedTemplateCategory = sourceCategory
+                    var crossDisciplineCategory = normalizedTemplateCategory.indexOf("医工交叉") >= 0
+                            && (normalizedTemplateCategory.indexOf("期刊") >= 0
+                                || normalizedTemplateCategory.indexOf("论文") >= 0)
+                    var equipmentCategory = normalizedTemplateCategory.indexOf("设备科") >= 0
+                    if (!crossDisciplineCategory && !equipmentCategory)
+                        continue
+                    normalizedTemplateCategory = crossDisciplineCategory
+                            ? "医工交叉期刊类" : "设备科工作模板类"
+                }
+                if (!imagingEdition && governmentEdition && !userTemplate && sourceCategory !== "政务类")
                     continue
                 var id = String(source.id || "").trim()
                 if (!id)
@@ -1981,9 +1999,11 @@ ApplicationWindow {
                     "id": id,
                     "name": String(source.name || source.title || qsTr("未命名模板")),
                     "detail": String(source.detail || source.description || source.desc || ""),
-                    "category": String(source.category
-                                       || (userTemplate ? qsTr("用户上传模板")
-                                                        : qsTr("其他模板"))),
+                    "category": imagingEdition
+                                  ? (userTemplate ? qsTr("用户上传模板") : normalizedTemplateCategory)
+                                  : String(source.category
+                                           || (userTemplate ? qsTr("用户上传模板")
+                                                            : qsTr("其他模板"))),
                     "templatePath": String(source.templatePath || ""),
                     "isUserTemplate": !!userTemplate
                 })
@@ -2001,6 +2021,8 @@ ApplicationWindow {
             "政务类", "医工交叉期刊类", "设备科工作模板类",
             "用户上传模板", "其他模板"
         ]
+        if (imagingEdition)
+            preferredOrder = ["医工交叉期刊类", "设备科工作模板类", "用户上传模板"]
         var present = {}
         var options = chatTemplateOptions()
         for (var i = 0; i < options.length; i++) {
@@ -2549,10 +2571,14 @@ ApplicationWindow {
                         visible: window.sidebarExpanded
                         Repeater {
                             id: selectionRepeater
-                            model: ["新建任务", "定时任务", "专家·工具", "知识库", "模板库"/*, "MCP"*/]
+                            model: window.imagingEdition
+                                   ? ["新建任务", "定时任务", "工具", "知识库", "模板库"]
+                                   : ["新建任务", "定时任务", "专家·工具", "知识库", "模板库"/*, "MCP"*/]
                             delegate: Rectangle{
-                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8))
-                                property bool isSelected: index === 2
+                                readonly property int targetIndex: window.imagingEdition
+                                                                   ? (index < 2 ? index : (index === 2 ? 4 : (index === 3 ? 7 : 8)))
+                                                                   : (index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8)))
+                                property bool isSelected: !window.imagingEdition && index === 2
                                                           ? (window.leftSelectedIndex === 2
                                                              || window.leftSelectedIndex === 4)
                                                           : targetIndex === window.leftSelectedIndex
@@ -2577,7 +2603,7 @@ ApplicationWindow {
                                                 return "qrc:/images/chatNew.png"
                                             }else if(modelData === "定时任务"){
                                                 return "qrc:/images/alarm.png"
-                                            }else if(modelData === "专家·工具"){
+                                            }else if(modelData === "专家·工具" || modelData === "工具"){
                                                 return "qrc:/images/category.png"
                                             }else if(modelData === "知识库"){
                                                 return "qrc:/images/knowledge.png"
@@ -2636,10 +2662,14 @@ ApplicationWindow {
                         visible: !window.sidebarExpanded
                         Repeater {
                             id: selectionRepeaterCollapsed
-                            model: ["新建任务", "定时任务", "专家·工具", "知识库", "模板库" /*, "MCP"*/ ]
+                            model: window.imagingEdition
+                                   ? ["新建任务", "定时任务", "专家", "知识库", "模板库"]
+                                   : ["新建任务", "定时任务", "专家·工具", "知识库", "模板库" /*, "MCP"*/ ]
                             delegate: Rectangle{
-                                readonly property int targetIndex: index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8))
-                                property bool isSelected: index === 2
+                                readonly property int targetIndex: window.imagingEdition
+                                                                   ? (index < 2 ? index : (index === 2 ? 4 : (index === 3 ? 7 : 8)))
+                                                                   : (index < 2 ? index : (index === 2 ? 2 : (index === 3 ? 7 : 8)))
+                                property bool isSelected: !window.imagingEdition && index === 2
                                                           ? (window.leftSelectedIndex === 2
                                                              || window.leftSelectedIndex === 4)
                                                           : targetIndex === window.leftSelectedIndex
@@ -2658,7 +2688,7 @@ ApplicationWindow {
                                             return "qrc:/images/chatNew.png"
                                         }else if(modelData === "定时任务"){
                                             return "qrc:/images/alarm.png"
-                                        }else if(modelData === "专家·工具"){
+                                        }else if(modelData === "专家·工具" || modelData === "工具"){
                                             return "qrc:/images/category.png"
                                         }else if(modelData === "知识库"){
                                             return "qrc:/images/knowledge.png"
@@ -5273,9 +5303,11 @@ ApplicationWindow {
                         ]
                     }
                 ]
-                readonly property var shortcutGroups: window.governmentEdition
-                                                      ? [allShortcutGroups[1], allShortcutGroups[2], allShortcutGroups[5]]
-                                                      : allShortcutGroups
+                readonly property var shortcutGroups: window.imagingEdition
+                                                      ? [allShortcutGroups[4]]
+                                                      : window.governmentEdition
+                                                        ? [allShortcutGroups[1], allShortcutGroups[2], allShortcutGroups[5]]
+                                                        : allShortcutGroups
 
                 readonly property var selectedShortcut: selectedShortcutGroup >= 0
                                                         && selectedShortcutGroup < shortcutGroups.length
@@ -5319,7 +5351,7 @@ ApplicationWindow {
                 }
 
                 readonly property bool canSelectExpert:
-                    isNewTaskWelcome && !expertSelectionLocked
+                    !window.imagingEdition && isNewTaskWelcome && !expertSelectionLocked
                     && (selectedCollaborationAgentIds || []).length === 0
                     && !expertInstallActive
                     && window.visibleAgentList().length > 0
@@ -9432,7 +9464,8 @@ ApplicationWindow {
                                     }
                                     // Once the first turn starts, the active
                                     // expert team is shown by CollaborationPicker.
-                                    visible: newTaskRec.isNewTaskWelcome && expertId.length > 0
+                                    visible: !window.imagingEdition
+                                             && newTaskRec.isNewTaskWelcome && expertId.length > 0
                                     width: visible ? Math.min(chatInputContainer.width < 700 ? 180 : 240,
                                                               expertTagRow.implicitWidth + 24) : 0
                                     height: 36
@@ -9577,7 +9610,8 @@ ApplicationWindow {
                                  CollaborationPicker {
                                     id: collaborationPicker
                                     anchors.verticalCenter: parent.verticalCenter
-                                    visible: newTaskRec.hasActiveTask
+                                 visible: !window.imagingEdition
+                                          && newTaskRec.hasActiveTask
                                              && wsClient.collaborationParticipants
                                              && wsClient.collaborationParticipants.length > 1
                                     width: visible ? implicitWidth : 0
@@ -12366,7 +12400,9 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 64
-                visible: window.leftSelectedIndex === 2 || window.leftSelectedIndex === 4
+                visible: window.imagingEdition
+                         ? window.leftSelectedIndex === 4
+                         : window.leftSelectedIndex === 2 || window.leftSelectedIndex === 4
                 z: 2
 
                 Row {
@@ -12376,10 +12412,12 @@ ApplicationWindow {
                     spacing: 8
 
                     Repeater {
-                        model: [
-                            { title: qsTr("专家"), pageIndex: 2 },
-                            { title: qsTr("工具"), pageIndex: 4 }
-                        ]
+                        model: window.imagingEdition
+                               ? [{ title: qsTr("工具"), pageIndex: 4 }]
+                               : [
+                                   { title: qsTr("专家"), pageIndex: 2 },
+                                   { title: qsTr("工具"), pageIndex: 4 }
+                               ]
                         delegate: Rectangle {
                             readonly property int pageIndex: Number(modelData.pageIndex)
                             width: 76
@@ -12410,7 +12448,7 @@ ApplicationWindow {
                 }
 
                 SingleLineTextInput {
-                    visible: window.leftSelectedIndex === 2
+                    visible: !window.imagingEdition && window.leftSelectedIndex === 2
                     anchors.right: parent.right
                     anchors.rightMargin: 60
                     anchors.verticalCenter: parent.verticalCenter
@@ -12567,7 +12605,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                visible: window.leftSelectedIndex === 2
+                visible: !window.imagingEdition && window.leftSelectedIndex === 2
                 property string searchText: ""
 
                 onVisibleChanged: {
@@ -13407,6 +13445,7 @@ ApplicationWindow {
                 loading: wsClient.docxTemplatesLoading
                 gatewayHttpBaseUrl: wsClient.gatewayHttpBaseUrl
                 governmentEdition: window.governmentEdition
+                imagingEdition: window.imagingEdition
 
                 onRefreshRequested: wsClient.refreshDocxTemplates()
                 onUploadTemplateRequested: function(name, description,
@@ -18170,6 +18209,7 @@ ApplicationWindow {
 
     LoginPage {
         governmentEdition: window.governmentEdition
+        imagingEdition: window.imagingEdition
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top

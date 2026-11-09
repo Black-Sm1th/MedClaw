@@ -12,7 +12,9 @@ Item {
     property string gatewayHttpBaseUrl: ""
     property string searchText: ""
     property bool governmentEdition: false
-    property string selectedCategory: governmentEdition ? "政务类" : "精选"
+    property bool imagingEdition: false
+    property string selectedCategory: imagingEdition ? "医工交叉期刊类"
+                                                      : governmentEdition ? "政务类" : "精选"
     property var activeTemplate: ({})
     property bool previewOpen: false
     property bool uploadBusy: false
@@ -25,9 +27,11 @@ Item {
     readonly property bool uploadReady: uploadNameInput.text.trim().length > 0
                                         && pendingTemplateFileUrl.length > 0
                                         && pendingCoverFileUrl.length > 0
-    property var categories: governmentEdition
-        ? ["政务类", "用户上传模板"]
-        : [
+    property var categories: imagingEdition
+        ? ["医工交叉期刊类", "设备科工作模板类", "用户上传模板"]
+        : governmentEdition
+          ? ["政务类", "用户上传模板"]
+          : [
             "精选", "国际国内期刊论文类", "行业情报类", "新药研发类",
             "药品注册申报类", "医药监管申报合规类", "药品准入与HTA类",
             "政务类", "医工交叉期刊类", "设备科工作模板类", "用户上传模板"
@@ -185,6 +189,12 @@ Item {
     Component.onCompleted: {
         if (visible && !loading && (!templates || templates.length === 0))
             refreshRequested()
+    }
+
+    onSelectedCategoryChanged: {
+        if (categories.indexOf(selectedCategory) < 0)
+            selectedCategory = imagingEdition ? categories[0]
+                                               : governmentEdition ? categories[0] : "精选"
     }
 
     Rectangle {
