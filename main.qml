@@ -3912,6 +3912,48 @@ ApplicationWindow {
                     rebuildArtifactRows()
                 }
 
+                // 「关键图像」用缩略图看，路径 → dataURL（和阅片台的缩略图共用
+                // 一个 Thumbnailer，只是缓存分开存）
+                property var artifactThumbs: ({})
+                property var artifactImageCells: []
+                property var artifactThumbRequested: ({})
+
+                function imageArtifactCells() {
+                    var items = sessionArtifacts || []
+                    var only = artifactTurnFilter || []
+                    var out = []
+                    for (var i = 0; i < items.length; ++i) {
+                        var entry = items[i] || {}
+                        var path = String(entry.path || "")
+                        if (path.length === 0)
+                            continue
+                        var name = artifactEntryName(entry)
+                        if (name.length === 0 || !artifactMatchesFilter(name, "image"))
+                            continue
+                        if (only.length > 0 && only.indexOf(artifactTurnKey(entry)) < 0)
+                            continue
+                        out.push({ name: name, path: path })
+                    }
+                    return out
+                }
+
+                /// 网格里的缩略图按需生成；同一个路径只请求一次
+                function requestArtifactThumb(path) {
+                    var key = String(path || "")
+                    if (key.length === 0)
+                        return
+                    if (String(artifactThumbs[key] || "").length > 0)
+                        return
+                    if (artifactThumbRequested[key] === true)
+                        return
+                    var pending = {}
+                    for (var k in artifactThumbRequested)
+                        pending[k] = artifactThumbRequested[k]
+                    pending[key] = true
+                    artifactThumbRequested = pending
+                    thumbnailer.request("artifact:" + key, key)
+                }
+
                 /// 产物的分组：按所在目录归类，交给文件树页面按"文件夹形式"渲染
                 function buildArtifactGroups(filter) {
                     var items = sessionArtifacts || []
@@ -3979,6 +4021,7 @@ ApplicationWindow {
                     }
                     splitArtifactGroups = buildArtifactGroups(splitArtifactFilter)
                     rebuildArtifactRows()
+                    artifactImageCells = imageArtifactCells()
                 }
 
                 onSplitArtifactFilterChanged: refreshArtifactGroups()
@@ -4017,6 +4060,10 @@ ApplicationWindow {
                     splitMode = false
                     splitRoots = []
                     splitSelection = []
+                    // 并排里的面板不跟会话走，退出时得自己收干净，
+                    // 否则回到新建任务页右侧还挂着一个空产物面板
+                    artifactSidebarVisible = false
+                    artifactSidebarMode = "list"
                 }
 
                 /// 把勾选的文件塞进输入框（「在对话框中引用」）
@@ -4117,6 +4164,23 @@ ApplicationWindow {
                     var nextKey = currentSidebarSessionKey()
                     if (nextKey === sidebarStateSessionKey)
                         return
+                    // 并排视图期间，中栏（输入文件树 + 阅片台）和里面打开的文件
+                    // 属于「窗口工作区」，不跟会话走：换会话只换会话数据（产物、
+                    // 输入文件列表），标签、当前影像、面板宽度全部保留，否则
+                    // 一换对话阅片台就退回空白提示、产物面板也被收起。
+                    if (splitMode) {
+                        for (var t = 0; t < officeTabs.count; ++t) {
+                            if (String(officeTabs.get(t).sessionKey || "") !== nextKey)
+                                officeTabs.setProperty(t, "sessionKey", nextKey)
+                        }
+                        sidebarStateSessionKey = nextKey
+                        sessionHistoryLoading = nextKey.length > 0
+                        sessionInputFiles = []
+                        sessionArtifacts = []
+                        artifactHighlights = ({})
+                        hideResourcePopover()
+                        return
+                    }
                     var states = ({})
                     for (var key in sidebarVisibilityBySession)
                         states[key] = sidebarVisibilityBySession[key]
@@ -4678,6 +4742,16 @@ ApplicationWindow {
                             copy[k] = newTaskRec.readerThumbs[k]
                         copy[key] = String(dataUrl || "")
                         newTaskRec.readerThumbs = copy
+                        // 产物「关键图像」网格用同一个结果
+                        var grid = {}
+                        for (var g in newTaskRec.artifactThumbs)
+                            grid[g] = newTaskRec.artifactThumbs[g]
+                        grid[key] = String(dataUrl || "")
+                        newTaskRec.artifactThumbs = grid
+                    }
+                    function onFailed(requestId, path, reason) {
+                        // 生成失败让占位留在那儿，不再无限重试
+                        console.log("[ArtifactThumb] failed", path, reason)
                     }
                 }
 
@@ -4766,6 +4840,38 @@ ApplicationWindow {
                     }
                     pendingDroppedRoots = list
                     dropRootsDialog.open()
+                }
+
+                /// 中栏（含阅片台页）拖进来的东西：
+                /// 文件夹 → 进「输入文件」并问追加/替换；文件 → 直接打开
+                ///（影像进阅片台，其它进中栏预览）。
+                function handleMiddleDrop(paths) {
+                    var list = []
+                    for (var i = 0; i < (paths || []).length; ++i) {
+                        var p = String(paths[i] || "")
+                        if (p.length > 0)
+                            list.push(p)
+                    }
+                    if (list.length === 0)
+                        return
+                    var described = fileTreeProvider.describeAll(list)
+                    var dirs = []
+                    var files = []
+                    for (var j = 0; j < described.length; ++j) {
+                        if (described[j].isDir)
+                            dirs.push(String(described[j].path || ""))
+                        else
+                            files.push(String(described[j].path || ""))
+                    }
+                    console.log("[MiddleDrop] dirs=" + dirs.length + " files=" + files.length)
+                    if (dirs.length > 0) {
+                        splitMiddleTab = "files"
+                        handleDroppedRoots(dirs)
+                    }
+                    for (var f = 0; f < files.length; ++f) {
+                        if (files[f].length > 0)
+                            openArtifactPath(files[f])
+                    }
                 }
 
                 function replaceDroppedRoots() {
@@ -6121,8 +6227,7 @@ ApplicationWindow {
                             if (locals.length === 0)
                                 return
                             drop.acceptProposedAction()
-                            newTaskRec.splitMiddleTab = "files"
-                            newTaskRec.handleDroppedRoots(locals)
+                            newTaskRec.handleMiddleDrop(locals)
                         }
                     }
 
@@ -6723,6 +6828,9 @@ ApplicationWindow {
 
                                 Connections {
                                     target: officeViewHost.officeView
+                                    // 目标是 Loader 加载出来的对象，静态类型是 QQuickItem，
+                                    // 编译期看不到 seriesPicked，不静音就是一条 warning
+                                    ignoreUnknownSignals: true
                                     function onSeriesPicked(path) {
                                         newTaskRec.activateMedicalPath(path)
                                     }
@@ -7191,6 +7299,8 @@ ApplicationWindow {
                         ListView {
                             id: splitArtifactList
 
+                            // 「关键图像」改由下面的缩略图网格显示
+                            visible: newTaskRec.splitArtifactFilter !== "image"
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: artifactFilters.bottom
@@ -7336,9 +7446,98 @@ ApplicationWindow {
                                 font.pixelSize: 13
                             }
                         }
+
+                        // 「关键图像」用缩略图网格看：影像缩略图 + 文件名
+                        GridView {
+                            id: splitArtifactGrid
+
+                            visible: newTaskRec.splitArtifactFilter === "image"
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: artifactFilters.bottom
+                            anchors.bottom: parent.bottom
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 8
+                            anchors.topMargin: 12
+                            anchors.bottomMargin: 12
+                            clip: true
+                            cellWidth: Math.max(88, Math.floor(width / 2))
+                            cellHeight: Math.round(cellWidth * 0.80)
+                            model: newTaskRec.artifactImageCells
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                            delegate: Item {
+                                id: imageCell
+
+                                required property var modelData
+
+                                width: splitArtifactGrid.cellWidth
+                                height: splitArtifactGrid.cellHeight
+
+                                Rectangle {
+                                    id: imageCellCard
+
+                                    x: 2
+                                    y: 2
+                                    width: parent.width - 8
+                                    height: parent.height - 24
+                                    radius: 6
+                                    color: "#F4F6F9"
+                                    border.width: 1
+                                    border.color: imageCellMouse.containsMouse ? "#006BFF" : "#0F000000"
+                                    clip: true
+
+                                    readonly property string thumb:
+                                        String(newTaskRec.artifactThumbs[imageCell.modelData.path] || "")
+
+                                    Image {
+                                        anchors.fill: parent
+                                        anchors.margins: 1
+                                        source: imageCellCard.thumb
+                                        visible: imageCellCard.thumb.length > 0
+                                        // 看片要看到整幅，别裁边
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                        cache: false
+                                    }
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: imageCellCard.thumb.length === 0
+                                        text: qsTr("生成中…")
+                                        color: "#40000000"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 12
+                                    }
+
+                                    Component.onCompleted:
+                                        newTaskRec.requestArtifactThumb(imageCell.modelData.path)
+                                }
+
+                                Text {
+                                    anchors.left: imageCellCard.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 2
+                                    text: imageCell.modelData.name
+                                    color: "#A6000000"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                }
+
+                                MouseArea {
+                                    id: imageCellMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.openArtifactPath(imageCell.modelData.path)
+                                }
+                            }
+                        }
                     }
-
-
 
                     Item {
                         id: resourcePopover
@@ -18289,6 +18488,8 @@ ApplicationWindow {
                             + " splitMode=" + newTaskRec.splitMode
                             + " collapsed=" + newTaskRec.splitMiddleCollapsed)
             }
+            if (artifactFilterAuto !== undefined && String(artifactFilterAuto).length > 0)
+                newTaskRec.splitArtifactFilter = String(artifactFilterAuto)
             if (splitAutoOpenFile !== undefined && String(splitAutoOpenFile).length > 0) {
                 // 支持用「;」一次打开多个，便于核对阅片台里的缩略图条
                 var openParts = String(splitAutoOpenFile).split(";")

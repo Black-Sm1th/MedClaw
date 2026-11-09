@@ -185,4 +185,20 @@
       })();
     }());
   </script>
-<style id="medclaw-overrides">.viewport-area{padding:8px 10px 10px!important;}.toolbar-wrap{position:static!important;left:auto!important;top:auto!important;right:auto!important;transform:none!important;z-index:auto!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:center!important;gap:8px!important;margin:0 0 8px!important;}#medclawLayoutToolbar{position:static!important;left:auto!important;top:auto!important;transform:none!important;background:none!important;border:0!important;padding:0!important;}.grid-ico{display:grid;gap:1.5px;}.grid-ico i{background:currentColor;border-radius:1px;display:block;}</style></body></html>
+<style id="medclaw-overrides">.viewport-area{padding:8px 10px 10px!important;}.toolbar-wrap{position:static!important;left:auto!important;top:auto!important;right:auto!important;transform:none!important;z-index:auto!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:center!important;gap:8px!important;margin:0 0 8px!important;}#medclawLayoutToolbar{position:static!important;left:auto!important;top:auto!important;transform:none!important;background:none!important;border:0!important;padding:0!important;}.grid-ico{display:grid;gap:1.5px;}.grid-ico i{background:currentColor;border-radius:1px;display:block;}</style>
+<script>
+  // 拖放统一交给 Qt 宿主（QML 中栏的 DropArea）处理。
+  // 打包代码在 document 上监听 dragover 并 preventDefault，WebEngine 于是认领
+  // 了整次拖拽：文件被塞进页面自带的 file input，文件夹则什么也不发生
+  //（这就是"阅片台只能拖文件、不能拖文件夹"的原因）。
+  // 这里在 capture 阶段截住、且**不** preventDefault —— 页面不认领，拖拽就会
+  // 落到上层 QML，文件夹和文件都按宿主的规则处理。聊天页也是靠这个机制把
+  // 拖放交回 QML 的。
+  (function () {
+    var swallow = function (e) { e.stopImmediatePropagation() }
+    window.addEventListener('dragenter', swallow, true)
+    window.addEventListener('dragover', swallow, true)
+    window.addEventListener('drop', swallow, true)
+  }());
+</script>
+</body></html>

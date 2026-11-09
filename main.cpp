@@ -608,6 +608,9 @@ int main(int argc, char *argv[])
     // 核对对话栏右缘的「展开中间栏」按钮
     engine.rootContext()->setContextProperty(QStringLiteral("splitAutoCollapse"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_COLLAPSE"));
+    // 诊断用：MEDCLAW_ARTIFACT_FILTER=image 直接落到「关键图像」页，核对缩略图网格
+    engine.rootContext()->setContextProperty(QStringLiteral("artifactFilterAuto"),
+                                             qEnvironmentVariable("MEDCLAW_ARTIFACT_FILTER"));
 
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-55-Regular.ttf");
     QFontDatabase::addApplicationFont(":/fonts/AlibabaPuHuiTi-3-65-Medium.ttf");
