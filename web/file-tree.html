@@ -238,8 +238,7 @@
 
   // 顶层根节点列表：多次拖入就是多个并列的根，各自占一行（不套"已拖入 N 项"）
   var roots = [];
-  var scrollTarget = null;   // 需要滚进视野的根（追加时用）
-  var scrollUntil = 0;       // 这个时间点之前持续盯着它（子项是分块异步到的）
+  var pinBottomUntil = 0;    // 这个时间点之前一直把列表钉在底部（刚追加完）
   var hostMode = false;
   var nextListId = 1;
   var pendingList = new Map();   // id -> node（等待宿主返回这一块）
@@ -476,21 +475,12 @@
 
     drawLinks(first, last);
 
-    // 追加进来的根滚进视野：子项分块异步到，它的位置会一路往后走，
-    // 所以盯着看一小会儿（scrollUntil），只在它掉到视口外时才滚。
-    if (scrollTarget) {
-      if (Date.now() > scrollUntil) {
-        scrollTarget = null;
-      } else {
-        for (var s = 0; s < flat.length; s++) {
-          if (flat[s].node !== scrollTarget) continue;
-          var top2 = s * ROW_H;
-          if (top2 >= treePane.scrollTop + treePane.clientHeight - ROW_H) {
-            treePane.scrollTop = Math.max(0, top2 - 8);
-            return;   // 滚动位置变了，下一帧重画
-          }
-          break;
-        }
+    // 刚追加完：钉在底部，让新加的那一行露出来（子项还在分块到，高度会长）
+    if (pinBottomUntil && Date.now() < pinBottomUntil) {
+      var maxTop = Math.max(0, spacer.offsetHeight - treePane.clientHeight);
+      if (maxTop - treePane.scrollTop > 2) {
+        treePane.scrollTop = maxTop;
+        return;   // 位置变了，下一帧按新位置重画
       }
     }
 
@@ -585,10 +575,8 @@
     rebuildFlat();
     scheduleRender();
     updateStat();
-    // 追加时新根排在前面目录展开后的所有子项后面，而子项是分块异步到的，
-    // 所以这里只记下目标，等 renderWindow 拿到最新 flat 再滚（见 scrollTarget）
-    scrollTarget = roots.length > 1 ? roots[roots.length - 1] : null;
-    scrollUntil = scrollTarget ? Date.now() + 2500 : 0;
+    // 追加进来的根排在最后：直接把列表钉到底部，子项分块到齐前也不会跑丢
+    pinBottomUntil = roots.length > 1 ? Date.now() + 3000 : 0;
   }
 
   function mountRoot(node) {
