@@ -611,6 +611,9 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_ARTIFACT_FILTER=image 直接落到「关键图像」页，核对缩略图网格
     engine.rootContext()->setContextProperty(QStringLiteral("artifactFilterAuto"),
                                              qEnvironmentVariable("MEDCLAW_ARTIFACT_FILTER"));
+    // 诊断用：MEDCLAW_SPLIT_EMPTY=1 打开「有中栏、没有根目录」的工作区空状态
+    engine.rootContext()->setContextProperty(QStringLiteral("splitEmptyAuto"),
+                                             qEnvironmentVariable("MEDCLAW_SPLIT_EMPTY"));
     // 诊断用：MEDCLAW_OPEN_SESSION=<序号从1开始 | session key 片段>
     // 登录后自动打开一个历史会话，核对"真实会话里"的界面（按钮有没有被 WebEngine 盖住之类）
     engine.rootContext()->setContextProperty(QStringLiteral("openSessionAuto"),

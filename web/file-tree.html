@@ -33,6 +33,9 @@
   body.embed .head,
   body.embed .foot,
   body.embed .preview-pane { display: none; }
+  /* 嵌入模式没有表头，页面自己的空状态（📂 + 提示）会和宿主 QML 的
+     空状态叠在一起，两段文字重叠——空状态交给宿主画。 */
+  body.embed .empty { display: none; }
   body.embed .tree-pane { padding: 0; scrollbar-width: none; }
   body.embed .tree-pane::-webkit-scrollbar { width: 0; height: 0; display: none; }
 

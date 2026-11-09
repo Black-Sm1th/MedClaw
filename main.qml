@@ -18509,6 +18509,19 @@ ApplicationWindow {
         }
     }
 
+    // 诊断：MEDCLAW_SPLIT_EMPTY=1 打开「有中栏但还没有根目录」的工作区，
+    // 核对中栏空状态（页面自带的空状态必须关掉，否则和 QML 的文字叠在一起）
+    Timer {
+        running: splitEmptyAuto !== undefined && String(splitEmptyAuto) === "1"
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            newTaskRec.enterSplitWorkspace()
+            console.log("[SplitEmptyAuto] splitMode=" + newTaskRec.splitMode
+                        + " roots=" + newTaskRec.splitRoots.length)
+        }
+    }
+
     // 诊断入口：MEDCLAW_OPEN_SESSION=<序号从 1 开始 | key 片段>
     // 登录后自动打开一个历史会话，用来核对"真实会话里"的界面
     // （尤其是浮在聊天 WebEngine 上方的按钮会不会被盖住）。
