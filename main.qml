@@ -10563,13 +10563,18 @@ ApplicationWindow {
                                         title: qsTr("选择文件")
                                         fileMode: FileDialog.OpenFiles
                                         onAccepted: {
+                                            var picked = []
                                             for (var i = 0; i < selectedFiles.length; i++) {
                                                 var url = selectedFiles[i].toString()
                                                 var path = window.localFilePathFromUrl(url)
                                                 var parts = path.split(/[\\\/]/)
                                                 var name = parts[parts.length - 1] || path
                                                 textInputArea.insertFile(name, path, false)
+                                                picked.push(path)
                                             }
+                                            // 除了挂成输入框的附件，也在中间栏「输入文件」里打开
+                                            if (picked.length > 0)
+                                                newTaskRec.handleMiddleDrop(picked)
                                         }
                                     }
                                     FolderDialog {
@@ -10581,6 +10586,8 @@ ApplicationWindow {
                                             var parts = path.split(/[\\\/]/)
                                             var name = parts[parts.length - 1] || path
                                             textInputArea.insertFile(name, path, true)
+                                            // 同样把文件夹放进中间栏「输入文件」
+                                            newTaskRec.handleMiddleDrop([path])
                                         }
                                     }
                                     Rectangle{
