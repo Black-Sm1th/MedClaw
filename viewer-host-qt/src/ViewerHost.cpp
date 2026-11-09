@@ -1,6 +1,7 @@
 #include "ViewerHost.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
@@ -14,6 +15,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QTcpSocket>
+#include <QTimer>
 #include <QUrlQuery>
 #include <QUuid>
 
@@ -303,9 +305,16 @@ bool isNpyName(const QString &name)
     return name.endsWith(QStringLiteral(".npy"), Qt::CaseInsensitive);
 }
 
+/// FreeSurfer MGZ（gzip 压缩的 MGH）。查看器会先转成 NIfTI 再显示，
+/// 这里只需要把它当体数据识别出来。
+bool isMgzName(const QString &name)
+{
+    return name.endsWith(QStringLiteral(".mgz"), Qt::CaseInsensitive);
+}
+
 bool isVolumeName(const QString &name)
 {
-    return isNiftiName(name) || isNpyName(name);
+    return isNiftiName(name) || isNpyName(name) || isMgzName(name);
 }
 
 QString volumeStemName(const QString &fileName)
@@ -316,6 +325,8 @@ QString volumeStemName(const QString &fileName)
     else if (stem.endsWith(QStringLiteral(".nii"), Qt::CaseInsensitive))
         stem.chop(4);
     else if (stem.endsWith(QStringLiteral(".npy"), Qt::CaseInsensitive))
+        stem.chop(4);
+    else if (stem.endsWith(QStringLiteral(".mgz"), Qt::CaseInsensitive))
         stem.chop(4);
     return stem;
 }
@@ -780,7 +791,7 @@ QString directoryViewerMode(const QFileInfo &info)
         ++seen;
         if (nameHasAnySuffix(name, {QStringLiteral(".dcm"), QStringLiteral(".dicom"),
                                     QStringLiteral(".ima"), QStringLiteral(".nii"),
-                                    QStringLiteral(".nii.gz")}))
+                                    QStringLiteral(".nii.gz"), QStringLiteral(".mgz")}))
             ++dicom;
         else if (isMolstarName(name))
             ++molstar;
@@ -816,7 +827,8 @@ QString medicalViewerMode(const QFileInfo &info)
     if (isNiftiName(name))
         return QStringLiteral("volume");
 
-    if (name == QStringLiteral("result.json") || name.endsWith(QStringLiteral(".npy")))
+    if (name == QStringLiteral("result.json") || name.endsWith(QStringLiteral(".npy"))
+        || isMgzName(name))
         return QStringLiteral("volume");
 
     const QString suffix = info.suffix().toLower();
@@ -948,6 +960,7 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
     m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     ++m_nonce;
     setLastError({});
+    writeControlEndpoint();
     return medicalPageUrl(mode);
 }
 
@@ -993,6 +1006,7 @@ QString ViewerHost::addMedicalImage(const QString &localPath)
     if (added)
         ++m_nonce;
     setLastError({});
+    writeControlEndpoint();
     return medicalPageUrl(m_medicalViewerMode);
 }
 
@@ -1030,6 +1044,7 @@ void ViewerHost::closeDocument()
     m_medicalViewerMode.clear();
     m_medicalMode = false;
     m_readOnly = false;
+    removeControlEndpoint();
 }
 
 bool ViewerHost::saveAsCurrent()
@@ -1103,6 +1118,14 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
     const QByteArray method = parts.at(0);
     const QUrl url = QUrl::fromEncoded(parts.at(1));
     const QByteArray body = request.mid(headerEnd + 4);
+
+    // Agent control channel: POST /api/viewer {"action": ..., "args": {...}}
+    // with the per-session token in X-Viewer-Token. Routes to QML, which owns
+    // the actual viewer widget, and answers when replyControl() is called.
+    if (method == "POST" && url.path() == QStringLiteral("/api/viewer")) {
+        handleControl(socket, request, body);
+        return;
+    }
 
       if (method == "OPTIONS") {
           respond(socket, 204, "text/plain", {});
@@ -1453,6 +1476,139 @@ void ViewerHost::respondJson(QTcpSocket *socket, int statusCode, const QJsonObje
 {
     respond(socket, statusCode, "application/json; charset=utf-8",
             QJsonDocument(object).toJson(QJsonDocument::Compact));
+}
+
+QByteArray ViewerHost::headerValue(const QByteArray &request, const QByteArray &name) const
+{
+    const int headerEnd = request.indexOf("\r\n\r\n");
+    const QByteArray head = headerEnd >= 0 ? request.left(headerEnd) : request;
+    const QByteArray lowerName = name.toLower() + ':';
+    const QList<QByteArray> lines = head.split('\n');
+    for (const QByteArray &raw : lines) {
+        const QByteArray line = raw.trimmed();
+        if (line.toLower().startsWith(lowerName))
+            return line.mid(lowerName.size()).trimmed();
+    }
+    return {};
+}
+
+void ViewerHost::handleControl(QTcpSocket *socket, const QByteArray &request,
+                               const QByteArray &body)
+{
+    if (!m_medicalMode || m_sessionId.isEmpty()) {
+        respondJson(socket, 409,
+                    {{QStringLiteral("ok"), false},
+                     {QStringLiteral("error"), QStringLiteral("no_medical_viewer")},
+                     {QStringLiteral("message"), QStringLiteral("No medical viewer is open.")}});
+        return;
+    }
+    if (headerValue(request, "x-viewer-token") != m_sessionId.toUtf8()) {
+        respondJson(socket, 403,
+                    {{QStringLiteral("ok"), false},
+                     {QStringLiteral("error"), QStringLiteral("bad_token")},
+                     {QStringLiteral("message"),
+                      QStringLiteral("X-Viewer-Token does not match the active session.")}});
+        return;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        respondJson(socket, 400,
+                    {{QStringLiteral("ok"), false},
+                     {QStringLiteral("error"), QStringLiteral("bad_request")},
+                     {QStringLiteral("message"), QStringLiteral("Body must be a JSON object.")}});
+        return;
+    }
+    const QJsonObject object = document.object();
+    const QString action = object.value(QStringLiteral("action")).toString().trimmed();
+    if (action.isEmpty()) {
+        respondJson(socket, 400,
+                    {{QStringLiteral("ok"), false},
+                     {QStringLiteral("error"), QStringLiteral("bad_request")},
+                     {QStringLiteral("message"), QStringLiteral("Missing action.")}});
+        return;
+    }
+
+    const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_pendingControls.insert(requestId, socket);
+    connect(socket, &QTcpSocket::disconnected, this, [this, requestId]() {
+        m_pendingControls.remove(requestId);
+    });
+    // A viewer command should be near-instant. Never leave the HTTP client hanging.
+    QTimer::singleShot(15000, this, [this, requestId]() {
+        const auto it = m_pendingControls.find(requestId);
+        if (it == m_pendingControls.end())
+            return;
+        QTcpSocket *pending = it.value();
+        m_pendingControls.erase(it);
+        respondJson(pending, 504,
+                    {{QStringLiteral("ok"), false},
+                     {QStringLiteral("error"), QStringLiteral("timeout")},
+                     {QStringLiteral("message"),
+                      QStringLiteral("The viewer did not answer within 15 s.")}});
+    });
+    emit controlRequest(requestId, action, object.value(QStringLiteral("args")).toObject());
+}
+
+void ViewerHost::replyControl(const QString &requestId, bool ok, const QJsonObject &payload)
+{
+    const auto it = m_pendingControls.find(requestId);
+    if (it == m_pendingControls.end())
+        return;
+    QTcpSocket *socket = it.value();
+    m_pendingControls.erase(it);
+    QJsonObject out = payload;
+    out.insert(QStringLiteral("ok"), ok);
+    respondJson(socket, 200, out);
+}
+
+QString ViewerHost::controlEndpointPath() const
+{
+    QString base = qEnvironmentVariable("LOCALAPPDATA");
+    if (base.isEmpty())
+        base = QDir::tempPath();
+    return QDir::fromNativeSeparators(base)
+           + QStringLiteral("/MedClaw/viewer/endpoint.json");
+}
+
+QString ViewerHost::newScreenshotPath() const
+{
+    const QString dir =
+        QFileInfo(controlEndpointPath()).absolutePath() + QStringLiteral("/shots");
+    QDir().mkpath(dir);
+    return dir + QLatin1Char('/')
+           + QUuid::createUuid().toString(QUuid::WithoutBraces)
+           + QStringLiteral(".png");
+}
+
+void ViewerHost::writeControlEndpoint()
+{
+    if (!m_medicalMode || m_sessionId.isEmpty()) {
+        removeControlEndpoint();
+        return;
+    }
+    const QString path = controlEndpointPath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    const QJsonObject object{
+        {QStringLiteral("port"), static_cast<int>(port())},
+        {QStringLiteral("token"), m_sessionId},
+        {QStringLiteral("path"), m_currentPath},
+        {QStringLiteral("viewer"), m_medicalViewerMode},
+        {QStringLiteral("pid"), static_cast<qint64>(QCoreApplication::applicationPid())},
+        {QStringLiteral("updated"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+    };
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return;
+    file.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    file.commit();
+}
+
+void ViewerHost::removeControlEndpoint()
+{
+    const QString path = controlEndpointPath();
+    if (QFileInfo::exists(path))
+        QFile::remove(path);
 }
 
 void ViewerHost::setLastError(const QString &message)

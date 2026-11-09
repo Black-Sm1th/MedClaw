@@ -2,6 +2,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QHash>
 #include <QObject>
 #include <QTcpServer>
 #include <QUrl>
@@ -42,17 +43,31 @@ public:
     Q_INVOKABLE void closeDocument();
     Q_INVOKABLE bool saveAsCurrent();
 
+    // --- Agent control channel -------------------------------------------
+    // The Qt/QML side owns the viewer widgets, so C++ only routes commands:
+    // POST /api/viewer -> controlRequest() -> QML -> replyControl().
+    // The endpoint is written to a fixed per-user path so an external tool can
+    // discover the ephemeral port and session token.
+    Q_INVOKABLE void replyControl(const QString &requestId, bool ok,
+                                  const QJsonObject &payload);
+    Q_INVOKABLE QString controlEndpointPath() const;
+    Q_INVOKABLE QString newScreenshotPath() const;
+
 signals:
     void serverChanged();
     void lastErrorChanged();
     void documentChanged();
     void documentSaved(const QString &path);
     void viewerEvent(const QString &type, const QVariant &content);
+    void controlRequest(const QString &requestId, const QString &action,
+                        const QJsonObject &args);
 
 private:
     void acceptConnection();
     void readRequest(QTcpSocket *socket);
     void handleRequest(QTcpSocket *socket, const QByteArray &request);
+    void handleControl(QTcpSocket *socket, const QByteArray &request,
+                       const QByteArray &body);
     void handleEvent(QTcpSocket *socket, const QByteArray &body);
     void respond(QTcpSocket *socket, int statusCode, const QByteArray &contentType,
                  const QByteArray &body,
@@ -70,6 +85,9 @@ private:
     QJsonObject medicalManifest() const;
     QString medicalPageUrl(const QString &mode) const;
     bool writeBytes(const QString &path, const QByteArray &bytes);
+    QByteArray headerValue(const QByteArray &request, const QByteArray &name) const;
+    void writeControlEndpoint();
+    void removeControlEndpoint();
 
     QTcpServer m_server;
     QString m_currentPath;
@@ -83,4 +101,5 @@ private:
     bool m_readOnly = false;
     bool m_medicalMode = false;
     quint64 m_nonce = 0;
+    QHash<QString, QTcpSocket *> m_pendingControls;
 };

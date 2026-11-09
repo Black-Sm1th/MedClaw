@@ -261,6 +261,11 @@ public:
     /// 中止当前会话正在执行的聊天运行（服务端仍保持连接）
     Q_INVOKABLE void abortChat(const QString &sessionKey = QString());
 
+    /// 回答 ask_user 提问（toolCallId 来自提问事件）
+    Q_INVOKABLE void resolveQuestion(const QString &toolCallId, const QString &answer);
+
+    /// 跳过 ask_user 提问
+    Q_INVOKABLE void skipQuestion(const QString &toolCallId);
     /**
      * @brief 发送聊天消息
      * @param message    用户输入的消息文本
@@ -629,6 +634,20 @@ signals:
                             const QString &toolCallId,
                             bool isError); ///< 工具执行结果返回
 
+    // ── ask_user 提问 ──
+    void questionAsked(const QString &toolCallId,
+                       const QString &question,
+                       const QVariantList &options,
+                       bool multi,
+                       bool allowText,
+                       const QString &header);
+    void questionResolved(const QString &toolCallId,
+                          const QString &status,
+                          const QString &answer);
+
+    /// imaging_viewer 的 open/add：客户端据此自动打开阅片窗口
+    void viewerOpenRequested(const QString &path, bool add);
+
     // ── 错误 ──
     void errorOccurred(const QString &message); ///< 发生错误
     /// The packaged local Gateway could not be started or recovered.
@@ -744,6 +763,15 @@ private:
      */
     bool handleStructuredChatEvent(const QJsonObject &payload);
 
+    /// 工具事件出口：ask_user 转成提问事件，其余保持原样
+    void emitToolCallEvent(const QString &toolName,
+                           const QString &toolArgs,
+                           const QString &toolCallId);
+    void emitToolResultEvent(const QString &toolName,
+                             const QString &content,
+                             const QString &toolCallId,
+                             bool isError);
+
     /**
      * @brief 处理入站响应帧（type: "res"）
      * @param msg 完整的 JSON 对象
@@ -851,6 +879,11 @@ private:
     QStringList workspacesForArtifactSession(const QString &sessionKey) const;
     void beginArtifactTracking(const QString &sessionKey, bool resetSnapshot = false);
     void finishArtifactTracking(const QString &sessionKey);
+    /// 兜底：按修改时间找出本轮开始后新建/改动的文件。
+    /// 用于「开工快照缺失」或「快照 diff 落空」两种情况——否则产物明明写进了
+    /// 工作区，界面上的产物清单却是空的，而且没有任何日志可查。
+    QVariantList artifactsModifiedSince(const QStringList &workspaces, qint64 sinceMs,
+                                        const QString &sessionKey) const;
     static bool shouldIgnoreArtifactPath(const QString &relativePath);
     QString desiredTaskOutputDir(const QString &sessionKey) const;
     bool isOpenClawAgentWorkspace(const QString &path) const;
@@ -1119,6 +1152,8 @@ private:
     QString m_activeChatSessionKey;               ///< 当前聊天运行所属 sessionKey
     QString m_recentlyAbortedChatSessionKey;      ///< 中止后用于过滤迟到的 complete 事件
     QHash<QString, ArtifactTrackingState> m_artifactTrackingBySession;
+    /// 每轮开工时间（毫秒）。即使开工快照没能建立也要记下来，收尾时才能按 mtime 兜底。
+    QHash<QString, qint64> m_artifactTurnStartMs;
     QSet<QString> m_patchedChildOutputDirKeys;
     quint64 m_sidebarTitleBatchGen = 0;
     quint64 m_sessionTitleBatchGen = 0;

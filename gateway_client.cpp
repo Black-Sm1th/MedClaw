@@ -24,6 +24,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QTimer>
 #include <QUrl>
@@ -915,6 +916,92 @@ QJsonObject historyToolArguments(const QJsonObject &object)
             return parseToolArguments(value.toString());
     }
     return QJsonObject();
+}
+
+bool parseAskUserCard(const QString &argsJson,
+                      QString *question,
+                      QVariantList *options,
+                      bool *multi,
+                      bool *allowText,
+                      QString *header)
+{
+    QJsonObject object = parseToolArguments(argsJson);
+    if (object.isEmpty())
+        return false;
+
+    const QJsonArray grouped = object.value(QStringLiteral("questions")).toArray();
+    if (!grouped.isEmpty())
+        object = grouped.at(0).toObject();
+
+    const QString text = object.value(QStringLiteral("question")).toString().trimmed();
+    if (text.isEmpty())
+        return false;
+    if (question)
+        *question = text;
+    if (header)
+        *header = object.value(QStringLiteral("header")).toString().trimmed();
+    if (multi)
+        *multi = object.value(QStringLiteral("multi")).toBool(false);
+    if (allowText)
+        *allowText = object.value(QStringLiteral("allow_text")).toBool(true);
+
+    if (options) {
+        options->clear();
+        for (const QJsonValue &value : object.value(QStringLiteral("options")).toArray()) {
+            QVariantMap option;
+            if (value.isString()) {
+                const QString label = value.toString().trimmed();
+                if (label.isEmpty())
+                    continue;
+                option.insert(QStringLiteral("label"), label);
+            } else if (value.isObject()) {
+                const QJsonObject entry = value.toObject();
+                const QString label =
+                    entry.value(QStringLiteral("label")).toString().trimmed();
+                if (label.isEmpty())
+                    continue;
+                option.insert(QStringLiteral("label"), label);
+                const QString description =
+                    entry.value(QStringLiteral("description")).toString().trimmed();
+                if (!description.isEmpty())
+                    option.insert(QStringLiteral("description"), description);
+                if (entry.value(QStringLiteral("recommended")).toBool(false))
+                    option.insert(QStringLiteral("recommended"), true);
+            } else {
+                continue;
+            }
+            options->append(option);
+        }
+    }
+    return true;
+}
+
+QString formatAskAnswer(const QJsonValue &value)
+{
+    if (value.isString())
+        return value.toString();
+    if (value.isArray()) {
+        QStringList parts;
+        for (const QJsonValue &entry : value.toArray()) {
+            const QString text = formatAskAnswer(entry);
+            if (!text.isEmpty())
+                parts.append(text);
+        }
+        return parts.join(QStringLiteral("、"));
+    }
+    if (value.isObject()) {
+        QStringList parts;
+        const QJsonObject object = value.toObject();
+        for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
+            const QString text = formatAskAnswer(it.value());
+            if (!text.isEmpty())
+                parts.append(QStringLiteral("%1: %2").arg(it.key(), text));
+        }
+        return parts.join(QStringLiteral("；"));
+    }
+    if (value.isNull() || value.isUndefined())
+        return QString();
+    return value.toVariant().toString();
 }
 
 } // namespace
@@ -4527,9 +4614,19 @@ bool GatewayClient::artifactResultsBelongToView(const QString &artifactSessionKe
 void GatewayClient::beginArtifactTracking(const QString &sessionKey, bool resetSnapshot)
 {
     const QString key = resolveArtifactTrackingKey(sessionKey);
-    const QStringList workspaces = workspacesForArtifactSession(key);
-    if (key.isEmpty() || workspaces.isEmpty())
+    // 先记开工时间：即使下面拿不到工作区、快照建不起来，收尾时还能按 mtime 兜底。
+    if (!key.isEmpty())
+        m_artifactTurnStartMs.insert(key, QDateTime::currentMSecsSinceEpoch());
+    if (key.isEmpty()) {
+        qWarning() << "[Gateway] artifact tracking skipped: session not resolvable"
+                   << sessionKey;
         return;
+    }
+    const QStringList workspaces = workspacesForArtifactSession(key);
+    if (workspaces.isEmpty()) {
+        qWarning() << "[Gateway] artifact tracking skipped: no workspace for" << key;
+        return;
+    }
 
     auto trackingIt = m_artifactTrackingBySession.find(key);
     if (trackingIt != m_artifactTrackingBySession.end()) {
@@ -4555,8 +4652,30 @@ void GatewayClient::beginArtifactTracking(const QString &sessionKey, bool resetS
 void GatewayClient::finishArtifactTracking(const QString &sessionKey)
 {
     const QString key = resolveArtifactTrackingKey(sessionKey);
+    if (key.isEmpty()) {
+        qWarning() << "[Gateway] artifact tracking finish skipped: session not resolvable"
+                   << sessionKey;
+        return;
+    }
+    const qint64 startMs = m_artifactTurnStartMs.value(key, 0);
     auto trackingIt = m_artifactTrackingBySession.find(key);
-    if (key.isEmpty() || trackingIt == m_artifactTrackingBySession.end()) {
+    if (trackingIt == m_artifactTrackingBySession.end()) {
+        // 没有开工快照（客户端中途连上、事件漏收、会话不在任务列表里……），
+        // 此时原来的实现是静默 return，界面就永远没有产物清单。改成按 mtime 补扫。
+        const QStringList workspaces = workspacesForArtifactSession(key);
+        qWarning() << "[Gateway] artifact tracking finished without start snapshot:"
+                   << key << "workspaces" << workspaces.size() << "startMs" << startMs;
+        if (workspaces.isEmpty() || startMs <= 0) {
+            qWarning() << "[Gateway] artifact fallback unavailable for" << key;
+            return;
+        }
+        QTimer::singleShot(2000, this, [this, key, workspaces, startMs]() {
+            const QVariantList artifacts = artifactsModifiedSince(workspaces, startMs, key);
+            if (!artifacts.isEmpty())
+                emit artifactsDetected(key, artifacts);
+            qDebug() << "[Gateway] artifact fallback finished:"
+                     << artifacts.size() << "files (no start snapshot)";
+        });
         return;
     }
 
@@ -4570,7 +4689,7 @@ void GatewayClient::finishArtifactTracking(const QString &sessionKey)
 
     // External tools such as Chrome and Office can return before the final
     // output file is fully flushed to disk.
-    QTimer::singleShot(2000, this, [this, key, workspaces, before, generation]() {
+    QTimer::singleShot(2000, this, [this, key, workspaces, before, generation, startMs]() {
         const auto trackingIt = m_artifactTrackingBySession.constFind(key);
         if (trackingIt != m_artifactTrackingBySession.cend()
             && trackingIt->generation != generation) {
@@ -4607,11 +4726,70 @@ void GatewayClient::finishArtifactTracking(const QString &sessionKey)
             item.insert(QStringLiteral("changeType"), changeType);
             artifacts.append(item);
         }
+        // 快照 diff 为空时按 mtime 补扫一次：产物确实写进了工作区、但写入发生在
+        // 开工快照之前（或文件被原地覆盖成相同大小）时，diff 是看不见的。
+        if (artifacts.isEmpty() && startMs > 0) {
+            artifacts = artifactsModifiedSince(workspaces, startMs, key);
+            if (!artifacts.isEmpty())
+                qDebug() << "[Gateway] artifact tracking used mtime fallback:"
+                         << artifacts.size() << "files";
+        }
         if (!artifacts.isEmpty())
             emit artifactsDetected(key, artifacts);
+        else
+            qWarning() << "[Gateway] artifact tracking found no changed files in"
+                       << workspaces;
         qDebug() << "[Gateway] artifact tracking finished:"
                  << artifacts.size() << "changed files";
+        // 本轮变更已"消费"：把快照前移到当前状态，下一轮只比这之后的新变化。
+        // 否则 before 一直停在第一轮开工时，同一批文件会被每轮重复判成"本轮改动"，
+        // 挂到当轮消息上就表现为"产物总在最后一个对话下面显示"。
+        auto stateIt = m_artifactTrackingBySession.find(key);
+        if (stateIt != m_artifactTrackingBySession.end()
+            && stateIt->generation == generation) {
+            stateIt->before = after;
+        }
     });
+}
+
+QVariantList GatewayClient::artifactsModifiedSince(const QStringList &workspaces,
+                                                   qint64 sinceMs,
+                                                   const QString &sessionKey) const
+{
+    QVariantList artifacts;
+    if (workspaces.isEmpty() || sinceMs <= 0)
+        return artifacts;
+
+    const QString dest = desiredTaskOutputDir(sessionKey);
+    const bool destHasImaging = !dest.isEmpty()
+        && QDir(QDir(dest).absoluteFilePath(QStringLiteral("imaging"))).exists();
+    // 容忍写入延迟与文件系统时间戳精度
+    const qint64 floorMs = sinceMs - 5000;
+
+    for (const QString &workspace : workspaces) {
+        const WorkspaceSnapshot snapshot = snapshotWorkspace(workspace);
+        QStringList paths = snapshot.keys();
+        paths.sort(Qt::CaseInsensitive);
+        for (const QString &absolutePath : paths) {
+            if (artifacts.size() >= 200)
+                return artifacts;
+            const WorkspaceFileState state = snapshot.value(absolutePath);
+            if (destHasImaging && isOpenClawAgentWorkspace(state.absolutePath))
+                continue;
+            if (state.modifiedMs < floorMs)
+                continue;
+            const QFileInfo info(state.absolutePath);
+            QVariantMap item;
+            item.insert(QStringLiteral("name"), info.fileName());
+            item.insert(QStringLiteral("path"), state.absolutePath);
+            item.insert(QStringLiteral("relativePath"), info.fileName());
+            item.insert(QStringLiteral("extension"), info.suffix().toLower());
+            item.insert(QStringLiteral("size"), state.size);
+            item.insert(QStringLiteral("changeType"), QStringLiteral("created"));
+            artifacts.append(item);
+        }
+    }
+    return artifacts;
 }
 
 QString GatewayClient::resolveChatSessionKeyForAgentId(const QString &agentId) const
@@ -5773,6 +5951,40 @@ void GatewayClient::abortChat(const QString &sessionKey)
     m_chatAbortReqSession.insert(reqId, key);
 }
 
+void GatewayClient::resolveQuestion(const QString &toolCallId, const QString &answer)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("尚未连接到服务器，无法提交回答"));
+        return;
+    }
+    const QString id = toolCallId.trimmed();
+    if (id.isEmpty())
+        return;
+
+    QJsonObject params;
+    params[QStringLiteral("toolCallId")] = id;
+    params[QStringLiteral("answer")] = answer;
+    if (sendRequest(QStringLiteral("medclaw.question.resolve"), params).isEmpty())
+        emit errorOccurred(QStringLiteral("回答提交失败，请重试"));
+}
+
+void GatewayClient::skipQuestion(const QString &toolCallId)
+{
+    if (m_state != Connected) {
+        emit errorOccurred(QStringLiteral("尚未连接到服务器，无法跳过提问"));
+        return;
+    }
+    const QString id = toolCallId.trimmed();
+    if (id.isEmpty())
+        return;
+
+    QJsonObject params;
+    params[QStringLiteral("toolCallId")] = id;
+    params[QStringLiteral("skipped")] = true;
+    if (sendRequest(QStringLiteral("medclaw.question.resolve"), params).isEmpty())
+        emit errorOccurred(QStringLiteral("跳过提问失败，请重试"));
+}
+
 /**
  * @brief WebSocket 连接建立成功回调
  *
@@ -6076,6 +6288,70 @@ void GatewayClient::onTextMessageReceived(const QString &message)
  *      并根据解析结果发射对应的 Qt 信号（streaming / chatMessage）
  *   ④ 其他：如有文本内容，作为完整消息发射
  */
+void GatewayClient::emitToolCallEvent(const QString &toolName,
+                                      const QString &toolArgs,
+                                      const QString &toolCallId)
+{
+    if (toolName == QLatin1String("ask_user")) {
+        QString question;
+        QString header;
+        QVariantList options;
+        bool multi = false;
+        bool allowText = true;
+        if (parseAskUserCard(toolArgs, &question, &options, &multi, &allowText, &header)) {
+            emit questionAsked(toolCallId, question, options, multi, allowText, header);
+            return;
+        }
+    }
+    if (toolName == QLatin1String("imaging_viewer")) {
+        const QJsonObject call = parseToolArguments(toolArgs);
+        const QString action = call.value(QStringLiteral("action")).toString().trimmed().toLower();
+        if (action == QLatin1String("open") || action == QLatin1String("add")) {
+            QJsonObject actionArgs;
+            const QJsonValue rawArgs = call.value(QStringLiteral("args"));
+            if (rawArgs.isObject()) {
+                actionArgs = rawArgs.toObject();
+            } else if (rawArgs.isString()) {
+                actionArgs = parseToolArguments(rawArgs.toString());
+            }
+            const QString path = actionArgs.value(QStringLiteral("path")).toString().trimmed();
+            if (!path.isEmpty())
+                emit viewerOpenRequested(path, action == QLatin1String("add"));
+        }
+    }
+    emit toolCallReceived(toolName, toolArgs, toolCallId);
+}
+
+void GatewayClient::emitToolResultEvent(const QString &toolName,
+                                        const QString &content,
+                                        const QString &toolCallId,
+                                        bool isError)
+{
+    if (toolName == QLatin1String("ask_user")) {
+        QString status = QStringLiteral("answered");
+        QString answer = content;
+        const QJsonDocument document = QJsonDocument::fromJson(content.toUtf8());
+        if (document.isObject()) {
+            const QJsonObject object = document.object();
+            const QString reported = object.value(QStringLiteral("status")).toString();
+            if (!reported.isEmpty())
+                status = reported;
+            answer = formatAskAnswer(object.value(QStringLiteral("answer")));
+        }
+        if (status == QLatin1String("skipped") && answer.isEmpty())
+            answer = QStringLiteral("已跳过");
+        if (status == QLatin1String("timeout") && answer.isEmpty())
+            answer = QStringLiteral("等待超时");
+        if (status == QLatin1String("aborted") && answer.isEmpty())
+            answer = QStringLiteral("已取消");
+        if (answer.isEmpty())
+            answer = content;
+        emit questionResolved(toolCallId, status, answer);
+        return;
+    }
+    emit toolResultReceived(toolName, content, toolCallId, isError);
+}
+
 void GatewayClient::handleEvent(const QJsonObject &msg)
 {
     const QString     event   = msg.value(QStringLiteral("event")).toString();
@@ -6215,7 +6491,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             qDebug().noquote() << "[Gateway] session.tool → call:" << tr.toolName
                                << "id:" << tr.toolCallId;
             rememberCronToolCall(tr.toolName, tr.toolArgs, tr.toolCallId);
-            emit toolCallReceived(tr.toolName, tr.toolArgs, tr.toolCallId);
+            emitToolCallEvent(tr.toolName, tr.toolArgs, tr.toolCallId);
             return;
         }
         if (tr.isToolUpdate) {
@@ -6229,8 +6505,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             refreshCollaborationSessionsAfterSpawn(tr.toolName, tr.content);
             persistCronToolResult(tr.toolName, tr.content,
                                   tr.toolCallId, tr.toolIsError);
-            emit toolResultReceived(tr.toolName, tr.content,
-                                    tr.toolCallId, tr.toolIsError);
+            emitToolResultEvent(tr.toolName, tr.content,
+                                tr.toolCallId, tr.toolIsError);
             m_toolResultRefreshTimer.start();
             return;
         }
@@ -6262,7 +6538,7 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         qDebug().noquote() << "[Gateway] tool call:" << r.toolName
                            << "id:" << r.toolCallId;
         rememberCronToolCall(r.toolName, r.toolArgs, r.toolCallId);
-        emit toolCallReceived(r.toolName, r.toolArgs, r.toolCallId);
+        emitToolCallEvent(r.toolName, r.toolArgs, r.toolCallId);
         return;
     }
     if (r.isToolUpdate) {
@@ -6276,8 +6552,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         refreshCollaborationSessionsAfterSpawn(r.toolName, r.content);
         persistCronToolResult(r.toolName, r.content,
                               r.toolCallId, r.toolIsError);
-        emit toolResultReceived(r.toolName, r.content,
-                                r.toolCallId, r.toolIsError);
+        emitToolResultEvent(r.toolName, r.content,
+                            r.toolCallId, r.toolIsError);
         m_toolResultRefreshTimer.start();
         return;
     }
@@ -6314,9 +6590,16 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         }
         if (r.isComplete) {
             const QString completedKey = extractPayloadSessionKey(payload).trimmed();
+            // 发送时是用 m_activeChatSessionKey 置的"运行中"（见 sendChatMessageNow）。
+            // 完成事件里的 sessionKey 未必与它相同（agent:xxx:main 与任务/视图 key 可能
+            // 不同），只按事件 key 清除就会一直卡在"运行中"：输入框停在暂停按钮、
+            // 「任务完成」永远不出现，而产物其实已经出来了。
+            const QString sendKey = m_activeChatSessionKey.trimmed();
             if (!completedKey.isEmpty())
                 m_chatRunningSessionKeys.remove(completedKey);
             syncCollaborationTaskStatus(completedKey);
+            if (!sendKey.isEmpty() && sendKey != completedKey)
+                m_chatRunningSessionKeys.remove(sendKey);
             QString viewedKey = m_currentViewSessionKey.trimmed();
             if (viewedKey.isEmpty())
                 viewedKey = m_currentTaskSessionKey.trimmed();
@@ -6335,6 +6618,11 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             m_activeChatRunId.clear();
             m_activeChatSessionKey.clear();
             updateChatRunningForCurrentSession();
+            // 完成事件都处理完了还在"运行中"，说明 key 没对上——留日志便于定位
+            if (chatRunning())
+                qWarning() << "[Gateway] chat complete but still marked running:"
+                           << m_chatRunningSessionKeys << "view"
+                           << m_currentViewSessionKey << "task" << m_currentTaskSessionKey;
             m_toolResultRefreshTimer.start();
             schedulePostStreamSidebarRefresh();
             maybeShowControllerProducts();
@@ -6364,9 +6652,16 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         }
         if (r.isComplete) {
             const QString completedKey = extractPayloadSessionKey(payload).trimmed();
+            // 发送时是用 m_activeChatSessionKey 置的"运行中"（见 sendChatMessageNow）。
+            // 完成事件里的 sessionKey 未必与它相同（agent:xxx:main 与任务/视图 key 可能
+            // 不同），只按事件 key 清除就会一直卡在"运行中"：输入框停在暂停按钮、
+            // 「任务完成」永远不出现，而产物其实已经出来了。
+            const QString sendKey = m_activeChatSessionKey.trimmed();
             if (!completedKey.isEmpty())
                 m_chatRunningSessionKeys.remove(completedKey);
             syncCollaborationTaskStatus(completedKey);
+            if (!sendKey.isEmpty() && sendKey != completedKey)
+                m_chatRunningSessionKeys.remove(sendKey);
             QString viewedKey = m_currentViewSessionKey.trimmed();
             if (viewedKey.isEmpty())
                 viewedKey = m_currentTaskSessionKey.trimmed();
@@ -7494,7 +7789,7 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
             emit streamingFinished();
         }
         persistCronToolResult(tName, resultText, tcId, isErr);
-        emit toolResultReceived(tName, resultText, tcId, isErr);
+        emitToolResultEvent(tName, resultText, tcId, isErr);
 
         // 防抖补拉历史，原地合并完整 toolResult 文本
         m_toolResultRefreshTimer.start();
@@ -7552,7 +7847,10 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
             qDebug().noquote() << "[Gateway] chat → toolCall:" << tName
                                << "id:" << tcId;
             rememberCronToolCall(tName, fullArgsStr, tcId);
-            emit toolCallReceived(tName, argsStr, tcId);
+            // ask_user 的问题、imaging_viewer 的 path 都在参数里，不能截断。
+            const bool keepFullArgs = tName == QLatin1String("ask_user")
+                                      || tName == QLatin1String("imaging_viewer");
+            emitToolCallEvent(tName, keepFullArgs ? fullArgsStr : argsStr, tcId);
         }
         // text 条目不在这里重复发射，因为流式 delta 已经推送过了
     }
