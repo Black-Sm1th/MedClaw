@@ -2665,7 +2665,7 @@ ApplicationWindow {
                         Repeater {
                             id: selectionRepeaterCollapsed
                             model: window.imagingEdition
-                                   ? ["新建任务", "定时任务", "专家", "知识库", "模板库"]
+                                   ? ["新建任务", "定时任务", "工具", "知识库", "模板库"]
                                    : ["新建任务", "定时任务", "专家·工具", "知识库", "模板库" /*, "MCP"*/ ]
                             delegate: Rectangle{
                                 readonly property int targetIndex: window.imagingEdition
