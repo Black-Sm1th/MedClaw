@@ -7,13 +7,16 @@ TARGET = AetherStudy
 CONFIG += c++17
 
 # Build editions from the same source tree. The default build is the main
-# edition; pass edition_government or edition_hospital_chang2 to qmake for those editions.
+# edition; pass edition_government, edition_hospital_chang2, or edition_imaging to qmake.
 contains(CONFIG, edition_government) {
     DEFINES += MEDCLAW_EDITION_GOVERNMENT
     message("MedClaw build edition: government")
 } else:contains(CONFIG, edition_hospital_chang2) {
     DEFINES += MEDCLAW_EDITION_HOSPITAL_CHANG2
     message("MedClaw build edition: hospital-chang2")
+} else:contains(CONFIG, edition_imaging) {
+    DEFINES += MEDCLAW_EDITION_IMAGING
+    message("MedClaw build edition: imaging")
 } else {
     DEFINES += MEDCLAW_EDITION_MAIN
     message("MedClaw build edition: main")

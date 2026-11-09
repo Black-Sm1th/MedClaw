@@ -380,6 +380,10 @@ int main(int argc, char *argv[])
     const QString preferredDataRoot
         = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy-hospital-chang2"));
     QString dataRoot = preferredDataRoot;
+#elif defined(MEDCLAW_EDITION_IMAGING)
+    const QString preferredDataRoot
+        = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy-imaging"));
+    QString dataRoot = preferredDataRoot;
 #else
     const QString preferredDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy"));
     const QString legacyDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("Aether_ClawDESK"));
@@ -568,6 +572,11 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("buildGovernmentEdition"), true);
 #else
     engine.rootContext()->setContextProperty(QStringLiteral("buildGovernmentEdition"), false);
+#endif
+#ifdef MEDCLAW_EDITION_IMAGING
+    engine.rootContext()->setContextProperty(QStringLiteral("buildImagingEdition"), true);
+#else
+    engine.rootContext()->setContextProperty(QStringLiteral("buildImagingEdition"), false);
 #endif
     engine.rootContext()->setContextProperty("$MainViewController",
                                              GET_SINGLETON(MainViewController));

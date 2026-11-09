@@ -5,6 +5,7 @@ Item {
     id: loginPage
     signal errorRequested(string message)
     property bool governmentEdition: false
+    property bool imagingEdition: false
     property bool showPhoneForm: false
     property int resendSeconds: 0
     property bool initializing: false
@@ -16,10 +17,12 @@ Item {
     readonly property string welcomeTitle: governmentEdition
                                          ? qsTr("你好，欢迎来到 政务智能体")
                                          : qsTr("你好，欢迎来到 汇小智 Aether study")
-    readonly property var shortcutImages: governmentEdition
-                                          ? ["loginShortcut1.png", "loginShortcut3-sp.png", "loginShortcut6-sp.png"]
-                                          : ["loginShortcut1.png", "loginShortcut2.png", "loginShortcut3.png",
-                                             "loginShortcut4.png", "loginShortcut5.png", "loginShortcut6.png"]
+    readonly property var shortcutImages: imagingEdition
+                                          ? ["loginShortcut1.png", "loginShortcut5.png"]
+                                          : governmentEdition
+                                            ? ["loginShortcut1.png", "loginShortcut3-sp.png", "loginShortcut6-sp.png"]
+                                            : ["loginShortcut1.png", "loginShortcut2.png", "loginShortcut3.png",
+                                               "loginShortcut4.png", "loginShortcut5.png", "loginShortcut6.png"]
 
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
     function submitLogin() {
