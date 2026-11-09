@@ -775,7 +775,57 @@
     post({ type: 'selection', paths: [] });
   }
 
+  /// 宿主重新下发根目录时不要把用户已勾选的项清掉：
+  /// 重新挂载前记下勾选，挂完把仍然存在的恢复回去。
   function setHostPaths(items) {
+    // 纯追加（老根都还在、顺序一致，只是末尾多了几个）：增量挂上去就行，
+    // 不要把整棵树重挂一遍——那样之前展开的目录会全部收起来、重新读磁盘。
+    var oldPaths = roots.map(function (r) { return String(r.path || ''); });
+    var newPaths = items.map(function (it) { return String(it.path || ''); });
+    var appendOnly = oldPaths.length > 0 && newPaths.length > oldPaths.length;
+    if (appendOnly) {
+      for (var q = 0; q < oldPaths.length; q++) {
+        if (oldPaths[q] !== newPaths[q]) { appendOnly = false; break; }
+      }
+    }
+    if (appendOnly) {
+      var added = [];
+      for (var n = oldPaths.length; n < items.length; n++) {
+        var it = items[n];
+        var node = newNode(it.name, '', it.isDir ? 'dir' : 'file');
+        node.path = it.path;
+        node.host = true;
+        if (it.isDir) { node.loaded = false; node.received = 0; }
+        else { node.size = it.size || 0; }
+        nodeIndex.set(it.path, node);
+        roots.push(node);
+        added.push(node);
+      }
+      for (var a = 0; a < added.length; a++)
+        expandDir(added[a]);
+      rebuildFlat();
+      scheduleRender();
+      updateStat();
+      pinBottomUntil = Date.now() + 3000;
+      return;
+    }
+
+    var keep = Array.from(selectedSet);
+    setHostPathsInner(items);
+    var restored = 0;
+    for (var i = 0; i < keep.length; i++) {
+      if (nodeIndex.has(keep[i]) && !selectedSet.has(keep[i])) {
+        selectedSet.add(keep[i]);
+        restored++;
+      }
+    }
+    if (restored > 0) {
+      post({ type: 'selection', paths: Array.from(selectedSet) });
+      scheduleRender();
+    }
+  }
+
+  function setHostPathsInner(items) {
     if (!items || items.length === 0)
       return;
     clearSelection();

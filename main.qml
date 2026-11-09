@@ -13,6 +13,8 @@ ApplicationWindow {
         id: workspaceSettings
         category: "workspace"
         property string recentFoldersJson: "[]"
+        // 「输入文件」树的缩放，记住用户上次的选择
+        property real treeZoom: 1.0
     }
     // Use logical (DIP) screen dimensions so the initial window fits on
     // high-DPI displays instead of opening larger than the work area.
@@ -3838,14 +3840,16 @@ ApplicationWindow {
                 // 打开 DICOM 时会自动切到阅片台（见 activateOfficeTab）
                 property string splitMiddleTab: "files"   // files | reader
                 readonly property bool splitReaderPage: splitMiddleTab === "reader"
-                // 「输入文件」树的缩放（0.8 – 1.6，步进 0.1）
-                property real splitTreeZoom: 1.0
-
-                onSplitTreeZoomChanged: console.log("[TreeZoom] " + splitTreeZoom)
+                // 「输入文件」树的缩放（0.8 – 1.6，步进 0.1），记住上次的值
+                property real splitTreeZoom: {
+                    var saved = Number(workspaceSettings.treeZoom)
+                    return (saved >= 0.8 && saved <= 1.6) ? saved : 1.0
+                }
 
                 function zoomSplitTree(delta) {
                     var next = Math.round((splitTreeZoom + delta * 0.1) * 10) / 10
                     splitTreeZoom = Math.max(0.8, Math.min(1.6, next))
+                    workspaceSettings.treeZoom = splitTreeZoom
                 }
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
@@ -4884,23 +4888,39 @@ ApplicationWindow {
                 /// 拖进来的路径：空的直接进入；已有根目录时问用户追加还是替换
                 property var pendingDroppedRoots: []
 
-                /// 把一批路径并进现有根目录（按小写路径去重）
+                /// 路径归一化：只用来比较（Windows 下反斜杠路径和正斜杠路径是同一个）
+                function inputPathKey(path) {
+                    var text = String(path || "")
+                    var out = ""
+                    for (var i = 0; i < text.length; ++i) {
+                        var ch = text.charAt(i)
+                        if (ch === String.fromCharCode(92))
+                            out += "/"
+                        else if (ch === "/" && out.charAt(out.length - 1) === "/")
+                            continue
+                        else
+                            out += ch
+                    }
+                    return out.toLowerCase()
+                }
+
+                /// 把一批路径并进现有根目录（按归一化路径去重）
                 function mergeSplitRoots(extra) {
                     var merged = []
                     var seen = ({})
                     var base = splitRoots || []
                     for (var i = 0; i < base.length; ++i) {
                         var key = String(base[i] || "")
-                        if (key.length === 0 || seen[key.toLowerCase()])
+                        if (key.length === 0 || seen[inputPathKey(key)])
                             continue
-                        seen[key.toLowerCase()] = true
+                        seen[inputPathKey(key)] = true
                         merged.push(key)
                     }
                     for (var j = 0; j < (extra || []).length; ++j) {
                         var item = String(extra[j] || "")
-                        if (item.length === 0 || seen[item.toLowerCase()])
+                        if (item.length === 0 || seen[inputPathKey(item)])
                             continue
-                        seen[item.toLowerCase()] = true
+                        seen[inputPathKey(item)] = true
                         merged.push(item)
                     }
                     return merged
@@ -4972,7 +4992,13 @@ ApplicationWindow {
                     // 一律只加进「输入文件」，不自动打开预览/阅片台：
                     // 拖进来的人第一眼要看到的是"它进列表了"，
                     // 想看内容再双击（影像也可以勾选后「在阅片台打开」）。
+                    // 注意要像点标签页那样把打开的文档收起来，否则预览还盖在上面，
+                    // 列表在底下变了也看不见。
                     splitMiddleTab = "files"
+                    if (officeDocumentVisible) {
+                        activeOfficeTabIndex = -1
+                        artifactSidebarMode = "list"
+                    }
                     handleDroppedRoots(all)
                 }
 
