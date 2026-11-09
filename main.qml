@@ -3838,6 +3838,15 @@ ApplicationWindow {
                 // 打开 DICOM 时会自动切到阅片台（见 activateOfficeTab）
                 property string splitMiddleTab: "files"   // files | reader
                 readonly property bool splitReaderPage: splitMiddleTab === "reader"
+                // 「输入文件」树的缩放（0.8 – 1.6，步进 0.1）
+                property real splitTreeZoom: 1.0
+
+                onSplitTreeZoomChanged: console.log("[TreeZoom] " + splitTreeZoom)
+
+                function zoomSplitTree(delta) {
+                    var next = Math.round((splitTreeZoom + delta * 0.1) * 10) / 10
+                    splitTreeZoom = Math.max(0.8, Math.min(1.6, next))
+                }
                 property string splitTab: "files"        // files | artifacts
                 property var splitSelection: []          // 勾选的文件路径
                 property string splitArtifactFilter: "all"   // all | report | image
@@ -4875,6 +4884,32 @@ ApplicationWindow {
                 /// 拖进来的路径：空的直接进入；已有根目录时问用户追加还是替换
                 property var pendingDroppedRoots: []
 
+                /// 把一批路径并进现有根目录（按小写路径去重）
+                function mergeSplitRoots(extra) {
+                    var merged = []
+                    var seen = ({})
+                    var base = splitRoots || []
+                    for (var i = 0; i < base.length; ++i) {
+                        var key = String(base[i] || "")
+                        if (key.length === 0 || seen[key.toLowerCase()])
+                            continue
+                        seen[key.toLowerCase()] = true
+                        merged.push(key)
+                    }
+                    for (var j = 0; j < (extra || []).length; ++j) {
+                        var item = String(extra[j] || "")
+                        if (item.length === 0 || seen[item.toLowerCase()])
+                            continue
+                        seen[item.toLowerCase()] = true
+                        merged.push(item)
+                    }
+                    return merged
+                }
+
+                /// 拖进来的根目录（文件夹或单个文件）：
+                /// - 还没有根目录 → 直接进入工作区；
+                /// - 已有根目录、这次只有文件 → 静默追加，不打断；
+                /// - 已有根目录、这次带文件夹 → 问「追加 / 替换 / 取消」。
                 function handleDroppedRoots(paths) {
                     var list = []
                     for (var i = 0; i < (paths || []).length; ++i) {
@@ -4884,8 +4919,19 @@ ApplicationWindow {
                     }
                     if (list.length === 0)
                         return
+                    var described = fileTreeProvider.describeAll(list)
+                    var dirCount = 0
+                    for (var d = 0; d < described.length; ++d) {
+                        if (described[d].isDir)
+                            ++dirCount
+                    }
                     if (splitRoots.length === 0) {
                         enterSplit(list)
+                        return
+                    }
+                    if (dirCount === 0) {
+                        console.log("[DropRoots] append files=" + list.length)
+                        splitRoots = mergeSplitRoots(list)
                         return
                     }
                     pendingDroppedRoots = list
@@ -4893,8 +4939,8 @@ ApplicationWindow {
                 }
 
                 /// 中栏（含阅片台页）拖进来的东西：
-                /// 文件夹 → 进「输入文件」并问追加/替换；文件 → 直接打开
-                ///（影像进阅片台，其它进中栏预览）。
+                /// 文件夹和单个文件都进「输入文件」；只拖了一个文件时顺带打开它
+                ///（影像进阅片台，其它进中栏预览），多选时不抢焦点。
                 function handleMiddleDrop(paths) {
                     var list = []
                     for (var i = 0; i < (paths || []).length; ++i) {
@@ -4907,21 +4953,27 @@ ApplicationWindow {
                     var described = fileTreeProvider.describeAll(list)
                     var dirs = []
                     var files = []
+                    var all = []
                     for (var j = 0; j < described.length; ++j) {
+                        var p2 = String(described[j].path || "")
+                        if (p2.length === 0)
+                            continue
+                        all.push(p2)
                         if (described[j].isDir)
-                            dirs.push(String(described[j].path || ""))
+                            dirs.push(p2)
                         else
-                            files.push(String(described[j].path || ""))
+                            files.push(p2)
                     }
-                    console.log("[MiddleDrop] dirs=" + dirs.length + " files=" + files.length)
-                    if (dirs.length > 0) {
-                        splitMiddleTab = "files"
-                        handleDroppedRoots(dirs)
-                    }
-                    for (var f = 0; f < files.length; ++f) {
-                        if (files[f].length > 0)
-                            openArtifactPath(files[f])
-                    }
+                    console.log("[MiddleDrop] dirs=" + dirs.length
+                                + " files=" + files.length
+                                + " roots=" + splitRoots.length)
+                    if (all.length === 0)
+                        return
+                    // 一律只加进「输入文件」，不自动打开预览/阅片台：
+                    // 拖进来的人第一眼要看到的是"它进列表了"，
+                    // 想看内容再双击（影像也可以勾选后「在阅片台打开」）。
+                    splitMiddleTab = "files"
+                    handleDroppedRoots(all)
                 }
 
                 function replaceDroppedRoots() {
@@ -4931,24 +4983,7 @@ ApplicationWindow {
                 }
 
                 function appendDroppedRoots() {
-                    var merged = []
-                    var seen = ({})
-                    var base = splitRoots || []
-                    for (var i = 0; i < base.length; ++i) {
-                        var key = String(base[i] || "").toLowerCase()
-                        if (key.length === 0 || seen[key])
-                            continue
-                        seen[key] = true
-                        merged.push(String(base[i]))
-                    }
-                    for (var j = 0; j < pendingDroppedRoots.length; ++j) {
-                        var item = String(pendingDroppedRoots[j] || "")
-                        var k = item.toLowerCase()
-                        if (k.length === 0 || seen[k])
-                            continue
-                        seen[k] = true
-                        merged.push(item)
-                    }
+                    var merged = mergeSplitRoots(pendingDroppedRoots)
                     pendingDroppedRoots = []
                     enterSplit(merged)
                 }
@@ -6147,6 +6182,79 @@ ApplicationWindow {
                         // 摆着是重复（用户报"怎么有两个收起中间栏"）。收起/展开统一
                         // 走对话栏右缘那个开关。
 
+                        // 右侧：输入文件的缩放（−/+ 调字号和行高）
+                        Row {
+                            id: splitTreeZoomBar
+
+                            visible: newTaskRec.splitMiddleTab === "files"
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            Rectangle {
+                                width: 24
+                                height: 24
+                                radius: 6
+                                color: zoomOutMouse.containsMouse ? "#F4F6F9" : "transparent"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "−"
+                                    color: newTaskRec.splitTreeZoom <= 0.8 ? "#33000000" : "#8A000000"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 16
+                                }
+
+                                MouseArea {
+                                    id: zoomOutMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.zoomSplitTree(-1)
+                                }
+
+                                ToolTip.visible: zoomOutMouse.containsMouse
+                                ToolTip.text: qsTr("缩小")
+                            }
+
+                            Text {
+                                width: 34
+                                horizontalAlignment: Text.AlignHCenter
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: Math.round(newTaskRec.splitTreeZoom * 100) + "%"
+                                color: "#8A000000"
+                                font.family: "Alibaba PuHuiTi 3.0"
+                                font.pixelSize: 11
+                            }
+
+                            Rectangle {
+                                width: 24
+                                height: 24
+                                radius: 6
+                                color: zoomInMouse.containsMouse ? "#F4F6F9" : "transparent"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "+"
+                                    color: newTaskRec.splitTreeZoom >= 1.6 ? "#33000000" : "#8A000000"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 16
+                                }
+
+                                MouseArea {
+                                    id: zoomInMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newTaskRec.zoomSplitTree(1)
+                                }
+
+                                ToolTip.visible: zoomInMouse.containsMouse
+                                ToolTip.text: qsTr("放大")
+                            }
+                        }
+
                         Rectangle {
                             anchors.left: parent.left
                             anchors.right: parent.right
@@ -6159,6 +6267,7 @@ ApplicationWindow {
 
                     InputFileTree {
                         id: splitTree
+                        zoomScale: newTaskRec.splitTreeZoom
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: splitFilesHeader.bottom
@@ -18516,6 +18625,29 @@ ApplicationWindow {
             }
             newTaskRec.artifactTurnFilter = keys
             newTaskRec.showArtifactTurn()
+        }
+    }
+
+    // 诊断：MEDCLAW_DROP_TEST=<path;path> 直接走一遍中栏拖放的代码路径
+    Timer {
+        running: dropTestAuto !== undefined && String(dropTestAuto).length > 0
+        interval: 1600
+        repeat: false
+        onTriggered: {
+            var parts = String(dropTestAuto).split(";")
+            var list = []
+            for (var i = 0; i < parts.length; ++i) {
+                var p = String(parts[i] || "")
+                if (p.length > 0)
+                    list.push(p)
+            }
+            console.log("[DropTest] call handleMiddleDrop " + JSON.stringify(list))
+            newTaskRec.handleMiddleDrop(list)
+            if (treeZoomAuto !== undefined && String(treeZoomAuto).length > 0)
+                newTaskRec.splitTreeZoom = Number(treeZoomAuto)
+            console.log("[DropTest] roots=" + JSON.stringify(newTaskRec.splitRoots)
+                        + " tab=" + newTaskRec.splitMiddleTab
+                        + " zoom=" + newTaskRec.splitTreeZoom)
         }
     }
 

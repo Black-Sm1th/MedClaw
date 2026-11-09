@@ -620,6 +620,13 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_ARTIFACT_FILTER=image 直接落到「关键图像」页，核对缩略图网格
     engine.rootContext()->setContextProperty(QStringLiteral("artifactFilterAuto"),
                                              qEnvironmentVariable("MEDCLAW_ARTIFACT_FILTER"));
+    // 诊断用：MEDCLAW_DROP_TEST=<path;path> 直接走一遍中栏拖放的代码路径
+    // （文件名 vs 文件夹、追加 vs 弹框都能验，OS 拖拽本身没法合成）
+    engine.rootContext()->setContextProperty(QStringLiteral("dropTestAuto"),
+                                             qEnvironmentVariable("MEDCLAW_DROP_TEST"));
+    // 诊断用：MEDCLAW_TREE_ZOOM=1.3 直接设「输入文件」树的缩放，核对 −/+ 效果
+    engine.rootContext()->setContextProperty(QStringLiteral("treeZoomAuto"),
+                                             qEnvironmentVariable("MEDCLAW_TREE_ZOOM"));
     // 诊断用：MEDCLAW_SPLIT_EMPTY=1 打开「有中栏、没有根目录」的工作区空状态
     engine.rootContext()->setContextProperty(QStringLiteral("splitEmptyAuto"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_EMPTY"));

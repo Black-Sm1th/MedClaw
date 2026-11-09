@@ -26,6 +26,18 @@ Item {
     /// 页面还没加载完时先记下来，加载完成后再送过去
     property var pendingPaths: []
     property bool pageReady: false
+    /// 树字号/行高缩放（宿主用 −/+ 按钮调，1.0 是默认）
+    property real zoomScale: 1.0
+
+    onZoomScaleChanged: applyZoom()
+
+    function applyZoom() {
+        if (!treeLoader.item)
+            return
+        treeLoader.item.runJavaScript(
+                    "window.__fileTree && window.__fileTree.setZoom("
+                    + Number(zoomScale) + ")")
+    }
 
     readonly property alias viewer: treeLoader.item
 
@@ -114,6 +126,7 @@ Item {
                 root.pageReady = true
                 // 去掉页面自带的头部/预览/底栏
                 runJavaScript("window.__fileTree && window.__fileTree.setEmbedMode(true)")
+                root.applyZoom()
                 if (root.pendingPaths && root.pendingPaths.length > 0)
                     root.pushPaths()
                 else if (root.pendingArtifacts && root.pendingArtifacts.length > 0)

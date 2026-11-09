@@ -11,7 +11,8 @@
     --text-2: rgba(0, 0, 0, .45);
     --hover: #F4F6F9;
     --selected: #EAF2FF;
-    --row-h: 60px;
+    --zoom: 1;                 /* 树字号缩放：宿主可以用 −/+ 调 */
+    --row-h: calc(60px * var(--zoom));
     --font: "Alibaba PuHuiTi Regular", "Microsoft YaHei", "PingFang SC", sans-serif;
   }
   * { box-sizing: border-box; }
@@ -107,7 +108,8 @@
   .node-row.selected .node-name { color: #FFFFFF; }
   .node-row.selected .node-size { color: rgba(255,255,255,.7); }
   .check {
-    width: 20px; height: 20px; flex: 0 0 20px; box-sizing: border-box;
+    width: calc(20px * var(--zoom)); height: calc(20px * var(--zoom));
+    flex: 0 0 calc(20px * var(--zoom)); box-sizing: border-box;
     border-radius: 5px; border: 1px solid rgba(0, 0, 0, .12); background: #FFFFFF;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
   }
@@ -118,16 +120,18 @@
   .check.checked svg { display: block; }
   .node-row.selected .check svg { display: block; }
   .chev {
-    width: 14px; flex: 0 0 14px; text-align: center; color: var(--text-2);
-    font-size: 10px; transition: transform .12s ease;
+    width: calc(14px * var(--zoom)); flex: 0 0 calc(14px * var(--zoom));
+    text-align: center; color: var(--text-2);
+    font-size: calc(10px * var(--zoom)); transition: transform .12s ease;
   }
   .chev.expanded { transform: rotate(90deg); }
   .chev.leaf { visibility: hidden; }
-  .node-icon { width: 16px; flex: 0 0 16px; display: flex; align-items: center; justify-content: center; }
-  .node-icon svg { width: 14px; height: 14px; display: block; }
+  .node-icon { width: calc(16px * var(--zoom)); flex: 0 0 calc(16px * var(--zoom)); display: flex; align-items: center; justify-content: center; }
+  .node-icon svg { width: calc(14px * var(--zoom)); height: calc(14px * var(--zoom)); display: block; }
   /* 缩略图占位：拿到图后替换成 <img>，尺寸固定不跳动 */
   .thumb {
-    width: 24px; height: 24px; flex: 0 0 24px; border-radius: 4px;
+    width: calc(24px * var(--zoom)); height: calc(24px * var(--zoom));
+    flex: 0 0 calc(24px * var(--zoom)); border-radius: 4px;
     background: #F2F3F5; display: flex; align-items: center; justify-content: center;
     overflow: hidden;
   }
@@ -135,7 +139,7 @@
   .thumb.pending { background: linear-gradient(90deg,#F2F3F5 25%,#E9EBEF 37%,#F2F3F5 63%); background-size: 400% 100%; animation: shimmer 1.2s ease infinite; }
   @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
   .node-name { overflow: hidden; text-overflow: ellipsis; }
-  .node-size { color: var(--text-2); font-size: 11px; margin-left: 6px; flex: 0 0 auto; }
+  .node-size { color: var(--text-2); font-size: calc(11px * var(--zoom)); margin-left: 6px; flex: 0 0 auto; }
   .node-row.placeholder .node-name { color: var(--text-2); font-style: italic; }
 
   /* ── 空态 / 拖拽 ────────────────────────────────────── */
@@ -206,7 +210,8 @@
 (function () {
   'use strict';
 
-  var ROW_H = 60;        // 卡片 48 + 间距 12
+  var ROW_H = 60;        // 卡片 48 + 间距 12（含缩放，见 setZoom）
+  var zoom = 1;
   var CARD_H = 48;
   var CARD_W = 188;      // 设计稿卡片宽度
   var INDENT = 208;      // 子卡片从父卡片右缘再往右 20px，连接线才不会被卡片压住
@@ -231,7 +236,10 @@
 
   var HOST_CHUNK = 300;      // 每次向宿主请求多少条（流式加载的粒度）
 
-  var root = null;
+  // 顶层根节点列表：多次拖入就是多个并列的根，各自占一行（不套"已拖入 N 项"）
+  var roots = [];
+  var scrollTarget = null;   // 需要滚进视野的根（追加时用）
+  var scrollUntil = 0;       // 这个时间点之前持续盯着它（子项是分块异步到的）
   var hostMode = false;
   var nextListId = 1;
   var pendingList = new Map();   // id -> node（等待宿主返回这一块）
@@ -308,17 +316,17 @@
   // ── 虚拟列表 ────────────────────────────────────────
   function rebuildFlat() {
     var out = [];
-    if (root) {
-      (function push(node, depth, parentIndex) {
-        var index = out.length;
-        out.push({ node: node, depth: depth, parentIndex: parentIndex });
-        if (node.kind !== 'dir' || !node.expanded) return;
-        for (var i = 0; i < node.children.length; i++)
-          push(node.children[i], depth + 1, index);
-        if (node.reading)
-          out.push({ node: node, depth: depth + 1, placeholder: true, parentIndex: index });
-      })(root, 0, -1);
+    function push(node, depth, parentIndex) {
+      var index = out.length;
+      out.push({ node: node, depth: depth, parentIndex: parentIndex });
+      if (node.kind !== 'dir' || !node.expanded) return;
+      for (var i = 0; i < node.children.length; i++)
+        push(node.children[i], depth + 1, index);
+      if (node.reading)
+        out.push({ node: node, depth: depth + 1, placeholder: true, parentIndex: index });
     }
+    for (var r = 0; r < roots.length; r++)
+      push(roots[r], 0, -1);
     flat = out;
   }
 
@@ -452,7 +460,7 @@
   }
 
   function renderWindow() {
-    if (!root) return;
+    if (roots.length === 0) return;
     spacer.style.height = (flat.length * ROW_H) + 'px';
 
     var top = treePane.scrollTop;
@@ -467,6 +475,24 @@
     viewport.appendChild(frag);
 
     drawLinks(first, last);
+
+    // 追加进来的根滚进视野：子项分块异步到，它的位置会一路往后走，
+    // 所以盯着看一小会儿（scrollUntil），只在它掉到视口外时才滚。
+    if (scrollTarget) {
+      if (Date.now() > scrollUntil) {
+        scrollTarget = null;
+      } else {
+        for (var s = 0; s < flat.length; s++) {
+          if (flat[s].node !== scrollTarget) continue;
+          var top2 = s * ROW_H;
+          if (top2 >= treePane.scrollTop + treePane.clientHeight - ROW_H) {
+            treePane.scrollTop = Math.max(0, top2 - 8);
+            return;   // 滚动位置变了，下一帧重画
+          }
+          break;
+        }
+      }
+    }
 
     // 只为当前视口内的行请求缩略图（滚动离开的不再请求）
     for (var k = first; k < last; k++) {
@@ -547,13 +573,26 @@
   }
 
   // ── 展开 / 折叠 ─────────────────────────────────────
-  function mountRoot(node) {
-    root = node;
-    emptyState.hidden = true;
-    spacer.hidden = false;
-    collapseBtn.disabled = false;
+  /// 一组根节点：每个都作为顶层的一行（多次拖入 = 多行，不嵌套、不套虚拟根）
+  function mountRoots(list) {
+    roots = list || [];
+    emptyState.hidden = roots.length > 0;
+    spacer.hidden = roots.length === 0;
+    collapseBtn.disabled = roots.length === 0;
     treePane.scrollTop = 0;
-    expandDir(node);
+    for (var i = 0; i < roots.length; i++)
+      expandDir(roots[i]);
+    rebuildFlat();
+    scheduleRender();
+    updateStat();
+    // 追加时新根排在前面目录展开后的所有子项后面，而子项是分块异步到的，
+    // 所以这里只记下目标，等 renderWindow 拿到最新 flat 再滚（见 scrollTarget）
+    scrollTarget = roots.length > 1 ? roots[roots.length - 1] : null;
+    scrollUntil = scrollTarget ? Date.now() + 2500 : 0;
+  }
+
+  function mountRoot(node) {
+    mountRoots([node]);
   }
 
   function toggleDir(node) {
@@ -640,20 +679,24 @@
   }
 
   function updateStat() {
-    if (root && root.kind === 'file') {
-      setStat('1 个文件');
+    if (roots.length === 0) {
+      setStat('未加载');
       return;
     }
     fileCount = 0;
     dirCount = 0;
-    (function walk(n) {
+    function walk(n) {
       for (var i = 0; i < n.children.length; i++) {
         var c = n.children[i];
         if (c.kind === 'dir') { dirCount++; walk(c); }
         else fileCount++;
       }
-    })(root || { children: [] });
-    setStat(root ? ('已读取 ' + fileCount + ' 个文件 / ' + dirCount + ' 个目录') : '未加载');
+    }
+    for (var r = 0; r < roots.length; r++) {
+      if (roots[r].kind === 'file') { fileCount++; continue; }
+      walk(roots[r]);
+    }
+    setStat('已读取 ' + fileCount + ' 个文件 / ' + dirCount + ' 个目录');
   }
 
   // ── 宿主模式：目录由宿主逐层/分块提供 ───────────────
@@ -678,7 +721,7 @@
 
     var list = groups || [];
     if (list.length === 0) {
-      root = null;
+      roots = [];
       rebuildFlat();
       renderWindow();
       emptyState.hidden = false;
@@ -758,46 +801,24 @@
     nodeIndex.clear();
     selectedPath = null;
 
-    // 拖进来的是单个文件：直接把文件本身作为根（否则会出现"根 + 同名子项"两行）
-    if (items.length === 1 && !items[0].isDir) {
-      var fileNode = newNode(items[0].name, '', 'file');
-      fileNode.path = items[0].path;
-      fileNode.host = true;
-      fileNode.size = items[0].size || 0;
-      nodeIndex.set(fileNode.path, fileNode);
-      mountRoot(fileNode);
-      rebuildFlat();
-      renderWindow();
-      setStat('1 个文件');
-      return;
-    }
-
-    var rootNode = newNode(items.length === 1
-        ? items[0].name
-        : '（已拖入 ' + items.length + ' 项）', '', 'dir');
-    rootNode.loaded = true;
+    // 多个（或文件夹和文件混拖）：每一项都是顶层的一行，往下追加，
+    // 不再套一层"（已拖入 N 项）"的虚拟根 —— 用户要的是"再来一行"。
+    var nodes = [];
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
-      var child = newNode(item.name, '', item.isDir ? 'dir' : 'file');
-      child.path = item.path;
-      child.host = true;
+      var node = newNode(item.name, '', item.isDir ? 'dir' : 'file');
+      node.path = item.path;
+      node.host = true;
       if (item.isDir) {
-        child.loaded = false;
-        child.received = 0;
+        node.loaded = false;
+        node.received = 0;
       } else {
-        child.size = item.size || 0;
+        node.size = item.size || 0;
       }
-      nodeIndex.set(item.path, child);
-      rootNode.children.push(child);
+      nodeIndex.set(item.path, node);
+      nodes.push(node);
     }
-    if (rootNode.children.length === 1 && rootNode.children[0].kind === 'dir') {
-      // 单个目录被包了一层：直接用那个目录做根
-      var only = rootNode.children[0];
-      nodeIndex.delete(only.path);
-      setHostRoot(only.path);
-      return;
-    }
-    mountRoot(rootNode);
+    mountRoots(nodes);
   }
 
   function requestHostChunk(node) {
@@ -1028,13 +1049,16 @@
   });
 
   collapseBtn.addEventListener('click', function () {
-    if (!root) return;
-    (function walk(n) {
+    if (roots.length === 0) return;
+    function walk(n) {
       if (n.kind !== 'dir') return;
       n.expanded = false;
       for (var i = 0; i < n.children.length; i++) walk(n.children[i]);
-    })(root);
-    if (root.kind === 'dir') root.expanded = true;   // 根保持展开，否则只剩一行
+    }
+    for (var r = 0; r < roots.length; r++) {
+      walk(roots[r]);
+      if (roots[r].kind === 'dir') roots[r].expanded = true;  // 根保持展开
+    }
     rebuildFlat();
     scheduleRender();
   });
@@ -1103,6 +1127,18 @@
     thumbStats: function () { return { cached: thumbCache.size, busy: thumbBusy.size, failed: thumbFailed.size }; },
     selected: function () { return selectedPath; },
     /** 嵌入模式：隐藏头部/预览/底栏，只留树本身 */
+    /** 字/行缩放：0.8 – 1.6。--zoom 管 CSS，ROW_H 管虚拟滚动的高度计算 */
+    setZoom: function (scale) {
+      var z = Number(scale);
+      if (!isFinite(z) || z <= 0) z = 1;
+      z = Math.max(0.8, Math.min(1.6, z));
+      zoom = z;
+      ROW_H = Math.round(60 * z);
+      document.documentElement.style.setProperty('--zoom', String(z));
+      rebuildFlat();
+      scheduleRender();
+      return true;
+    },
     setEmbedMode: function (on) {
       embedMode = !!on;
       document.body.classList.toggle('embed', embedMode);
