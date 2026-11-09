@@ -4036,6 +4036,31 @@ ApplicationWindow {
                           : (officeDocumentVisible ? officePreviewWidth : 300)))
                     : 0
 
+                /// 打开「中间栏（输入文件 / 阅片台）+ 产物」这套工作区。
+                /// 不需要先有根目录：空状态下中栏自己会给「选择文件夹」。
+                function enterSplitWorkspace() {
+                    if (!splitViewEnabled)
+                        return
+                    splitMiddleCollapsed = false
+                    splitMode = true
+                    splitSelection = []
+                    splitTab = "files"
+                    refreshArtifactGroups()
+                    artifactSidebarMode = "list"
+                    artifactSidebarVisible = true
+                }
+
+                /// 对话栏右缘那个常驻开关：没工作区就开一个，有就收起 / 展开中栏
+                function toggleSplitMiddleColumn() {
+                    if (!splitViewEnabled)
+                        return
+                    if (!splitMode) {
+                        enterSplitWorkspace()
+                        return
+                    }
+                    splitMiddleCollapsed = !splitMiddleCollapsed
+                }
+
                 function enterSplit(paths) {
                     if (!splitViewEnabled)
                         return
@@ -4048,12 +4073,7 @@ ApplicationWindow {
                     if (list.length === 0)
                         return
                     splitRoots = list
-                    splitSelection = []
-                    splitTab = "files"
-                    refreshArtifactGroups()
-                    splitMode = true
-                    artifactSidebarMode = "list"
-                    artifactSidebarVisible = true
+                    enterSplitWorkspace()
                 }
 
                 function exitSplit() {
@@ -5867,7 +5887,8 @@ ApplicationWindow {
                 Rectangle {
                     id: splitMiddleRestoreButton
 
-                    visible: newTaskRec.splitMode && newTaskRec.splitMiddleCollapsed
+                    // 常驻开关：没开工作区就开一个，开着就收起 / 展开中间栏
+                    visible: newTaskRec.splitViewEnabled
                     z: 20
                     width: 28
                     height: 28
@@ -5875,8 +5896,11 @@ ApplicationWindow {
                     color: splitRestoreMouse.containsMouse ? "#F4F6F9" : "transparent"
                     anchors.top: parent.top
                     anchors.topMargin: 16
-                    anchors.right: newTaskRec.artifactPanelVisible
-                                   ? artifactSidebar.left : parent.right
+                    // 贴着对话列真正的右边缘（中栏展开时是它的左缘）
+                    anchors.right: (newTaskRec.splitMode && !newTaskRec.splitMiddleCollapsed)
+                                   ? splitFilesPanel.left
+                                   : (newTaskRec.artifactPanelVisible ? artifactSidebar.left
+                                                                      : parent.right)
                     anchors.rightMargin: 10
 
                     // 和中间栏表头的收起按钮同一个图标（圆角矩形 + 竖分割线）
@@ -5893,11 +5917,14 @@ ApplicationWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: newTaskRec.splitMiddleCollapsed = false
+                        onClicked: newTaskRec.toggleSplitMiddleColumn()
                     }
 
                     ToolTip.visible: splitRestoreMouse.containsMouse
-                    ToolTip.text: qsTr("展开中间栏")
+                    ToolTip.text: !newTaskRec.splitMode
+                                  ? qsTr("打开阅片台 / 输入文件")
+                                  : (newTaskRec.splitMiddleCollapsed
+                                     ? qsTr("展开中间栏") : qsTr("收起中间栏"))
                 }
 
                 // ── 中间栏：输入文件（文件夹树，带连接线）─────────────────
@@ -18479,6 +18506,42 @@ ApplicationWindow {
             }
             newTaskRec.artifactTurnFilter = keys
             newTaskRec.showArtifactTurn()
+        }
+    }
+
+    // 诊断入口：MEDCLAW_OPEN_SESSION=<序号从 1 开始 | key 片段>
+    // 登录后自动打开一个历史会话，用来核对"真实会话里"的界面
+    // （尤其是浮在聊天 WebEngine 上方的按钮会不会被盖住）。
+    Timer {
+        id: openSessionAutoTimer
+        running: openSessionAuto !== undefined
+                 && String(openSessionAuto).length > 0
+                 && (wsClient.taskSessionList || []).length > 0
+        interval: 2500
+        repeat: false
+        onTriggered: {
+            var want = String(openSessionAuto).trim()
+            var sessions = wsClient.taskSessionList || []
+            var key = ""
+            var index = parseInt(want, 10)
+            if (!isNaN(index) && index >= 1 && index <= sessions.length) {
+                key = String(sessions[index - 1].session_id || "")
+            } else {
+                for (var i = 0; i < sessions.length; ++i) {
+                    var candidate = String(sessions[i].session_id || "")
+                    if (candidate.indexOf(want) >= 0) {
+                        key = candidate
+                        break
+                    }
+                }
+            }
+            if (key.length === 0) {
+                console.log("[OpenSessionAuto] no session matches " + want)
+                return
+            }
+            console.log("[OpenSessionAuto] open " + key)
+            leftMidPanel.activeAgentId = window.agentIdFromSessionKey(key)
+            wsClient.switchTaskSession(key)
         }
     }
 
