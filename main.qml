@@ -55,10 +55,20 @@ ApplicationWindow {
     property string gatewayRecoveryLogDirectory: ""
     property string knowledgeBaseReadyUserId: ""
     property bool userSessionInitializing: authController.loggedIn
+    property bool gatewayStartupReady: false
+    readonly property bool gatewayStartupPrerequisitesReady: authController.loggedIn
+                                                     && authController.modelConfigReady
+                                                     && String(authController.userId || "").length > 0
+                                                     && wsClient.connectionState === 3
+                                                     && wsClient.knowledgeBaseDataDirReady
+                                                     && knowledgeBaseReadyUserId === String(authController.userId || "")
+                                                     && !userSessionInitializing
     readonly property bool userSessionReady: accountPreviewMode || (authController.loggedIn
                                              && authController.modelConfigReady
                                              && String(authController.userId || "").length > 0
                                              && knowledgeBaseReadyUserId === String(authController.userId || "")
+                                             && wsClient.connectionState === 3
+                                             && gatewayStartupReady
                                              && !userSessionInitializing)
     readonly property bool configurationUpdateActive: userSessionReady
                                                        && (wsClient.connectionState !== 3
@@ -2044,6 +2054,17 @@ ApplicationWindow {
             window.openAccountPopup()
         }
     }
+    Timer {
+        id: gatewayStartupReadyTimer
+        interval: 5000
+        repeat: false
+        running: !window.gatewayStartupReady
+                 && window.gatewayStartupPrerequisitesReady
+        onTriggered: {
+            if (window.gatewayStartupPrerequisitesReady)
+                window.gatewayStartupReady = true
+        }
+    }
     Connections {
         target: authController
         function onWebLoginUrlReady(url) {
@@ -2077,6 +2098,7 @@ ApplicationWindow {
                          + ", userIdPresent=" + (String(authController.userId || "").length > 0)
                          + ", modelConfigReady=" + authController.modelConfigReady)
             if (authController.loggedIn) {
+                window.gatewayStartupReady = false
                 window.userSessionInitializing = true
                 window.knowledgeBaseReadyUserId = ""
                 window.reloadUploadedDocxTemplates()
@@ -2084,6 +2106,7 @@ ApplicationWindow {
                 if (authController.modelConfigReady)
                     wsClient.connectToServer(wsClient.serverUrl)
             } else {
+                window.gatewayStartupReady = false
                 window.userSessionInitializing = false
                 window.knowledgeBaseReadyUserId = ""
                 window.kbListRequestGeneration++
@@ -2129,6 +2152,8 @@ ApplicationWindow {
                          + authController.modelConfigReady
                          + ", loggedIn=" + authController.loggedIn
                          + ", userIdPresent=" + (String(authController.userId || "").length > 0))
+            if (!authController.modelConfigReady)
+                window.gatewayStartupReady = false
             if (authController.loggedIn && authController.modelConfigReady) {
                 window.reloadUploadedDocxTemplates()
                 window.kbLoadMetadata()
@@ -2141,6 +2166,8 @@ ApplicationWindow {
         function onConnectionStateChanged(){
             console.info("[KB-INIT][QML] Gateway connection state changed; state=" + wsClient.connectionState
                          + ", userIdPresent=" + (String(authController.userId || "").length > 0))
+            if (wsClient.connectionState !== 3)
+                window.gatewayStartupReady = false
             if(wsClient.connectionState === 3){
                 wsClient.configureKnowledgeBaseForUser(String(authController.userId || ""))
                 wsClient.refreshSkills()
@@ -17917,7 +17944,7 @@ ApplicationWindow {
         anchors.topMargin: rightTopPanel.height
         anchors.bottom: parent.bottom
         initializing: authController.loggedIn
-                     && (!authController.modelConfigReady || window.userSessionInitializing)
+                     && (!authController.modelConfigReady || !window.userSessionReady)
         // A document preview is intentionally usable while the session is
         // reconnecting. Do not let the login overlay's full-window MouseArea
         // swallow clicks inside the embedded WebEngine document.
