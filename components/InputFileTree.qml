@@ -41,6 +41,23 @@ Item {
 
     readonly property alias viewer: treeLoader.item
 
+    /// QML 的 url 值没有 toLocalFile()（Qt 6 里调用会抛 TypeError，
+    /// 拖放回调直接中断，表现就是"拖进来没反应"）。这里自己转成本地路径。
+    function localPathFromUrl(value) {
+        var path = String(value || "")
+        if (path.indexOf("file://") === 0)
+            path = decodeURIComponent(path.replace(/^file:\/\/{2,3}/, ""))
+        if (Qt.platform.os === "windows") {
+            if (path.length >= 3 && path.charAt(0) === "/" && path.charAt(2) === ":")
+                path = path.substring(1)
+            path = path.replace(/\//g, "\\")
+        } else if (Qt.platform.os === "linux" || Qt.platform.os === "osx") {
+            if (path.charAt(0) !== "/")
+                path = "/" + path
+        }
+        return path
+    }
+
     function openPaths(localPaths) {
         var list = []
         for (var i = 0; i < localPaths.length; ++i) {
@@ -204,7 +221,7 @@ Item {
                 return
             var locals = []
             for (var i = 0; i < drop.urls.length; ++i) {
-                var local = drop.urls[i].toLocalFile()
+                var local = root.localPathFromUrl(drop.urls[i])
                 if (local && local.length > 0)
                     locals.push(local)
             }

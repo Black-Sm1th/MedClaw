@@ -5957,7 +5957,7 @@ ApplicationWindow {
                             return
                         var locals = []
                         for (var i = 0; i < drop.urls.length; ++i) {
-                            var local = drop.urls[i].toLocalFile()
+                            var local = window.localFilePathFromUrl(drop.urls[i])
                             if (local && local.length > 0)
                                 locals.push(local)
                         }
@@ -6413,7 +6413,7 @@ ApplicationWindow {
                                 return
                             var locals = []
                             for (var i = 0; i < drop.urls.length; ++i) {
-                                var local = drop.urls[i].toLocalFile()
+                                var local = window.localFilePathFromUrl(drop.urls[i])
                                 if (local && local.length > 0)
                                     locals.push(local)
                             }
@@ -18530,7 +18530,7 @@ ApplicationWindow {
                 return
             var locals = []
             for (var i = 0; i < drop.urls.length; ++i) {
-                var local = drop.urls[i].toLocalFile()
+                var local = window.localFilePathFromUrl(drop.urls[i])
                 if (local && local.length > 0)
                     locals.push(local)
             }
