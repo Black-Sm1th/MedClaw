@@ -6110,40 +6110,10 @@ ApplicationWindow {
                             }
                         }
 
-                        // 右侧：分栏图标（当前用于退出并排）
-                        Rectangle {
-                            id: splitMiddleLayoutButton
-
-                            anchors.right: parent.right
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 28
-                            height: 28
-                            radius: 6
-                            color: splitLayoutMouse.containsMouse ? "#F4F6F9" : "transparent"
-
-                            // 现成资源：圆角矩形 + 竖分割线（images/office/sidebar-collapse.svg）
-                            Image {
-                                anchors.centerIn: parent
-                                width: 20
-                                height: 20
-                                source: "qrc:/images/office/sidebar-collapse.svg"
-                                fillMode: Image.PreserveAspectFit
-                            }
-
-                            MouseArea {
-                                id: splitLayoutMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: newTaskRec.splitMiddleCollapsed
-                                           = !newTaskRec.splitMiddleCollapsed
-                            }
-
-                            ToolTip.visible: splitLayoutMouse.containsMouse
-                            ToolTip.text: newTaskRec.splitMiddleCollapsed
-                                          ? qsTr("展开中间栏") : qsTr("收起中间栏")
-                        }
+                        // 表头右侧不再放「收起中间栏」——它的作用和对话栏右缘那个
+                        // 常驻开关（splitMiddleRestoreButton）完全一样，两个图标并排
+                        // 摆着是重复（用户报"怎么有两个收起中间栏"）。收起/展开统一
+                        // 走对话栏右缘那个开关。
 
                         Rectangle {
                             anchors.left: parent.left
