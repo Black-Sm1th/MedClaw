@@ -647,6 +647,9 @@ int main(int argc, char *argv[])
     // 核对它会不会被中间的 WebEngine（文件树/查看器）盖住
     engine.rootContext()->setContextProperty(QStringLiteral("rootsDialogAuto"),
                                              qEnvironmentVariable("MEDCLAW_ROOTS_DIALOG"));
+    // 诊断用：MEDCLAW_PANEL_CLOSE=1 进工作区后再收掉产物面板（等价于点 ✕）
+    engine.rootContext()->setContextProperty(QStringLiteral("panelCloseAuto"),
+                                             qEnvironmentVariable("MEDCLAW_PANEL_CLOSE"));
     // 诊断用：MEDCLAW_SPLIT_EMPTY=1 打开「有中栏、没有根目录」的工作区空状态
     engine.rootContext()->setContextProperty(QStringLiteral("splitEmptyAuto"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_EMPTY"));
