@@ -5799,7 +5799,10 @@ ApplicationWindow {
                 Column{
                     id: titleCol
                     // 并排模式左栏是"对话列"，不再显示启动页（25% 宽放不下）
-                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactPanelVisible)
+                    // 工作区一开就不再显示欢迎页：只看 splitMode，别把产物面板也拉进来。
+                    // 之前写成 !(splitMode && artifactPanelVisible)，关掉产物面板（✕）后
+                    // 条件又成立，欢迎页（含分类标签，影像版就是「设备管理」）会浮在工作区上层。
+                    visible: newTaskRec.isNewTaskWelcome && !newTaskRec.splitMode
                     width: Math.min(840, Math.max(320, parent.width - 48))
                     spacing: 12
                     anchors.topMargin: 80
@@ -10927,7 +10930,10 @@ ApplicationWindow {
 
                 Item {
                     id: welcomeShortcutLayer
-                    visible: newTaskRec.isNewTaskWelcome && !(newTaskRec.splitMode && newTaskRec.artifactPanelVisible)
+                    // 工作区一开就不再显示欢迎页：只看 splitMode，别把产物面板也拉进来。
+                    // 之前写成 !(splitMode && artifactPanelVisible)，关掉产物面板（✕）后
+                    // 条件又成立，欢迎页（含分类标签，影像版就是「设备管理」）会浮在工作区上层。
+                    visible: newTaskRec.isNewTaskWelcome && !newTaskRec.splitMode
                     // 显式四条边：anchors.fill 之后再改 right 不生效（并排时内容会被右栏盖住）
                     anchors.left: parent.left
                     anchors.top: parent.top
@@ -18686,6 +18692,19 @@ ApplicationWindow {
             }
             newTaskRec.artifactTurnFilter = keys
             newTaskRec.showArtifactTurn()
+        }
+    }
+
+    // 诊断：MEDCLAW_PANEL_CLOSE=1 进工作区后收掉产物面板，复现"关掉产物后欢迎页浮上来"
+    Timer {
+        running: panelCloseAuto !== undefined && String(panelCloseAuto) === "1"
+        interval: 3000
+        repeat: false
+        onTriggered: {
+            newTaskRec.artifactSidebarVisible = false
+            console.log("[PanelCloseAuto] splitMode=" + newTaskRec.splitMode
+                        + " welcome=" + newTaskRec.isNewTaskWelcome
+                        + " welcomeLayerVisible=" + welcomeShortcutLayer.visible)
         }
     }
 
