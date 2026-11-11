@@ -287,5 +287,27 @@
         <file>images/updateImage.png</file>
         <file>images/updateStar.png</file>
         <file>fonts/AlibabaPuHuiTi-3-95-ExtraBold.ttf</file>
+        <file>images/template/46.png</file>
+        <file>images/template/47.png</file>
+        <file>images/template/48.png</file>
+        <file>images/template/49.png</file>
+        <file>images/template/50.png</file>
+        <file>images/template/51.png</file>
+        <file>images/template/52.png</file>
+        <file>images/template/53.png</file>
+        <file>images/template/54.png</file>
+        <file>images/template/55.png</file>
+        <file>images/template/56.png</file>
+        <file>images/template/57.png</file>
+        <file>images/template/58.png</file>
+        <file>images/template/59.png</file>
+        <file>images/template/60.png</file>
+        <file>images/template/61.png</file>
+        <file>images/template/62.png</file>
+        <file>images/template/63.png</file>
+        <file>images/template/64.png</file>
+        <file>images/template/65.png</file>
+        <file>images/template/66.png</file>
+        <file>images/template/67.png</file>
     </qresource>
 </RCC>
