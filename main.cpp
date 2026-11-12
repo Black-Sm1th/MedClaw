@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QAction>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -9,6 +10,7 @@
 #include <QLibraryInfo>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QMenu>
 #include <QPainterPath>
 #include <QProcess>
 #include <QQmlApplicationEngine>
@@ -23,6 +25,8 @@
 #include <QStringList>
 #include <QSurfaceFormat>
 #include <QTextStream>
+#include <QSystemTrayIcon>
+#include <QIcon>
 #include <QDateTime>
 #include <QMutex>
 #include <QMutexLocker>
@@ -640,6 +644,28 @@ int main(int argc, char *argv[])
     // --test 启动 WebSocket 测试页。
     const bool testMode = app.arguments().contains(QStringLiteral("--test"));
     const bool accountPreviewMode = app.arguments().contains(QStringLiteral("--account-preview"));
+    QSystemTrayIcon *trayIcon = nullptr;
+    QAction *trayShowAction = nullptr;
+    if (!testMode && !accountPreviewMode) {
+        app.setQuitOnLastWindowClosed(false);
+        trayIcon = new QSystemTrayIcon(QIcon(QStringLiteral(":/images/icon.ico")), &app);
+        trayIcon->setToolTip(QCoreApplication::applicationName());
+
+        auto *trayMenu = new QMenu;
+        trayShowAction = trayMenu->addAction(QStringLiteral("打开主窗口"));
+        trayMenu->addSeparator();
+        QAction *quitAction = trayMenu->addAction(QStringLiteral("退出"));
+        trayIcon->setContextMenu(trayMenu);
+        QObject::connect(quitAction, &QAction::triggered, &app, &QCoreApplication::quit);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, trayIcon, &QSystemTrayIcon::hide);
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayAvailable"),
+                                                 QSystemTrayIcon::isSystemTrayAvailable());
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayIcon"), trayIcon);
+    } else {
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayAvailable"), false);
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayIcon"),
+                                                 static_cast<QSystemTrayIcon *>(nullptr));
+    }
     QString accountPreviewOutput;
     const QString accountPreviewOutputPrefix = QStringLiteral("--account-preview-output=");
     for (const QString &argument : app.arguments()) {
@@ -654,13 +680,32 @@ int main(int argc, char *argv[])
         &engine,
         &QQmlApplicationEngine::objectCreated,
         &app,
-        [url, testMode, accountPreviewMode, accountPreviewOutput](QObject *obj, const QUrl &objUrl) {
+        [url, testMode, accountPreviewMode, accountPreviewOutput, trayIcon, trayShowAction](QObject *obj, const QUrl &objUrl) {
             if (!obj && url == objUrl)
                 QCoreApplication::exit(-1);
 
             QWindow *window = qobject_cast<QWindow *>(obj);
             if (!window || url != objUrl)
                 return;
+
+            if (trayIcon) {
+                QObject::connect(trayIcon, &QSystemTrayIcon::activated, window,
+                                 [window, trayIcon](QSystemTrayIcon::ActivationReason reason) {
+                    if (reason == QSystemTrayIcon::Trigger
+                        || reason == QSystemTrayIcon::DoubleClick) {
+                        trayIcon->hide();
+                        window->showNormal();
+                        window->raise();
+                        window->requestActivate();
+                    }
+                });
+                QObject::connect(trayShowAction, &QAction::triggered, window, [window, trayIcon]() {
+                    trayIcon->hide();
+                    window->showNormal();
+                    window->raise();
+                    window->requestActivate();
+                });
+            }
 
             if (!testMode && !accountPreviewMode) {
                 auto *saveWindowSizeTimer = new QTimer(window);

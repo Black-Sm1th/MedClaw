@@ -15,6 +15,245 @@ ApplicationWindow {
         property string recentFoldersJson: "[]"
         // 「输入文件」树的缩放，记住用户上次的选择
         property real treeZoom: 1.0
+        // 0: 最小化到任务栏；1: 直接退出
+        property int closeBehavior: 0
+        property bool showClosePrompt: true
+    }
+    function requestClose() {
+        if (workspaceSettings.showClosePrompt) {
+            closeChoiceDialog.open()
+        } else {
+            applyCloseBehavior()
+        }
+    }
+    function applyCloseBehavior() {
+        if (workspaceSettings.closeBehavior === 1) {
+            Qt.quit()
+        } else if (systemTrayAvailable) {
+            systemTrayIcon.show()
+            window.hide()
+        } else {
+            window.showMinimized()
+        }
+    }
+    onClosing: {
+        close.accepted = false
+        requestClose()
+    }
+
+    Popup {
+        id: closeChoiceDialog
+        anchors.centerIn: parent
+        width: 400
+        height: 302
+        modal: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property int selectedCloseBehavior: workspaceSettings.closeBehavior
+        onOpened: {
+            selectedCloseBehavior = workspaceSettings.closeBehavior
+            suppressFuturePrompt.checked = false
+        }
+        Overlay.modal: Rectangle { color: "#59000000" }
+        background: Rectangle {
+            radius: 12
+            color: "#FFFFFF"
+            border.color: "#E8EBF0"
+        }
+        contentItem: Item {
+            Text {
+                x: 24
+                y: 22
+                text: "关闭 Aether study"
+                color: "#1F2329"
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+            }
+            Text {
+                x: 24
+                y: 59
+                width: parent.width - 48
+                text: "请选择关闭后的操作"
+                color: "#646A73"
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 14
+            }
+            ButtonGroup {
+                id: closeChoiceGroup
+            }
+            RadioButton {
+                id: minimizeOption
+                x: 24
+                y: 96
+                width: parent.width - 48
+                height: 40
+                text: "最小化到任务栏"
+                checked: closeChoiceDialog.selectedCloseBehavior === 0
+                ButtonGroup.group: closeChoiceGroup
+                onToggled: {
+                    if (checked)
+                        closeChoiceDialog.selectedCloseBehavior = 0
+                }
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 14
+                indicator: Rectangle {
+                    x: minimizeOption.leftPadding
+                    y: minimizeOption.height / 2 - height / 2
+                    width: 18
+                    height: 18
+                    radius: width / 2
+                    color: "#FFFFFF"
+                    border.color: minimizeOption.checked ? "#006BFF" : "#B8BEC8"
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 10
+                        radius: width / 2
+                        color: "#006BFF"
+                        visible: minimizeOption.checked
+                    }
+                }
+                contentItem: Text {
+                    leftPadding: minimizeOption.indicator.width + minimizeOption.spacing
+                    text: minimizeOption.text
+                    color: "#323842"
+                    font: minimizeOption.font
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            RadioButton {
+                id: exitOption
+                x: 24
+                y: 140
+                width: parent.width - 48
+                height: 40
+                text: "直接关闭软件"
+                checked: closeChoiceDialog.selectedCloseBehavior === 1
+                ButtonGroup.group: closeChoiceGroup
+                onToggled: {
+                    if (checked)
+                        closeChoiceDialog.selectedCloseBehavior = 1
+                }
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 14
+                indicator: Rectangle {
+                    x: exitOption.leftPadding
+                    y: exitOption.height / 2 - height / 2
+                    width: 18
+                    height: 18
+                    radius: width / 2
+                    color: "#FFFFFF"
+                    border.color: exitOption.checked ? "#006BFF" : "#B8BEC8"
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 10
+                        radius: width / 2
+                        color: "#006BFF"
+                        visible: exitOption.checked
+                    }
+                }
+                contentItem: Text {
+                    leftPadding: exitOption.indicator.width + exitOption.spacing
+                    text: exitOption.text
+                    color: "#323842"
+                    font: exitOption.font
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            CheckBox {
+                id: suppressFuturePrompt
+                x: 24
+                y: 204
+                width: parent.width - 48
+                height: 30
+                text: "下次不再提示（可在设置中更改）"
+                font.family: "Alibaba PuHuiTi 3.0"
+                font.pixelSize: 13
+                hoverEnabled: true
+                indicator: Rectangle {
+                    x: suppressFuturePrompt.leftPadding
+                    y: suppressFuturePrompt.height / 2 - height / 2
+                    width: 18
+                    height: 18
+                    radius: 4
+                    color: suppressFuturePrompt.checked ? "#006BFF" : "#FFFFFF"
+                    border.color: suppressFuturePrompt.checked ? "#006BFF" : "#B8BEC8"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✓"
+                        color: "#FFFFFF"
+                        font.pixelSize: 13
+                        visible: suppressFuturePrompt.checked
+                    }
+                }
+                contentItem: Text {
+                    leftPadding: suppressFuturePrompt.indicator.width + suppressFuturePrompt.spacing
+                    text: suppressFuturePrompt.text
+                    color: "#646A73"
+                    font: suppressFuturePrompt.font
+                    verticalAlignment: Text.AlignVCenter
+                }
+                HoverHandler {
+                    cursorShape: Qt.PointingHandCursor
+                }
+            }
+            Row {
+                y: parent.height - 60
+                spacing: 12
+                anchors.right: parent.right
+                anchors.rightMargin: 24
+                Rectangle {
+                    width: 80
+                    height: 40
+                    radius: 6
+                    color: cancelMouse.pressed ? "#F2F3F5"
+                         : cancelMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
+                    border.color: "#D7DCE3"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "取消"
+                        color: "#4E5662"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 14
+                    }
+                    MouseArea {
+                        id: cancelMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: closeChoiceDialog.close()
+                    }
+                }
+                Rectangle {
+                    width: 80
+                    height: 40
+                    radius: 6
+                    color: confirmMouse.pressed ? "#0056D6"
+                         : confirmMouse.containsMouse ? "#1677FF" : "#006BFF"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "确定"
+                        color: "#FFFFFF"
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 14
+                    }
+                    MouseArea {
+                        id: confirmMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            workspaceSettings.closeBehavior = closeChoiceDialog.selectedCloseBehavior
+                            workspaceSettings.showClosePrompt = !suppressFuturePrompt.checked
+                            closeChoiceDialog.close()
+                            applyCloseBehavior()
+                        }
+                    }
+                }
+            }
+        }
     }
     // Use logical (DIP) screen dimensions so the initial window fits on
     // high-DPI displays instead of opening larger than the work area.
@@ -3683,9 +3922,7 @@ ApplicationWindow {
                     btnWidth: 20
                     btnHeight: 20
                     source: "qrc:/images/close.png"
-                    onClicked: {
-                        Qt.quit()
-                    }
+                    onClicked: window.requestClose()
                 }
             }
         }
@@ -17513,7 +17750,8 @@ ApplicationWindow {
                                 model: [
                                     { text: "模型", icon: "qrc:/images/category.png" },
                                     { text: "记忆", icon: "qrc:/images/category.png" },
-                                    { text: "沙箱", icon: "qrc:/images/category.png" }
+                                    { text: "沙箱", icon: "qrc:/images/category.png" },
+                                    { text: "通用", icon: "qrc:/images/setting.png" }
                                 ]
 
                                 delegate: Rectangle {
@@ -18119,6 +18357,122 @@ ApplicationWindow {
                             }
                         }
                     }
+                    ScrollView {
+                        id: settingsContentScroll4
+                        width: parent.width - settingsLeftNav.width - 1
+                        height: parent.height
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        visible: settingsDialog.settingsTabIndex === 3
+                        Column {
+                            width: settingsContentScroll4.width
+                            padding: 16
+                            spacing: 12
+
+                            Label {
+                                text: qsTr("通用")
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                                color: "#D9000000"
+                            }
+
+                            Label {
+                                text: qsTr("关闭窗口时")
+                                font.pixelSize: 14
+                                color: "#73000000"
+                            }
+
+                            ButtonGroup {
+                                id: settingsCloseBehaviorGroup
+                            }
+
+                            RadioButton {
+                                id: settingsMinimizeOnCloseOption
+                                width: parent.width - 32
+                                text: qsTr("最小化到任务栏")
+                                checked: workspaceSettings.closeBehavior === 0
+                                ButtonGroup.group: settingsCloseBehaviorGroup
+                                onToggled: {
+                                    if (checked)
+                                        workspaceSettings.closeBehavior = 0
+                                }
+                            }
+
+                            Label {
+                                width: parent.width - 32
+                                text: qsTr("关闭主窗口后，软件继续在系统托盘运行。")
+                                leftPadding: 32
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 13
+                                color: "#73000000"
+                            }
+
+                            RadioButton {
+                                id: settingsExitOnCloseOption
+                                width: parent.width - 32
+                                text: qsTr("直接关闭软件")
+                                checked: workspaceSettings.closeBehavior === 1
+                                ButtonGroup.group: settingsCloseBehaviorGroup
+                                onToggled: {
+                                    if (checked)
+                                        workspaceSettings.closeBehavior = 1
+                                }
+                            }
+
+                            Label {
+                                width: parent.width - 32
+                                text: qsTr("关闭主窗口后，退出软件并结束后台运行。")
+                                leftPadding: 32
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 13
+                                color: "#73000000"
+                            }
+
+                            Label {
+                                width: parent.width - 32
+                                text: qsTr("关闭方式和提示选项更改后立即保存。")
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: 12
+                                color: "#8A9099"
+                            }
+
+                            CheckBox {
+                                id: settingsShowClosePromptOption
+                                width: parent.width - 32
+                                text: qsTr("关闭窗口时显示选择提示")
+                                checked: workspaceSettings.showClosePrompt
+                                hoverEnabled: true
+                                onToggled: workspaceSettings.showClosePrompt = checked
+                                indicator: Rectangle {
+                                    x: settingsShowClosePromptOption.leftPadding
+                                    y: settingsShowClosePromptOption.height / 2 - height / 2
+                                    width: 18
+                                    height: 18
+                                    radius: 4
+                                    color: settingsShowClosePromptOption.checked ? "#006BFF" : "#FFFFFF"
+                                    border.color: settingsShowClosePromptOption.checked ? "#006BFF" : "#B8BEC8"
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "✓"
+                                        color: "#FFFFFF"
+                                        font.pixelSize: 13
+                                        visible: settingsShowClosePromptOption.checked
+                                    }
+                                }
+                                contentItem: Text {
+                                    leftPadding: settingsShowClosePromptOption.indicator.width
+                                                 + settingsShowClosePromptOption.spacing
+                                    text: settingsShowClosePromptOption.text
+                                    color: "#323842"
+                                    font: settingsShowClosePromptOption.font
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                HoverHandler {
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Item {
@@ -18149,11 +18503,17 @@ ApplicationWindow {
                             text: qsTr("保存")
                             fontSize: 14
                             onClicked: {
-                                wsClient.saveGeneralSettings(
-                                    memorySwitch.checked,
-                                    llmSwitch.checked,
-                                    sandboxPage.sandboxMode
-                                )
+                                var gatewaySettingsChanged =
+                                        memorySwitch.checked !== wsClient.memoryEnabled
+                                        || llmSwitch.checked !== wsClient.llmJudgmentEnabled
+                                        || sandboxPage.sandboxMode !== wsClient.sandboxMode
+                                if (gatewaySettingsChanged) {
+                                    wsClient.saveGeneralSettings(
+                                        memorySwitch.checked,
+                                        llmSwitch.checked,
+                                        sandboxPage.sandboxMode
+                                    )
+                                }
                                 settingsDialog.close()
                             }
                         }
