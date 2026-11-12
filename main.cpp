@@ -501,46 +501,17 @@ int main(int argc, char *argv[])
                          chatModel.resolveQuestion(id, status, answer);
                      });
 
-    // 工具结果补拉完成：原地合并完整文本（不清空聊天模型，避免闪烁）
-    // 同时补插实时事件中漏掉的 toolCall 条目
-    QObject::connect(
-        &wsClient, &GatewayClient::toolResultsRefreshed, [&chatModel](const QVariantList &messages) {
-            for (const QVariant &v : messages) {
-                const QVariantMap m = v.toMap();
-                const QString mtype = m.value(QStringLiteral("msgType")).toString();
-                const QString tcId = m.value(QStringLiteral("toolCallId")).toString();
-                if (tcId.isEmpty())
-                    continue;
-
-                if (mtype == QLatin1String("toolCall")) {
-                    const QString toolName = m.value(QStringLiteral("toolName")).toString();
-                    if (toolName == QLatin1String("ask_user")) {
-                        // 提问卡由实时事件或历史加载创建，这里不要再补一张普通工具卡。
-                        continue;
-                    }
-                    if (!chatModel.hasToolCallId(tcId))
-                        chatModel.addToolCall(toolName,
-                                              m.value(QStringLiteral("toolArgs")).toString(),
-                                              tcId);
-                } else if (mtype == QLatin1String("toolResult")) {
-                    const QString toolName = m.value(QStringLiteral("toolName")).toString();
-                    if (toolName == QLatin1String("ask_user")) {
-                        if (chatModel.hasQuestionId(tcId))
-                            chatModel.resolveQuestionFromContent(
-                                tcId, m.value(QStringLiteral("content")).toString());
-                        continue;
-                    }
-                    if (!chatModel.hasToolCallId(tcId))
-                        chatModel.addToolCall(toolName,
-                                              QString(),
-                                              tcId);
-                    chatModel.addToolResult(toolName,
-                                            m.value(QStringLiteral("content")).toString(),
-                                            tcId,
-                                            m.value(QStringLiteral("isError")).toBool());
-                }
-            }
-        });
+    // Periodic and tool-result history refreshes are merged without resetting
+    // any live stream or the user's current transcript view.
+    QObject::connect(&wsClient,
+                     &GatewayClient::conversationHistoryRefreshed,
+                     [&chatModel, &wsClient](const QVariantList &messages) {
+                         QString sessionKey = wsClient.currentViewSessionKey().trimmed();
+                         if (sessionKey.isEmpty())
+                             sessionKey = wsClient.currentTaskSessionKey().trimmed();
+                         chatModel.mergeHistorySnapshot(
+                             wsClient.restoreSessionArtifacts(sessionKey, messages));
+                     });
 
     // 新会话创建成功：聊天区保留本地已追加的首条用户消息。
     QObject::connect(&wsClient, &GatewayClient::sessionCreated, []() {});

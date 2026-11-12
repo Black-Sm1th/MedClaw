@@ -1049,6 +1049,35 @@ GatewayClient::GatewayClient(QObject *parent)
     connect(&m_sessionFirstUserTitleDebounce, &QTimer::timeout, this,
             &GatewayClient::flushSessionListFirstUserTitles);
 
+    m_visibleHistoryRefreshTimer.setInterval(1500);
+    connect(&m_visibleHistoryRefreshTimer, &QTimer::timeout, this, [this]() {
+        if (m_state != Connected)
+            return;
+        const QString viewKey = currentUiSessionKey();
+        if (viewKey.isEmpty() || viewKey.contains(QStringLiteral(":cron:")))
+            return;
+        for (auto it = m_visibleHistoryRefreshReqSessions.cbegin();
+             it != m_visibleHistoryRefreshReqSessions.cend(); ++it) {
+            if (it.value() == viewKey)
+                return;
+        }
+        for (auto it = m_toolResultRefreshReqSessions.cbegin();
+             it != m_toolResultRefreshReqSessions.cend(); ++it) {
+            if (it.value() == viewKey)
+                return;
+        }
+        for (auto it = m_chatHistoryReqSessions.cbegin();
+             it != m_chatHistoryReqSessions.cend(); ++it) {
+            if (it.value() == viewKey)
+                return;
+        }
+        const QString reqId = sendRequest(
+            QStringLiteral("chat.history"),
+            m_session.buildChatHistoryParams(viewKey, 500));
+        if (!reqId.isEmpty())
+            m_visibleHistoryRefreshReqSessions.insert(reqId, viewKey);
+    });
+
     m_toolResultRefreshTimer.setSingleShot(true);
     m_toolResultRefreshTimer.setInterval(300);
     connect(&m_toolResultRefreshTimer, &QTimer::timeout, this, [this]() {
@@ -1146,7 +1175,30 @@ void GatewayClient::updateChatRunningForCurrentSession()
         key = m_currentTaskSessionKey.trimmed();
     if (key.isEmpty())
         key = m_session.currentSessionKey().trimmed();
+
     setChatRunning(!key.isEmpty() && m_chatRunningSessionKeys.contains(key));
+}
+
+bool GatewayClient::controllerRunning() const
+{
+    const QString taskKey = m_currentTaskSessionKey.trimmed();
+    if (taskKey.isEmpty())
+        return false;
+
+    // The picker indicator is bound directly to this property. A terminal
+    // task status must win over a stale live-run key, which can remain after
+    // the completion event has already updated the task record.
+    const QString taskStatus = taskSessionInfoByKey(taskKey)
+                                   .value(QStringLiteral("taskStatus")).toString();
+    if (taskStatus == QLatin1String("completed")
+        || taskStatus == QLatin1String("failed")
+        || taskStatus == QLatin1String("cancelled")
+        || taskStatus == QLatin1String("aborted")) {
+        return false;
+    }
+
+    return !m_controllerCompletedTaskSessionKeys.contains(taskKey)
+        && m_chatRunningSessionKeys.contains(taskKey);
 }
 
 QString GatewayClient::serverUrl() const { return m_config.serverUrl(); }
@@ -1182,6 +1234,7 @@ void GatewayClient::setTaskSessionUserId(const QString &userId)
     m_taskSessionUserId = normalized;
     m_pendingCronToolCalls.clear();
     m_runningTaskSessionKeys.clear();
+    m_controllerCompletedTaskSessionKeys.clear();
     m_chatRunningSessionKeys.clear();
     setChatRunning(false);
     clearActiveAgentContext();
@@ -1242,6 +1295,12 @@ QVariantList GatewayClient::collaborationParticipants() const
     const QString controllerAgentId = agentIdFromSessionKey(taskKey);
     const QVariantMap controllerAgent = agentInfoById(controllerAgentId);
     const QString currentViewKey = m_currentViewSessionKey.trimmed();
+    const QString taskStatus = taskSessionInfoByKey(taskKey)
+                                  .value(QStringLiteral("taskStatus")).toString();
+    const bool taskIsTerminal = taskStatus == QLatin1String("completed")
+        || taskStatus == QLatin1String("failed")
+        || taskStatus == QLatin1String("cancelled")
+        || taskStatus == QLatin1String("aborted");
     QSet<QString> seenAgentIds;
     QSet<QString> seenSessionKeys;
     if (!controllerAgentId.isEmpty())
@@ -1261,8 +1320,11 @@ QVariantList GatewayClient::collaborationParticipants() const
     controller[QStringLiteral("roleLabel")] = QStringLiteral("\u4e3b\u63a7");
     controller[QStringLiteral("isController")] = true;
     controller[QStringLiteral("isPending")] = false;
-    controller[QStringLiteral("isRunning")] = false;
-    controller[QStringLiteral("isCompleted")] = true;
+    const bool rootRunning = !taskIsTerminal
+        && (m_runningTaskSessionKeys.contains(taskKey)
+            || m_chatRunningSessionKeys.contains(taskKey));
+    controller[QStringLiteral("isRunning")] = rootRunning;
+    controller[QStringLiteral("isCompleted")] = !rootRunning;
     controller[QStringLiteral("identity")] =
         controllerAgent.value(QStringLiteral("identity"));
     if (!controllerAgent.value(QStringLiteral("name")).toString().isEmpty())
@@ -1374,14 +1436,14 @@ QVariantList GatewayClient::collaborationParticipants() const
             || sessionState.contains(QLatin1String("failed"))
             || sessionState.contains(QLatin1String("aborted"));
         const bool chatRunning = m_chatRunningSessionKeys.contains(key);
-        if (explicitlyComplete && !chatRunning
-            && !(matchingHint
-                 && hinted.value(QStringLiteral("isRunning")).toBool()))
+        if (taskIsTerminal)
+            isRunning = false;
+        else if (matchingHint && hinted.contains(QStringLiteral("isRunning")))
+            isRunning = hinted.value(QStringLiteral("isRunning")).toBool();
+        else if (explicitlyComplete)
             isRunning = false;
         else
             isRunning = isRunning || chatRunning;
-        if (matchingHint && hinted.contains(QStringLiteral("isRunning")))
-            isRunning = hinted.value(QStringLiteral("isRunning")).toBool() || chatRunning;
         row[QStringLiteral("isPending")] = false;
         row[QStringLiteral("isRunning")] = isRunning;
         row[QStringLiteral("isCompleted")] = !isRunning;
@@ -1445,7 +1507,7 @@ QVariantList GatewayClient::collaborationParticipants() const
             || childState.contains(QLatin1String("failed"))
             || childState.contains(QLatin1String("aborted"));
         const bool childChatRunning = m_chatRunningSessionKeys.contains(selectedSessionKey);
-        const bool isChildRunning = !hinted.isEmpty()
+        const bool isChildRunning = !taskIsTerminal && (!hinted.isEmpty()
             ? ((!childExplicitlyComplete
                 || hinted.value(QStringLiteral("isRunning")).toBool())
                && (hinted.value(QStringLiteral("isRunning"), true).toBool()
@@ -1454,7 +1516,7 @@ QVariantList GatewayClient::collaborationParticipants() const
                 || childState == QLatin1String("running")
                 || childState == QLatin1String("active")
                 || childState == QLatin1String("starting")
-                || childState == QLatin1String("queued"));
+                || childState == QLatin1String("queued")));
         row[QStringLiteral("sessionKey")] =
             selectedSessionKey;
         row[QStringLiteral("agentId")] = aid;
@@ -1491,7 +1553,6 @@ QVariantList GatewayClient::collaborationParticipants() const
             hinted.value(QStringLiteral("parentSessionKey")).toString().trimmed();
         if (spawnedBy != taskKey && parent != taskKey)
             continue;
-
         const QString aid =
             hinted.value(QStringLiteral("agentId")).toString().trimmed();
         const QString childKey =
@@ -1511,8 +1572,8 @@ QVariantList GatewayClient::collaborationParticipants() const
         row[QStringLiteral("roleLabel")] = QStringLiteral("\u6267\u884c\u4e2d");
         row[QStringLiteral("isController")] = false;
         row[QStringLiteral("isPending")] = false;
-        row[QStringLiteral("isRunning")] =
-            hinted.value(QStringLiteral("isRunning"), true).toBool();
+        row[QStringLiteral("isRunning")] = !taskIsTerminal
+            && hinted.value(QStringLiteral("isRunning"), true).toBool();
         row[QStringLiteral("isCompleted")] =
             !row.value(QStringLiteral("isRunning")).toBool();
         row[QStringLiteral("identity")] = agent.value(QStringLiteral("identity"));
@@ -1698,6 +1759,12 @@ void GatewayClient::setState(ConnectionState state)
             emit docxTemplatesLoadStateChanged();
         }
         emit connectionStateChanged();
+    }
+    if (m_state == Connected) {
+        if (!currentUiSessionKey().isEmpty())
+            m_visibleHistoryRefreshTimer.start();
+    } else {
+        m_visibleHistoryRefreshTimer.stop();
     }
 }
 
@@ -2904,11 +2971,11 @@ bool GatewayClient::hasRunningCollaborationChildren(const QString &taskSessionKe
                 || sessionState == QLatin1String("starting")
                 || sessionState == QLatin1String("queued");
         }
-        if (explicitlyComplete && !m_chatRunningSessionKeys.contains(childKey)
-            && !(matchingHint
-                 && hint.value(QStringLiteral("isRunning")).toBool()))
+        if (matchingHint && hint.contains(QStringLiteral("isRunning")))
+            isRunning = hint.value(QStringLiteral("isRunning")).toBool();
+        else if (explicitlyComplete)
             isRunning = false;
-        if (m_chatRunningSessionKeys.contains(childKey))
+        else if (m_chatRunningSessionKeys.contains(childKey))
             isRunning = true;
         if (isRunning)
             return true;
@@ -2922,11 +2989,90 @@ bool GatewayClient::hasRunningCollaborationChildren(const QString &taskSessionKe
         if ((parent == taskKey || spawnedBy == taskKey)
             && !childKey.isEmpty()
             && (child.value(QStringLiteral("isRunning"), true).toBool()
-                || m_chatRunningSessionKeys.contains(childKey))) {
+                || (!child.contains(QStringLiteral("isRunning"))
+                    && m_chatRunningSessionKeys.contains(childKey)))) {
             return true;
         }
     }
     return false;
+}
+
+bool GatewayClient::isCollaborationChildSessionForTask(
+    const QString &childSessionKey, const QString &taskSessionKey) const
+{
+    const QString childKey = childSessionKey.trimmed();
+    const QString taskKey = taskSessionKey.trimmed();
+    if (childKey.isEmpty() || taskKey.isEmpty() || childKey == taskKey)
+        return false;
+
+    for (const QVariant &value : m_collaborationChildSessionHints) {
+        const QVariantMap child = value.toMap();
+        if (child.value(QStringLiteral("sessionKey")).toString().trimmed() != childKey)
+            continue;
+        if (child.value(QStringLiteral("parentSessionKey")).toString().trimmed() == taskKey
+            || child.value(QStringLiteral("spawnedBy")).toString().trimmed() == taskKey) {
+            return true;
+        }
+    }
+
+    if (sessionBelongsToTask(sessionInfoByKey(childKey), taskKey))
+        return true;
+
+    const QString eventAgentId = agentIdFromSessionKey(childKey);
+    const QString controllerAgentId = agentIdFromSessionKey(taskKey);
+    if (eventAgentId.isEmpty() || eventAgentId == controllerAgentId)
+        return false;
+
+    const QVariantMap task = taskSessionInfoByKey(taskKey);
+    if (taskSessionAgentIds(task).contains(eventAgentId))
+        return true;
+    return m_agentSubagentsById.value(controllerAgentId).contains(eventAgentId);
+}
+
+void GatewayClient::markCollaborationChildTerminal(
+    const QString &childSessionKey, const QString &taskSessionKey)
+{
+    const QString eventKey = childSessionKey.trimmed();
+    const QString taskKey = taskSessionKey.trimmed();
+    if (eventKey.isEmpty() || taskKey.isEmpty())
+        return;
+
+    const QString eventAgentId = agentIdFromSessionKey(eventKey);
+    int targetIndex = -1;
+    int sameAgentCount = 0;
+    for (int i = 0; i < m_collaborationChildSessionHints.size(); ++i) {
+        const QVariantMap child = m_collaborationChildSessionHints.at(i).toMap();
+        if (child.value(QStringLiteral("parentSessionKey")).toString().trimmed() != taskKey
+            && child.value(QStringLiteral("spawnedBy")).toString().trimmed() != taskKey) {
+            continue;
+        }
+        if (child.value(QStringLiteral("sessionKey")).toString().trimmed() == eventKey) {
+            targetIndex = i;
+            break;
+        }
+        if (!eventAgentId.isEmpty()
+            && child.value(QStringLiteral("agentId")).toString().trimmed() == eventAgentId) {
+            targetIndex = i;
+            ++sameAgentCount;
+        }
+    }
+    if (targetIndex < 0
+        || (sameAgentCount > 1
+            && m_collaborationChildSessionHints.at(targetIndex).toMap()
+                   .value(QStringLiteral("sessionKey")).toString().trimmed() != eventKey)) {
+        return;
+    }
+
+    QVariantMap child = m_collaborationChildSessionHints.at(targetIndex).toMap();
+    const QString actualChildKey =
+        child.value(QStringLiteral("sessionKey")).toString().trimmed();
+    if (!actualChildKey.isEmpty())
+        m_chatRunningSessionKeys.remove(actualChildKey);
+    child[QStringLiteral("isRunning")] = false;
+    child[QStringLiteral("updatedAt")] = QVariant(
+        static_cast<qlonglong>(QDateTime::currentMSecsSinceEpoch()));
+    m_collaborationChildSessionHints[targetIndex] = child;
+    emit collaborationParticipantsChanged();
 }
 
 void GatewayClient::syncCollaborationTaskStatus(const QString &sessionKey)
@@ -2948,15 +3094,42 @@ void GatewayClient::syncCollaborationTaskStatus(const QString &sessionKey)
     if (taskKey.isEmpty())
         return;
 
-    const bool controllerRunning = m_chatRunningSessionKeys.contains(taskKey);
-    const bool shouldRun = hasRunningCollaborationChildren(taskKey) || controllerRunning;
     const QVariantMap task = taskSessionInfoByKey(taskKey);
+    const QString taskStatus = task.value(QStringLiteral("taskStatus")).toString();
+    const bool controllerRunning = m_chatRunningSessionKeys.contains(taskKey)
+        && !m_controllerCompletedTaskSessionKeys.contains(taskKey);
+    const bool childRunning = hasRunningCollaborationChildren(taskKey);
+    const bool shouldRun = childRunning || controllerRunning;
     const bool isRunning = task.value(QStringLiteral("taskStatus")).toString()
         == QLatin1String("running");
-    if (shouldRun == isRunning)
+    if (!shouldRun && !isRunning) {
+        if (taskStatus == QLatin1String("running"))
+            setTaskSessionRunning(taskKey, false);
+        m_chatRunningSessionKeys.remove(taskKey);
+        updateChatRunningForCurrentSession();
+        if ((taskStatus == QLatin1String("completed")
+             || taskStatus == QLatin1String("failed")
+             || taskStatus == QLatin1String("cancelled")
+             || taskStatus == QLatin1String("aborted"))
+            && currentUiSessionKey() == taskKey) {
+            setChatRunning(false);
+        }
         return;
+    }
+    if (shouldRun == isRunning) {
+        updateChatRunningForCurrentSession();
+        if ((taskStatus == QLatin1String("completed")
+             || taskStatus == QLatin1String("failed")
+             || taskStatus == QLatin1String("cancelled")
+             || taskStatus == QLatin1String("aborted"))
+            && currentUiSessionKey() == taskKey) {
+            setChatRunning(false);
+        }
+        return;
+    }
 
     setTaskSessionRunning(taskKey, shouldRun);
+    updateChatRunningForCurrentSession();
 }
 
 void GatewayClient::setTaskSessionState(const QString &sessionKey,
@@ -2996,12 +3169,12 @@ void GatewayClient::setTaskSessionState(const QString &sessionKey,
                 return child.value(QStringLiteral("parentSessionKey")).toString() == key
                     || child.value(QStringLiteral("spawnedBy")).toString() == key;
             });
-    if (normalizedStatus == QLatin1String("completed") && hasCollaborators) {
-        if (hasRunningCollaborationChildren(key)
-            || m_chatRunningSessionKeys.contains(key)) {
-            normalizedStatus = QStringLiteral("running");
-        }
-    }
+    const bool controllerTerminalAlreadySeen =
+        m_controllerCompletedTaskSessionKeys.contains(key);
+    if (normalizedStatus == QLatin1String("completed") && hasCollaborators
+        && !controllerTerminalAlreadySeen
+        && hasRunningCollaborationChildren(key))
+        normalizedStatus = QStringLiteral("running");
 
     QString viewedKey = m_currentViewSessionKey.trimmed();
     if (viewedKey.isEmpty())
@@ -3011,11 +3184,23 @@ void GatewayClient::setTaskSessionState(const QString &sessionKey,
         || viewedKey == key
         || isViewedTask;
     const bool running = normalizedStatus == QLatin1String("running");
+    const bool wasControllerCompleted =
+        m_controllerCompletedTaskSessionKeys.contains(key);
+    const bool completedChanged =
+        m_controllerCompletedTaskSessionKeys.contains(key)
+            != (normalizedStatus == QLatin1String("completed"));
+    if (normalizedStatus == QLatin1String("completed"))
+        m_controllerCompletedTaskSessionKeys.insert(key);
+    else if (running && !controllerTerminalAlreadySeen
+             && m_chatRunningSessionKeys.contains(key))
+        m_controllerCompletedTaskSessionKeys.remove(key);
     const bool stateChanged =
         currentStatus != normalizedStatus
         || current.value(QStringLiteral("isUnread")).toBool() == isRead
-        || m_runningTaskSessionKeys.contains(key) != running;
-    if (!stateChanged)
+        || m_runningTaskSessionKeys.contains(key) != running
+        || wasControllerCompleted !=
+            m_controllerCompletedTaskSessionKeys.contains(key);
+    if (!stateChanged && !completedChanged)
         return;
 
     if (running)
@@ -3038,11 +3223,51 @@ void GatewayClient::setTaskSessionState(const QString &sessionKey,
         }
     }
     loadTaskSessionListFromDb();
+    emit collaborationParticipantsChanged();
+    if (normalizedStatus == QLatin1String("completed")) {
+        m_controllerCompletedTaskSessionKeys.insert(key);
+        updateChatRunningForCurrentSession();
+    }
     if (!running) {
         // Notify the collaboration picker after the controller or last child stops.
-        emit collaborationParticipantsChanged();
         maybeShowControllerProducts();
     }
+}
+
+void GatewayClient::markControllerTaskTerminal(const QString &taskSessionKey)
+{
+    const QString taskKey = taskSessionKey.trimmed();
+    if (taskKey.isEmpty())
+        return;
+
+    m_controllerCompletedTaskSessionKeys.insert(taskKey);
+    m_chatRunningSessionKeys.remove(taskKey);
+    if (!hasRunningCollaborationChildren(taskKey)) {
+        for (auto it = m_chatRunningSessionKeys.begin();
+             it != m_chatRunningSessionKeys.end();) {
+            if (isCollaborationChildSessionForTask(*it, taskKey))
+                it = m_chatRunningSessionKeys.erase(it);
+            else
+                ++it;
+        }
+        for (int i = 0; i < m_collaborationChildSessionHints.size(); ++i) {
+            QVariantMap child = m_collaborationChildSessionHints.at(i).toMap();
+            if (child.value(QStringLiteral("parentSessionKey")).toString().trimmed()
+                    != taskKey
+                && child.value(QStringLiteral("spawnedBy")).toString().trimmed()
+                    != taskKey) {
+                continue;
+            }
+            child[QStringLiteral("isRunning")] = false;
+            child[QStringLiteral("updatedAt")] = QVariant(
+                static_cast<qlonglong>(QDateTime::currentMSecsSinceEpoch()));
+            m_collaborationChildSessionHints[i] = child;
+        }
+    }
+    setTaskSessionState(taskKey, QStringLiteral("completed"));
+    updateChatRunningForCurrentSession();
+    emit collaborationParticipantsChanged();
+    emit taskSessionListChanged();
 }
 
 void GatewayClient::markTaskSessionRead(const QString &sessionKey)
@@ -3108,7 +3333,15 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
         || subEvent.contains(QLatin1String("abort"))
         || subEvent.contains(QLatin1String("cancel")));
     const bool marksComplete = !isToolStream && !marksFailed && !marksCancelled
-        && (phase == QLatin1String("complete")
+        && (state == QLatin1String("complete")
+        || state == QLatin1String("completed")
+        || state == QLatin1String("done")
+        || state == QLatin1String("finished")
+        || dataState == QLatin1String("complete")
+        || dataState == QLatin1String("completed")
+        || dataState == QLatin1String("done")
+        || dataState == QLatin1String("finished")
+        || phase == QLatin1String("complete")
         || phase == QLatin1String("done")
         || phase == QLatin1String("end")
         || subEvent.contains(QLatin1String("complete"))
@@ -3129,9 +3362,9 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
     const QString eventKey = extractPayloadSessionKey(payload).trimmed();
     QString taskKey = taskSessionInfoByKey(eventKey).isEmpty() ? QString() : eventKey;
 
-    // Events without an explicit session key may be normalized to
-    // agent:<id>:main. Resolve them only when exactly one running task uses
-    // that controller agent; child-agent events then cannot stop the parent.
+    // Events without an explicit task session key may be normalized to
+    // agent:<id>:main. Match only the task controller agent; collaborator
+    // events must not let a child completion stop its parent.
     if (taskKey.isEmpty() && (marksComplete || marksFailed || marksCancelled)
         && !eventKey.contains(QLatin1String(":subagent:"))
         && !eventKey.contains(QLatin1String(":acp:"))) {
@@ -3140,8 +3373,7 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
             if (agentIdFromSessionKey(runningKey) != agentId)
                 continue;
             const QVariantMap runningTask = taskSessionInfoByKey(runningKey);
-            if (runningTask.isEmpty()
-                || !taskSessionAgentIds(runningTask).contains(agentId)) {
+            if (runningTask.isEmpty()) {
                 continue;
             }
             if (!taskKey.isEmpty()) {
@@ -3153,21 +3385,43 @@ void GatewayClient::updateTaskSessionRuntimeFromEvent(const QJsonObject &payload
     }
 
     if (!taskKey.isEmpty()) {
-        if (marksFailed)
+        if (marksFailed) {
+            m_chatRunningSessionKeys.remove(taskKey);
+            updateChatRunningForCurrentSession();
+            emit collaborationParticipantsChanged();
+            markControllerTaskTerminal(taskKey);
             setTaskSessionFailed(taskKey);
-        else if (marksCancelled) {
+        } else if (marksCancelled) {
             const QString currentStatus =
                 taskSessionInfoByKey(taskKey).value(QStringLiteral("taskStatus")).toString();
+            m_chatRunningSessionKeys.remove(taskKey);
+            updateChatRunningForCurrentSession();
+            emit collaborationParticipantsChanged();
+            markControllerTaskTerminal(taskKey);
             if (currentStatus != QLatin1String("cancelled"))
                 setTaskSessionAborted(taskKey);
         }
-        else if (marksRunning)
+        else if (marksRunning) {
+            m_controllerCompletedTaskSessionKeys.remove(taskKey);
             setTaskSessionRunning(taskKey, marksRunning);
+            m_chatRunningSessionKeys.insert(taskKey);
+            emit collaborationParticipantsChanged();
+        }
         if (marksFailed || marksCancelled || marksComplete) {
             m_chatRunningSessionKeys.remove(taskKey);
             updateChatRunningForCurrentSession();
-            if (marksComplete)
+            emit collaborationParticipantsChanged();
+            if (marksComplete) {
+                markControllerTaskTerminal(taskKey);
                 syncCollaborationTaskStatus(taskKey);
+            }
+        }
+    }
+    if (taskKey.isEmpty() && (marksComplete || marksFailed || marksCancelled)) {
+        const QString parentKey = resolveArtifactTrackingKey(eventKey);
+        if (!parentKey.isEmpty() && parentKey != eventKey) {
+            markCollaborationChildTerminal(eventKey, parentKey);
+            syncCollaborationTaskStatus(parentKey);
         }
     }
 
@@ -3360,6 +3614,7 @@ void GatewayClient::switchCollaborationViewSession(const QString &sessionKey)
     setCurrentViewSessionKeyInternal(key);
     getAgentIdentity(key);
     loadChatHistory(key);
+    m_visibleHistoryRefreshTimer.start();
 }
 
 bool GatewayClient::mergeSessionHintsIntoAgentList()
@@ -3695,6 +3950,10 @@ void GatewayClient::setCurrentViewSessionKeyInternal(const QString &key)
     m_currentViewSessionKey = trimmed;
     emit currentViewSessionChanged();
     updateChatRunningForCurrentSession();
+    if (m_state == Connected && !trimmed.isEmpty())
+        m_visibleHistoryRefreshTimer.start();
+    else
+        m_visibleHistoryRefreshTimer.stop();
 }
 
 QVariantMap GatewayClient::agentInfoById(const QString &agentId) const
@@ -4254,6 +4513,8 @@ void GatewayClient::sendChatMessageNow(const QString &sessionKey,
     m_activeChatSessionKey = key;
     m_recentlyAbortedChatSessionKey.clear();
     m_chatRunningSessionKeys.insert(key);
+    if (!taskSessionInfoByKey(key).isEmpty())
+        m_controllerCompletedTaskSessionKeys.remove(key);
     updateChatRunningForCurrentSession();
     if (!taskSessionInfoByKey(key).isEmpty())
         setTaskSessionRunning(key, true);
@@ -4560,9 +4821,10 @@ bool GatewayClient::collaborationTaskFullyComplete(const QString &taskKey) const
             continue;
         if (row.value(QStringLiteral("isRunning")).toBool())
             return false;
-        const QString childKey = row.value(QStringLiteral("sessionKey")).toString().trimmed();
-        if (!childKey.isEmpty() && m_chatRunningSessionKeys.contains(childKey))
-            return false;
+        // collaborationParticipants() already folds chatRunningSessionKeys
+        // into isRunning unless the server/session hint explicitly reports
+        // completion. Checking the raw key again here lets a stale marker
+        // override that authoritative completed state forever.
     }
     return true;
 }
@@ -5838,6 +6100,8 @@ void GatewayClient::beginGatewayConnection(const QString &url)
                       << "previousState=" << static_cast<int>(m_state);
 
     m_userRequestedDisconnect = false;
+    m_visibleHistoryRefreshTimer.stop();
+    m_visibleHistoryRefreshReqSessions.clear();
     m_lastConnectedWsUrl = url;
     if (!fromAuto)
         m_autoReconnectFailureCount = 0;
@@ -5908,6 +6172,10 @@ void GatewayClient::disconnectFromServer()
     m_pendingReconnectDelayMs = 0;
     m_toolResultRefreshTimer.stop();
     m_toolResultRefreshReqSessions.clear();
+    m_chatHistoryReqSessions.clear();
+    m_toolResultRefreshReqSessions.clear();
+    m_visibleHistoryRefreshReqSessions.clear();
+    m_visibleHistoryRefreshTimer.stop();
     m_activeChatRunId.clear();
     setChatRunning(false);
     m_chatRunningSessionKeys.clear();
@@ -6031,6 +6299,10 @@ void GatewayClient::onDisconnected()
              << "socket=" << reinterpret_cast<quintptr>(m_socket)
              << "pendingBeforeClear=" << m_pendingRequests.size();
     const ConnectionState prevState = m_state;
+    m_visibleHistoryRefreshTimer.stop();
+    m_visibleHistoryRefreshReqSessions.clear();
+    m_toolResultRefreshReqSessions.clear();
+    m_chatHistoryReqSessions.clear();
     qInfo().noquote() << "[KB-INIT][Gateway] websocket disconnected"
                       << "previousState=" << static_cast<int>(prevState)
                       << "kbUserTag=" << knowledgeBaseDiagnosticUserTag(m_knowledgeBaseDataDirUserId)
@@ -6414,13 +6686,20 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         const QString eventKey = extractPayloadSessionKey(payload).trimmed();
         const QString abortedKey = eventKey.isEmpty()
             ? m_activeChatSessionKey : eventKey;
-        if (taskSessionInfoByKey(abortedKey).value(QStringLiteral("taskStatus")).toString()
-            != QLatin1String("cancelled")) {
-            setTaskSessionAborted(abortedKey);
+        const QString taskKey = taskSessionInfoByKey(abortedKey).isEmpty()
+            ? resolveArtifactTrackingKey(abortedKey) : abortedKey;
+        if (!taskKey.isEmpty() && taskKey != abortedKey) {
+            markCollaborationChildTerminal(abortedKey, taskKey);
+            syncCollaborationTaskStatus(taskKey);
+        } else {
+            if (taskSessionInfoByKey(abortedKey).value(QStringLiteral("taskStatus")).toString()
+                != QLatin1String("cancelled")) {
+                setTaskSessionAborted(abortedKey);
+            }
+            markControllerTaskTerminal(abortedKey);
+            updateChatRunningForCurrentSession();
+            syncCollaborationTaskStatus(abortedKey);
         }
-        m_chatRunningSessionKeys.remove(abortedKey);
-        updateChatRunningForCurrentSession();
-        syncCollaborationTaskStatus(abortedKey);
         m_recentlyAbortedChatSessionKey = eventKey.isEmpty()
             ? m_activeChatSessionKey : eventKey;
         if (!eventAppliesToCurrentUiSession(payload))
@@ -6597,9 +6876,13 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             const QString sendKey = m_activeChatSessionKey.trimmed();
             if (!completedKey.isEmpty())
                 m_chatRunningSessionKeys.remove(completedKey);
-            syncCollaborationTaskStatus(completedKey);
-            if (!sendKey.isEmpty() && sendKey != completedKey)
+            const bool completedChildOfSend =
+                !completedKey.isEmpty() && !sendKey.isEmpty()
+                && isCollaborationChildSessionForTask(completedKey, sendKey);
+            if (!sendKey.isEmpty() && sendKey != completedKey
+                && !completedChildOfSend) {
                 m_chatRunningSessionKeys.remove(sendKey);
+            }
             QString viewedKey = m_currentViewSessionKey.trimmed();
             if (viewedKey.isEmpty())
                 viewedKey = m_currentTaskSessionKey.trimmed();
@@ -6615,9 +6898,17 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             if (suppressLateAbortComplete)
                 m_recentlyAbortedChatSessionKey.clear();
-            m_activeChatRunId.clear();
-            m_activeChatSessionKey.clear();
+            if (!completedChildOfSend) {
+                m_activeChatRunId.clear();
+                m_activeChatSessionKey.clear();
+            }
             updateChatRunningForCurrentSession();
+            if (!completedKey.isEmpty())
+                syncCollaborationTaskStatus(completedKey);
+            if (!sendKey.isEmpty() && !completedChildOfSend)
+                markControllerTaskTerminal(sendKey);
+            if (!sendKey.isEmpty())
+                syncCollaborationTaskStatus(sendKey);
             // 完成事件都处理完了还在"运行中"，说明 key 没对上——留日志便于定位
             if (chatRunning())
                 qWarning() << "[Gateway] chat complete but still marked running:"
@@ -6659,9 +6950,13 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             const QString sendKey = m_activeChatSessionKey.trimmed();
             if (!completedKey.isEmpty())
                 m_chatRunningSessionKeys.remove(completedKey);
-            syncCollaborationTaskStatus(completedKey);
-            if (!sendKey.isEmpty() && sendKey != completedKey)
+            const bool completedChildOfSend =
+                !completedKey.isEmpty() && !sendKey.isEmpty()
+                && isCollaborationChildSessionForTask(completedKey, sendKey);
+            if (!sendKey.isEmpty() && sendKey != completedKey
+                && !completedChildOfSend) {
                 m_chatRunningSessionKeys.remove(sendKey);
+            }
             QString viewedKey = m_currentViewSessionKey.trimmed();
             if (viewedKey.isEmpty())
                 viewedKey = m_currentTaskSessionKey.trimmed();
@@ -6677,10 +6972,18 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
             }
             if (suppressLateAbortComplete)
                 m_recentlyAbortedChatSessionKey.clear();
-            m_activeChatRunId.clear();
-            m_activeChatSessionKey.clear();
+            if (!completedChildOfSend) {
+                m_activeChatRunId.clear();
+                m_activeChatSessionKey.clear();
+            }
             m_toolResultRefreshTimer.start();
             updateChatRunningForCurrentSession();
+            if (!completedKey.isEmpty())
+                syncCollaborationTaskStatus(completedKey);
+            if (!sendKey.isEmpty() && !completedChildOfSend)
+                markControllerTaskTerminal(sendKey);
+            if (!sendKey.isEmpty())
+                syncCollaborationTaskStatus(sendKey);
             schedulePostStreamSidebarRefresh();
             maybeShowControllerProducts();
             return;
@@ -6798,6 +7101,11 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
         }
         completeCronTaskHistoryPart(id, QVariantList());
         const QString failedChatSession = m_chatSendReqSession.take(id);
+        m_toolResultRefreshReqSessions.remove(id);
+        m_visibleHistoryRefreshReqSessions.remove(id);
+        m_chatHistoryReqSessions.remove(id);
+        if (method == QLatin1String("chat.history"))
+            return;
         if (!failedChatSession.isEmpty()) {
             setTaskSessionFailed(failedChatSession);
             m_chatRunningSessionKeys.remove(failedChatSession);
@@ -7289,16 +7597,21 @@ void GatewayClient::handleResponse(const QJsonObject &msg)
             return;
         }
 
-        // 工具结果补拉：仅原地合并 toolResult 文本，不清空聊天模型
+        // 工具结果补拉及可见会话轮询：只向当前会话发送合并快照，不重置模型
         const QString toolResultSession =
             m_toolResultRefreshReqSessions.take(id);
-        if (!toolResultSession.isEmpty()) {
+        const QString refreshSession =
+            m_visibleHistoryRefreshReqSessions.take(id);
+        if (!toolResultSession.isEmpty() || !refreshSession.isEmpty()) {
+            const QString requestSession = !refreshSession.isEmpty()
+                ? refreshSession : toolResultSession;
             const QString currentView = currentUiSessionKey();
-            if (toolResultSession == currentView) {
+            if (requestSession == currentView) {
                 QVariantList visible = history;
                 if (currentView == m_currentTaskSessionKey)
                     visible = filterControllerHistory(history);
-                emit toolResultsRefreshed(visible);
+                visible = restoreSessionArtifacts(currentView, visible);
+                emit conversationHistoryRefreshed(visible);
             }
             return;
         }
@@ -9041,7 +9354,6 @@ void GatewayClient::switchTaskSession(const QString &sessionKey)
     markTaskSessionRead(key);
 
     m_toolResultRefreshTimer.stop();
-    m_toolResultRefreshReqSessions.clear();
     m_pendingCollaborationAgentIds.clear();
     m_collaborationChildSessionHints.clear();
     emit collaborationParticipantsChanged();
@@ -9096,7 +9408,6 @@ void GatewayClient::applyAgentSwitch(const QString &agentId, bool shouldLoadHist
 
     // 切换会话时取消未完成的工具结果补拉
     m_toolResultRefreshTimer.stop();
-    m_toolResultRefreshReqSessions.clear();
 
     const QString sessionKey = resolveChatSessionKeyForAgentId(agentId.trimmed());
 
@@ -9147,6 +9458,8 @@ void GatewayClient::loadChatHistory(const QString &sessionKey, int limit)
                 m_session.buildChatHistoryParams(key, limit));
     if (!reqId.isEmpty())
         m_chatHistoryReqSessions.insert(reqId, key);
+    if (key == currentUiSessionKey() && m_state == Connected)
+        m_visibleHistoryRefreshTimer.start();
 }
 
 /**
@@ -10513,20 +10826,42 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     const QString taskKey = currentTaskKey;
     const QJsonObject eventData = payload.value(QStringLiteral("data")).toObject();
     const QString eventState = payload.value(QStringLiteral("state")).toString().trimmed().toLower();
+    const QString eventDataState = eventData.value(QStringLiteral("state"))
+                                       .toString().trimmed().toLower();
     const QString phase = eventData.value(QStringLiteral("phase")).toString(
         payload.value(QStringLiteral("phase")).toString()).trimmed().toLower();
     const QString subEvent = payload.value(QStringLiteral("event"))
                                  .toString().trimmed().toLower();
-    const bool marksComplete = phase == QLatin1String("complete")
+    const bool marksFailed = eventState == QLatin1String("failed")
+        || eventState == QLatin1String("failure")
+        || eventState == QLatin1String("error")
+        || eventDataState == QLatin1String("failed")
+        || eventDataState == QLatin1String("failure")
+        || eventDataState == QLatin1String("error");
+    const bool marksCancelled = eventState == QLatin1String("aborted")
+        || eventState == QLatin1String("cancelled")
+        || eventDataState == QLatin1String("aborted")
+        || eventDataState == QLatin1String("cancelled");
+    const bool marksComplete = !marksFailed && !marksCancelled
+        && (eventState == QLatin1String("complete")
+        || eventState == QLatin1String("completed")
+        || eventState == QLatin1String("done")
+        || eventState == QLatin1String("finished")
+        || eventDataState == QLatin1String("complete")
+        || eventDataState == QLatin1String("completed")
+        || eventDataState == QLatin1String("done")
+        || eventDataState == QLatin1String("finished")
+        || phase == QLatin1String("complete")
         || phase == QLatin1String("done")
         || phase == QLatin1String("end")
         || subEvent.contains(QLatin1String("complete"))
         || subEvent.contains(QLatin1String("done"))
         || subEvent.contains(QLatin1String("finish"))
-        || subEvent.contains(QLatin1String("end"));
-    const bool marksRunning = !marksComplete
-        && (phase == QLatin1String("start")
-            || eventState == QLatin1String("running")
+        || subEvent.contains(QLatin1String("end")));
+    const bool marksRunning = !marksComplete && !marksFailed && !marksCancelled
+        && (eventState == QLatin1String("running")
+            || eventDataState == QLatin1String("running")
+            || phase == QLatin1String("start")
             || eventData.contains(QStringLiteral("delta"))
             || subEvent.contains(QLatin1String("start"))
             || subEvent.contains(QLatin1String("delta"))
@@ -10577,31 +10912,37 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
                         .value(QStringLiteral("sessionKey")).toString())) {
                 QVariantMap existing = m_collaborationChildSessionHints.at(targetIndex).toMap();
                 const bool nextRunning = marksRunning;
-                if (existing.value(QStringLiteral("isRunning"), true).toBool()
-                    != nextRunning) {
+                const QString childKey =
+                    existing.value(QStringLiteral("sessionKey")).toString().trimmed();
+                if (!childKey.isEmpty()) {
+                    if (nextRunning)
+                        m_chatRunningSessionKeys.insert(childKey);
+                    else
+                        m_chatRunningSessionKeys.remove(childKey);
+                }
+                const bool hintChanged =
+                    existing.value(QStringLiteral("isRunning"), true).toBool()
+                    != nextRunning;
+                if (hintChanged) {
                     existing[QStringLiteral("isRunning")] = nextRunning;
                     existing[QStringLiteral("updatedAt")] = QVariant(
                         static_cast<qlonglong>(QDateTime::currentMSecsSinceEpoch()));
                     m_collaborationChildSessionHints[targetIndex] = existing;
-                    emit collaborationParticipantsChanged();
-                    const QString parentKey =
-                        existing.value(QStringLiteral("parentSessionKey")).toString();
-                    const QString spawnedBy =
-                        existing.value(QStringLiteral("spawnedBy")).toString();
-                    const QString controllerKey = taskSessionInfoByKey(parentKey).isEmpty()
-                        ? spawnedBy : parentKey;
-                    if (!controllerKey.isEmpty()) {
-                        syncCollaborationTaskStatus(controllerKey);
-                    }
-                    if (controllerKey == m_currentTaskSessionKey.trimmed()) {
-                        emit taskSessionListChanged();
-                    }
-                    if (!nextRunning) {
-                        maybeShowControllerProducts();
-                        syncCollaborationTaskStatus(
-                            existing.value(QStringLiteral("parentSessionKey")).toString());
-                    }
                 }
+                const QString parentKey =
+                    existing.value(QStringLiteral("parentSessionKey")).toString();
+                const QString spawnedBy =
+                    existing.value(QStringLiteral("spawnedBy")).toString();
+                const QString controllerKey = taskSessionInfoByKey(parentKey).isEmpty()
+                    ? spawnedBy : parentKey;
+                if (hintChanged || !childKey.isEmpty())
+                    emit collaborationParticipantsChanged();
+                if (!controllerKey.isEmpty())
+                    syncCollaborationTaskStatus(controllerKey);
+                if (controllerKey == m_currentTaskSessionKey.trimmed())
+                    emit taskSessionListChanged();
+                if (!nextRunning)
+                    maybeShowControllerProducts();
             }
         }
         return;
@@ -10683,13 +11024,21 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     row[QStringLiteral("isRunning")] = hasLifecycleState
         ? QVariant(marksRunning)
         : previous.value(QStringLiteral("isRunning"), true);
+    if (hasLifecycleState) {
+        if (marksRunning)
+            m_chatRunningSessionKeys.insert(sessionKey);
+        else
+            m_chatRunningSessionKeys.remove(sessionKey);
+    }
 
     if (existingIndex >= 0) {
         const bool wasRunning = previous.value(QStringLiteral("isRunning"), true).toBool();
         m_collaborationChildSessionHints[existingIndex] = row;
         emit collaborationParticipantsChanged();
+        if (hasLifecycleState)
+            syncCollaborationTaskStatus(controllerKey);
         if (wasRunning != row.value(QStringLiteral("isRunning")).toBool()
-            || !controllerKey.isEmpty()) {
+            && !hasLifecycleState) {
             syncCollaborationTaskStatus(controllerKey);
         }
         if (controllerKey == m_currentTaskSessionKey.trimmed()) {
@@ -10702,7 +11051,8 @@ void GatewayClient::rememberCollaborationChildSessionHint(const QJsonObject &pay
     }
     m_collaborationChildSessionHints.append(row);
     emit collaborationParticipantsChanged();
-    syncCollaborationTaskStatus(controllerKey);
+    if (hasLifecycleState)
+        syncCollaborationTaskStatus(controllerKey);
     if (controllerKey == m_currentTaskSessionKey.trimmed())
         emit taskSessionListChanged();
     ensureChildSessionOutputDir(sessionKey, parentKey.isEmpty() ? taskKey : parentKey);

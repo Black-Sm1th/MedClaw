@@ -118,6 +118,8 @@ public:
     Q_INVOKABLE QVariantList pendingQuestions() const;
     Q_INVOKABLE bool setArtifactsForLastAssistant(const QVariantList &artifacts);
     void loadHistory(const QVariantList &messages);
+    /// Merge a fresh server snapshot into the live model without resetting streaming rows.
+    void mergeHistorySnapshot(const QVariantList &messages);
 
     void beginStreaming();
     void appendStreamChunk(const QString &chunk);
@@ -135,6 +137,8 @@ signals:
     /// row 是目标 delegate 在 model 中的行号，QML 用 index 比对决定是否处理。
     void streamFlushed(int row, const QString &delta);
     void toolResultFlushed(int row, const QString &delta);
+    /// 工具完成或错误状态变化时，通知聊天 WebView 立即刷新对应工具行。
+    void toolCallChanged(int row, const QVariantMap &message);
 
 private:
     /// 节流刷新：把累积的 delta 通过 streamFlushed(row, delta) 推给 QML，

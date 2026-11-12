@@ -9785,7 +9785,7 @@ ApplicationWindow {
                                     participants: wsClient.collaborationParticipants || []
                                     currentSessionKey: (wsClient.currentViewSessionKey || "")
                                                        || (wsClient.currentTaskSessionKey || "")
-                                    controllerRunning: chatModel.isStreaming
+                                    controllerRunning: wsClient.controllerRunning
                                     onSessionSelected: function(sessionKey) {
                                         wsClient.switchCollaborationViewSession(sessionKey)
                                     }

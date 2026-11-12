@@ -316,6 +316,15 @@
       font-style: italic;
     }
 
+    .bubble.aside {
+      padding: 2px 4px;
+      color: rgba(0, 0, 0, .56);
+      font-size: 15px;
+      font-style: italic;
+    }
+    .thought-aside {
+      margin-bottom: 8px;
+    }
     .markdown-body > :first-child { margin-top: 0; }
     .markdown-body > :last-child { margin-bottom: 0; }
     p { margin: 0 0 10px; }
@@ -569,6 +578,83 @@
       color: rgba(0, 0, 0, .86);
     }
 
+    .thought-group {
+      margin-bottom: 12px;
+    }
+    .thought-header {
+      display: flex;
+      align-items: center;
+      min-height: 28px;
+      width: 100%;
+      padding: 2px 0;
+      border: 0;
+      background: transparent;
+      color: rgba(0, 0, 0, .78);
+      font: inherit;
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .thought-header:focus,
+    .thought-header:focus-visible {
+      outline: none;
+      box-shadow: none;
+    }
+    .thought-title {
+      line-height: 24px;
+    }
+    .thought-status {
+      width: 16px;
+      height: 16px;
+      margin-right: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+    .thought-arrow {
+      margin-left: 5px;
+      color: rgba(0, 0, 0, .42);
+      font-size: 13px;
+      line-height: 1;
+      transition: transform 140ms ease;
+    }
+    .thought-header[aria-expanded="true"] .thought-arrow {
+      transform: rotate(90deg);
+    }
+    .thought-body {
+      margin: 1px 0 1px 2px;
+      padding-left: 20px;
+      border-left: 2px solid #EBEDF0;
+    }
+    .thought-body[hidden] {
+      display: none;
+    }
+    .thought-text {
+      margin: 0 0 4px;
+      color: rgba(0, 0, 0, .58);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.62;
+    }
+    .thought-text.intermediate {
+      color: rgba(0, 0, 0, .58);
+      font-style: normal;
+    }
+    .thought-body .tool {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+    }
+    .thought-body .tool-header {
+      min-height: 26px;
+    }
+    .thought-body .tool-detail-text {
+      margin-bottom: 5px;
+    }
+
     /* ask_user 提问卡已迁到 QML（components/AskUserCard.qml）：
        聊天正文是 WebEngineView，底边停在输入框上方，卡片放在页面里
        永远盖不住 QML 的输入框，必然出现"两个框同时存在"。
@@ -704,6 +790,9 @@
       var app = document.getElementById('app');
       var messages = [];
       var expandedTools = {};
+      var expandedThoughts = {};
+      var userControlledThoughts = {};
+      var userControlledTools = {};
       var renderToken = 0;
       var hoveredFile = null;
       var conversationRunning = false;
@@ -1039,20 +1128,20 @@
 
       function toolVisuallyComplete(items, index, isRunning) {
         var msg = items[index] || {};
-        if (!msg.hasToolResult) return false;
-        if (msg.isError || !isRunning) return true;
-
-        var lastUser = -1;
-        for (var i = items.length - 1; i >= 0; i--) {
-          if ((items[i] || {}).msgRole === 'user') {
-            lastUser = i;
-            break;
+        if (msg.hasToolResult !== true) return false;
+        if (msg.isError === true) return true;
+        for (var next = index + 1; next < items.length; next++) {
+          var following = items[next] || {};
+          if (following.msgRole === 'user') return true;
+          if (following.msgType === 'question') {
+            var questionStatus = String(following.questionStatus || '').toLowerCase();
+            if (questionStatus === 'pending' || questionStatus === '') return false;
+            return true;
           }
-        }
-        if (index < lastUser) return true;
-
-        for (var j = index + 1; j < items.length; j++) {
-          if ((items[j] || {}).msgType === 'toolCall') return true;
+          if (following.msgType === 'toolCall') return true;
+          if (following.msgType === 'text' && following.msgRole === 'assistant'
+              && String(following.content || '').trim()) return true;
+          if (following.msgType === 'toolResult') return true;
         }
         return false;
       }
@@ -1099,11 +1188,164 @@
           + '</div>';
       }
 
+      function isThoughtAside(row, items) {
+        items = items || messages;
+        var msg = items[row] || {};
+        if (msg.msgType !== 'text' || msg.msgRole !== 'assistant'
+            || msg.isIntermediate !== true) return false;
+        var hasCompletedTool = false;
+        for (var i = row - 1; i >= 0; i--) {
+          var previous = items[i] || {};
+          if (previous.msgRole === 'user') break;
+          if (previous.msgType === 'text' && previous.msgRole === 'assistant'
+              && previous.isIntermediate === true) continue;
+          if (previous.msgType === 'toolCall') {
+            if (previous.hasToolResult === true) hasCompletedTool = true;
+            continue;
+          }
+          break;
+        }
+        if (!hasCompletedTool) return false;
+        for (var j = row + 1; j < items.length; j++) {
+          var next = items[j] || {};
+          if (next.msgRole === 'user') return false;
+          if (next.msgType === 'toolCall') return true;
+          if (next.msgType === 'question') return false;
+          if (next.msgType === 'text' && next.msgRole === 'assistant') {
+            if (next.isIntermediate === true) continue;
+            if (!String(next.content || '').trim()) continue;
+            return false;
+          }
+        }
+        return false;
+      }
+
+      function isThoughtItem(msg, row, items) {
+        if (!msg) return false;
+        return msg.msgType === 'toolCall'
+          || (msg.msgType === 'text' && msg.msgRole === 'assistant'
+              && msg.isIntermediate === true && !isThoughtAside(row, items));
+      }
+
+      function thoughtGroupRange(row) {
+        if (!isThoughtItem(messages[row], row)) return null;
+        var start = row;
+        var end = row;
+        while (start > 0 && isThoughtItem(messages[start - 1], start - 1)) start--;
+        while (end + 1 < messages.length && isThoughtItem(messages[end + 1], end + 1)) end++;
+        return { start: start, end: end };
+      }
+
+      function isLastThoughtGroup(range) {
+        for (var i = range.end + 1; i < messages.length; i++) {
+          if (isThoughtItem(messages[i], i)) return false;
+        }
+        return true;
+      }
+
+      function thoughtGroupIsActive(range) {
+        if (!conversationRunning || turnStartIndex(range.start) !== lastUserMessageIndex())
+          return false;
+        for (var i = range.end + 1; i < messages.length; i++) {
+          var msg = messages[i] || {};
+          if (msg.msgRole === 'user') break;
+          if (msg.msgType === 'question') return false;
+          if (isThoughtAside(i)) return false;
+          if (msg.msgType === 'text' && msg.msgRole === 'assistant') {
+            if (msg.isStreaming || String(msg.content || '').trim()) return false;
+          }
+        }
+        return true;
+      }
+
+      function latestActiveThoughtGroup() {
+        var last = null;
+        var userRow = lastUserMessageIndex();
+        if (!conversationRunning || userRow < 0) return null;
+        for (var i = userRow + 1; i < messages.length; i++) {
+          if (!isThoughtItem(messages[i], i)) continue;
+          var range = thoughtGroupRange(i);
+          if (range && range.start === i && thoughtGroupIsActive(range))
+            last = range;
+          if (range) i = range.end;
+        }
+        return last;
+      }
+
+      function thoughtGroupKey(start) {
+        var range = thoughtGroupRange(start);
+        return 'thought:' + turnStartIndex(start) + ':row:'
+          + (range ? range.start : start);
+      }
+
+      function renderThoughtGroup(start) {
+        var range = thoughtGroupRange(start);
+        if (!range || range.start !== start) return '';
+        var key = thoughtGroupKey(start);
+        var hasError = false;
+        for (var errorRow = range.start; errorRow <= range.end; errorRow++) {
+          var errorMessage = messages[errorRow] || {};
+          if (errorMessage.msgType === 'toolCall' && errorMessage.isError === true) {
+            hasError = true;
+            break;
+          }
+        }
+        var latestActive = latestActiveThoughtGroup();
+        var expanded = Object.prototype.hasOwnProperty.call(expandedThoughts, key)
+          ? expandedThoughts[key] === true
+          : (hasError || (latestActive
+              ? latestActive.start === range.start : isLastThoughtGroup(range)));
+        var bodyId = 'thought-body-' + start;
+        var html = [];
+        var active = conversationRunning
+          && turnStartIndex(range.start) === lastUserMessageIndex()
+          && thoughtGroupIsActive(range);
+        var busy = false;
+        if (active) {
+          for (var activeRow = range.start; activeRow <= range.end; activeRow++) {
+            var activeTool = messages[activeRow] || {};
+            if (activeTool.msgType === 'toolCall'
+                && !toolVisuallyComplete(messages, activeRow, conversationRunning)) {
+              busy = true;
+              break;
+            }
+          }
+        }
+        html.push('<section class="message assistant thought-group" data-row="' + start
+          + '" data-thought-start="' + start + '">');
+        html.push('<button class="thought-header" type="button" data-thought-key="'
+          + escapeAttr(key) + '" aria-controls="' + bodyId + '" aria-expanded="'
+          + (expanded ? 'true' : 'false') + '">');
+        html.push(((active || busy)
+            ? '<span class="thought-status"><span class="spinner"></span></span>' : '')
+          + '<span class="thought-title">深度思考</span>'
+          + '<span class="thought-arrow" aria-hidden="true">›</span></button>');
+        html.push('<div class="thought-body" id="' + bodyId + '"'
+          + (expanded ? '' : ' hidden') + '>');
+        for (var i = range.start; i <= range.end; i++) {
+          var msg = messages[i] || {};
+          if (msg.msgType === 'toolCall') {
+            html.push(renderToolCall(msg, i));
+          } else if (msg.msgType === 'text') {
+            var body = msg.isStreaming
+              ? streamingTextHtml(msg.content || '') : renderMarkdown(msg.content || '');
+            html.push('<div class="thought-text markdown-body'
+              + (msg.isIntermediate ? ' intermediate' : '')
+              + '" data-content-row="' + i + '" data-thought-row="' + i
+              + '">' + body + '</div>');
+          }
+        }
+        html.push('</div></section>');
+        return html.join('');
+      }
+
       function renderToolCall(msg, index) {
         var completed = toolVisuallyComplete(messages, index, conversationRunning);
-        var detail = completed ? msg.toolResultText : msg.toolArgs;
+        var hasOutput = String(msg.toolResultText || '').length > 0;
+        var detail = completed || hasOutput ? msg.toolResultText : msg.toolArgs;
         var key = toolKey(msg, index);
-        var expanded = !completed || expandedTools[key] === true;
+        var expanded = Object.prototype.hasOwnProperty.call(expandedTools, key)
+          ? expandedTools[key] === true : msg.isError === true;
         var html = [];
         html.push('<div class="tool" data-row="' + index + '">');
         html.push('<div class="tool-header" data-tool-key="' + escapeAttr(key)
@@ -1112,10 +1354,11 @@
         html.push('<span class="tool-name">' + escapeHtml(msg.toolName || '工具') + '</span>');
         html.push('<span class="tool-arrow" aria-hidden="true">' + (expanded ? '▾' : '▸') + '</span>');
         html.push('</div>');
-        if (expanded && String(detail || '').length > 0)
+        var detailText = detail || '';
+        if (expanded && String(detailText).length > 0)
           html.push('<div class="tool-detail-text' + (msg.isError ? ' error' : '')
-            + (completed ? '" data-tool-result-row="' + index : '') + '">'
-            + plainTextHtml(detail || '') + '</div>');
+            + (completed || hasOutput ? '" data-tool-result-row="' + index : '') + '">'
+            + plainTextHtml(detailText) + '</div>');
         html.push('</div>');
         return html.join('');
       }
@@ -1131,8 +1374,10 @@
 
       function renderTextMessage(msg, index) {
         var isUser = msg.msgRole === 'user';
+        var isAside = !isUser && isThoughtAside(index);
         var classes = 'bubble ' + (isUser ? 'user' : 'assistant markdown-body');
-        if (msg.isIntermediate) classes += ' intermediate';
+        if (msg.isIntermediate && !isAside) classes += ' intermediate';
+        if (isAside) classes += ' aside';
         var body = '';
         if (isUser)
           body = renderUserContent(msg.content || '');
@@ -1140,7 +1385,8 @@
           body = streamingTextHtml(msg.content || '');
         else
           body = renderMarkdown(msg.content || '');
-        return '<div class="message ' + (isUser ? 'user' : 'assistant') + '" data-row="' + index + '">'
+        return '<div class="message ' + (isUser ? 'user' : 'assistant')
+          + (isAside ? ' thought-aside' : '') + '" data-row="' + index + '">'
           + '<div class="' + classes + '" data-content-row="' + index + '">' + body + '</div>'
           + '</div>';
       }
@@ -1240,6 +1486,8 @@
        */
       function turnTailHtml(index) {
         var next = messages[index + 1];
+        if (isThoughtAside(index))
+          return '';
         if (next && next.msgRole !== 'user')
           return '';
         var start = turnStartIndex(index);
@@ -1263,12 +1511,19 @@
           + '</div>';
       }
 
-            function renderMessage(msg, index) {
+      function renderMessage(msg, index) {
         msg = msg || {};
         if (isCompactionMarker(msg))
           return '<div class="message compaction" data-row="' + index + '"></div>';
         if (msg.msgType === 'question')
           return renderQuestion(msg, index) + turnTailHtml(index);
+        if (isThoughtItem(msg, index)) {
+          var range = thoughtGroupRange(index);
+          if (range && range.start !== index) return '';
+          return renderThoughtGroup(index) + turnTailHtml(range ? range.end : index);
+        }
+        if (isThoughtAside(index))
+          return renderTextMessage(msg, index) + turnTailHtml(index);
         if (msg.msgType === 'toolCall')
           return renderToolCall(msg, index) + turnTailHtml(index);
         if (msg.msgType === 'toolResult')
@@ -1448,10 +1703,40 @@
 
       function replaceMessageRow(row) {
         var node = app.querySelector(':scope > [data-row="' + row + '"]');
+        if (!node) {
+          var thoughtGroups = app.querySelectorAll(':scope > .thought-group[data-thought-start]');
+          for (var i = 0; i < thoughtGroups.length; i++) {
+            var rowMessage = messages[row] || {};
+            if (rowMessage.msgType === 'toolCall') {
+              var toolHeader = thoughtGroups[i].querySelector('[data-tool-key="'
+                + escapeAttr(toolKey(rowMessage, row)) + '"]');
+              if (toolHeader) {
+                node = toolHeader.parentNode;
+                break;
+              }
+            } else {
+              var thoughtRow = thoughtGroups[i].querySelector('[data-thought-row="' + row + '"]');
+              if (thoughtRow) {
+                node = thoughtRow;
+                break;
+              }
+            }
+          }
+        }
         if (!node) return false;
         if (hoveredFile && node.contains(hoveredFile))
           clearFileHover();
-        node.outerHTML = renderMessage(messages[row], row);
+        if (node.classList.contains('tool')) {
+          node.outerHTML = renderToolCall(messages[row], row);
+        } else if (node.classList.contains('thought-text')) {
+          var hiddenThoughtBody = node.closest('.thought-body[hidden]');
+          if (hiddenThoughtBody) return true;
+          var msg = messages[row] || {};
+          node.innerHTML = msg.isStreaming
+            ? streamingTextHtml(msg.content || '') : renderMarkdown(msg.content || '');
+        } else {
+          node.outerHTML = renderMessage(messages[row], row);
+        }
         return true;
       }
 
@@ -1498,9 +1783,21 @@
         if (nextMessages.length < messages.length)
           return false;
 
+        // A thought group can span several model rows. Rebuild the conversation
+        // when its boundaries change so a text/tool row is never duplicated or
+        // left outside the group after an incremental update.
+        if (nextMessages.length > messages.length && messages.length
+            && (isThoughtItem(messages[messages.length - 1], messages.length - 1)
+                || isThoughtAside(messages.length - 1)))
+          return false;
+
         var changed = [];
         var sharedCount = Math.min(messages.length, nextMessages.length);
         for (var i = 0; i < sharedCount; i++) {
+          if (isThoughtItem(messages[i], i, messages)
+                !== isThoughtItem(nextMessages[i], i, nextMessages)
+              || isThoughtAside(i, messages) !== isThoughtAside(i, nextMessages))
+            return false;
           var dataChanged = !messageEquals(messages[i], nextMessages[i]);
           var visualStateChanged = (messages[i] || {}).msgType === 'toolCall'
             && toolVisuallyComplete(messages, i, conversationRunning)
@@ -1524,9 +1821,30 @@
             && toolVisuallyComplete(previousMessages, changedRow, conversationRunning);
           var afterCompleted = after.msgType === 'toolCall'
             && toolVisuallyComplete(messages, changedRow, conversationRunning);
-          if (!beforeCompleted && afterCompleted)
-            delete expandedTools[toolKey(after, changedRow)];
-          if (!replaceMessageRow(changedRow))
+          if (!beforeCompleted && afterCompleted
+              && (after.isError === true || !userControlledTools[toolKey(after, changedRow)]))
+            expandedTools[toolKey(after, changedRow)] = after.isError === true;
+          var groupRange = after.msgType === 'toolCall'
+            ? thoughtGroupRange(changedRow) : null;
+          if (groupRange && after.isError === true) {
+            var groupKey = thoughtGroupKey(groupRange.start);
+            expandedThoughts[groupKey] = true;
+          }
+          var groupNode = groupRange
+            ? app.querySelector(':scope > .thought-group[data-thought-start="'
+                + groupRange.start + '"]') : null;
+          var needsGroupStatusRefresh = groupRange && groupNode
+            && (beforeCompleted !== afterCompleted
+                || before.isError !== after.isError);
+          var updated = false;
+          if (needsGroupStatusRefresh) {
+            groupNode.outerHTML = renderThoughtGroup(groupRange.start);
+            updated = true;
+          }
+          if (!groupNode || !needsGroupStatusRefresh)
+            updated = replaceMessageRow(changedRow);
+          if (!updated && groupNode) updated = true;
+          if (!updated)
             return false;
           if (after.msgType === 'toolCall'
               && !afterCompleted
@@ -1541,8 +1859,14 @@
                    && String(after.toolResultText || '').length > 0)
             scrollToolResultToBottom(changedRow);
         }
-        for (var row = sharedCount; row < messages.length; row++)
-          app.insertAdjacentHTML('beforeend', renderMessage(messages[row], row));
+        if (messages.length > sharedCount) {
+          var previousTail = sharedCount > 0 ? sharedCount - 1 : -1;
+          if (previousTail >= 0 && (isThoughtItem(messages[previousTail], previousTail)
+              || isThoughtAside(previousTail)))
+            return false;
+          for (var row = sharedCount; row < messages.length; row++)
+            app.insertAdjacentHTML('beforeend', renderMessage(messages[row], row));
+        }
         return true;
       }
 
@@ -1633,10 +1957,35 @@
           var runningChanged = conversationRunning !== nextRunning;
           var nextEndLabel = String(endLabel || '');
           var endLabelChanged = conversationEndLabel !== nextEndLabel;
+          if (runningChanged && !nextRunning) {
+            for (var thoughtRow = 0; thoughtRow < messages.length; thoughtRow++) {
+              if (!isThoughtItem(messages[thoughtRow], thoughtRow)) continue;
+              var thoughtRange = thoughtGroupRange(thoughtRow);
+              if (!thoughtRange || thoughtRange.start !== thoughtRow) continue;
+              var thoughtKey = thoughtGroupKey(thoughtRow);
+              var hasThoughtError = false;
+              var hasPendingError = false;
+              for (var errorRow = thoughtRange.start; errorRow <= thoughtRange.end; errorRow++) {
+                var thoughtMessage = messages[errorRow] || {};
+                if (thoughtMessage.msgType === 'toolCall') {
+                  if (thoughtMessage.isError === true) hasThoughtError = true;
+                  else if (thoughtMessage.hasToolResult !== true) hasPendingError = true;
+                }
+              }
+              if (hasThoughtError) expandedThoughts[thoughtKey] = true;
+              else if (!hasPendingError && !userControlledThoughts[thoughtKey])
+                delete expandedThoughts[thoughtKey];
+              thoughtRow = thoughtRange.end;
+            }
+          }
           conversationRunning = nextRunning;
           conversationEndLabel = nextEndLabel;
-          if (forceFullRender || (runningChanged && !nextRunning))
+          if (forceFullRender) {
             expandedTools = {};
+            expandedThoughts = {};
+            userControlledThoughts = {};
+            userControlledTools = {};
+          }
           var followBottom = messages.length === 0 || isNearBottom();
           var viewport = followBottom ? null : captureViewport();
           if (forceFullRender || runningChanged || endLabelChanged
@@ -1656,6 +2005,14 @@
           var viewport = followBottom ? null : captureViewport();
           messages[row].content = String(messages[row].content || '') + String(delta || '');
           messages[row].isStreaming = true;
+          var thoughtRow = app.querySelector('[data-thought-row="' + row + '"]');
+          if (thoughtRow) {
+            if (thoughtRow.offsetParent !== null)
+              thoughtRow.innerHTML = streamingTextHtml(messages[row].content || '');
+            restoreViewport(viewport, followBottom);
+            updateScrollToBottomButton();
+            return;
+          }
           var node = app.querySelector('[data-content-row="' + row + '"]');
           if (!node) {
             renderAll(followBottom, viewport);
@@ -1680,12 +2037,22 @@
           var followBottom = isNearBottom();
           var viewport = followBottom ? null : captureViewport();
           messages[row].toolResultText = String(messages[row].toolResultText || '') + value;
+          var toolKeyValue = toolKey(messages[row], row);
           var node = app.querySelector('[data-tool-result-row="' + row + '"]');
           if (!node) {
-            var card = app.querySelector(':scope > [data-row="' + row + '"]');
-            if (card) card.outerHTML = renderMessage(messages[row], row);
-            node = app.querySelector('[data-tool-result-row="' + row + '"]');
-            if (node) scrollToolResultToBottom(row);
+            // Results remain tucked away until the user opens the tool row.
+            // If it is already open, create its detail node with the latest
+            // accumulated output without rebuilding the whole conversation.
+            var expanded = Object.prototype.hasOwnProperty.call(expandedTools, toolKeyValue)
+              ? expandedTools[toolKeyValue] === true : messages[row].isError === true;
+            if (expanded) {
+              replaceMessageRow(row);
+              node = app.querySelector('[data-tool-result-row="' + row + '"]');
+            }
+            if (node) {
+              node.innerHTML = plainTextHtml(messages[row].toolResultText || '');
+              node.scrollTop = node.scrollHeight;
+            }
             restoreViewport(viewport, followBottom);
             updateScrollToBottomButton();
             return;
@@ -1701,6 +2068,39 @@
             restoreViewport(viewport, followBottom);
             updateScrollToBottomButton();
           });
+          restoreViewport(viewport, followBottom);
+          updateScrollToBottomButton();
+        },
+        refreshToolCall: function (row, updatedMessage) {
+          row = Number(row);
+          if (!messages[row] || messages[row].msgType !== 'toolCall'
+              || !updatedMessage || updatedMessage.msgType !== 'toolCall') return;
+          var followBottom = isNearBottom();
+          var viewport = followBottom ? null : captureViewport();
+          var msg = updatedMessage;
+          var wasCompleted = messages[row].hasToolResult === true;
+          messages[row] = updatedMessage;
+          var completed = toolVisuallyComplete(messages, row, conversationRunning);
+          var key = toolKey(msg, row);
+            if (completed && !wasCompleted && !userControlledTools[key])
+            expandedTools[key] = false;
+          if (completed && msg.isError === true) {
+            expandedTools[key] = true;
+            var errorRange = thoughtGroupRange(row);
+            if (errorRange) expandedThoughts[thoughtGroupKey(errorRange.start)] = true;
+          }
+          var range = thoughtGroupRange(row);
+          var groupActive = range && thoughtGroupIsActive(range);
+          var isLatestActiveGroup = groupActive
+            && latestActiveThoughtGroup()
+            && latestActiveThoughtGroup().start === range.start;
+          if (completed && !isLatestActiveGroup && !msg.isError)
+            delete expandedThoughts[thoughtGroupKey(range.start)];
+          var groupNode = range
+            ? app.querySelector(':scope > .thought-group[data-thought-start="'
+                + range.start + '"]') : null;
+          if (groupNode) groupNode.outerHTML = renderThoughtGroup(range.start);
+          else replaceMessageRow(row);
           restoreViewport(viewport, followBottom);
           updateScrollToBottomButton();
         },
@@ -1765,10 +2165,19 @@
           tool = tool.parentNode;
         if (tool && tool.getAttribute && tool.getAttribute('data-tool-key')) {
           var toolKeyValue = tool.getAttribute('data-tool-key');
-          if (expandedTools[toolKeyValue] === true)
-            delete expandedTools[toolKeyValue];
-          else
-            expandedTools[toolKeyValue] = true;
+          userControlledTools[toolKeyValue] = true;
+          expandedTools[toolKeyValue] = tool.getAttribute('aria-expanded') !== 'true';
+          renderAll(false, captureViewport());
+          return;
+        }
+
+        var thought = event.target;
+        while (thought && thought !== document && !thought.getAttribute('data-thought-key'))
+          thought = thought.parentNode;
+        if (thought && thought.getAttribute && thought.getAttribute('data-thought-key')) {
+          var thoughtKeyValue = thought.getAttribute('data-thought-key');
+          userControlledThoughts[thoughtKeyValue] = true;
+          expandedThoughts[thoughtKeyValue] = thought.getAttribute('aria-expanded') !== 'true';
           renderAll(false, captureViewport());
           return;
         }
@@ -1790,14 +2199,21 @@
 
       document.addEventListener('keydown', function (event) {
         if (event.key !== 'Enter' && event.key !== ' ') return;
+        var thought = event.target;
+        if (thought && thought.getAttribute && thought.getAttribute('data-thought-key')) {
+          event.preventDefault();
+          var thoughtKeyValue = thought.getAttribute('data-thought-key');
+          userControlledThoughts[thoughtKeyValue] = true;
+          expandedThoughts[thoughtKeyValue] = thought.getAttribute('aria-expanded') !== 'true';
+          renderAll(false, captureViewport());
+          return;
+        }
         var tool = event.target;
         if (!tool || !tool.getAttribute || !tool.getAttribute('data-tool-key')) return;
         event.preventDefault();
         var key = tool.getAttribute('data-tool-key');
-        if (expandedTools[key] === true)
-          delete expandedTools[key];
-        else
-          expandedTools[key] = true;
+        userControlledTools[key] = true;
+        expandedTools[key] = tool.getAttribute('aria-expanded') !== 'true';
         renderAll(false, captureViewport());
       });
 
