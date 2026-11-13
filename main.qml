@@ -79,19 +79,19 @@ ApplicationWindow {
             maximizeWindow()
     }
 
-    onVisibilityChanged: {
-        if (visibility === Window.Minimized) {
+    onVisibilityChanged: function(vis) {
+        if (vis === Window.Minimized) {
             windowWasMinimized = true
             return
         }
         var unminimized = windowWasMinimized
         windowWasMinimized = false
-        if (unminimized && windowMaximized && visibility === Window.Windowed) {
+        if (unminimized && windowMaximized && vis === Window.Windowed) {
             // 任务栏还原：Qt 丢了最大化状态，补一次 showMaximized()
             maximizeReapplyTimer.restart()
             return
         }
-        if (visibility === Window.Windowed && !windowMaximized)
+        if (vis === Window.Windowed && !windowMaximized)
             rememberWindowedGeometry()
     }
 
@@ -5547,6 +5547,39 @@ ApplicationWindow {
                                                         ? [allShortcutGroups[1], allShortcutGroups[2], allShortcutGroups[5]]
                                                         : allShortcutGroups
 
+                // 影像版欢迎页的 STEP 卡片（设计稿 node 5441-29653）：
+                // 点击把该步骤的提示词填进输入框，用户可改完再发。
+                readonly property var imagingStepCards: [
+                    {
+                        step: "STEP.1",
+                        title: "数据载入与预处理",
+                        image: "qrc:/images/imaging/step-1.png",
+                        detail: "支持多种格式 CCTA 数据载入，提供重采样、去噪、增强等预处理技术。",
+                        prompt: "帮我完成影像数据的载入与预处理：支持 DICOM/NIfTI/MGH 等格式，完成重采样、去噪、增强与配准，检查影像质量与元数据完整性，并列出需要人工确认的异常。"
+                    },
+                    {
+                        step: "STEP.2",
+                        title: "智能分割与分段",
+                        image: "qrc:/images/imaging/step-2.png",
+                        detail: "基于深度学习实现冠脉等解剖结构的自动分割与分段。",
+                        prompt: "帮我对已载入的影像做智能分割与分段：自动分割冠脉、主动脉、心室等解剖结构，完成冠脉中心线与分段命名，输出分割结果和置信度，并标出需要人工复核的区域。"
+                    },
+                    {
+                        step: "STEP.3",
+                        title: "定量评估",
+                        image: "qrc:/images/imaging/step-3.png",
+                        detail: "冠脉狭窄分析、钙化与斑块计算、冠周脂肪定量分析、无创FFR计算。",
+                        prompt: "帮我做影像定量评估：基于分割结果计算冠脉狭窄程度、钙化积分与斑块成分、冠周脂肪衰减指数、无创 FFR 等量化指标，按规范输出结构化报告，并标注计算口径和参考范围。"
+                    },
+                    {
+                        step: "STEP.4",
+                        title: "纹理特征提取与建模",
+                        image: "qrc:/images/imaging/step-4.png",
+                        detail: "标准化影像组学纹理特征提取，协助完成个性化预测模型构建。",
+                        prompt: "帮我做纹理特征提取与建模：标准化提取影像组学纹理特征（一阶/形状/纹理），完成特征筛选与降维，构建个性化预测模型，给出 AUC、校准曲线、决策曲线等评价指标和可解释性分析。"
+                    }
+                ]
+
                 readonly property var selectedShortcut: selectedShortcutGroup >= 0
                                                         && selectedShortcutGroup < shortcutGroups.length
                                                         ? shortcutGroups[selectedShortcutGroup] : null
@@ -5961,7 +5994,9 @@ ApplicationWindow {
                     anchors.horizontalCenterOffset: newTaskRec.splitMode
                                                  ? -newTaskRec.artifactSidebarWidth / 2 : 0
                     Row {
-                        width: Math.min(390, parent.width)
+                        // 影像版按设计稿（node 5441-29653）：标题左对齐、40px w500，标题块高 60
+                        width: window.imagingEdition ? parent.width - 40
+                                                     : Math.min(390, parent.width)
                         spacing: 8
                         anchors.horizontalCenter: parent.horizontalCenter
                         Image {
@@ -5974,15 +6009,21 @@ ApplicationWindow {
                         Text {
                             width: parent.width - 46
                             text: qsTr("今天想完成什么？")
-                            color: "#D9000000"
+                            color: window.imagingEdition ? "#000000" : "#D9000000"
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.pixelSize: 40
-                            font.bold: true
+                            font.bold: !window.imagingEdition
+                            font.weight: window.imagingEdition ? Font.Medium : Font.Bold
+                            lineHeight: window.imagingEdition ? 60 : 0
+                            lineHeightMode: window.imagingEdition ? Text.FixedHeight
+                                                                 : Text.ProportionalHeight
                             wrapMode: Text.Wrap
                             verticalAlignment: Text.AlignVCenter
                         }
                     }
                     Text {
+                        // 设计稿里影像版没有副标题，直接是「影像版 选择影像领域」胶囊
+                        visible: !window.imagingEdition
                         width: Math.min(840, parent.width)
                         text: qsTr(window.governmentEdition
                                    ? "请描述目标，政务智能体会为您调用合适的专家、工具、模板与知识库"
@@ -8740,13 +8781,15 @@ ApplicationWindow {
                     readonly property bool welcomeLayout: newTaskRec.isNewTaskWelcome
                                                          && !newTaskRec.splitMode
                     readonly property real targetY: welcomeLayout
-                                                    ? shortcutTopRow.y + shortcutTopRow.height + 20
+                                                    ? shortcutTopRow.y + shortcutTopRow.height
+                                                      + (window.imagingEdition ? 60 : 20)
                                                     : newTaskRec.height - height - 24
                     // Keep the WebEngine-backed editor on physical-pixel boundaries.
                     // Fractional translations can blur its composited text on scaled displays.
                     y: Math.round(targetY * devicePixelRatio) / devicePixelRatio
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                     clip: false
+
                     Rectangle {
                         id: chatInputSurface
                         anchors.top: parent.top
@@ -8773,7 +8816,9 @@ ApplicationWindow {
                             borderWidth: 0
                             placeholderText: wsClient.connectionState === 3
                                              ? (newTaskRec.viewingControllerSession
-                                                ? "分配一个任务或提问任何问题"
+                                                ? (window.imagingEdition
+                                                   ? "分配一个任务或提问任何问题，支持拖入文件到此处"
+                                                   : "分配一个任务或提问任何问题")
                                                 : "当前为子 Agent 记录，仅支持查看")
                                              : "正在连接服务器，请稍候..."
                             width: parent.width - 24
@@ -11103,11 +11148,22 @@ ApplicationWindow {
                     anchors.right: newTaskRec.splitMode ? artifactSidebar.left : parent.right
                     z: 2
 
+                    // 设计稿数值：linear 左→右，#006BFF 8% → 4%
+                    Gradient {
+                        id: imagingPillGradient
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "#14006BFF" }
+                        GradientStop { position: 1.0; color: "#0A006BFF" }
+                    }
+
                     Row {
                         id: shortcutTopRow
-                        height: 36
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: titleCol.y + titleCol.height + 60
+                        // 影像版是设计稿里的「影像版 选择影像领域」胶囊：高 48、左对齐到标题列
+                        height: window.imagingEdition ? 48 : 36
+                        x: window.imagingEdition
+                           ? titleCol.x + 20
+                           : Math.round((parent.width - width) / 2)
+                        y: titleCol.y + titleCol.height + (window.imagingEdition ? 12 : 60)
                         spacing: 0
 
                         Repeater {
@@ -11117,39 +11173,70 @@ ApplicationWindow {
                                 id: shortcutTabItem
                                 readonly property var group: modelData
                                 readonly property bool selected: index === newTaskRec.selectedShortcutGroup
-                                width: shortcutTab.width + (index < newTaskRec.shortcutGroups.length - 1 ? 25 : 0)
+                                width: window.imagingEdition
+                                       ? shortcutTab.width
+                                       : shortcutTab.width + (index < newTaskRec.shortcutGroups.length - 1 ? 25 : 0)
                                 height: shortcutTopRow.height
 
                                 Rectangle {
                                     id: shortcutTab
-                                    width: tabContent.implicitWidth + 24
-                                    height: 36
-                                    radius: 18
-                                    color: shortcutTabItem.selected ? "#006BFF"
+                                    width: window.imagingEdition ? 235 : tabContent.implicitWidth + 24
+                                    height: window.imagingEdition ? 48 : 36
+                                    radius: window.imagingEdition ? 8 : 18
+                                    color: window.imagingEdition ? "transparent"
+                                          : shortcutTabItem.selected ? "#006BFF"
                                           : tabMouse.containsMouse ? "#F5F7FA" : "transparent"
+                                    gradient: window.imagingEdition ? imagingPillGradient : null
 
                                     Row {
                                         id: tabContent
                                         anchors.centerIn: parent
-                                        spacing: 6
+                                        spacing: window.imagingEdition ? 12 : 6
 
                                         Image {
-                                            width: 18
-                                            height: 18
-                                            source: shortcutTabItem.selected
-                                                    ? shortcutTabItem.group.selectedIcon
-                                                    : shortcutTabItem.group.icon
+                                            width: window.imagingEdition ? 24 : 18
+                                            height: width
+                                            source: window.imagingEdition
+                                                    ? "qrc:/images/imaging/lung.png"
+                                                    : (shortcutTabItem.selected
+                                                       ? shortcutTabItem.group.selectedIcon
+                                                       : shortcutTabItem.group.icon)
                                             fillMode: Image.PreserveAspectFit
                                             sourceSize: Qt.size(40, 40)
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
 
                                         Label {
-                                            text: shortcutTabItem.group.title
+                                            text: window.imagingEdition
+                                                  ? qsTr("影像版")
+                                                  : shortcutTabItem.group.title
                                             font.pixelSize: 16
                                             font.family: "Alibaba PuHuiTi 3.0"
-                                            color: shortcutTabItem.selected ? "#FFFFFF" : "#D9000000"
+                                            font.weight: window.imagingEdition ? Font.Medium : Font.Normal
+                                            color: window.imagingEdition ? "#006BFF"
+                                                 : shortcutTabItem.selected ? "#FFFFFF" : "#D9000000"
                                             anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                        Row {
+                                            visible: window.imagingEdition
+                                            spacing: 4
+                                            anchors.verticalCenter: parent.verticalCenter
+
+                                            Label {
+                                                text: qsTr("选择影像领域")
+                                                font.pixelSize: 16
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                color: "#000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                            Label {
+                                                text: "›"
+                                                font.pixelSize: 18
+                                                color: "#000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                anchors.verticalCenterOffset: -1
+                                            }
                                         }
                                     }
 
@@ -11176,7 +11263,8 @@ ApplicationWindow {
 
                     Item {
                         id: shortcutCardHeader
-                        visible: !!newTaskRec.selectedShortcut
+                        // 影像版用设计稿的 STEP 卡片，不再显示「最佳实践案例」这一栏
+                        visible: !!newTaskRec.selectedShortcut && !window.imagingEdition
                         width: chatInputContainer.width
                         height: 30
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -11373,6 +11461,121 @@ ApplicationWindow {
                             }
                         }
                     }
+
+                        // 影像版欢迎页的 4 张 STEP 卡片（设计稿 node 5441-29653）：
+                        // 卡片 204x69，hover 长高到 116 并露出描述；点击把该步骤提示词填进输入框。
+                        Item {
+                            id: imagingStepRow
+                            visible: window.imagingEdition && newTaskRec.isNewTaskWelcome
+                                     && !newTaskRec.splitMode
+                            width: chatInputContainer.width
+                            height: 116
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            y: chatInputContainer.y + chatInputContainer.height + 80
+                            z: 3
+
+                            readonly property real cardWidth: (width - 24) / 4
+
+                            Repeater {
+                                model: newTaskRec.imagingStepCards
+
+                                delegate: Item {
+                                    id: imagingStepSlot
+                                    readonly property var step: modelData
+                                    width: imagingStepRow.cardWidth
+                                    height: imagingStepRow.height
+                                    x: index * (width + 8)
+
+                                    Rectangle {
+                                        id: imagingStepCard
+                                        readonly property bool hovered: imagingStepMouse.containsMouse
+                                        width: parent.width
+                                        height: hovered ? 116 : 69
+                                        anchors.bottom: parent.bottom
+                                        radius: 16
+                                        color: "#FFFFFF"
+                                        border.width: 1
+                                        border.color: hovered ? "#D8DEE7" : "#EBEDF0"
+                                        clip: true
+
+                                        Behavior on height {
+                                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                                        }
+
+                                        // 设计稿：0 偏移 blur 20 的极淡投影，只在展开/悬停时出现
+                                        layer.enabled: hovered
+                                        layer.effect: DropShadow {
+                                            transparentBorder: true
+                                            horizontalOffset: 0
+                                            verticalOffset: 0
+                                            radius: 20
+                                            samples: 33
+                                            color: "#0D000000"
+                                            cached: true
+                                        }
+
+                                        Label {
+                                            x: 16
+                                            y: 8
+                                            text: imagingStepSlot.step.step
+                                            font.family: "Poppins"
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                            color: "#40000000"
+                                        }
+
+                                        Label {
+                                            x: 16
+                                            y: 31
+                                            width: imagingStepCard.width - 32
+                                            text: imagingStepSlot.step.title
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 16
+                                            font.weight: Font.Medium
+                                            color: "#000000"
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Label {
+                                            x: 16
+                                            y: 60
+                                            width: imagingStepCard.width - 32
+                                            visible: imagingStepCard.hovered
+                                            text: imagingStepSlot.step.detail
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 14
+                                            lineHeight: 21
+                                            lineHeightMode: Text.FixedHeight
+                                            color: "#000000"
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        Image {
+                                            width: 56
+                                            height: 56
+                                            anchors.top: parent.top
+                                            anchors.topMargin: 6
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 6
+                                            source: imagingStepSlot.step.image
+                                            sourceSize: Qt.size(112, 112)
+                                            fillMode: Image.PreserveAspectFit
+                                        }
+
+                                        MouseArea {
+                                            id: imagingStepMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                textInputArea.text = imagingStepSlot.step.prompt
+                                                textInputArea.forceActiveFocus()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                 }
             }
 
