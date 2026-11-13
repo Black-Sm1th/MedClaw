@@ -28,6 +28,83 @@ ApplicationWindow {
     readonly property bool compactLayout: width < 1100
     readonly property bool sidebarExpanded: !sidebarCollapsed && !compactLayout
     readonly property int windowCornerRadius: 12
+    // 无边框窗口最大化时 Qt 只是把窗口拉到工作区大小（不走系统的 SW_MAXIMIZE），
+    // 而且窗口最小化再从任务栏还原后，Qt 会把这个状态丢掉：窗口还是满屏大小，
+    // 但圆角遮罩、边框和按钮图标都退回“普通窗口”。所以自己记一份最大化状态和
+    // 普通尺寸，最大化/还原、按钮图标、遮罩显隐都以它为准。
+    property bool windowMaximized: false
+    property rect windowedGeometry: Qt.rect(0, 0, 0, 0)
+    property bool windowWasMinimized: false
+    property bool suppressingWindowedGeometryUpdate: false
+
+    function rememberWindowedGeometry() {
+        if (windowMaximized || suppressingWindowedGeometryUpdate)
+            return
+        if (visibility !== Window.Windowed || width <= 0 || height <= 0)
+            return
+        windowedGeometry = Qt.rect(x, y, width, height)
+    }
+
+    function maximizeWindow() {
+        if (windowMaximized)
+            return
+        rememberWindowedGeometry()
+        windowMaximized = true
+        showMaximized()
+    }
+
+    function restoreWindow() {
+        if (!windowMaximized)
+            return
+        var target = windowedGeometry
+        windowMaximized = false
+        // showNormal() 会先把窗口放回 Qt 记的“还原尺寸”；这个值在最小化还原后
+        // 已经是工作区大小了，所以下面再把我们记的普通尺寸显式落回去。
+        suppressingWindowedGeometryUpdate = true
+        if (visibility !== Window.Windowed)
+            showNormal()
+        if (target.width > 0 && target.height > 0) {
+            x = target.x
+            y = target.y
+            width = target.width
+            height = target.height
+        }
+        suppressingWindowedGeometryUpdate = false
+    }
+
+    function toggleMaximize() {
+        if (windowMaximized)
+            restoreWindow()
+        else
+            maximizeWindow()
+    }
+
+    onVisibilityChanged: {
+        if (visibility === Window.Minimized) {
+            windowWasMinimized = true
+            return
+        }
+        var unminimized = windowWasMinimized
+        windowWasMinimized = false
+        if (unminimized && windowMaximized && visibility === Window.Windowed) {
+            // 任务栏还原：Qt 丢了最大化状态，补一次 showMaximized()
+            maximizeReapplyTimer.restart()
+            return
+        }
+        if (visibility === Window.Windowed && !windowMaximized)
+            rememberWindowedGeometry()
+    }
+
+    Timer {
+        id: maximizeReapplyTimer
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (windowMaximized && visibility === Window.Windowed)
+                showMaximized()
+        }
+    }
+
     minimumWidth: accountPreviewMode ? 420
                                      : Math.min(1024, Math.max(560, availableScreenWidth - 96), availableScreenWidth)
     minimumHeight: accountPreviewMode ? 560
@@ -2058,6 +2135,8 @@ ApplicationWindow {
 
     // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
+        // 记下开局尺寸，作为第一次“还原”的目标
+        rememberWindowedGeometry()
         // Protect the packaged local backend as soon as the application opens,
         // even before login. connectToServer joins the same recovery if login is ready.
         wsClient.ensureLocalGatewayService(wsClient.serverUrl)
@@ -3541,19 +3620,49 @@ ApplicationWindow {
                 color: "#14000000"
             }
 
+            // 标题栏拖动：越过几个像素才用 startSystemMove() 交给系统（这样单击/双击
+            // 都不会被系统拖动循环吃掉），系统移动才有吸附边框、多屏拖拽。
+            // 最大化时先在指针下还原成普通尺寸再拖（系统不认为这是最大化窗口，
+            // 直接改 window.x/y 对满屏窗口是无效的）。
             MouseArea {
+                id: titleBarDragArea
                 anchors.fill: parent
-                property point dragPos
+                property point pressPos
+                property bool dragging: false
+                property bool doubleClickGesture: false
+                property real lastPressTime: 0
 
-                onPressed: {
-                    dragPos = Qt.point(mouseX, mouseY)
+                onPressed: function(mouse) {
+                    var now = Date.now()
+                    var doubleClick = (now - lastPressTime) < 400
+                            && Math.abs(mouse.x - pressPos.x) < 12
+                            && Math.abs(mouse.y - pressPos.y) < 12
+                    lastPressTime = doubleClick ? 0 : now
+                    pressPos = Qt.point(mouse.x, mouse.y)
+                    dragging = false
+                    doubleClickGesture = doubleClick
+                    if (doubleClick)
+                        window.toggleMaximize()
                 }
-                onPositionChanged: {
-                    if (pressed) {
-                        var delta = Qt.point(mouseX - dragPos.x, mouseY - dragPos.y)
-                        window.x += delta.x
-                        window.y += delta.y
+                onReleased: {
+                    dragging = false
+                    doubleClickGesture = false
+                }
+                onPositionChanged: function(mouse) {
+                    if (!pressed || dragging || doubleClickGesture)
+                        return
+                    if (Math.abs(mouse.x - pressPos.x) < 4 && Math.abs(mouse.y - pressPos.y) < 4)
+                        return
+                    dragging = true
+                    if (window.windowMaximized) {
+                        var ratio = window.width > 0 ? mouse.x / window.width : 0.5
+                        var globalX = window.x + mouse.x
+                        var globalY = window.y + mouse.y
+                        window.restoreWindow()
+                        window.x = Math.round(globalX - window.width * ratio)
+                        window.y = Math.round(globalY - 12)
                     }
+                    window.startSystemMove()
                 }
             }
             Rectangle{
@@ -3662,16 +3771,10 @@ ApplicationWindow {
                 }
                 ImageButton{
                     id: maxmizeBtn
-                    source: window.visibility === Window.Maximized ? "qrc:/images/minus-square.png" : "qrc:/images/add-square.png"
+                    source: window.windowMaximized ? "qrc:/images/minus-square.png" : "qrc:/images/add-square.png"
                     btnWidth: 20
                     btnHeight: 20
-                    onClicked: {
-                        if (window.visibility === Window.Maximized) {
-                            window.showNormal()
-                        } else {
-                            window.showMaximized()
-                        }
-                    }
+                    onClicked: window.toggleMaximize()
                 }
                 Rectangle{
                     width: 10
@@ -18471,7 +18574,7 @@ ApplicationWindow {
         color: "transparent"
         border.width: 1
         border.color: "#1A000000"
-        visible: window.visibility !== Window.Maximized
+        visible: !window.windowMaximized
                  && window.visibility !== Window.FullScreen
         z: 30000
     }
@@ -18479,10 +18582,10 @@ ApplicationWindow {
     // Frameless windows need explicit native resize handles.
     Item {
         anchors.fill: parent
-        visible: window.visibility === Window.Windowed
+        visible: !window.windowMaximized
         z: 30001
 
-        readonly property int edgeSize: 6
+        readonly property int edgeSize: 8
         readonly property int cornerSize: 12
 
         MouseArea {
