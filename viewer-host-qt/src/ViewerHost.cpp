@@ -338,9 +338,10 @@ bool isNiftiMaskName(const QString &fileName)
         QStringLiteral("(?:^|[_-])(?:mask|seg|label|labels|labelmap|pred|prediction)(?:[_-]|$)"));
     if (re.match(stem).hasMatch())
         return true;
-    return stem.contains(QStringLiteral("器官分割"))
-        || stem.contains(QStringLiteral("分割标签"))
-        || stem.contains(QStringLiteral("分割mask"));
+    // 影像工具产出常用中文后缀（如 lungs01_分割.nii.gz），不能只认下面三个固定短语。
+    return stem.contains(QStringLiteral("分割"))
+        || stem.contains(QStringLiteral("标签"))
+        || stem.contains(QStringLiteral("器官mask"));
 }
 
 struct ByteRange {
@@ -515,10 +516,12 @@ bool jsonTruthy(const QJsonValue &value)
 
 QJsonObject overlayObjectFromSummary(const QJsonObject &root)
 {
-    if (root.value(QStringLiteral("status")).toString() != QStringLiteral("ok"))
-        return {};
+    // 质控.json 没有 status 字段，只有 segmentation/radiomics 这类分项结果，
+    // 所以这里不能按 status 拦截；display.overlay 存在且同网格就足够用了。
     const QJsonObject summary = root.value(QStringLiteral("summary")).toObject();
-    const QJsonObject display = summary.value(QStringLiteral("display")).toObject();
+    QJsonObject display = summary.value(QStringLiteral("display")).toObject();
+    if (display.isEmpty())
+        display = root.value(QStringLiteral("display")).toObject();
     const QJsonValue overlayValue = display.value(QStringLiteral("overlay"));
     if (!overlayValue.isObject())
         return {};
@@ -537,6 +540,12 @@ QStringList candidateResultJsonPaths(const QFileInfo &info)
         paths.append(path);
     };
 
+    auto addBoth = [&](const QString &dirPath) {
+        const QDir d(dirPath);
+        add(d.filePath(QStringLiteral("result.json")));
+        add(d.filePath(QStringLiteral("质控.json")));
+    };
+
     auto addReportResults = [&](const QDir &dir) {
         add(dir.filePath(QStringLiteral("04_report/result.json")));
         const QDir report(dir.filePath(QStringLiteral("04_report")));
@@ -544,22 +553,22 @@ QStringList candidateResultJsonPaths(const QFileInfo &info)
             return;
         const QFileInfoList children = report.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
         for (const QFileInfo &child : children)
-            add(QDir(child.absoluteFilePath()).filePath(QStringLiteral("result.json")));
+            addBoth(child.absoluteFilePath());
     };
 
     if (info.isDir()) {
         QDir dir(info.absoluteFilePath());
-        add(dir.filePath(QStringLiteral("result.json")));
+        addBoth(dir.absolutePath());
         add(dir.filePath(QStringLiteral("02_seg/result.json")));
         add(dir.filePath(QStringLiteral("01_data/result.json")));
         addReportResults(dir);
         const QFileInfoList children = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
         for (const QFileInfo &child : children)
-            add(QDir(child.absoluteFilePath()).filePath(QStringLiteral("result.json")));
+            addBoth(child.absoluteFilePath());
         for (int i = 0; i < 3; ++i) {
             if (!dir.cdUp())
                 break;
-            add(dir.filePath(QStringLiteral("result.json")));
+            addBoth(dir.absolutePath());
             add(dir.filePath(QStringLiteral("02_seg/result.json")));
             add(dir.filePath(QStringLiteral("01_data/result.json")));
             addReportResults(dir);
@@ -568,15 +577,28 @@ QStringList candidateResultJsonPaths(const QFileInfo &info)
     }
 
     const QDir dir = info.absoluteDir();
-    add(dir.filePath(QStringLiteral("result.json")));
-    if (info.fileName().compare(QStringLiteral("result.json"), Qt::CaseInsensitive) == 0)
+    addBoth(dir.absolutePath());
+    if (info.fileName().compare(QStringLiteral("result.json"), Qt::CaseInsensitive) == 0
+        || info.fileName().compare(QStringLiteral("质控.json"), Qt::CaseInsensitive) == 0)
         add(info.absoluteFilePath());
 
     QDir cursor = dir;
     for (int i = 0; i < 4; ++i) {
-        add(cursor.filePath(QStringLiteral("result.json")));
+        addBoth(cursor.absolutePath());
         add(cursor.filePath(QStringLiteral("02_seg/result.json")));
         addReportResults(cursor);
+        // 打开的是底图文件时，分割结果常在兄弟目录里（02_fastsurfer/、02_seg/、03_quant/…），
+        // 只枚举最近两层、且限制数量，避免从深层目录一路扫到 workspace 根。
+        if (i < 2) {
+            const QFileInfoList children =
+                cursor.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+            int seen = 0;
+            for (const QFileInfo &child : children) {
+                if (++seen > 24)
+                    break;
+                addBoth(child.absoluteFilePath());
+            }
+        }
         if (!cursor.cdUp())
             break;
     }
@@ -671,15 +693,42 @@ bool displayIsOriginalCt(const QJsonObject &image)
             || name.contains(QStringLiteral("_0000.nii"), Qt::CaseInsensitive));
 }
 
-QStringList displayPairFromResult(const QJsonObject &root, const QDir &dir, QStringList *maskNames)
+// display.mask.labels 只接受「标签号 → 名字」的扁平对象，别的形状一律忽略。
+QJsonObject maskLabelsFromDisplay(const QJsonObject &maskObject)
 {
+    const QJsonObject labels = maskObject.value(QStringLiteral("labels")).toObject();
+    QJsonObject flat;
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().isString())
+            flat.insert(it.key(), it.value());
+        else if (it.value().isObject()) {
+            const QJsonObject entry = it.value().toObject();
+            const QString name = entry.value(QStringLiteral("zh")).toString(
+                entry.value(QStringLiteral("name")).toString());
+            if (!name.isEmpty())
+                flat.insert(it.key(), name);
+        }
+    }
+    return flat;
+}
+
+QStringList displayPairFromResult(const QJsonObject &root, const QDir &dir, QStringList *maskNames,
+                                  QJsonObject *maskLabels = nullptr)
+{
+    const QJsonObject summary = root.value(QStringLiteral("summary")).toObject();
+    const QJsonObject summaryDisplay = summary.value(QStringLiteral("display")).toObject();
+    // 质控.json 把 display 放在根节点，result.json 放在 summary 下面，两者都要认。
+    const QJsonObject display = summaryDisplay.isEmpty()
+        ? root.value(QStringLiteral("display")).toObject() : summaryDisplay;
+
     const QJsonObject overlay = overlayObjectFromSummary(root);
     const QStringList overlayPair = overlayPairFromResult(overlay, dir, maskNames);
-    if (overlayPair.size() >= 2)
+    if (overlayPair.size() >= 2) {
+        if (maskLabels)
+            *maskLabels = maskLabelsFromDisplay(display.value(QStringLiteral("mask")).toObject());
         return overlayPair;
+    }
 
-    const QJsonObject summary = root.value(QStringLiteral("summary")).toObject();
-    const QJsonObject display = summary.value(QStringLiteral("display")).toObject();
     const QJsonObject imageObj = display.value(QStringLiteral("image")).toObject();
     const QJsonObject maskObj = display.value(QStringLiteral("mask")).toObject();
     QString imageRel = displayPathString(imageObj);
@@ -700,10 +749,13 @@ QStringList displayPairFromResult(const QJsonObject &root, const QDir &dir, QStr
     appendUniquePath(pair, maskPath);
     if (maskNames && !maskPath.isEmpty())
         maskNames->append(QFileInfo(maskPath).fileName());
+    if (maskLabels)
+        *maskLabels = maskLabelsFromDisplay(display.value(QStringLiteral("mask")).toObject());
     return pair;
 }
 
-QStringList collectOverlayFromResults(const QFileInfo &info, QStringList *maskNames)
+QStringList collectOverlayFromResults(const QFileInfo &info, QStringList *maskNames,
+                                        QJsonObject *maskLabels = nullptr)
 {
     if (info.isFile()) {
         const QString name = info.fileName().toLower();
@@ -715,13 +767,16 @@ QStringList collectOverlayFromResults(const QFileInfo &info, QStringList *maskNa
     QStringList fallback;
     QStringList preferredMasks;
     QStringList fallbackMasks;
+    QJsonObject preferredLabels;
+    QJsonObject fallbackLabels;
     for (const QString &jsonPath : jsonPaths) {
         const QJsonObject root = readJsonObjectFile(jsonPath);
         if (root.isEmpty())
             continue;
         const QDir dir = QFileInfo(jsonPath).absoluteDir();
         QStringList names;
-        const QStringList pair = displayPairFromResult(root, dir, &names);
+        QJsonObject labels;
+        const QStringList pair = displayPairFromResult(root, dir, &names, &labels);
         if (pair.size() < 2)
             continue;
         const bool preferSeg = root.value(QStringLiteral("skill")).toString()
@@ -730,16 +785,20 @@ QStringList collectOverlayFromResults(const QFileInfo &info, QStringList *maskNa
         if (preferSeg) {
             preferred = pair;
             preferredMasks = names;
+            preferredLabels = labels;
             break;
         }
         if (fallback.isEmpty()) {
             fallback = pair;
             fallbackMasks = names;
+            fallbackLabels = labels;
         }
     }
     const QStringList files = !preferred.isEmpty() ? preferred : fallback;
     if (maskNames)
         *maskNames = !preferred.isEmpty() ? preferredMasks : fallbackMasks;
+    if (maskLabels)
+        *maskLabels = !preferred.isEmpty() ? preferredLabels : fallbackLabels;
     return files;
 }
 
@@ -866,6 +925,7 @@ QString ViewerHost::openDocument(const QString &localPath, bool readOnly, const 
     m_currentPath = info.absoluteFilePath();
     m_medicalFiles.clear();
     m_medicalMaskNames.clear();
+    m_medicalMaskLabels = QJsonObject();
     m_medicalMode = false;
     m_readOnly = readOnly;
     // Downloads (WeChat/browser) often arrive with the Windows ReadOnly bit.
@@ -939,11 +999,12 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
     }
 
     QStringList overlayMaskNames;
+    QJsonObject overlayMaskLabels;
     QStringList overlayFiles;
     // Opening a PNG/JPEG must not pick up a sibling result.json overlay pair
     // (that pair is npy/nifti and would be served to <img>, which then fails).
     if (mode != QStringLiteral("raster"))
-        overlayFiles = collectOverlayFromResults(info, &overlayMaskNames);
+        overlayFiles = collectOverlayFromResults(info, &overlayMaskNames, &overlayMaskLabels);
     const QStringList files = overlayFiles.isEmpty() ? collectMedicalFiles(info) : overlayFiles;
     if (files.isEmpty()) {
         setLastError(QStringLiteral("影像文件夹为空：%1").arg(info.absoluteFilePath()));
@@ -953,6 +1014,7 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
     m_currentPath = info.absoluteFilePath();
     m_medicalFiles = files;
     m_medicalMaskNames = overlayMaskNames;
+    m_medicalMaskLabels = overlayMaskLabels;
     m_medicalViewerMode = mode;
     m_medicalMode = true;
     m_readOnly = true;
@@ -966,8 +1028,14 @@ QString ViewerHost::openMedicalImage(const QString &localPath)
 
 QString ViewerHost::addMedicalImage(const QString &localPath)
 {
-    if (!m_medicalMode || m_sessionId.isEmpty()
-        || m_medicalViewerMode != QStringLiteral("jbrowse"))
+    // Cornerstone 影像会话也要支持「追加」：agent 先用底图开窗，再 add 分割掩膜，
+    // 追加后重新加载同一 session，manifest 里就有底图 + mask 两个条目。
+    // 注意 nii/npy/mgz 的 mode 是 volume，不是 cornerstone3d。
+    const bool cornerstoneMode = m_medicalViewerMode == QStringLiteral("volume")
+        || m_medicalViewerMode == QStringLiteral("single");
+    const bool canMerge = m_medicalMode && !m_sessionId.isEmpty()
+        && (m_medicalViewerMode == QStringLiteral("jbrowse") || cornerstoneMode);
+    if (!canMerge)
         return openMedicalImage(localPath);
 
     const QFileInfo info(localPath);
@@ -977,13 +1045,26 @@ QString ViewerHost::addMedicalImage(const QString &localPath)
     }
 
     QStringList extra = collectMedicalFiles(info);
-    if (info.isDir()) {
+    if (info.isDir() && m_medicalViewerMode == QStringLiteral("jbrowse")) {
         QStringList genomeOnly;
         for (const QString &path : extra) {
             if (isJbrowseName(QFileInfo(path).fileName().toLower()))
                 genomeOnly.append(path);
         }
         extra = genomeOnly;
+    } else if (cornerstoneMode) {
+        // 只拿到掩膜时把同目录底图一起带进来，否则查看器只能把掩膜当原图显示。
+        QStringList tuned;
+        for (const QString &path : extra) {
+            if (isNiftiMaskName(QFileInfo(path).fileName())) {
+                for (const QString &sibling : siblingNiftiPaths(QFileInfo(path))) {
+                    if (!isNiftiMaskName(QFileInfo(sibling).fileName()))
+                        tuned.append(sibling);
+                }
+            }
+            tuned.append(path);
+        }
+        extra = tuned;
     }
     if (extra.isEmpty())
         return medicalPageUrl(m_medicalViewerMode);
@@ -1041,6 +1122,7 @@ void ViewerHost::closeDocument()
     m_sessionId.clear();
     m_medicalFiles.clear();
     m_medicalMaskNames.clear();
+    m_medicalMaskLabels = QJsonObject();
     m_medicalViewerMode.clear();
     m_medicalMode = false;
     m_readOnly = false;
@@ -1710,17 +1792,21 @@ QJsonObject ViewerHost::medicalManifest() const
             relativePath = QDir::fromNativeSeparators(root.relativeFilePath(info.absoluteFilePath()));
         const QString fileUrl = QStringLiteral("/api/medical/file?session=%1&index=%2&nonce=%3")
             .arg(m_sessionId).arg(index).arg(m_nonce);
-        files.append(QJsonObject{
+        const bool isMask = m_medicalMaskNames.contains(info.fileName(), Qt::CaseInsensitive)
+            || isNiftiMaskName(info.fileName());
+        QJsonObject entry{
             {QStringLiteral("name"), info.fileName()},
             {QStringLiteral("relativePath"), relativePath},
             {QStringLiteral("url"), fileUrl},
             {QStringLiteral("mime"), contentTypeForPath(info.absoluteFilePath())},
             {QStringLiteral("size"), info.size()},
             {QStringLiteral("modifiedAt"), info.lastModified().toMSecsSinceEpoch()},
-            {QStringLiteral("role"), (m_medicalMaskNames.contains(info.fileName(), Qt::CaseInsensitive)
-                                      || isNiftiMaskName(info.fileName()))
-                ? QStringLiteral("mask") : QStringLiteral("image")}
-        });
+            {QStringLiteral("role"), isMask ? QStringLiteral("mask") : QStringLiteral("image")}
+        };
+        // 标签号 → 名字随清单下发，页面据此纠正内置器官表猜出来的名字
+        if (isMask && !m_medicalMaskLabels.isEmpty())
+            entry.insert(QStringLiteral("labels"), m_medicalMaskLabels);
+        files.append(entry);
     }
     return QJsonObject{
         {QStringLiteral("files"), files},

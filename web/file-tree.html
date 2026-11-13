@@ -459,7 +459,14 @@
   }
 
   function renderWindow() {
-    if (roots.length === 0) return;
+    if (roots.length === 0) {
+      // 没有根就把视口清掉：否则清空根目录后旧行还留在 DOM 里，
+      // 看起来像上一个会话的目录没消失。
+      viewport.textContent = '';
+      links.innerHTML = '';
+      spacer.style.height = '0px';
+      return;
+    }
     spacer.style.height = (flat.length * ROW_H) + 'px';
 
     var top = treePane.scrollTop;
@@ -826,8 +833,18 @@
   }
 
   function setHostPathsInner(items) {
-    if (!items || items.length === 0)
+    if (!items || items.length === 0) {
+      // 宿主把根目录清空了（切换会话）：必须真的把树清掉，
+      // 否则上一个会话的目录会一直留在画面上。
+      hostMode = true;
+      pendingList.clear();
+      pendingFile.clear();
+      nodeIndex.clear();
+      clearSelection();
+      selectedPath = null;
+      mountRoots([]);
       return;
+    }
     clearSelection();
     if (items.length === 1 && items[0].isDir) {
       setHostRoot(items[0].path);

@@ -97,6 +97,9 @@ private:
     QString m_viewerRootOverride;
     QStringList m_medicalFiles;
     QStringList m_medicalMaskNames;
+    // 掩膜标签号 → 中文名（来自 质控.json 的 display.mask.labels），
+    // 随 manifest 下发给页面，用来纠正页面内置器官表猜出来的名字。
+    QJsonObject m_medicalMaskLabels;
     QString m_medicalViewerMode;
     bool m_readOnly = false;
     bool m_medicalMode = false;

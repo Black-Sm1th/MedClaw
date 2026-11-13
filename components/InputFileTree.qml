@@ -65,8 +65,8 @@ Item {
             if (item.length > 0)
                 list.push(item)
         }
-        if (list.length === 0)
-            return
+        // 空数组是"清空"的意思（切换会话时根目录会变成空），不能当成没调用，
+        // 否则页面会一直留着上一个会话的目录，看起来像两个状态叠在一起。
         pendingPaths = list
         if (pageReady)
             pushPaths()
@@ -92,12 +92,14 @@ Item {
     }
 
     function pushPaths() {
-        if (!treeLoader.item || !pendingPaths || pendingPaths.length === 0)
+        if (!treeLoader.item || !pendingPaths)
             return
-        var described = fileTreeProvider.describeAll(pendingPaths)
+        // 空列表也要推，页面据此清根目录并通知宿主勾选已清空
+        var described = pendingPaths.length > 0
+                ? fileTreeProvider.describeAll(pendingPaths) : []
         treeLoader.item.runJavaScript(
                     "window.__fileTree && window.__fileTree.setHostPaths("
-                    + JSON.stringify(described) + ")")
+                    + JSON.stringify(described) + ");")
     }
 
     // 注意：这里不要写 anchors.fill: parent —— 组件自身再锚一次会覆盖调用方设置的
