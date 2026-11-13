@@ -12,6 +12,8 @@ WebEngineView {
     signal saveAsUnavailable()
     /// 查看器内部（例如顶部序列缩略图条）要求切换文件
     signal medviewPicked(string path)
+    /// 查看器内部缩略图条上的 × ：要求把这一项从阅片列表里移除（不动磁盘文件）
+    signal medviewRemoveRequested(string path)
     property var popupViews: []
     property int currentPopupTab: -1
 
@@ -189,6 +191,8 @@ WebEngineView {
                 var payload = JSON.parse(message.substring(pickPrefix.length))
                 if (payload && payload.type === "select")
                     viewer.medviewPicked(String(payload.path || ""))
+                else if (payload && payload.type === "remove")
+                    viewer.medviewRemoveRequested(String(payload.path || ""))
             } catch (error) {
                 console.log("[ViewerWeb] bad medview payload", message)
             }

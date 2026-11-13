@@ -23,6 +23,8 @@ Item {
     signal viewerLoaded()
     /// 顶部序列缩略图条被点击：宿主据此切换标签
     signal seriesPicked(string path)
+    /// 顶部序列缩略图条上的 × ：把这一项从阅片列表里移除（不动磁盘文件）
+    signal seriesRemoveRequested(string path)
 
     function open(path, requestedMode) {
         var target = String(path || filePath)
@@ -49,8 +51,11 @@ Item {
         var url = viewerHost.addMedicalImage(target)
         if (!url)
             return false
-        if (viewerSource === url)
-            return false
+        if (viewerSource === url) {
+            // 文件已经在当前会话里（例如打开底图时已自动带出同目录分割），
+            // 这不是失败：不重新加载，但按成功返回。
+            return true
+        }
         filePath = target
         viewerSource = url
         return true
@@ -121,6 +126,8 @@ Item {
                 return
             }
             var changed = (name === "open") ? root.open(path, "view") : root.addFile(path)
+            // Mask 列表由查看器自己按 manifest 里的 role=mask 条目生成，
+            // 这里不要再用 __medclawSetOverlay 塞空壳条目（会被页面加载清掉）。
             viewerHost.replyControl(requestId, !!changed, { "path": path })
             return
         }
@@ -282,6 +289,7 @@ Item {
         viewerUrl: root.viewerSource
 
         onMedviewPicked: function(path) { root.seriesPicked(path) }
+        onMedviewRemoveRequested: function(path) { root.seriesRemoveRequested(path) }
 
         onViewerLoaded: {
             root.viewerLoaded()

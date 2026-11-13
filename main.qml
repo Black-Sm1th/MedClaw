@@ -4594,6 +4594,52 @@ ApplicationWindow {
                     medicalHistory = list
                 }
 
+                /// 从阅片列表里移除一个影像（只出列表，不动磁盘文件）。
+                /// 它如果就是当前的阅片标签，顺手把对应标签关掉，让视图切到下一个。
+                function forgetMedicalPath(path) {
+                    var target = String(path || "")
+                    if (target.length === 0)
+                        return
+                    var key = medicalPathKey(target)
+                    console.log("[ReaderStrip] remove " + target)
+                    // 1) 关掉指向同一文件的阅片标签（从后往前，避免下标错位）
+                    for (var i = officeTabs.count - 1; i >= 0; --i) {
+                        var tab = officeTabs.get(i)
+                        if (String(tab.kind || "") !== "medical")
+                            continue
+                        if (medicalPathKey(tab.path) !== key)
+                            continue
+                        closeOfficeTabNow(i)
+                    }
+                    // 2) 从历史列表里去掉（缩略图条的数据源）
+                    var list = (medicalHistory || []).slice(0)
+                    var kept = []
+                    for (var j = 0; j < list.length; ++j) {
+                        if (medicalPathKey(list[j].path) === key)
+                            continue
+                        kept.push(list[j])
+                    }
+                    medicalHistory = kept
+                    // 3) 顺手丢掉这一项的缩略图缓存
+                    var thumbs = readerThumbs || ({})
+                    var stale = false
+                    for (var k in thumbs) {
+                        if (medicalPathKey(k) === key) {
+                            stale = true
+                            break
+                        }
+                    }
+                    if (stale) {
+                        var next = {}
+                        for (var t in thumbs) {
+                            if (medicalPathKey(t) === key)
+                                continue
+                            next[t] = thumbs[t]
+                        }
+                        readerThumbs = next
+                    }
+                }
+
                 function isNeverOpenFile(file) {
                     var path = String((file && file.path) || "")
                     var ext = String((file && file.extension) || fileExtension(path)).toLowerCase()
@@ -6394,6 +6440,16 @@ ApplicationWindow {
                     Connections {
                         target: newTaskRec
                         function onSplitRootsChanged() {
+                            // 退出工作区时 roots 会变空、splitMode 已经是 false，
+                            // 这种清空也要下发，否则下次进来树里还是上个会话的目录。
+                            if (!newTaskRec.splitMode && newTaskRec.splitRoots.length > 0)
+                                return
+                            splitTree.openPaths(newTaskRec.splitRoots)
+                        }
+                        // 切换会话会先退出工作区：那时 splitMode 已经是 false，
+                        // 上面这个处理器被跳过；再进来时根目录没变，树就永远不会刷新。
+                        // 进入工作区时补一次同步，空列表会真的把上一个会话的树清掉。
+                        function onSplitModeChanged() {
                             if (newTaskRec.splitMode)
                                 splitTree.openPaths(newTaskRec.splitRoots)
                         }
@@ -7064,6 +7120,9 @@ ApplicationWindow {
                                     ignoreUnknownSignals: true
                                     function onSeriesPicked(path) {
                                         newTaskRec.activateMedicalPath(path)
+                                    }
+                                    function onSeriesRemoveRequested(path) {
+                                        newTaskRec.forgetMedicalPath(path)
                                     }
                                 }
 
