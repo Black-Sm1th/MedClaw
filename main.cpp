@@ -650,6 +650,9 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_PANEL_CLOSE=1 进工作区后再收掉产物面板（等价于点 ✕）
     engine.rootContext()->setContextProperty(QStringLiteral("panelCloseAuto"),
                                              qEnvironmentVariable("MEDCLAW_PANEL_CLOSE"));
+    // 诊断用：MEDCLAW_DRAG_DEMO=1 直接显示「拖文件到对话中」引导浮层（方便截图核对）
+    engine.rootContext()->setContextProperty(QStringLiteral("dragOverlayDemo"),
+                                             qEnvironmentVariable("MEDCLAW_DRAG_DEMO"));
     // 诊断用：MEDCLAW_SPLIT_EMPTY=1 打开「有中栏、没有根目录」的工作区空状态
     engine.rootContext()->setContextProperty(QStringLiteral("splitEmptyAuto"),
                                              qEnvironmentVariable("MEDCLAW_SPLIT_EMPTY"));

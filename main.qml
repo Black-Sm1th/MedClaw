@@ -4199,6 +4199,8 @@ ApplicationWindow {
                     splitMiddleCollapsed = false
                     splitMode = true
                     splitSelection = []
+                    // 拖文件进来的目的就是看「输入文件」，顺手切过去
+                    splitMiddleTab = "files"
                     splitTab = "files"
                     refreshArtifactGroups()
                     artifactSidebarMode = "list"
@@ -6220,6 +6222,63 @@ ApplicationWindow {
                             return
                         newTaskRec.enterSplit(dirs)
                         drop.acceptProposedAction()
+                    }
+                }
+
+                // 拖文件到对话区时的引导浮层（设计稿 node 5068-47694 / frame 5068-47245）：
+                // 白底盖住对话列，居中一个 114x86 插画 + 标题 + 两行说明；
+                // 松手后 drop 流程会进工作区并切到「输入文件」。
+                Item {
+                    id: chatDragOverlay
+                    visible: chatFolderDropArea.containsDrag
+                             || (dragOverlayDemo !== undefined
+                                 && String(dragOverlayDemo) === "1")
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.right: chatFolderDropArea.right
+                    z: 44
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#E6FFFFFF"
+                    }
+
+                    Column {
+                        anchors.centerIn: parent
+                        width: 280
+                        spacing: 8
+
+                        Image {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 114
+                            height: 86
+                            source: "qrc:/images/imaging/drag-drop-files.png"
+                            sourceSize: Qt.size(228, 172)
+                            fillMode: Image.PreserveAspectFit
+                        }
+
+                        Label {
+                            width: parent.width
+                            text: qsTr("添加文件到对话中")
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 20
+                            font.weight: Font.Medium
+                            color: "#000000"
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Label {
+                            width: parent.width
+                            text: qsTr("支持拖入 DICOM 文件夹 / ZIP / 一组散装文件
+本地解析，不上传")
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 14
+                            lineHeight: 21
+                            lineHeightMode: Text.FixedHeight
+                            color: "#000000"
+                            horizontalAlignment: Text.AlignHCenter
+                        }
                     }
                 }
 
