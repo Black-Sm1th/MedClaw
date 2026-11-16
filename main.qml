@@ -11785,15 +11785,16 @@ ApplicationWindow {
                                 Rectangle {
                                     id: imagingDomainCard
                                     readonly property bool hovered: imagingDomainMouse.containsMouse
-                                    anchors.fill: parent
                                     readonly property bool chosen:
                                         newTaskRec.imagingDomainSelected(imagingDomainSlot.domain.name)
-                                    radius: hovered ? 11 : 8
+                                    // 悬停和选中都是“抬起来”：摆正、放大、投影更重（设计稿 5460-31496）
+                                    readonly property bool raised: hovered || chosen
+                                    anchors.fill: parent
+                                    radius: raised ? 11 : 8
                                     color: "#FFFFFF"
-                                    // 扇形排布：鼠标移上去那张摆正、放大并盖住邻居
-                                    rotation: hovered ? 0 : (imagingDomainSlot.domain.tilt || 0)
-                                    scale: hovered ? 1.07 : 1.0
-                                    z: hovered ? 10 : index
+                                    rotation: raised ? 0 : (imagingDomainSlot.domain.tilt || 0)
+                                    scale: raised ? 1.07 : 1.0
+                                    z: hovered ? 20 : (chosen ? 10 : index)
 
                                     Behavior on scale {
                                         NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
@@ -11802,24 +11803,14 @@ ApplicationWindow {
                                         NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
                                     }
 
-                                    // 选中的那张加一圈蓝边（设计稿只给了胶囊态，这里按胶囊同色做最小区分）
-                                    Rectangle {
-                                        visible: imagingDomainCard.chosen
-                                        anchors.fill: parent
-                                        radius: imagingDomainCard.radius
-                                        color: "transparent"
-                                        border.width: 2
-                                        border.color: "#006BFF"
-                                    }
-
                                     layer.enabled: true
                                     layer.effect: DropShadow {
                                         transparentBorder: true
                                         horizontalOffset: 0
-                                        verticalOffset: 8
-                                        radius: 22
+                                        verticalOffset: imagingDomainCard.raised ? 11 : 8
+                                        radius: imagingDomainCard.raised ? 34 : 22
                                         samples: 41
-                                        color: "#1A000000"
+                                        color: imagingDomainCard.raised ? "#1F000000" : "#1A000000"
                                         cached: true
                                     }
 
