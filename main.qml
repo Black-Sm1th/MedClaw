@@ -11472,7 +11472,7 @@ ApplicationWindow {
                     }
 
                         // 影像版欢迎页的 4 张 STEP 卡片（设计稿 node 5441-29653）：
-                        // 卡片 204x69，hover 长高到 116 并露出描述；点击把该步骤提示词填进输入框。
+                        // 卡片 204x69，hover 长高到 116 并露出描述；纯展示，不响应点击。
                         Item {
                             id: imagingStepRow
                             visible: window.imagingEdition && newTaskRec.isNewTaskWelcome
@@ -11494,6 +11494,15 @@ ApplicationWindow {
                                     width: imagingStepRow.cardWidth
                                     height: imagingStepRow.height
                                     x: index * (width + 8)
+
+                                    // 纯装饰：只做悬停展开，不响应点击（不回手型光标、点了什么都不发生）。
+                                    // 命中区用整格（116 高）而不是卡片本身：卡片底部对齐、悬停时向上
+                                    // 长高，只盖卡片的话指针在长高过程中会落到卡片外，展开会闪。
+                                    MouseArea {
+                                        id: imagingStepMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                    }
 
                                     Rectangle {
                                         id: imagingStepCard
@@ -11571,16 +11580,6 @@ ApplicationWindow {
                                             fillMode: Image.PreserveAspectFit
                                         }
 
-                                        MouseArea {
-                                            id: imagingStepMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                textInputArea.text = imagingStepSlot.step.prompt
-                                                textInputArea.forceActiveFocus()
-                                            }
-                                        }
                                     }
                                 }
                             }
