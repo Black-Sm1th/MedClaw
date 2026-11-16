@@ -67,6 +67,7 @@ class GatewayClient : public QObject
     // ── QML 可绑定属性 ──
     Q_PROPERTY(int connectionState READ connectionState NOTIFY connectionStateChanged)
     Q_PROPERTY(bool chatRunning READ chatRunning NOTIFY chatRunningChanged)
+    Q_PROPERTY(bool controllerRunning READ controllerRunning NOTIFY collaborationParticipantsChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY connectionStateChanged)
     Q_PROPERTY(QVariantList sessions READ sessions NOTIFY sessionsChanged)
     Q_PROPERTY(QString currentSessionKey READ currentSessionKey WRITE setCurrentSessionKey NOTIFY
@@ -177,6 +178,7 @@ public:
     int connectionState() const;
     /// 当前聊天运行是否仍在服务端执行
     bool chatRunning() const { return m_chatRunning; }
+    bool controllerRunning() const;
     /// 获取当前连接状态的中文描述文本
     QString statusText() const;
     /// 获取会话列表（委托给 WsSession）
@@ -662,7 +664,7 @@ signals:
     void collaborationParticipantsChanged();                 ///< 协作参与者列表更新
     void sessionCreated();                                   ///< 新会话创建成功
     void historyLoaded(const QVariantList &messages);        ///< 历史消息加载完成
-    void toolResultsRefreshed(const QVariantList &messages); ///< 工具结果补拉完成（原地合并）
+    void conversationHistoryRefreshed(const QVariantList &messages); ///< 当前会话历史增量刷新
 
     // ── 技能管理 ──
     void skillListChanged();                                  ///< 技能列表更新
@@ -913,6 +915,11 @@ private:
     void setTaskSessionAborted(const QString &sessionKey);
     void setTaskSessionState(const QString &sessionKey, const QString &status);
     bool hasRunningCollaborationChildren(const QString &taskSessionKey) const;
+    bool isCollaborationChildSessionForTask(const QString &childSessionKey,
+                                           const QString &taskSessionKey) const;
+    void markCollaborationChildTerminal(const QString &childSessionKey,
+                                        const QString &taskSessionKey);
+    void markControllerTaskTerminal(const QString &taskSessionKey);
     void syncCollaborationTaskStatus(const QString &sessionKey);
     void markTaskSessionRead(const QString &sessionKey);
     void updateTaskSessionRuntimeFromEvent(const QJsonObject &payload);
@@ -1039,6 +1046,7 @@ private:
     QSqlDatabase m_taskSessionDb;    ///< 本地任务会话 SQLite
     bool m_taskSessionDbReady = false;
     QSet<QString> m_runningTaskSessionKeys;
+    QSet<QString> m_controllerCompletedTaskSessionKeys;
     QString m_taskSessionUserId;
     QSet<QString> m_currentUserCronJobIds;       ///< 当前登录用户拥有的 cron job ID
     QSet<QString> m_currentUserPinnedCronJobIds; ///< 当前用户置顶的 cron job ID
@@ -1163,6 +1171,9 @@ private:
     /// 收到 toolResult 后防抖补拉历史；仅更新 toolResult 文本，不清空聊天模型
     QTimer m_toolResultRefreshTimer;
     QMap<QString, QString> m_toolResultRefreshReqSessions; ///< requestId -> view sessionKey
+    /// 周期检查当前可见会话，兜底没有收到子 agent 事件的情况
+    QTimer m_visibleHistoryRefreshTimer;
+    QMap<QString, QString> m_visibleHistoryRefreshReqSessions; ///< requestId -> view sessionKey
     QMap<QString, QString> m_chatHistoryReqSessions; ///< chat.history requestId -> sessionKey
 
     // ── 模型管理 ──

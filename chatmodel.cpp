@@ -345,6 +345,7 @@ void ChatModel::addToolResult(const QString &toolName,
             const QModelIndex idx = index(i);
             emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
             emit messagePayloadChanged();
+            emit toolCallChanged(i, messages().at(i).toMap());
             return;
         }
     }
@@ -364,6 +365,7 @@ void ChatModel::addToolResult(const QString &toolName,
             const QModelIndex idx = index(i);
             emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
             emit messagePayloadChanged();
+            emit toolCallChanged(i, messages().at(i).toMap());
             return;
         }
     }
@@ -608,6 +610,171 @@ bool ChatModel::setArtifactsForLastAssistant(const QVariantList &artifacts)
     return true;
 }
 
+void ChatModel::mergeHistorySnapshot(const QVariantList &messages)
+{
+    ChatModel snapshot;
+    snapshot.loadHistory(messages);
+
+    auto sameMessage = [](const ChatMessage &left, const ChatMessage &right) {
+        if (left.msgType != right.msgType || left.role != right.role)
+            return false;
+        if (left.msgType == QLatin1String("toolCall")) {
+            if (!left.toolCallId.isEmpty() && !right.toolCallId.isEmpty())
+                return left.toolCallId == right.toolCallId;
+            return left.toolName == right.toolName && left.toolArgs == right.toolArgs;
+        }
+        if (left.msgType == QLatin1String("question"))
+            return !left.questionId.isEmpty() && left.questionId == right.questionId;
+        if (left.msgType == QLatin1String("text")) {
+            if (left.content == right.content)
+                return true;
+            // A live assistant row can be ahead of or behind the last persisted snapshot.
+            return left.role == QLatin1String("assistant")
+                && (left.isStreaming || right.isStreaming)
+                && (!left.content.isEmpty() || !right.content.isEmpty())
+                && (left.content.startsWith(right.content)
+                    || right.content.startsWith(left.content));
+        }
+        return left.toolCallId == right.toolCallId
+            && left.toolName == right.toolName && left.content == right.content;
+    };
+
+    auto updateFromSnapshot = [this](int row, const ChatMessage &incoming) {
+        if (row < 0 || row >= m_messages.size())
+            return false;
+        ChatMessage &current = m_messages[row];
+        if (current.msgType == QLatin1String("toolCall")
+            && incoming.msgType == QLatin1String("toolCall")) {
+            const QString resultText = incoming.toolResultText.size() >= current.toolResultText.size()
+                ? incoming.toolResultText : current.toolResultText;
+            const bool hasResult = current.hasToolResult || incoming.hasToolResult;
+            const bool isError = current.isError || incoming.isError;
+            if (current.toolArgs.isEmpty())
+                current.toolArgs = incoming.toolArgs;
+            const bool changed = current.toolResultText != resultText
+                || current.hasToolResult != hasResult || current.isError != isError;
+            current.toolResultText = resultText;
+            current.hasToolResult = hasResult;
+            current.isError = isError;
+            if (changed) {
+                const QModelIndex idx = index(row);
+                emit dataChanged(idx, idx,
+                                 {IsErrorRole, ToolResultTextRole, HasToolResultRole,
+                                  ToolArgsRole});
+                emit toolCallChanged(row, this->messages().at(row).toMap());
+                emit messagePayloadChanged();
+            }
+            return changed;
+        }
+
+        bool changed = false;
+        if (current.msgType == QLatin1String("text") && current.isStreaming
+            && incoming.content.startsWith(current.content)) {
+            const QString accumulated = current.content
+                + (m_streamFlushRow == row ? m_streamPending : QString());
+            if (incoming.content.startsWith(accumulated))
+                appendStreamChunk(incoming.content.mid(accumulated.size()));
+        } else if (current.msgType == QLatin1String("text") && !current.isStreaming
+                   && incoming.content.startsWith(current.content)
+                   && current.content != incoming.content) {
+            current.content = incoming.content;
+            changed = true;
+        }
+        if (current.msgType == QLatin1String("text")
+            && current.isIntermediate != incoming.isIntermediate) {
+            current.isIntermediate = incoming.isIntermediate;
+            changed = true;
+        }
+        if (current.artifacts != incoming.artifacts && !incoming.artifacts.isEmpty()) {
+            current.artifacts = incoming.artifacts;
+            changed = true;
+        }
+        if (current.msgType == QLatin1String("question")
+            && (current.questionStatus != incoming.questionStatus
+                || current.questionAnswer != incoming.questionAnswer)) {
+            current.questionStatus = incoming.questionStatus;
+            current.questionAnswer = incoming.questionAnswer;
+            changed = true;
+        }
+        if (changed) {
+            const QModelIndex idx = index(row);
+            emit dataChanged(idx, idx, {ContentRole, IsIntermediateRole, ArtifactsRole,
+                                        QuestionStatusRole, QuestionAnswerRole});
+            emit messagePayloadChanged();
+        }
+        return changed;
+    };
+
+    int cursor = 0;
+    bool foundExistingAnchor = m_messages.isEmpty();
+    for (const ChatMessage &incoming : snapshot.m_messages) {
+        int match = -1;
+        const int searchStart = foundExistingAnchor ? cursor : 0;
+        for (int row = searchStart; row < m_messages.size(); ++row) {
+            if (sameMessage(m_messages.at(row), incoming)) {
+                match = row;
+                break;
+            }
+        }
+        if (match >= 0) {
+            foundExistingAnchor = true;
+            updateFromSnapshot(match, incoming);
+            cursor = match + 1;
+            continue;
+        }
+        // chat.history can return a larger tail window than the one originally
+        // loaded. Ignore its older prefix until it overlaps the live model.
+        if (!foundExistingAnchor)
+            continue;
+
+        // Do not append a duplicate of a live row that has not yet reached the
+        // persisted history tail, including a streamed assistant answer.
+        bool alreadyPresent = false;
+        for (const ChatMessage &current : m_messages) {
+            if (sameMessage(current, incoming)) {
+                alreadyPresent = true;
+                break;
+            }
+        }
+        if (alreadyPresent)
+            continue;
+
+        int insertAt = m_messages.size();
+        // Preserve server order when a missed live event sits before a later
+        // row that is already present in the model.
+        for (int nextIncoming = cursor; nextIncoming < snapshot.m_messages.size();
+             ++nextIncoming) {
+            int nextExisting = -1;
+            for (int row = cursor; row < m_messages.size(); ++row) {
+                if (sameMessage(m_messages.at(row), snapshot.m_messages.at(nextIncoming))) {
+                    nextExisting = row;
+                    break;
+                }
+            }
+            if (nextExisting >= 0) {
+                insertAt = nextExisting;
+                break;
+            }
+        }
+        if (insertAt == m_messages.size()) {
+            // Keep an empty local stream placeholder after server-persisted rows.
+            while (insertAt > cursor && m_messages.at(insertAt - 1).isStreaming)
+                --insertAt;
+        }
+        const int row = insertAt;
+        beginInsertRows(QModelIndex(), row, row);
+        m_messages.insert(row, incoming);
+        endInsertRows();
+        if (m_streamFlushRow >= row)
+            ++m_streamFlushRow;
+        emit countChanged();
+        if (incoming.msgType == QLatin1String("toolCall"))
+            emit toolCallChanged(row, this->messages().at(row).toMap());
+        emit messagePayloadChanged();
+        cursor = row + 1;
+    }
+}
+
 void ChatModel::loadHistory(const QVariantList &messages)
 {
     m_streamFlushTimer.stop();
@@ -739,8 +906,29 @@ void ChatModel::loadHistory(const QVariantList &messages)
             bool merged = false;
             for (int i = m_messages.count() - 1; i >= 0; --i) {
                 if (m_messages[i].msgType == QStringLiteral("toolCall")
-                    && m_messages[i].toolCallId == toolCallId) {
+                    && ((!toolCallId.isEmpty() && m_messages[i].toolCallId == toolCallId)
+                        || (toolCallId.isEmpty() && !toolName.isEmpty()
+                            && m_messages[i].toolCallId.isEmpty()
+                            && m_messages[i].toolName == toolName
+                            && !m_messages[i].hasToolResult))) {
                     m_messages[i].toolResultText = m.value(QStringLiteral("content")).toString();
+                    m_messages[i].hasToolResult = true;
+                    m_messages[i].isError = m.value(QStringLiteral("isError")).toBool();
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged)
+                continue;
+
+            if (toolCallId.isEmpty() && !toolName.isEmpty()) {
+                for (int i = m_messages.count() - 1; i >= 0; --i) {
+                    if (m_messages[i].msgType != QStringLiteral("toolCall")
+                        || m_messages[i].toolCallId.isEmpty()
+                        || m_messages[i].toolName != toolName) {
+                        continue;
+                    }
+                    m_messages[i].toolResultText = content;
                     m_messages[i].hasToolResult = true;
                     m_messages[i].isError = m.value(QStringLiteral("isError")).toBool();
                     merged = true;

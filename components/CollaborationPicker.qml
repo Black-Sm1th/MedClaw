@@ -55,7 +55,7 @@ Item {
         if (!participant)
             return "pending"
         if (participant.isController)
-            return teamRunning ? "running" : "complete"
+            return controllerRunning ? "running" : "complete"
         if (participant.isPending)
             return "pending"
         if (participant.isRunning)

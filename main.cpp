@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QAction>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -9,6 +10,7 @@
 #include <QLibraryInfo>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QMenu>
 #include <QPainterPath>
 #include <QProcess>
 #include <QQmlApplicationEngine>
@@ -23,6 +25,8 @@
 #include <QStringList>
 #include <QSurfaceFormat>
 #include <QTextStream>
+#include <QSystemTrayIcon>
+#include <QIcon>
 #include <QDateTime>
 #include <QMutex>
 #include <QMutexLocker>
@@ -501,46 +505,17 @@ int main(int argc, char *argv[])
                          chatModel.resolveQuestion(id, status, answer);
                      });
 
-    // 工具结果补拉完成：原地合并完整文本（不清空聊天模型，避免闪烁）
-    // 同时补插实时事件中漏掉的 toolCall 条目
-    QObject::connect(
-        &wsClient, &GatewayClient::toolResultsRefreshed, [&chatModel](const QVariantList &messages) {
-            for (const QVariant &v : messages) {
-                const QVariantMap m = v.toMap();
-                const QString mtype = m.value(QStringLiteral("msgType")).toString();
-                const QString tcId = m.value(QStringLiteral("toolCallId")).toString();
-                if (tcId.isEmpty())
-                    continue;
-
-                if (mtype == QLatin1String("toolCall")) {
-                    const QString toolName = m.value(QStringLiteral("toolName")).toString();
-                    if (toolName == QLatin1String("ask_user")) {
-                        // 提问卡由实时事件或历史加载创建，这里不要再补一张普通工具卡。
-                        continue;
-                    }
-                    if (!chatModel.hasToolCallId(tcId))
-                        chatModel.addToolCall(toolName,
-                                              m.value(QStringLiteral("toolArgs")).toString(),
-                                              tcId);
-                } else if (mtype == QLatin1String("toolResult")) {
-                    const QString toolName = m.value(QStringLiteral("toolName")).toString();
-                    if (toolName == QLatin1String("ask_user")) {
-                        if (chatModel.hasQuestionId(tcId))
-                            chatModel.resolveQuestionFromContent(
-                                tcId, m.value(QStringLiteral("content")).toString());
-                        continue;
-                    }
-                    if (!chatModel.hasToolCallId(tcId))
-                        chatModel.addToolCall(toolName,
-                                              QString(),
-                                              tcId);
-                    chatModel.addToolResult(toolName,
-                                            m.value(QStringLiteral("content")).toString(),
-                                            tcId,
-                                            m.value(QStringLiteral("isError")).toBool());
-                }
-            }
-        });
+    // Periodic and tool-result history refreshes are merged without resetting
+    // any live stream or the user's current transcript view.
+    QObject::connect(&wsClient,
+                     &GatewayClient::conversationHistoryRefreshed,
+                     [&chatModel, &wsClient](const QVariantList &messages) {
+                         QString sessionKey = wsClient.currentViewSessionKey().trimmed();
+                         if (sessionKey.isEmpty())
+                             sessionKey = wsClient.currentTaskSessionKey().trimmed();
+                         chatModel.mergeHistorySnapshot(
+                             wsClient.restoreSessionArtifacts(sessionKey, messages));
+                     });
 
     // 新会话创建成功：聊天区保留本地已追加的首条用户消息。
     QObject::connect(&wsClient, &GatewayClient::sessionCreated, []() {});
@@ -668,6 +643,28 @@ int main(int argc, char *argv[])
     // --test 启动 WebSocket 测试页。
     const bool testMode = app.arguments().contains(QStringLiteral("--test"));
     const bool accountPreviewMode = app.arguments().contains(QStringLiteral("--account-preview"));
+    QSystemTrayIcon *trayIcon = nullptr;
+    QAction *trayShowAction = nullptr;
+    if (!testMode && !accountPreviewMode) {
+        app.setQuitOnLastWindowClosed(false);
+        trayIcon = new QSystemTrayIcon(QIcon(QStringLiteral(":/images/icon.ico")), &app);
+        trayIcon->setToolTip(QCoreApplication::applicationName());
+
+        auto *trayMenu = new QMenu;
+        trayShowAction = trayMenu->addAction(QStringLiteral("打开主窗口"));
+        trayMenu->addSeparator();
+        QAction *quitAction = trayMenu->addAction(QStringLiteral("退出"));
+        trayIcon->setContextMenu(trayMenu);
+        QObject::connect(quitAction, &QAction::triggered, &app, &QCoreApplication::quit);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, trayIcon, &QSystemTrayIcon::hide);
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayAvailable"),
+                                                 QSystemTrayIcon::isSystemTrayAvailable());
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayIcon"), trayIcon);
+    } else {
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayAvailable"), false);
+        engine.rootContext()->setContextProperty(QStringLiteral("systemTrayIcon"),
+                                                 static_cast<QSystemTrayIcon *>(nullptr));
+    }
     QString accountPreviewOutput;
     const QString accountPreviewOutputPrefix = QStringLiteral("--account-preview-output=");
     for (const QString &argument : app.arguments()) {
@@ -682,13 +679,32 @@ int main(int argc, char *argv[])
         &engine,
         &QQmlApplicationEngine::objectCreated,
         &app,
-        [url, testMode, accountPreviewMode, accountPreviewOutput](QObject *obj, const QUrl &objUrl) {
+        [url, testMode, accountPreviewMode, accountPreviewOutput, trayIcon, trayShowAction](QObject *obj, const QUrl &objUrl) {
             if (!obj && url == objUrl)
                 QCoreApplication::exit(-1);
 
             QWindow *window = qobject_cast<QWindow *>(obj);
             if (!window || url != objUrl)
                 return;
+
+            if (trayIcon) {
+                QObject::connect(trayIcon, &QSystemTrayIcon::activated, window,
+                                 [window, trayIcon](QSystemTrayIcon::ActivationReason reason) {
+                    if (reason == QSystemTrayIcon::Trigger
+                        || reason == QSystemTrayIcon::DoubleClick) {
+                        trayIcon->hide();
+                        window->showNormal();
+                        window->raise();
+                        window->requestActivate();
+                    }
+                });
+                QObject::connect(trayShowAction, &QAction::triggered, window, [window, trayIcon]() {
+                    trayIcon->hide();
+                    window->showNormal();
+                    window->raise();
+                    window->requestActivate();
+                });
+            }
 
             if (!testMode && !accountPreviewMode) {
                 auto *saveWindowSizeTimer = new QTimer(window);
