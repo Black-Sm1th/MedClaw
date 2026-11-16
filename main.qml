@@ -11195,6 +11195,21 @@ ApplicationWindow {
                     anchors.right: newTaskRec.splitMode ? artifactSidebar.left : parent.right
                     z: 2
 
+                    // 欢迎页右上角的「医学影像 AI Agent」挂绳徽章（设计稿 node 5458-28605）：
+                    // 209x269，距内容区右缘 230、上边缘往上 -12（挂绳从顶部伸出去）。
+                    Image {
+                        id: imagingAgentBadge
+                        visible: window.imagingEdition && parent.width >= 1000
+                        source: "qrc:/images/imaging/agent-badge.png"
+                        sourceSize: Qt.size(418, 538)
+                        width: 209
+                        height: 269
+                        fillMode: Image.PreserveAspectFit
+                        x: parent.width - 230 - width
+                        y: -12
+                        z: -1
+                    }
+
                     // 设计稿数值：linear 左→右，#006BFF 8% → 4%
                     Gradient {
                         id: imagingPillGradient
