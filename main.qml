@@ -5286,11 +5286,6 @@ ApplicationWindow {
                     splitMiddleTab = "artifacts"
                 }
 
-                /// 产物面板的收起：切回「输入文件」
-                function closeArtifactPanel() {
-                    splitMiddleTab = "files"
-                }
-
                 function openArtifactPath(path) {
                     var raw = String(path || "")
                     if (!raw)
@@ -6656,50 +6651,6 @@ ApplicationWindow {
                                     }
                                 }
 
-                                Rectangle {
-                                    id: splitCloseButton
-
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 14
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 20
-                                    height: 20
-                                    radius: 4
-                                    color: splitCloseMouse.containsMouse ? "#0A000000" : "transparent"
-
-                                    Canvas {
-                                        anchors.centerIn: parent
-                                        width: 16
-                                        height: 16
-
-                                        onPaint: {
-                                            var ctx = getContext("2d")
-                                            ctx.reset()
-                                            ctx.strokeStyle = "#D9000000"
-                                            ctx.lineWidth = 1.4
-                                            ctx.lineCap = "round"
-                                            ctx.beginPath()
-                                            ctx.moveTo(2.5, 2.5)
-                                            ctx.lineTo(13.5, 13.5)
-                                            ctx.moveTo(13.5, 2.5)
-                                            ctx.lineTo(2.5, 13.5)
-                                            ctx.stroke()
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: splitCloseMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        // 并排时产物在中栏这个 tab 里，切回「输入文件」；
-                                        // 普通模式才收起右侧面板
-                                        onClicked: newTaskRec.closeArtifactPanel()
-                                    }
-
-                                    ToolTip.visible: splitCloseMouse.containsMouse
-                                    ToolTip.text: qsTr("收起产物面板")
-                                }
                             }
 
                             // 筛选胶囊：只有真的存在该类产物时才出现
