@@ -5556,6 +5556,19 @@ ApplicationWindow {
                                                         ? [allShortcutGroups[1], allShortcutGroups[2], allShortcutGroups[5]]
                                                         : allShortcutGroups
 
+                // 「选择影像领域」浮层的数据（设计稿 node 5460-30543）：6 个学组，
+                // tilt 是初始倾斜角（设计稿是扇形排布）。
+                property bool imagingDomainPickerOpen: false
+                property string selectedImagingDomain: ""
+                readonly property var imagingDomains: [
+                    { name: "神经学组", image: "qrc:/images/imaging/domain-neuro.png", tilt: -3 },
+                    { name: "头颈学组", image: "qrc:/images/imaging/domain-headneck.png", tilt: 1 },
+                    { name: "心胸学组", image: "qrc:/images/imaging/domain-chest.png", tilt: -2 },
+                    { name: "腹部学组", image: "qrc:/images/imaging/domain-abdomen.png", tilt: 0 },
+                    { name: "骨肌学组", image: "qrc:/images/imaging/domain-msk.png", tilt: 2 },
+                    { name: "乳腺学组", image: "qrc:/images/imaging/domain-breast.png", tilt: -4 }
+                ]
+
                 // 影像版欢迎页的 STEP 卡片（设计稿 node 5441-29653）：
                 // 点击把该步骤的提示词填进输入框，用户可改完再发。
                 readonly property var imagingStepCards: [
@@ -11233,18 +11246,21 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
 
                                             Label {
-                                                text: qsTr("选择影像领域")
+                                                text: newTaskRec.selectedImagingDomain.length > 0
+                                                      ? newTaskRec.selectedImagingDomain
+                                                      : qsTr("选择影像领域")
                                                 font.pixelSize: 16
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#000000"
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
-                                            Label {
-                                                text: "›"
-                                                font.pixelSize: 18
-                                                color: "#000000"
+                                            Image {
+                                                width: 16
+                                                height: 16
+                                                source: "qrc:/images/imaging/chevron-right.svg"
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(32, 32)
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                anchors.verticalCenterOffset: -1
                                             }
                                         }
                                     }
@@ -11254,7 +11270,14 @@ ApplicationWindow {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: newTaskRec.selectShortcutGroup(index)
+                                        onClicked: {
+                                            // 影像版这个胶囊是「选择影像领域」入口
+                                            if (window.imagingEdition) {
+                                                newTaskRec.imagingDomainPickerOpen = true
+                                                return
+                                            }
+                                            newTaskRec.selectShortcutGroup(index)
+                                        }
                                     }
                                 }
 
@@ -11585,6 +11608,153 @@ ApplicationWindow {
                             }
                         }
                 }
+
+                // 「选择影像领域」浮层（设计稿 node 5460-30543）：点标题下的胶囊打开，
+                // 白底近似设计稿的“白色 + 背景模糊”，下面是扇形排开的 6 个学组卡片。
+                Item {
+                    id: imagingDomainPicker
+                    visible: window.imagingEdition && newTaskRec.imagingDomainPickerOpen
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    z: 45
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#EAFFFFFF"
+                    }
+
+                    // 点空白处关掉
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: newTaskRec.imagingDomainPickerOpen = false
+                    }
+
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: 202
+                        spacing: 10
+
+                        Label {
+                            text: qsTr("选择影像领域")
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 20
+                            font.weight: Font.Medium
+                            color: "#000000"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Rectangle {
+                            width: 32
+                            height: 32
+                            radius: 8
+                            color: imagingDomainCloseMouse.containsMouse ? "#F2F4F7" : "transparent"
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            Image {
+                                anchors.centerIn: parent
+                                width: 16
+                                height: 16
+                                source: "qrc:/images/imaging/close-x.svg"
+                                fillMode: Image.PreserveAspectFit
+                            }
+
+                            MouseArea {
+                                id: imagingDomainCloseMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: newTaskRec.imagingDomainPickerOpen = false
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: imagingDomainCards
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        // 设计稿：卡片 175x218，横向步进 ~142（互相压一点），整体居中
+                        width: 6 * 142 + 33
+                        height: 250
+                        y: 300
+
+                        Repeater {
+                            model: newTaskRec.imagingDomains
+
+                            delegate: Item {
+                                id: imagingDomainSlot
+                                readonly property var domain: modelData
+                                x: index * 142
+                                width: 175
+                                height: 218
+
+                                Rectangle {
+                                    id: imagingDomainCard
+                                    readonly property bool hovered: imagingDomainMouse.containsMouse
+                                    anchors.fill: parent
+                                    radius: hovered ? 11 : 8
+                                    color: "#FFFFFF"
+                                    // 扇形排布：鼠标移上去那张摆正、放大并盖住邻居
+                                    rotation: hovered ? 0 : (imagingDomainSlot.domain.tilt || 0)
+                                    scale: hovered ? 1.07 : 1.0
+                                    z: hovered ? 10 : index
+
+                                    Behavior on scale {
+                                        NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                                    }
+                                    Behavior on rotation {
+                                        NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                                    }
+
+                                    layer.enabled: true
+                                    layer.effect: DropShadow {
+                                        transparentBorder: true
+                                        horizontalOffset: 0
+                                        verticalOffset: 8
+                                        radius: 22
+                                        samples: 41
+                                        color: "#1A000000"
+                                        cached: true
+                                    }
+
+                                    Image {
+                                        width: 94
+                                        height: 120
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        anchors.top: parent.top
+                                        anchors.topMargin: 30
+                                        source: imagingDomainSlot.domain.image
+                                        fillMode: Image.PreserveAspectFit
+                                        sourceSize: Qt.size(188, 240)
+                                    }
+
+                                    Label {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        anchors.bottom: parent.bottom
+                                        anchors.bottomMargin: 45
+                                        text: imagingDomainSlot.domain.name
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 16
+                                        font.weight: Font.Medium
+                                        color: "#000000"
+                                    }
+
+                                    MouseArea {
+                                        id: imagingDomainMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            newTaskRec.selectedImagingDomain = imagingDomainSlot.domain.name
+                                            newTaskRec.imagingDomainPickerOpen = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
             }
 
             Item {

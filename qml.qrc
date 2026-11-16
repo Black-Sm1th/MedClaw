@@ -79,6 +79,14 @@
         <file>images/imaging/step-3.png</file>
         <file>images/imaging/step-4.png</file>
         <file>images/imaging/lung.png</file>
+        <file>images/imaging/domain-neuro.png</file>
+        <file>images/imaging/domain-headneck.png</file>
+        <file>images/imaging/domain-chest.png</file>
+        <file>images/imaging/domain-abdomen.png</file>
+        <file>images/imaging/domain-msk.png</file>
+        <file>images/imaging/domain-breast.png</file>
+        <file>images/imaging/chevron-right.svg</file>
+        <file>images/imaging/close-x.svg</file>
         <file>images/shortcut/1.png</file>
         <file>images/shortcut/2.png</file>
         <file>images/shortcut/2-1.png</file>
