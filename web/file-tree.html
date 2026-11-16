@@ -122,16 +122,25 @@
 
 
 
+  /* 24x24 的命中区（设计稿 Check Square 是 24，里面 20x20 的方框）：
+     80% 缩放下原来只有 16px 的点击区，很容易点空/点到卡片别处。 */
   .check {
-    width: calc(20px * var(--zoom)); height: calc(20px * var(--zoom));
-    flex: 0 0 calc(20px * var(--zoom)); box-sizing: border-box;
-    border-radius: 5px; border: 1px solid rgba(0, 0, 0, .12); background: #FFFFFF;
+    position: relative;
+    width: calc(24px * var(--zoom)); height: calc(24px * var(--zoom));
+    flex: 0 0 calc(24px * var(--zoom)); box-sizing: border-box;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
   }
+  .check::before {
+    content: ''; position: absolute;
+    left: calc(2px * var(--zoom)); top: calc(2px * var(--zoom));
+    width: calc(20px * var(--zoom)); height: calc(20px * var(--zoom));
+    box-sizing: border-box; border-radius: 5px;
+    border: 1px solid rgba(0, 0, 0, .12); background: #FFFFFF;
+  }
   /* 勾选状态只看复选框本身，不再把整张卡片染蓝 */
-  .check.checked { background: #006BFF; border-color: #006BFF; }
-  .node-row.selected .check { border-color: #FFFFFF; background: #FFFFFF; }
-  .check svg { width: 12px; height: 12px; display: none; }
+  .check.checked::before { background: #006BFF; border-color: #006BFF; }
+  .node-row.selected .check::before { border-color: #FFFFFF; background: #FFFFFF; }
+  .check svg { width: 12px; height: 12px; display: none; position: relative; }
   .check.checked svg { display: block; }
   .node-row.selected .check svg { display: block; }
   .chev {
@@ -560,6 +569,12 @@
   // 行高固定 + 事件委托：不给每行挂监听，滚动时也不累积
   viewport.addEventListener('click', function (ev) {
     var row = ev.target.closest('.node-row');
+    var dbgTarget = ev.target;
+    post({ type: 'clickDebug',
+           path: row && row.dataset.path ? row.dataset.path : '',
+           cls: dbgTarget && dbgTarget.className ? String(dbgTarget.className) : '',
+           tag: dbgTarget ? dbgTarget.tagName : '',
+           x: Math.round(ev.clientX), y: Math.round(ev.clientY) });
     if (!row || !row.dataset.path) return;
     // 复选框：只切换勾选，不触发展开/预览
     if (ev.target.closest('.check')) {
