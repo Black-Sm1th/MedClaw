@@ -5559,7 +5559,32 @@ ApplicationWindow {
                 // 「选择影像领域」浮层的数据（设计稿 node 5460-30543）：6 个学组，
                 // tilt 是初始倾斜角（设计稿是扇形排布）。
                 property bool imagingDomainPickerOpen: false
-                property string selectedImagingDomain: ""
+                property var selectedImagingDomains: []
+                function imagingDomainSelected(name) {
+                    return (selectedImagingDomains || []).indexOf(String(name)) >= 0
+                }
+                function toggleImagingDomain(name) {
+                    var target = String(name || "")
+                    if (target.length === 0)
+                        return
+                    var list = (selectedImagingDomains || []).slice(0)
+                    var at = list.indexOf(target)
+                    if (at >= 0)
+                        list.splice(at, 1)
+                    else
+                        list.push(target)
+                    selectedImagingDomains = list
+                }
+                // 胶囊里最多显示 1 个学组 + 一个「+N」
+                readonly property var imagingPillChips: {
+                    var list = selectedImagingDomains || []
+                    if (list.length === 0)
+                        return []
+                    var chips = [{ name: String(list[0]), removable: true }]
+                    if (list.length > 1)
+                        chips.push({ name: "+" + (list.length - 1), removable: false })
+                    return chips
+                }
                 readonly property var imagingDomains: [
                     { name: "神经学组", image: "qrc:/images/imaging/domain-neuro.png", tilt: -3 },
                     { name: "头颈学组", image: "qrc:/images/imaging/domain-headneck.png", tilt: 1 },
@@ -11202,8 +11227,12 @@ ApplicationWindow {
 
                                 Rectangle {
                                     id: shortcutTab
-                                    width: window.imagingEdition ? 235 : tabContent.implicitWidth + 24
-                                    height: window.imagingEdition ? 48 : 36
+                                    width: window.imagingEdition
+                                           ? tabContent.implicitWidth + 32
+                                           : tabContent.implicitWidth + 24
+                                    height: window.imagingEdition
+                                            ? (newTaskRec.imagingPillChips.length > 0 ? 50 : 48)
+                                            : 36
                                     radius: window.imagingEdition ? 8 : 18
                                     color: window.imagingEdition ? "transparent"
                                           : shortcutTabItem.selected ? "#006BFF"
@@ -11246,17 +11275,65 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
 
                                             Label {
-                                                text: newTaskRec.selectedImagingDomain.length > 0
-                                                      ? newTaskRec.selectedImagingDomain
-                                                      : qsTr("选择影像领域")
+                                                text: qsTr("选择影像领域")
                                                 font.pixelSize: 16
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 color: "#000000"
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
+
+                                            // 已选学组：一个浅蓝 chip（带 ✕）+「+N」（设计稿 5460-32017）
+                                            Repeater {
+                                                model: newTaskRec.imagingPillChips
+
+                                                delegate: Rectangle {
+                                                    id: imagingDomainChipSlot
+                                                    readonly property var chip: modelData
+                                                    height: 26
+                                                    width: chipContent.implicitWidth + 10
+                                                    radius: 4
+                                                    color: "#0F006BFF"
+                                                    border.width: 1
+                                                    border.color: "#0F006BFF"
+                                                    anchors.verticalCenter: parent.verticalCenter
+
+                                                    Row {
+                                                        id: chipContent
+                                                        anchors.centerIn: parent
+                                                        spacing: 2
+
+                                                        Label {
+                                                            text: imagingDomainChipSlot.chip.name
+                                                            font.pixelSize: 16
+                                                            font.family: "Alibaba PuHuiTi 3.0"
+                                                            color: "#006BFF"
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+
+                                                        Image {
+                                                            visible: imagingDomainChipSlot.chip.removable
+                                                            width: 16
+                                                            height: 16
+                                                            opacity: 0.45
+                                                            source: "qrc:/images/imaging/close-x.svg"
+                                                            fillMode: Image.PreserveAspectFit
+                                                            anchors.verticalCenter: parent.verticalCenter
+
+                                                            MouseArea {
+                                                                anchors.fill: parent
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: newTaskRec.toggleImagingDomain(
+                                                                               imagingDomainChipSlot.chip.name)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
                                             Image {
                                                 width: 16
                                                 height: 16
+                                                opacity: 0.6
                                                 source: "qrc:/images/imaging/chevron-right.svg"
                                                 fillMode: Image.PreserveAspectFit
                                                 sourceSize: Qt.size(32, 32)
@@ -11692,6 +11769,8 @@ ApplicationWindow {
                                     id: imagingDomainCard
                                     readonly property bool hovered: imagingDomainMouse.containsMouse
                                     anchors.fill: parent
+                                    readonly property bool chosen:
+                                        newTaskRec.imagingDomainSelected(imagingDomainSlot.domain.name)
                                     radius: hovered ? 11 : 8
                                     color: "#FFFFFF"
                                     // 扇形排布：鼠标移上去那张摆正、放大并盖住邻居
@@ -11704,6 +11783,16 @@ ApplicationWindow {
                                     }
                                     Behavior on rotation {
                                         NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                                    }
+
+                                    // 选中的那张加一圈蓝边（设计稿只给了胶囊态，这里按胶囊同色做最小区分）
+                                    Rectangle {
+                                        visible: imagingDomainCard.chosen
+                                        anchors.fill: parent
+                                        radius: imagingDomainCard.radius
+                                        color: "transparent"
+                                        border.width: 2
+                                        border.color: "#006BFF"
                                     }
 
                                     layer.enabled: true
@@ -11739,15 +11828,14 @@ ApplicationWindow {
                                         color: "#000000"
                                     }
 
+                                    // 多选：点一张切换选中，浮层不关（选完点 ✕/空白处关闭）
                                     MouseArea {
                                         id: imagingDomainMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            newTaskRec.selectedImagingDomain = imagingDomainSlot.domain.name
-                                            newTaskRec.imagingDomainPickerOpen = false
-                                        }
+                                        onClicked: newTaskRec.toggleImagingDomain(
+                                                       imagingDomainSlot.domain.name)
                                     }
                                 }
                             }
