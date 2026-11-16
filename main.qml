@@ -6230,13 +6230,19 @@ ApplicationWindow {
                 // 松手后 drop 流程会进工作区并切到「输入文件」。
                 Item {
                     id: chatDragOverlay
+                    // 只要有文件拖进窗口就显示（输入框/中栏都有自己的 DropArea，
+                    // 指针停在那上面时外层这个拿不到 containsDrag，所以要把它们一起并进来）
                     visible: chatFolderDropArea.containsDrag
+                             || windowDropArea.containsDrag
+                             || textInputArea.dragActive
+                             || (newTaskRec.splitMode && splitMiddleDropArea.containsDrag)
                              || (dragOverlayDemo !== undefined
                                  && String(dragOverlayDemo) === "1")
+                    // 盖住整个内容区（对话列 + 中栏），这样在哪儿开始拖都能看到
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
-                    anchors.right: chatFolderDropArea.right
+                    anchors.right: parent.right
                     z: 44
 
                     Rectangle {
@@ -7108,6 +7114,7 @@ ApplicationWindow {
                     // 中栏整体接收文件夹拖放：不依赖当前是哪个标签页，
                     // 拖进来就切到「输入文件」并按追加/替换规则处理
                     DropArea {
+                        id: splitMiddleDropArea
                         anchors.fill: parent
                         z: 20
 
@@ -8927,6 +8934,12 @@ ApplicationWindow {
                             }
                             onLinkActivated: function(link) {
                                 window.openMarkdownLink(link)
+                            }
+                            // 拖进来的文件除了挂成附件，也进「输入文件」列表并切过去
+                            // （和中栏拖放、📎 按钮的行为一致）
+                            onFilesDropped: function(paths) {
+                                if (newTaskRec.splitViewEnabled)
+                                    newTaskRec.handleMiddleDrop(paths)
                             }
                             onFolderDropped: function(paths) {
                                 if (newTaskRec.splitViewEnabled) {
@@ -19215,6 +19228,7 @@ ApplicationWindow {
     // 兜底：整窗接收文件夹拖放。输入框有自己的 DropArea（z 更高）会先接管普通文件；
     // 这里只处理"含目录"的拖放，任何位置拖进来都能进入并排视图。
     DropArea {
+        id: windowDropArea
         anchors.fill: parent
         z: -1
         enabled: newTaskRec.splitViewEnabled

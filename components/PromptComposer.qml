@@ -15,6 +15,10 @@ Rectangle {
     property int inputRadius: 8
     property string text: ""
     property bool readOnly: false
+    // 拖进来的文件（不含文件夹）：外面除了挂附件，也要放进「输入文件」列表
+    signal filesDropped(var paths)
+    // 是否有文件正被拖到输入框上（给外层"拖拽引导浮层"用）
+    readonly property bool dragActive: composerDropArea.containsDrag
     property real textContentHeight: 52
     property bool webReady: false
     property bool syncingFromWeb: false
@@ -196,6 +200,7 @@ Rectangle {
     // Native file drops expose local URLs through QML even when Chromium
     // intentionally hides File.path from the page JavaScript.
     DropArea {
+        id: composerDropArea
         anchors.fill: parent
         z: 2
         keys: []
@@ -232,6 +237,8 @@ Rectangle {
                 console.log("[Composer] folderDropped " + JSON.stringify(dirs))
                 root.folderDropped(dirs)
             }
+            if (files.length > 0)
+                root.filesDropped(files)
             for (var f = 0; f < files.length; f++) {
                 var path = files[f]
                 if (!path || path.length === 0)
