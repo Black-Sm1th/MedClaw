@@ -5046,7 +5046,6 @@ ApplicationWindow {
                 }
 
                 /// 拖进来的路径：空的直接进入；已有根目录时问用户追加还是替换
-                property var pendingDroppedRoots: []
 
                 /// 路径归一化：只用来比较（Windows 下反斜杠路径和正斜杠路径是同一个）
                 function inputPathKey(path) {
@@ -5109,20 +5108,18 @@ ApplicationWindow {
                         enterSplit(list)
                         return "entered"
                     }
-                    if (dirCount === 0) {
-                        var merged = mergeSplitRoots(list)
-                        if (merged.length === splitRoots.length) {
-                            // 全是已经在列表里的：什么都不用做，但要给个交代
-                            console.log("[DropRoots] duplicate, ignored")
-                            return "duplicate"
-                        }
-                        console.log("[DropRoots] append files=" + list.length)
-                        splitRoots = merged
-                        return "appended"
+                    // 已经有根目录了：默认一律追加（原来这里会弹「追加/替换」对话框，
+                    // 用户明确要求去掉，替换用列表里的删除即可）
+                    var merged = mergeSplitRoots(list)
+                    if (merged.length === splitRoots.length) {
+                        // 全是已经在列表里的：什么都不用做，但要给个交代
+                        console.log("[DropRoots] duplicate, ignored")
+                        return "duplicate"
                     }
-                    pendingDroppedRoots = list
-                    dropRootsDialog.open()
-                    return "asked"
+                    console.log("[DropRoots] append dirs=" + dirCount
+                                + " files=" + (list.length - dirCount))
+                    splitRoots = merged
+                    return "appended"
                 }
 
                 /// 中栏（含阅片台页）拖进来的东西：
@@ -5183,24 +5180,7 @@ ApplicationWindow {
                     }
                 }
 
-                function replaceDroppedRoots() {
-                    if (pendingDroppedRoots.length > 0)
-                        enterSplit(pendingDroppedRoots)
-                    pendingDroppedRoots = []
-                }
 
-                function appendDroppedRoots() {
-                    var merged = mergeSplitRoots(pendingDroppedRoots)
-                    var unchanged = merged.length === splitRoots.length
-                    pendingDroppedRoots = []
-                    if (unchanged) {
-                        errorToast.text = qsTr("这些内容已经在输入文件里了")
-                        errorToast.visible = true
-                        errorToastTimer.restart()
-                        return
-                    }
-                    enterSplit(merged)
-                }
 
                 /// 确保三栏工作区已经展开（预览要显示在中栏，中栏得先在）
                 function ensureWorkspace() {
@@ -19288,112 +19268,6 @@ ApplicationWindow {
         onAccepted: newTaskRec.enterSplit([selectedFolder.toString()])
     }
 
-    // 再次拖入文件夹：问用户是追加还是替换
-    Popup {
-        id: dropRootsDialog
-
-        modal: true
-        anchors.centerIn: parent
-        width: 360
-        padding: 0
-
-        background: Rectangle {
-            radius: 12
-            color: "#FFFFFF"
-            border.width: 1
-            border.color: "#E6E7EB"
-        }
-
-        contentItem: Column {
-            spacing: 0
-            padding: 20
-
-            Text {
-                width: parent.width - 40
-                text: qsTr("当前已经在浏览 %1 个文件夹，这次拖入的怎么处理？")
-                          .arg(newTaskRec.splitRoots.length)
-                color: "#D9000000"
-                font.family: "Alibaba PuHuiTi 3.0"
-                font.pixelSize: 15
-                wrapMode: Text.Wrap
-            }
-
-            Text {
-                width: parent.width - 40
-                topPadding: 8
-                text: qsTr("追加：保留原来浏览的文件夹；替换：只用这次拖入的")
-                color: "#73000000"
-                font.family: "Alibaba PuHuiTi 3.0"
-                font.pixelSize: 12
-                wrapMode: Text.Wrap
-            }
-
-            Row {
-                topPadding: 18
-                spacing: 8
-                layoutDirection: Qt.RightToLeft
-
-                Rectangle {
-                    width: 72; height: 32; radius: 8
-                    color: dropReplaceMouse.containsMouse ? "#0058D6" : "#006BFF"
-                    Text {
-                        anchors.centerIn: parent
-                        text: qsTr("替换")
-                        color: "#FFFFFF"
-                        font.family: "Alibaba PuHuiTi 3.0"
-                        font.pixelSize: 13
-                    }
-                    MouseArea {
-                        id: dropReplaceMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: { dropRootsDialog.close(); newTaskRec.replaceDroppedRoots() }
-                    }
-                }
-
-                Rectangle {
-                    width: 72; height: 32; radius: 8
-                    color: dropAppendMouse.containsMouse ? "#F0F3F7" : "#F7F9FA"
-                    border.width: 1
-                    border.color: "#E6E7EB"
-                    Text {
-                        anchors.centerIn: parent
-                        text: qsTr("追加")
-                        color: "#D9000000"
-                        font.family: "Alibaba PuHuiTi 3.0"
-                        font.pixelSize: 13
-                    }
-                    MouseArea {
-                        id: dropAppendMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: { dropRootsDialog.close(); newTaskRec.appendDroppedRoots() }
-                    }
-                }
-
-                Rectangle {
-                    width: 72; height: 32; radius: 8
-                    color: dropCancelMouse.containsMouse ? "#F0F3F7" : "transparent"
-                    Text {
-                        anchors.centerIn: parent
-                        text: qsTr("取消")
-                        color: "#73000000"
-                        font.family: "Alibaba PuHuiTi 3.0"
-                        font.pixelSize: 13
-                    }
-                    MouseArea {
-                        id: dropCancelMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: { dropRootsDialog.close(); newTaskRec.pendingDroppedRoots = [] }
-                    }
-                }
-            }
-        }
-    }
 
     // 诊断：MEDCLAW_TURN_FILTER 延后模拟"查看全部"（启动瞬间 count=0 会把面板关掉）
     Timer {
@@ -19422,18 +19296,6 @@ ApplicationWindow {
             console.log("[PanelCloseAuto] splitMode=" + newTaskRec.splitMode
                         + " welcome=" + newTaskRec.isNewTaskWelcome
                         + " welcomeLayerVisible=" + welcomeShortcutLayer.visible)
-        }
-    }
-
-    // 诊断：MEDCLAW_ROOTS_DIALOG=1 直接打开「追加 / 替换」对话框
-    Timer {
-        running: rootsDialogAuto !== undefined && String(rootsDialogAuto) === "1"
-        interval: 2500
-        repeat: false
-        onTriggered: {
-            newTaskRec.pendingDroppedRoots = ["C:/tmp/demo-root"]
-            dropRootsDialog.open()
-            console.log("[RootsDialogAuto] open, visible=" + dropRootsDialog.visible)
         }
     }
 

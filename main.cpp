@@ -643,10 +643,6 @@ int main(int argc, char *argv[])
     // 诊断用：MEDCLAW_TREE_ZOOM=1.3 直接设「输入文件」树的缩放，核对 −/+ 效果
     engine.rootContext()->setContextProperty(QStringLiteral("treeZoomAuto"),
                                              qEnvironmentVariable("MEDCLAW_TREE_ZOOM"));
-    // 诊断用：MEDCLAW_ROOTS_DIALOG=1 直接把「追加 / 替换」对话框打开，
-    // 核对它会不会被中间的 WebEngine（文件树/查看器）盖住
-    engine.rootContext()->setContextProperty(QStringLiteral("rootsDialogAuto"),
-                                             qEnvironmentVariable("MEDCLAW_ROOTS_DIALOG"));
     // 诊断用：MEDCLAW_PANEL_CLOSE=1 进工作区后再收掉产物面板（等价于点 ✕）
     engine.rootContext()->setContextProperty(QStringLiteral("panelCloseAuto"),
                                              qEnvironmentVariable("MEDCLAW_PANEL_CLOSE"));
