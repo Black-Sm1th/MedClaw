@@ -11196,18 +11196,28 @@ ApplicationWindow {
                     z: 2
 
                     // 欢迎页右上角的「医学影像 AI Agent」挂绳徽章（设计稿 node 5458-28605）：
-                    // 209x269，距内容区右缘 230、上边缘往上 -12（挂绳从顶部伸出去）。
-                    Image {
-                        id: imagingAgentBadge
+                    // 209x269，距内容区右缘 230。挂绳本来是从顶部伸出去的（稿子上 y=-12），
+                    // 但那样会盖住顶栏下面那条横线，所以这里用一个从横线下方 6px 开始、
+                    // 高度裁到原来的裁剪层把挂绳截断：徽章本体位置不变，挂绳不再压线。
+                    Item {
+                        id: imagingAgentBadgeClip
                         visible: window.imagingEdition && parent.width >= 1000
-                        source: "qrc:/images/imaging/agent-badge.png"
-                        sourceSize: Qt.size(418, 538)
                         width: 209
-                        height: 269
-                        fillMode: Image.PreserveAspectFit
+                        height: 269 - 18
                         x: parent.width - 230 - width
-                        y: -12
+                        y: 6
+                        clip: true
                         z: -1
+
+                        Image {
+                            id: imagingAgentBadge
+                            source: "qrc:/images/imaging/agent-badge.png"
+                            sourceSize: Qt.size(418, 538)
+                            width: 209
+                            height: 269
+                            fillMode: Image.PreserveAspectFit
+                            y: -18
+                        }
                     }
 
                     // 设计稿数值：linear 左→右，#006BFF 8% → 4%
