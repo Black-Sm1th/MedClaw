@@ -107,6 +107,32 @@
   .node-row.selected .card { background: #006BFF; }
   .node-row.selected .node-name { color: #FFFFFF; }
   .node-row.selected .node-size { color: rgba(255,255,255,.7); }
+  /* 行尾的「⋯」：悬停根行时出现（设计稿 5263-58322） */
+  .node-row { position: relative; }
+  .row-menu {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; border-radius: 6px; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+  }
+  .node-row:hover .row-menu,
+  .node-row.menu-open .row-menu { display: flex; }
+  .row-menu:hover { background: rgba(0, 0, 0, .06); }
+  .row-menu svg { width: 15px; height: 3.34px; display: block; }
+
+  /* 删除气泡：180x52 / r8 / 阴影，条目 164x36 r6（设计稿 5424-81853） */
+  #rowMenu {
+    position: fixed; z-index: 50; width: 180px; padding: 8px;
+    background: #FFFFFF; border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(26, 26, 26, .12), 0 0 0 1px rgba(0, 0, 0, .04);
+  }
+  #rowMenu .item {
+    display: flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 12px; border-radius: 6px;
+    cursor: pointer; color: #FF3D40; font-size: 14px;
+  }
+  #rowMenu .item:hover { background: #FFF1F1; }
+  #rowMenu .item svg { width: 16px; height: 16px; display: block; }
+
   .check {
     width: calc(20px * var(--zoom)); height: calc(20px * var(--zoom));
     flex: 0 0 calc(20px * var(--zoom)); box-sizing: border-box;
@@ -388,6 +414,21 @@
 
     row.appendChild(card);
 
+    // 根行（depth 0）右侧的「⋯」：悬停出现，点开是「删除」气泡
+    if (!item.placeholder && item.depth === 0) {
+      var menuBtn = document.createElement('span');
+      menuBtn.className = 'row-menu';
+      menuBtn.title = '更多';
+      menuBtn.innerHTML = '<svg viewBox="0 0 15 3.34"><g fill="%231A1A1A">'
+        + '<circle cx="1.67" cy="1.67" r="1.67"/><circle cx="7.5" cy="1.67" r="1.67"/>'
+        + '<circle cx="13.33" cy="1.67" r="1.67"/></g></svg>';
+      menuBtn.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        openRowMenu(node.path, menuBtn);
+      });
+      row.appendChild(menuBtn);
+    }
+
     // 嵌入模式：勾选只体现在复选框上，整行不变蓝；
     // 独立弹层保留原来的蓝底选中（设计稿 5263-58459）
     if (!item.placeholder) {
@@ -554,6 +595,68 @@
       renderWindow();
     }
   });
+
+  // ── 行尾「⋯」→ 删除气泡 ──────────────────────────
+  var rowMenuEl = null;
+  var rowMenuPath = '';
+  var rowMenuRow = null;
+
+  function closeRowMenu() {
+    if (rowMenuEl) {
+      rowMenuEl.remove();
+      rowMenuEl = null;
+    }
+    if (rowMenuRow) {
+      rowMenuRow.classList.remove('menu-open');
+      rowMenuRow = null;
+    }
+    rowMenuPath = '';
+  }
+
+  function openRowMenu(path, anchorEl) {
+    closeRowMenu();
+    rowMenuPath = path;
+    rowMenuRow = anchorEl.closest('.node-row');
+    if (rowMenuRow) rowMenuRow.classList.add('menu-open');
+
+    var box = document.createElement('div');
+    box.id = 'rowMenu';
+    box.innerHTML = '<div class="item">'
+      + '<svg viewBox="0 0 16 16"><g fill="none" stroke="#FF3D40" stroke-width="1.3" '
+      + 'stroke-linecap="round" stroke-linejoin="round">'
+      + '<path d="M2.5 4.2h11"/><path d="M6 4.2V2.8h4v1.4"/>'
+      + '<path d="M3.6 4.2l.7 8.6a1 1 0 0 0 1 .9h5.4a1 1 0 0 0 1-.9l.7-8.6"/>'
+      + '<path d="M6.6 6.6v4.4M9.4 6.6v4.4"/></g></svg>'
+      + '<span>删除</span></div>';
+    box.querySelector('.item').addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      var target = rowMenuPath;
+      closeRowMenu();
+      post({ type: 'removeRoot', path: target });
+    });
+    document.body.appendChild(box);
+
+    // 贴着「⋯」下沿、右对齐
+    var r = anchorEl.getBoundingClientRect();
+    var w = box.offsetWidth || 180;
+    var h = box.offsetHeight || 52;
+    var left = Math.min(window.innerWidth - w - 8, r.right - w + 4);
+    var top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8)
+      top = Math.max(8, r.top - h - 6);
+    box.style.left = Math.max(8, left) + 'px';
+    box.style.top = top + 'px';
+  }
+
+  document.addEventListener('click', function(ev) {
+    if (rowMenuEl && !ev.target.closest('#rowMenu') && !ev.target.closest('.row-menu'))
+      closeRowMenu();
+  });
+  document.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Escape') closeRowMenu();
+  });
+  // 滚动/重排之后气泡位置就不对了，直接关掉
+  document.addEventListener('scroll', function() { closeRowMenu(); }, true);
 
   /** 切换某个节点的勾选状态，并通知宿主 */
   function toggleCheck(path, box) {

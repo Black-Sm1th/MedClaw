@@ -31,6 +31,8 @@ Item {
     property bool keepAlive: false
     /// 树字号/行高缩放（宿主用 −/+ 按钮调，1.0 是默认）
     property real zoomScale: 1.0
+    /// 用户点了某个根目录行尾「⋯」→「删除」
+    signal rootRemoved(string path)
 
     onZoomScaleChanged: applyZoom()
 
@@ -168,6 +170,9 @@ Item {
                 }
                 if (payload.type === "openFile") {
                     root.fileSelected(String(payload.path || ""))
+                } else if (payload.type === "removeRoot") {
+                    // 行尾「⋯」→「删除」：把这个根目录从列表里去掉
+                    root.rootRemoved(String(payload.path || ""))
                 } else if (payload.type === "selection") {
                     root.selectionChanged(payload.paths || [])
                 } else if (payload.type === "listDir") {

@@ -4233,6 +4233,25 @@ ApplicationWindow {
                     enterSplitWorkspace()
                 }
 
+                /// 从「输入文件」里去掉一个根目录（行尾 ⋯→删除）；没有根了就退出工作区
+                function removeSplitRoot(path) {
+                    var target = String(path || "")
+                    if (target.length === 0)
+                        return
+                    var keep = []
+                    for (var i = 0; i < splitRoots.length; ++i) {
+                        if (String(splitRoots[i] || "") !== target)
+                            keep.push(splitRoots[i])
+                    }
+                    if (keep.length === splitRoots.length)
+                        return
+                    if (keep.length === 0) {
+                        exitSplit()
+                        return
+                    }
+                    splitRoots = keep
+                }
+
                 function exitSplit() {
                     splitMode = false
                     splitRoots = []
@@ -7021,6 +7040,9 @@ ApplicationWindow {
                         }
                         onSelectionChanged: function(paths) {
                             newTaskRec.splitSelection = paths
+                        }
+                        onRootRemoved: function(path) {
+                            newTaskRec.removeSplitRoot(path)
                         }
                         onDropPaths: function(paths) {
                             newTaskRec.handleDroppedRoots(paths)
