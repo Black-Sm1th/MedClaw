@@ -107,15 +107,16 @@
   .node-row.selected .card { background: #006BFF; }
   .node-row.selected .node-name { color: #FFFFFF; }
   .node-row.selected .node-size { color: rgba(255,255,255,.7); }
-  /* 行尾的「⋯」：悬停根行时出现（设计稿 5263-58322） */
-  .node-row { position: relative; }
+  /* 卡片内的「⋯」：悬停根行时出现（设计稿 5263-58322）。
+     注意要跟着卡片走（margin-left:auto），不能贴整行的右边——行是整栏宽。 */
   .row-menu {
-    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
     width: 20px; height: 20px; border-radius: 6px; cursor: pointer;
-    display: none; align-items: center; justify-content: center;
+    margin-left: auto; flex: 0 0 20px;
+    display: flex; align-items: center; justify-content: center;
+    visibility: hidden;
   }
   .node-row:hover .row-menu,
-  .node-row.menu-open .row-menu { display: flex; }
+  .node-row.menu-open .row-menu { visibility: visible; }
   .row-menu:hover { background: rgba(0, 0, 0, .06); }
   .row-menu svg { width: 15px; height: 3.34px; display: block; }
 
@@ -164,7 +165,7 @@
   .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .thumb.pending { background: linear-gradient(90deg,#F2F3F5 25%,#E9EBEF 37%,#F2F3F5 63%); background-size: 400% 100%; animation: shimmer 1.2s ease infinite; }
   @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
-  .node-name { overflow: hidden; text-overflow: ellipsis; }
+  .node-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
   .node-size { color: var(--text-2); font-size: calc(11px * var(--zoom)); margin-left: 6px; flex: 0 0 auto; }
   .node-row.placeholder .node-name { color: var(--text-2); font-style: italic; }
 
@@ -412,22 +413,22 @@
     // 设计稿的卡片里只有名称，文件大小放到悬停提示里
     // 名称已在行内，路径提示只在需要时给：嵌入模式下系统 tooltip 太吵，去掉
 
-    row.appendChild(card);
-
-    // 根行（depth 0）右侧的「⋯」：悬停出现，点开是「删除」气泡
+    // 根行（depth 0）卡片里的「⋯」：悬停出现，点开是「删除」气泡
     if (!item.placeholder && item.depth === 0) {
       var menuBtn = document.createElement('span');
       menuBtn.className = 'row-menu';
       menuBtn.title = '更多';
-      menuBtn.innerHTML = '<svg viewBox="0 0 15 3.34"><g fill="%231A1A1A">'
+      menuBtn.innerHTML = '<svg viewBox="0 0 15 3.34"><g fill="#1A1A1A">'
         + '<circle cx="1.67" cy="1.67" r="1.67"/><circle cx="7.5" cy="1.67" r="1.67"/>'
         + '<circle cx="13.33" cy="1.67" r="1.67"/></g></svg>';
       menuBtn.addEventListener('click', function(ev) {
         ev.stopPropagation();
         openRowMenu(node.path, menuBtn);
       });
-      row.appendChild(menuBtn);
+      card.appendChild(menuBtn);
     }
+
+    row.appendChild(card);
 
     // 嵌入模式：勾选只体现在复选框上，整行不变蓝；
     // 独立弹层保留原来的蓝底选中（设计稿 5263-58459）
