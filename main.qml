@@ -2348,6 +2348,7 @@ ApplicationWindow {
                 newTaskRec.resetChatSelectionState()
                 /// 被删任务正在选中：跳回「新建任务」首页，与点击侧栏「新建任务」一致
                 window.leftSelectedIndex = 0
+                newTaskRec.exitSplit()
             }
         }
         function onAgentInstallFinished(agentId, success, message) {
@@ -2708,8 +2709,12 @@ ApplicationWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         window.leftSelectedIndex = targetIndex
-                                        if (targetIndex === 0)
+                                        if (targetIndex === 0) {
+                                            // 点「新建任务」就是要回欢迎页；并排工作区开着时
+                                            // 欢迎页是隐藏的（只看 splitMode），这里先退出去
                                             newTaskRec.resetChatSelectionState()
+                                            newTaskRec.exitSplit()
+                                        }
                                         leftMidPanel.activeAgentId = ""
                                         leftMidPanel.activeSessionKey = ""
                                         chatModel.clear()
@@ -2787,8 +2792,12 @@ ApplicationWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         window.leftSelectedIndex = targetIndex
-                                        if (targetIndex === 0)
+                                        if (targetIndex === 0) {
+                                            // 点「新建任务」就是要回欢迎页；并排工作区开着时
+                                            // 欢迎页是隐藏的（只看 splitMode），这里先退出去
                                             newTaskRec.resetChatSelectionState()
+                                            newTaskRec.exitSplit()
+                                        }
                                         leftMidPanel.activeAgentId = ""
                                         leftMidPanel.activeSessionKey = ""
                                         chatModel.clear()
