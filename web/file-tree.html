@@ -814,8 +814,17 @@
     pendingFile.clear();
     nodeIndex.clear();
     selectedPath = null;
-    var node = newNode(baseName(path), '', 'dir');
+    var name = baseName(path);
+    var node = newNode(name, '', 'dir');
     node.path = path;
+    // newNode 是按「名字」登记 nodeIndex 的；根节点在这里被改成了绝对路径，
+    // 必须把索引换到绝对路径上，否则点击回查 nodeIndex.get(row.dataset.path)
+    // 拿不到根节点 —— 根行的复选框、展开/折叠全部失效（子行的 key 本来就是
+    // 绝对路径，所以只有根行坏）。
+    if (name !== path) {
+      nodeIndex.delete(name);
+      nodeIndex.set(path, node);
+    }
     node.expanded = false;
     node.loaded = false;
     node.host = true;

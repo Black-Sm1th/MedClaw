@@ -5606,31 +5606,31 @@ ApplicationWindow {
                 readonly property var imagingStepCards: [
                     {
                         step: "STEP.1",
-                        title: "数据载入与预处理",
+                        title: "数据接入与预处理",
                         image: "qrc:/images/imaging/step-1.png",
-                        detail: "支持多种格式 CCTA 数据载入，提供重采样、去噪、增强等预处理技术。",
-                        prompt: "帮我完成影像数据的载入与预处理：支持 DICOM/NIfTI/MGH 等格式，完成重采样、去噪、增强与配准，检查影像质量与元数据完整性，并列出需要人工确认的异常。"
+                        detail: "DICOM 盘点、去标识、转 NIfTI，统一方向与层厚，重采样、强度标准化与配准。",
+                        prompt: "帮我做数据接入与预处理：先盘点这批数据有几个序列、有没有缺层/混序列/身份信息，需要外发就先做去标识；再把每个序列转成带 HU 和空间信息的 NIfTI，统一方向、重采到同一层厚，按需做强度标准化或偏置场校正，随访影像配准到基线。识别到的序列先列出来给我确认，处理哪些由我定。"
                     },
                     {
                         step: "STEP.2",
-                        title: "智能分割与分段",
+                        title: "分割与掩膜质控",
                         image: "qrc:/images/imaging/step-2.png",
-                        detail: "基于深度学习实现冠脉等解剖结构的自动分割与分段。",
-                        prompt: "帮我对已载入的影像做智能分割与分段：自动分割冠脉、主动脉、心室等解剖结构，完成冠脉中心线与分段命名，输出分割结果和置信度，并标出需要人工复核的区域。"
+                        detail: "密度分割肺/骨/体轮廓，腹部器官与病灶走深度学习，掩膜自动校验网格与体积。",
+                        prompt: "帮我对这批影像做分割：先列出能分的结构（肺实质、骨骼、体轮廓、腹部器官、肺结节等）让我选，再输出整数标签掩膜；分完逐个校验是否与底图同网格、体积是否合理、有没有孤立噪点，不合格的标出来，不要偷偷重采样。"
                     },
                     {
                         step: "STEP.3",
-                        title: "定量评估",
+                        title: "定量与组学",
                         image: "qrc:/images/imaging/step-3.png",
-                        detail: "冠脉狭窄分析、钙化与斑块计算、冠周脂肪定量分析、无创FFR计算。",
-                        prompt: "帮我做影像定量评估：基于分割结果计算冠脉狭窄程度、钙化积分与斑块成分、冠周脂肪衰减指数、无创 FFR 等量化指标，按规范输出结构化报告，并标注计算口径和参考范围。"
+                        detail: "逐物体算体积、长径短径、HU 统计，按 MIRP（IBSI）提组学特征，需要时接建模流水线。",
+                        prompt: "帮我在通过质控的掩膜上做定量：逐物体算体积、长径短径、HU 均值与范围；需要预测模型时，再按 MIRP 的 IBSI 剖面提取组学特征并交给建模流水线。只对掩膜通过质控的病例计算，bin 宽度、剖面这类口径要写进结果。"
                     },
                     {
                         step: "STEP.4",
-                        title: "纹理特征提取与建模",
+                        title: "报告与复核",
                         image: "qrc:/images/imaging/step-4.png",
-                        detail: "标准化影像组学纹理特征提取，协助完成个性化预测模型构建。",
-                        prompt: "帮我做纹理特征提取与建模：标准化提取影像组学纹理特征（一阶/形状/纹理），完成特征筛选与降维，构建个性化预测模型，给出 AUC、校准曲线、决策曲线等评价指标和可解释性分析。"
+                        detail: "底图、分割、测量、组学汇总成病例报告，并可在阅片窗口逐层对照复核。",
+                        prompt: "帮我把这个病例汇总成报告：底图、分割产物、测量表和组学表放一起，按病灶或按器官生成带配图的结构化报告，报告要点单独给一份；结论只用数据和测量能支持的说法，不做诊断，拿不准的列为待复核，并给我在阅片窗口逐层核对的入口。"
                     }
                 ]
 
@@ -11333,7 +11333,10 @@ ApplicationWindow {
                                             ? (newTaskRec.imagingPillChips.length > 0 ? 50 : 48)
                                             : 36
                                     radius: window.imagingEdition ? 8 : 18
-                                    color: window.imagingEdition ? "transparent"
+                                    // 注意：Qt 6 里 color 写成 "transparent" 时 gradient 不会被绘制，
+                                    // 胶囊只剩文字、没有底色。影像版用白底托住半透明渐变
+                                    // （页面本身是白底，视觉等价于稿子的 #006BFF 8%→4%）。
+                                    color: window.imagingEdition ? "#FFFFFF"
                                           : shortcutTabItem.selected ? "#006BFF"
                                           : tabMouse.containsMouse ? "#F5F7FA" : "transparent"
                                     gradient: window.imagingEdition ? imagingPillGradient : null
@@ -11343,29 +11346,37 @@ ApplicationWindow {
                                         anchors.centerIn: parent
                                         spacing: window.imagingEdition ? 12 : 6
 
-                                        Image {
-                                            width: window.imagingEdition ? 24 : 18
-                                            height: width
-                                            source: window.imagingEdition
-                                                    ? "qrc:/images/imaging/lung.png"
-                                                    : (shortcutTabItem.selected
-                                                       ? shortcutTabItem.group.selectedIcon
-                                                       : shortcutTabItem.group.icon)
-                                            fillMode: Image.PreserveAspectFit
-                                            sourceSize: Qt.size(40, 40)
+                                        // 稿子里图标和「影像版」只隔 4，它们自成一组；
+                                        // 组与「选择影像领域」之间才是 12。
+                                        Row {
+                                            id: tabTitleGroup
+                                            spacing: window.imagingEdition ? 4 : 6
                                             anchors.verticalCenter: parent.verticalCenter
-                                        }
 
-                                        Label {
-                                            text: window.imagingEdition
-                                                  ? qsTr("影像版")
-                                                  : shortcutTabItem.group.title
-                                            font.pixelSize: 16
-                                            font.family: "Alibaba PuHuiTi 3.0"
-                                            font.weight: window.imagingEdition ? Font.Medium : Font.Normal
-                                            color: window.imagingEdition ? "#006BFF"
-                                                 : shortcutTabItem.selected ? "#FFFFFF" : "#D9000000"
-                                            anchors.verticalCenter: parent.verticalCenter
+                                            Image {
+                                                width: window.imagingEdition ? 24 : 18
+                                                height: width
+                                                source: window.imagingEdition
+                                                        ? "qrc:/images/imaging/lung.png"
+                                                        : (shortcutTabItem.selected
+                                                           ? shortcutTabItem.group.selectedIcon
+                                                           : shortcutTabItem.group.icon)
+                                                fillMode: Image.PreserveAspectFit
+                                                sourceSize: Qt.size(40, 40)
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Label {
+                                                text: window.imagingEdition
+                                                      ? qsTr("影像版")
+                                                      : shortcutTabItem.group.title
+                                                font.pixelSize: 16
+                                                font.family: "Alibaba PuHuiTi 3.0"
+                                                font.weight: window.imagingEdition ? Font.Medium : Font.Normal
+                                                color: window.imagingEdition ? "#006BFF"
+                                                     : shortcutTabItem.selected ? "#FFFFFF" : "#D9000000"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
                                         }
 
                                         Row {
@@ -11432,7 +11443,8 @@ ApplicationWindow {
                                             Image {
                                                 width: 16
                                                 height: 16
-                                                opacity: 0.6
+                                                // 稿子里箭头是 #000000 @45%（5460-32017 的 Vector 描边）
+                                                opacity: 0.45
                                                 source: "qrc:/images/imaging/chevron-right.svg"
                                                 fillMode: Image.PreserveAspectFit
                                                 sourceSize: Qt.size(32, 32)
@@ -11694,12 +11706,21 @@ ApplicationWindow {
                                     height: imagingStepRow.height
                                     x: index * (width + 8)
 
+                                    // 展开后的高度按描述文字实际行数算：稿子里的文案是 2 行、
+                                    // 展开到 116 就够，我们的描述更长，写死 116 会把字裁掉。
+                                    // 60 是描述起始 y，14 是底部留白。
+                                    readonly property real expandedHeight: Math.max(
+                                        116, 60 + imagingStepDetailMeasure.implicitHeight + 14)
+
                                     // 纯装饰：只做悬停展开，不响应点击（不回手型光标、点了什么都不发生）。
-                                    // 命中区用整格（116 高）而不是卡片本身：卡片底部对齐、悬停时向上
-                                    // 长高，只盖卡片的话指针在长高过程中会落到卡片外，展开会闪。
+                                    // 命中区用整格而不是卡片本身：卡片底部对齐、悬停时向上长高，
+                                    // 只盖卡片的话指针在长高过程中会落到卡片外，展开会闪。
+                                    // 高度取展开后的高度，卡片长出去的部分也接得住 hover。
                                     MouseArea {
                                         id: imagingStepMouse
-                                        anchors.fill: parent
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        height: imagingStepSlot.expandedHeight
                                         hoverEnabled: true
                                     }
 
@@ -11707,7 +11728,7 @@ ApplicationWindow {
                                         id: imagingStepCard
                                         readonly property bool hovered: imagingStepMouse.containsMouse
                                         width: parent.width
-                                        height: hovered ? 116 : 69
+                                        height: hovered ? imagingStepSlot.expandedHeight : 69
                                         anchors.bottom: parent.bottom
                                         radius: 16
                                         color: "#FFFFFF"
@@ -11754,6 +11775,7 @@ ApplicationWindow {
                                         }
 
                                         Label {
+                                            id: imagingStepDetail
                                             x: 16
                                             y: 60
                                             width: imagingStepCard.width - 32
@@ -11764,6 +11786,19 @@ ApplicationWindow {
                                             lineHeight: 21
                                             lineHeightMode: Text.FixedHeight
                                             color: "#000000"
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        // 只用来量描述文字需要多高（同样的字号/宽度/行高），不显示
+                                        Label {
+                                            id: imagingStepDetailMeasure
+                                            visible: false
+                                            width: imagingStepDetail.width
+                                            text: imagingStepSlot.step.detail
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 14
+                                            lineHeight: 21
+                                            lineHeightMode: Text.FixedHeight
                                             wrapMode: Text.Wrap
                                         }
 
@@ -13849,6 +13884,9 @@ ApplicationWindow {
                 visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
                 readonly property string allToolCategoriesLabel: "全部"
+                // 设计稿 5506-41017：只有「医学影像处理」这个分类的 chip 用
+                // ✦ 星辉图标 + 浅蓝底 + 蓝字这一套，其它分类保持灰底
+                readonly property string imagingToolsCategoryLabel: "医学影像处理"
                 property string selectedToolPrimaryCategory: allToolCategoriesLabel
                 property string selectedToolSecondaryCategory: "全部"
                 readonly property var toolCategoryTree: ToolCategories.categoryTree
@@ -13874,7 +13912,7 @@ ApplicationWindow {
                     if (pluginId === "imaging-skills"
                             && (label.indexOf("nv-reason-ct") >= 0
                                 || label.indexOf("ct报告问答") >= 0)) {
-                        return { primary: "医学影像处理", secondary: "特征与报告" }
+                        return { primary: "医学影像处理", secondary: "报告与交互" }
                     }
                     return ToolCategories.classify(tool ? tool.toolId : "")
                 }
@@ -14021,21 +14059,69 @@ ApplicationWindow {
                             model: toolsSettingRec.visiblePrimaryCategories()
 
                             delegate: Rectangle {
+                                id: toolPrimaryCategoryChip
                                 readonly property bool selected:
                                     toolsSettingRec.selectedToolPrimaryCategory === modelData
-                                width: toolPrimaryCategoryLabel.implicitWidth + 24
-                                height: 32
-                                radius: 6
-                                color: selected ? "#0F006BFF"
+                                // 医学影像处理这一个分类用设计稿 5506-41017 的 chip：
+                                // ✦ 14 + 名称 14 + 数量（40%），r8、高 29、左右 10、间距 4
+                                readonly property bool imaging:
+                                    modelData === toolsSettingRec.imagingToolsCategoryLabel
+                                width: imaging
+                                       ? toolPrimaryCategoryRow.implicitWidth + 20
+                                       : toolPrimaryCategoryLabel.implicitWidth + 24
+                                height: imaging ? 29 : 32
+                                radius: imaging ? 8 : 6
+                                color: imaging
+                                       // 稿子（5506-41017）里这个 chip 就是 6% 蓝底；
+                                       // 选中只靠字重区分，底色保持原样，hover 才略深
+                                       ? (toolPrimaryCategoryMouse.containsMouse
+                                          ? "#1A006BFF" : "#0F006BFF")
+                                     : selected ? "#0F006BFF"
                                      : toolPrimaryCategoryMouse.containsMouse ? "#F7F8FA" : "#F7F9FA"
+
+                                Row {
+                                    id: toolPrimaryCategoryRow
+                                    anchors.centerIn: parent
+                                    spacing: 4
+                                    visible: toolPrimaryCategoryChip.imaging
+
+                                    Image {
+                                        width: 14
+                                        height: 14
+                                        source: "qrc:/images/imaging/category-spark.svg"
+                                        fillMode: Image.PreserveAspectFit
+                                        sourceSize: Qt.size(28, 28)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+
+                                    Label {
+                                        text: modelData
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.weight: toolPrimaryCategoryChip.selected
+                                                     ? Font.Medium : Font.Normal
+                                        color: "#006BFF"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+
+                                    Label {
+                                        text: toolsSettingRec.toolCount(modelData, "全部")
+                                        font.pixelSize: 14
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        color: "#006BFF"
+                                        opacity: 0.4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
 
                                 Label {
                                     id: toolPrimaryCategoryLabel
+                                    visible: !toolPrimaryCategoryChip.imaging
                                     anchors.centerIn: parent
                                     text: modelData + " (" + toolsSettingRec.toolCount(modelData, "全部") + ")"
                                     font.pixelSize: 14
-                                    font.weight: parent.selected ? Font.Medium : Font.Normal
-                                    color: parent.selected ? "#006BFF" : "#A6000000"
+                                    font.weight: toolPrimaryCategoryChip.selected ? Font.Medium : Font.Normal
+                                    color: toolPrimaryCategoryChip.selected ? "#006BFF" : "#A6000000"
                                 }
 
                                 MouseArea {
@@ -14049,56 +14135,49 @@ ApplicationWindow {
                         }
                     }
 
-                    Flickable {
+                    // 二级分类也用 Flow 换行：12 个组一行放不下，原来用横向 Flickable
+                    // 会被裁在右边看不见后面的组。
+                    Flow {
                         id: toolsSecondaryCategoryBar
                         width: parent.width - 120
-                        height: toolsSettingRec.selectedToolPrimaryCategory
+                        spacing: 8
+                        visible: toolsSettingRec.selectedToolPrimaryCategory
                                 && toolsSettingRec.selectedToolPrimaryCategory
-                                   !== toolsSettingRec.allToolCategoriesLabel ? 34 : 0
-                        visible: height > 0
-                        contentWidth: toolsSecondaryCategoryRow.width
-                        contentHeight: height
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        flickableDirection: Flickable.HorizontalFlick
+                                   !== toolsSettingRec.allToolCategoriesLabel
+                        height: visible ? childrenRect.height : 0
 
-                        Row {
-                            id: toolsSecondaryCategoryRow
-                            spacing: 8
+                        Repeater {
+                            model: toolsSettingRec.visibleSecondaryCategories(
+                                       toolsSettingRec.selectedToolPrimaryCategory)
 
-                            Repeater {
-                                model: toolsSettingRec.visibleSecondaryCategories(
-                                           toolsSettingRec.selectedToolPrimaryCategory)
+                            delegate: Rectangle {
+                                readonly property bool selected:
+                                    toolsSettingRec.selectedToolSecondaryCategory === modelData
+                                width: toolSecondaryCategoryLabel.implicitWidth + 22
+                                height: 30
+                                radius: 15
+                                color: selected ? "#EAF2FF"
+                                     : toolSecondaryCategoryMouse.containsMouse ? "#F0F3F8" : "#F7F9FA"
+                                border.width: selected ? 1 : 0
+                                border.color: "#99BFFF"
 
-                                delegate: Rectangle {
-                                    readonly property bool selected:
-                                        toolsSettingRec.selectedToolSecondaryCategory === modelData
-                                    width: toolSecondaryCategoryLabel.implicitWidth + 22
-                                    height: 30
-                                    radius: 15
-                                    color: selected ? "#EAF2FF"
-                                         : toolSecondaryCategoryMouse.containsMouse ? "#F0F3F8" : "#F7F9FA"
-                                    border.width: selected ? 1 : 0
-                                    border.color: "#99BFFF"
+                                Label {
+                                    id: toolSecondaryCategoryLabel
+                                    anchors.centerIn: parent
+                                    text: modelData + " (" + toolsSettingRec.toolCount(
+                                              toolsSettingRec.selectedToolPrimaryCategory,
+                                              modelData) + ")"
+                                    font.pixelSize: 13
+                                    font.weight: parent.selected ? Font.Medium : Font.Normal
+                                    color: parent.selected ? "#006BFF" : "#73000000"
+                                }
 
-                                    Label {
-                                        id: toolSecondaryCategoryLabel
-                                        anchors.centerIn: parent
-                                        text: modelData + " (" + toolsSettingRec.toolCount(
-                                                  toolsSettingRec.selectedToolPrimaryCategory,
-                                                  modelData) + ")"
-                                        font.pixelSize: 13
-                                        font.weight: parent.selected ? Font.Medium : Font.Normal
-                                        color: parent.selected ? "#006BFF" : "#73000000"
-                                    }
-
-                                    MouseArea {
-                                        id: toolSecondaryCategoryMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: toolsSettingRec.selectedToolSecondaryCategory = modelData
-                                    }
+                                MouseArea {
+                                    id: toolSecondaryCategoryMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: toolsSettingRec.selectedToolSecondaryCategory = modelData
                                 }
                             }
                         }
