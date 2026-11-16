@@ -239,14 +239,8 @@ Rectangle {
             }
             if (files.length > 0)
                 root.filesDropped(files)
-            for (var f = 0; f < files.length; f++) {
-                var path = files[f]
-                if (!path || path.length === 0)
-                    continue
-                var parts = path.split(/[\\\/]/)
-                var name = parts[parts.length - 1] || path
-                root.insertFile(name, path, false)
-            }
+            // 拖进来的文件不挂成输入框里的附件条（那是「选择文件」才有的样子），
+            // 只通知外面放进「输入文件」列表。
             drop.acceptProposedAction()
         }
     }

@@ -8935,11 +8935,22 @@ ApplicationWindow {
                             onLinkActivated: function(link) {
                                 window.openMarkdownLink(link)
                             }
-                            // 拖进来的文件除了挂成附件，也进「输入文件」列表并切过去
-                            // （和中栏拖放、📎 按钮的行为一致）
+                            // 拖进来的文件只进「输入文件」并切过去，不在输入框里挂附件条
+                            // （附件条是「选择文件」/📎 才有的样子）；工作区不可用时退回挂附件
                             onFilesDropped: function(paths) {
-                                if (newTaskRec.splitViewEnabled)
+                                if (newTaskRec.splitViewEnabled) {
                                     newTaskRec.handleMiddleDrop(paths)
+                                    return
+                                }
+                                for (var i = 0; i < (paths || []).length; ++i) {
+                                    var full = String(paths[i] || "")
+                                    if (full.length === 0)
+                                        continue
+                                    var cut = Math.max(full.lastIndexOf("/"),
+                                                       full.lastIndexOf(String.fromCharCode(92)))
+                                    var name = cut >= 0 ? full.slice(cut + 1) : full
+                                    textInputArea.insertFile(name, full, false)
+                                }
                             }
                             onFolderDropped: function(paths) {
                                 if (newTaskRec.splitViewEnabled) {
