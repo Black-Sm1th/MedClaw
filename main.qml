@@ -6361,14 +6361,26 @@ ApplicationWindow {
 
                                     required property var modelData
 
-                                    readonly property bool active:
-                                        newTaskRec.splitMiddleTab === modelData.key
-                                        && newTaskRec.activeOfficeTabIndex < 0
+                                    // 选中口径：当前 tab 就是它；另外打开影像文档时
+                                    // activeOfficeTabIndex 会 >= 0，那条文档其实是显示在「阅片台」
+                                    // 这一页里的，所以「阅片台」也得算选中，否则三个标签全都灰着。
+                                    readonly property bool active: {
+                                        if (newTaskRec.splitMiddleTab !== modelData.key)
+                                            return false
+                                        if (newTaskRec.activeOfficeTabIndex < 0)
+                                            return true
+                                        if (modelData.key !== "reader")
+                                            return false
+                                        var idx = newTaskRec.activeOfficeTabIndex
+                                        if (idx >= newTaskRec.officeTabs.count)
+                                            return false
+                                        return String(newTaskRec.officeTabs.get(idx).kind || "") === "medical"
+                                    }
 
                                     width: middleFixedLabel.implicitWidth + 24
                                     height: 28
                                     radius: 6
-                                    color: active ? "#EBEDF0"
+                                    color: active ? "#E6E7EB"
                                                   : (middleFixedMouse.containsMouse ? "#F4F6F9" : "transparent")
 
                                     Text {
