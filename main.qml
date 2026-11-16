@@ -3939,14 +3939,14 @@ ApplicationWindow {
                 // 设计稿 1440 宽：对话 360、右栏 1080。
                 // 对话列按固定宽度（封顶 360），右栏吃掉剩余空间——这样收起左侧导航时
                 // 多出来的宽度全给右侧文件面板，而不是聊天区跟着变宽。
-                readonly property int splitChatWidth: Math.max(280, Math.min(360, Math.round(width * 0.28)))
+                // 右侧产物栏已经并进中栏，腾出来的宽度给了对话列（上限 480）
+                readonly property int splitChatWidth: Math.max(320, Math.min(480, Math.round(width * 0.38)))
                 // 三栏：对话（固定）| 输入文件 | 产物（右侧栏）
                 readonly property int splitArtifactsWidth: Math.max(260, Math.min(360, Math.round(width * 0.2)))
                 property bool splitMiddleCollapsed: false
                 readonly property int splitFilesWidth: splitMiddleCollapsed
                     ? 0
-                    : Math.max(300, width - splitChatWidth
-                               - (artifactPanelVisible ? splitArtifactsWidth : 0))
+                    : Math.max(300, width - splitChatWidth)
                 readonly property int splitPanelWidth: splitArtifactsWidth
                 // 默认停在「输入文件」：工作区一打开先能浏览/拖入文件；
                 // 打开 DICOM 时会自动切到阅片台（见 activateOfficeTab）
@@ -4001,7 +4001,8 @@ ApplicationWindow {
                         want = Math.max(want, artifactChipFont.advanceWidth(chips[i].label) + 24)
                     // 侧栏变窄（退出并排后是 300）时按可用宽度压缩，
                     // 否则三个胶囊总宽超出去、最后一个被裁掉
-                    var avail = Math.max(180, artifactSidebarWidth - 24)
+                    var avail = Math.max(180, (splitMode ? splitFilesWidth
+                                                         : artifactSidebarWidth) - 24)
                     var fit = Math.floor((avail - 8 * (n - 1)) / n)
                     return Math.max(64, Math.min(want, fit))
                 }
@@ -4185,11 +4186,12 @@ ApplicationWindow {
                 // 那一下会把 artifactSidebarVisible 改回 false。并排期间不能让它生效，
                 // 否则刚展开的文件面板会被收掉、聊天区自动变回大屏。
                 readonly property bool artifactPanelVisible: artifactSidebarVisible
-                readonly property int artifactSidebarWidth: artifactPanelVisible
-                    ? (splitMode ? splitPanelWidth
-                       : (officePanelMaximized ? width
-                          : (officeDocumentVisible ? officePreviewWidth : 300)))
-                    : 0
+                // 并排工作区里产物已经并进中栏的第三个 tab，右侧不再占宽度
+                readonly property int artifactSidebarWidth: splitMode ? 0
+                    : (artifactPanelVisible
+                       ? (officePanelMaximized ? width
+                          : (officeDocumentVisible ? officePreviewWidth : 300))
+                       : 0)
 
                 /// 打开「中间栏（输入文件 / 阅片台）+ 产物」这套工作区。
                 /// 不需要先有根目录：空状态下中栏自己会给「选择文件夹」。
@@ -5279,8 +5281,23 @@ ApplicationWindow {
                 }
 
                 function showArtifactList() {
-                    artifactSidebarVisible = true
                     artifactSidebarMode = "list"
+                    if (splitMode) {
+                        // 并排工作区里产物是中栏的第三个 tab
+                        splitMiddleCollapsed = false
+                        splitMiddleTab = "artifacts"
+                        return
+                    }
+                    artifactSidebarVisible = true
+                }
+
+                /// 产物面板的收起：并排切回「输入文件」，普通模式收起右侧栏
+                function closeArtifactPanel() {
+                    if (splitMode) {
+                        splitMiddleTab = "files"
+                        return
+                    }
+                    artifactSidebarVisible = false
                 }
 
                 function openArtifactPath(path) {
@@ -5362,6 +5379,11 @@ ApplicationWindow {
                         showArtifactList()
                         return
                     }
+                    if (splitMode) {
+                        splitMiddleCollapsed = false
+                        splitMiddleTab = splitMiddleTab === "artifacts" ? "files" : "artifacts"
+                        return
+                    }
                     artifactSidebarVisible = !artifactSidebarVisible
                     artifactSidebarMode = "list"
                 }
@@ -5421,8 +5443,9 @@ ApplicationWindow {
                 /// 打开产物面板并只显示本轮变动的文件
                 function showArtifactTurn() {
                     artifactSidebarMode = "list"
-                    artifactSidebarVisible = true
                     refreshArtifactGroups()
+                    // 并排时产物在中栏 tab，走 showArtifactList 才能切过去
+                    showArtifactList()
                 }
 
                 function rebuildSessionArtifacts() {
@@ -6325,11 +6348,12 @@ ApplicationWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 4
 
-                            // 固定标签：输入文件 / 阅片台
+                            // 固定标签：输入文件 / 阅片台 / 产物（产物原来是右侧独立一栏）
                             Repeater {
                                 model: [
                                     { key: "files", label: qsTr("输入文件") },
-                                    { key: "reader", label: qsTr("阅片台") }
+                                    { key: "reader", label: qsTr("阅片台") },
+                                    { key: "artifacts", label: qsTr("产物") }
                                 ]
 
                                 delegate: Rectangle {
@@ -6557,6 +6581,19 @@ ApplicationWindow {
                             color: "#0F000000"
                         }
 
+                    }
+
+                    // 「产物」页：右侧栏的产物面板在并排时会挂到这里（见 splitPanel 的 state）
+                    Item {
+                        id: splitArtifactsPage
+
+                        visible: newTaskRec.splitMode
+                                 && newTaskRec.splitMiddleTab === "artifacts"
+                                 && !newTaskRec.officeDocumentVisible
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: splitFilesHeader.bottom
+                        anchors.bottom: parent.bottom
                     }
 
                     InputFileTree {
@@ -7592,7 +7629,7 @@ ApplicationWindow {
 
                 Rectangle {
                     id: artifactSidebar
-                    visible: newTaskRec.artifactPanelVisible
+                    visible: newTaskRec.artifactPanelVisible && !newTaskRec.splitMode
                     width: newTaskRec.artifactSidebarWidth
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
@@ -7616,9 +7653,25 @@ ApplicationWindow {
                     Item {
                         id: splitPanel
 
-                        // 预览已经搬到中栏，右侧栏固定显示产物
+                        // 预览已经搬到中栏，右侧栏固定显示产物；并排工作区里这一块
+                        // 会整体挂到中栏的「产物」tab 页里（state 里的 ParentChange）。
                         visible: true
                         anchors.fill: parent
+
+                        states: [
+                            State {
+                                name: "inMiddleColumn"
+                                when: newTaskRec.splitMode
+                                ParentChange { target: splitPanel; parent: splitArtifactsPage }
+                                AnchorChanges {
+                                    target: splitPanel
+                                    anchors.left: splitArtifactsPage.left
+                                    anchors.right: splitArtifactsPage.right
+                                    anchors.top: splitArtifactsPage.top
+                                    anchors.bottom: splitArtifactsPage.bottom
+                                }
+                            }
+                        ]
 
                         Item {
                             id: splitArtifactsHeader
@@ -7630,6 +7683,8 @@ ApplicationWindow {
 
                             Text {
                                 id: splitArtifactsTitle
+                                // 中栏里 tab 本身就叫「产物」，不再重复标题
+                                visible: !newTaskRec.splitMode
                                 anchors.left: parent.left
                                 anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
@@ -7708,8 +7763,9 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    // 只收起右侧的产物面板，不动中间栏
-                                    onClicked: newTaskRec.artifactSidebarVisible = false
+                                    // 并排时产物在中栏这个 tab 里，切回「输入文件」；
+                                    // 普通模式才收起右侧面板
+                                    onClicked: newTaskRec.closeArtifactPanel()
                                 }
 
                                 ToolTip.visible: splitCloseMouse.containsMouse
@@ -8025,9 +8081,9 @@ ApplicationWindow {
                         visible: newTaskRec.resourcePopoverVisible
                         x: 8
                         y: 44
-                        width: Math.min(292, artifactSidebar.width - 16)
+                        width: Math.min(292, splitPanel.width - 16)
                         height: Math.min(resourcePopoverContent.implicitHeight + 24,
-                                         artifactSidebar.height - y - 12)
+                                         splitPanel.height - y - 12)
                         z: 100
 
                         DropShadow {
