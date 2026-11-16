@@ -4185,13 +4185,11 @@ ApplicationWindow {
                 // 回答结束会重载历史，并按"离开会话时的快照"重放面板可见性，
                 // 那一下会把 artifactSidebarVisible 改回 false。并排期间不能让它生效，
                 // 否则刚展开的文件面板会被收掉、聊天区自动变回大屏。
-                readonly property bool artifactPanelVisible: artifactSidebarVisible
-                // 并排工作区里产物已经并进中栏的第三个 tab，右侧不再占宽度
-                readonly property int artifactSidebarWidth: splitMode ? 0
-                    : (artifactPanelVisible
-                       ? (officePanelMaximized ? width
-                          : (officeDocumentVisible ? officePreviewWidth : 300))
-                       : 0)
+                // 右侧栏已经废弃，「产物」在中栏 tab 里；
+                // 这个标志只留给锚点判断（并排时不再有右栏，恒为 false）
+                readonly property bool artifactPanelVisible: false
+                // 右侧栏废弃后不再占宽度
+                readonly property int artifactSidebarWidth: 0
 
                 /// 打开「中间栏（输入文件 / 阅片台）+ 产物」这套工作区。
                 /// 不需要先有根目录：空状态下中栏自己会给「选择文件夹」。
@@ -5207,7 +5205,6 @@ ApplicationWindow {
                     if (!splitViewEnabled || splitMode)
                         return
                     splitMode = true
-                    artifactSidebarVisible = true
                     artifactSidebarMode = "list"
                     refreshArtifactGroups()
                 }
@@ -5280,24 +5277,18 @@ ApplicationWindow {
                     }
                 }
 
+                /// 打开产物：一律弹中栏的「产物」tab（右侧独立栏已去掉）。
+                /// 不在工作区里就先展开工作区，必要时把收起的中栏展开。
                 function showArtifactList() {
                     artifactSidebarMode = "list"
-                    if (splitMode) {
-                        // 并排工作区里产物是中栏的第三个 tab
-                        splitMiddleCollapsed = false
-                        splitMiddleTab = "artifacts"
-                        return
-                    }
-                    artifactSidebarVisible = true
+                    splitMiddleCollapsed = false
+                    ensureWorkspace()
+                    splitMiddleTab = "artifacts"
                 }
 
-                /// 产物面板的收起：并排切回「输入文件」，普通模式收起右侧栏
+                /// 产物面板的收起：切回「输入文件」
                 function closeArtifactPanel() {
-                    if (splitMode) {
-                        splitMiddleTab = "files"
-                        return
-                    }
-                    artifactSidebarVisible = false
+                    splitMiddleTab = "files"
                 }
 
                 function openArtifactPath(path) {
@@ -5379,12 +5370,9 @@ ApplicationWindow {
                         showArtifactList()
                         return
                     }
-                    if (splitMode) {
-                        splitMiddleCollapsed = false
-                        splitMiddleTab = splitMiddleTab === "artifacts" ? "files" : "artifacts"
-                        return
-                    }
-                    artifactSidebarVisible = !artifactSidebarVisible
+                    splitMiddleCollapsed = false
+                    ensureWorkspace()
+                    splitMiddleTab = splitMiddleTab === "artifacts" ? "files" : "artifacts"
                     artifactSidebarMode = "list"
                 }
 
@@ -6595,7 +6583,7 @@ ApplicationWindow {
 
                     }
 
-                    // 「产物」页：右侧栏的产物面板在并排时会挂到这里（见 splitPanel 的 state）
+                    // 「产物」页：产物面板唯一的位置（右侧独立栏已按需求去掉）
                     Item {
                         id: splitArtifactsPage
 
@@ -6606,6 +6594,416 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.top: splitFilesHeader.bottom
                         anchors.bottom: parent.bottom
+                        Item {
+                            id: splitPanel
+
+                            // 产物面板：只有中栏这「产物」tab 一处在用（右侧独立栏已废弃）
+                            // 预览也已经搬到中栏，这里只管产物列表。
+                            visible: true
+                            anchors.fill: parent
+
+                            Item {
+                                id: splitArtifactsHeader
+
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                height: 52
+
+                                Text {
+                                    id: splitArtifactsTitle
+                                    // tab 本身就叫「产物」，不再重复标题
+                                    visible: false
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("产物")
+                                    color: "#D9000000"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 16
+                                    font.weight: Font.Medium
+                                }
+
+                                // 只看本轮时给个清除入口
+                                Rectangle {
+                                    id: turnFilterChip
+
+                                    visible: newTaskRec.artifactTurnFilter.length > 0
+                                    anchors.left: splitArtifactsTitle.right
+                                    anchors.leftMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: turnFilterLabel.implicitWidth + 20
+                                    height: 22
+                                    radius: 11
+                                    color: turnFilterMouse.containsMouse ? "#DCE8FF" : "#F0F5FF"
+
+                                    Text {
+                                        id: turnFilterLabel
+                                        anchors.centerIn: parent
+                                        text: qsTr("本轮 %1 个 · 显示全部")
+                                                  .arg(newTaskRec.splitArtifactFileCount)
+                                        color: "#006BFF"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 12
+                                    }
+
+                                    MouseArea {
+                                        id: turnFilterMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.clearArtifactTurnFilter()
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: splitCloseButton
+
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 14
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 20
+                                    height: 20
+                                    radius: 4
+                                    color: splitCloseMouse.containsMouse ? "#0A000000" : "transparent"
+
+                                    Canvas {
+                                        anchors.centerIn: parent
+                                        width: 16
+                                        height: 16
+
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.reset()
+                                            ctx.strokeStyle = "#D9000000"
+                                            ctx.lineWidth = 1.4
+                                            ctx.lineCap = "round"
+                                            ctx.beginPath()
+                                            ctx.moveTo(2.5, 2.5)
+                                            ctx.lineTo(13.5, 13.5)
+                                            ctx.moveTo(13.5, 2.5)
+                                            ctx.lineTo(2.5, 13.5)
+                                            ctx.stroke()
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: splitCloseMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        // 并排时产物在中栏这个 tab 里，切回「输入文件」；
+                                        // 普通模式才收起右侧面板
+                                        onClicked: newTaskRec.closeArtifactPanel()
+                                    }
+
+                                    ToolTip.visible: splitCloseMouse.containsMouse
+                                    ToolTip.text: qsTr("收起产物面板")
+                                }
+                            }
+
+                            // 筛选胶囊：只有真的存在该类产物时才出现
+                            Row {
+                                id: artifactFilters
+
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
+                                anchors.top: splitArtifactsHeader.bottom
+                                spacing: 8
+
+                                Repeater {
+                                    model: newTaskRec.splitArtifactFilterChips
+
+                                    delegate: Rectangle {
+                                        id: artifactFilterChip
+
+                                        required property var modelData
+
+                                        readonly property bool active:
+                                            newTaskRec.splitArtifactFilter === modelData.key
+
+                                        width: newTaskRec.splitArtifactChipWidth
+                                        height: 29
+                                        radius: 8
+                                        color: "#F7F9FA"
+
+                                        // 激活态：蓝底 6% + 蓝字（设计稿 fill #006BFF @0.06）
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 8
+                                            color: "#006BFF"
+                                            opacity: artifactFilterChip.active ? 0.06 : 0
+                                        }
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 8
+                                            color: "#0F000000"
+                                            opacity: artifactFilterChip.active || chipMouse.containsMouse ? 0 : 1
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: artifactFilterChip.modelData.label
+                                            color: artifactFilterChip.active ? "#006BFF" : "#A6000000"
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 14
+                                        }
+
+                                        MouseArea {
+                                            id: chipMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: newTaskRec.splitArtifactFilter
+                                                       = artifactFilterChip.modelData.key
+                                        }
+                                    }
+                                }
+                            }
+
+                            ListView {
+                                id: splitArtifactList
+
+                                // 「关键图像」改由下面的缩略图网格显示
+                                visible: newTaskRec.splitArtifactFilter !== "image"
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: artifactFilters.bottom
+                                anchors.bottom: parent.bottom
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 8
+                                anchors.topMargin: 12
+                                anchors.bottomMargin: 12
+                                clip: true
+                                // 设计稿：行高 24、行距 36（间距 12）
+                                spacing: 12
+                                model: newTaskRec.splitArtifactRows
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                                delegate: Rectangle {
+                                    id: artifactRowItem
+
+                                    required property var modelData
+
+                                    readonly property bool isDir: modelData.isDir === true
+                                    readonly property int depth: modelData.depth || 0
+
+                                    width: splitArtifactList.width
+                                    height: 24
+                                    radius: 8
+                                    color: "transparent"
+
+                                    // 缩进引导线（设计稿里每级一条细竖线，末项拐成 └）
+                                    Repeater {
+                                        model: artifactRowItem.depth
+
+                                        delegate: Rectangle {
+                                            required property int index
+
+                                            readonly property bool isLastLevel:
+                                                index === artifactRowItem.depth - 1
+                                            readonly property bool lastChild:
+                                                artifactRowItem.modelData.last === true
+
+                                            x: 4 + index * 20
+                                            width: 1
+                                            y: 0
+                                            height: isLastLevel && lastChild
+                                                    ? parent.height / 2 : parent.height
+                                            color: "#1F000000"
+                                        }
+                                    }
+
+                                    // 横向小尾巴，连到图标
+                                    Rectangle {
+                                        visible: artifactRowItem.depth > 0
+                                        x: 4 + (artifactRowItem.depth - 1) * 20
+                                        width: 16
+                                        height: 1
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: "#1F000000"
+                                    }
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        anchors.topMargin: 0
+                                        radius: 8
+                                        color: artifactRowMouse.containsMouse ? "#F4F6F9" : "transparent"
+                                    }
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: artifactRowItem.depth * 20
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 4
+
+                                        Image {
+                                            width: 20
+                                            height: 20
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            source: artifactRowItem.isDir
+                                                    ? "qrc:/images/folder-orange.svg"
+                                                    : newTaskRec.artifactIcon(artifactRowItem.modelData)
+                                            fillMode: Image.PreserveAspectFit
+                                        }
+
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: Math.max(0, splitArtifactList.width
+                                                            - 4 - artifactRowItem.depth * 20
+                                                            - 24 - 40)
+                                            text: artifactRowItem.modelData.name
+                                            color: "#D9000000"
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 16
+                                            elide: Text.ElideMiddle
+                                        }
+                                    }
+
+                                    Canvas {
+                                        visible: artifactRowItem.isDir
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 16
+                                        height: 16
+                                        rotation: artifactRowItem.modelData.collapsed ? 0 : 90
+
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.reset()
+                                            ctx.strokeStyle = "#8A000000"
+                                            ctx.lineWidth = 1.2
+                                            ctx.lineCap = "round"
+                                            ctx.lineJoin = "round"
+                                            ctx.beginPath()
+                                            ctx.moveTo(6, 4.5)
+                                            ctx.lineTo(10.5, 8)
+                                            ctx.lineTo(6, 11.5)
+                                            ctx.stroke()
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: artifactRowMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (artifactRowItem.isDir)
+                                                newTaskRec.toggleArtifactFolder(artifactRowItem.modelData.path)
+                                            else
+                                                newTaskRec.openArtifactPath(artifactRowItem.modelData.path)
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: splitArtifactList.count === 0
+                                    text: qsTr("还没有产物")
+                                    color: "#40000000"
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 13
+                                }
+                            }
+
+                            // 「关键图像」用缩略图网格看：影像缩略图 + 文件名
+                            GridView {
+                                id: splitArtifactGrid
+
+                                visible: newTaskRec.splitArtifactFilter === "image"
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: artifactFilters.bottom
+                                anchors.bottom: parent.bottom
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 8
+                                anchors.topMargin: 12
+                                anchors.bottomMargin: 12
+                                clip: true
+                                cellWidth: Math.max(88, Math.floor(width / 2))
+                                cellHeight: Math.round(cellWidth * 0.80)
+                                model: newTaskRec.artifactImageCells
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                                delegate: Item {
+                                    id: imageCell
+
+                                    required property var modelData
+
+                                    width: splitArtifactGrid.cellWidth
+                                    height: splitArtifactGrid.cellHeight
+
+                                    Rectangle {
+                                        id: imageCellCard
+
+                                        x: 2
+                                        y: 2
+                                        width: parent.width - 8
+                                        height: parent.height - 24
+                                        radius: 6
+                                        color: "#F4F6F9"
+                                        border.width: 1
+                                        border.color: imageCellMouse.containsMouse ? "#006BFF" : "#0F000000"
+                                        clip: true
+
+                                        readonly property string thumb:
+                                            String(newTaskRec.artifactThumbs[imageCell.modelData.path] || "")
+
+                                        Image {
+                                            anchors.fill: parent
+                                            anchors.margins: 1
+                                            source: imageCellCard.thumb
+                                            visible: imageCellCard.thumb.length > 0
+                                            // 看片要看到整幅，别裁边
+                                            fillMode: Image.PreserveAspectFit
+                                            asynchronous: true
+                                            cache: false
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            visible: imageCellCard.thumb.length === 0
+                                            text: qsTr("生成中…")
+                                            color: "#40000000"
+                                            font.family: "Alibaba PuHuiTi 3.0"
+                                            font.pixelSize: 12
+                                        }
+
+                                        Component.onCompleted:
+                                            newTaskRec.requestArtifactThumb(imageCell.modelData.path)
+                                    }
+
+                                    Text {
+                                        anchors.left: imageCellCard.left
+                                        anchors.right: parent.right
+                                        anchors.bottom: parent.bottom
+                                        anchors.bottomMargin: 2
+                                        text: imageCell.modelData.name
+                                        color: "#A6000000"
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 12
+                                        elide: Text.ElideMiddle
+                                    }
+
+                                    MouseArea {
+                                        id: imageCellMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.openArtifactPath(imageCell.modelData.path)
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     InputFileTree {
@@ -7641,8 +8039,11 @@ ApplicationWindow {
 
                 Rectangle {
                     id: artifactSidebar
-                    visible: newTaskRec.artifactPanelVisible && !newTaskRec.splitMode
-                    width: newTaskRec.artifactSidebarWidth
+                    // 右侧产物栏已经彻底去掉（产物只在中栏的「产物」tab）。
+                    // 这里保留一个 0 宽、不可见的占位，只为让别处
+                    // `anchors.right: artifactSidebar.left` 这类锚点继续有效。
+                    visible: false
+                    width: 0
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     anchors.right: parent.right
@@ -7650,443 +8051,10 @@ ApplicationWindow {
                     border.width: 0
                     z: 20
 
-                    Rectangle {
-                        width: 1
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        color: "#14000000"
-                    }
-
                     // 旧的「输入文件 / 产物」列表已删除：侧栏现在直接显示产物面板
                     // （输入文件改到并排视图的中间栏）。
 
                     // ── 右侧栏：产物（普通列表，文件夹不连连接线）──
-                    Item {
-                        id: splitPanel
-
-                        // 预览已经搬到中栏，右侧栏固定显示产物；并排工作区里这一块
-                        // 会整体挂到中栏的「产物」tab 页里（state 里的 ParentChange）。
-                        visible: true
-                        anchors.fill: parent
-
-                        states: [
-                            State {
-                                name: "inMiddleColumn"
-                                when: newTaskRec.splitMode
-                                ParentChange { target: splitPanel; parent: splitArtifactsPage }
-                                AnchorChanges {
-                                    target: splitPanel
-                                    anchors.left: splitArtifactsPage.left
-                                    anchors.right: splitArtifactsPage.right
-                                    anchors.top: splitArtifactsPage.top
-                                    anchors.bottom: splitArtifactsPage.bottom
-                                }
-                            }
-                        ]
-
-                        Item {
-                            id: splitArtifactsHeader
-
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            height: 52
-
-                            Text {
-                                id: splitArtifactsTitle
-                                // 中栏里 tab 本身就叫「产物」，不再重复标题
-                                visible: !newTaskRec.splitMode
-                                anchors.left: parent.left
-                                anchors.leftMargin: 12
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("产物")
-                                color: "#D9000000"
-                                font.family: "Alibaba PuHuiTi 3.0"
-                                font.pixelSize: 16
-                                font.weight: Font.Medium
-                            }
-
-                            // 只看本轮时给个清除入口
-                            Rectangle {
-                                id: turnFilterChip
-
-                                visible: newTaskRec.artifactTurnFilter.length > 0
-                                anchors.left: splitArtifactsTitle.right
-                                anchors.leftMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: turnFilterLabel.implicitWidth + 20
-                                height: 22
-                                radius: 11
-                                color: turnFilterMouse.containsMouse ? "#DCE8FF" : "#F0F5FF"
-
-                                Text {
-                                    id: turnFilterLabel
-                                    anchors.centerIn: parent
-                                    text: qsTr("本轮 %1 个 · 显示全部")
-                                              .arg(newTaskRec.splitArtifactFileCount)
-                                    color: "#006BFF"
-                                    font.family: "Alibaba PuHuiTi 3.0"
-                                    font.pixelSize: 12
-                                }
-
-                                MouseArea {
-                                    id: turnFilterMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: newTaskRec.clearArtifactTurnFilter()
-                                }
-                            }
-
-                            Rectangle {
-                                id: splitCloseButton
-
-                                anchors.right: parent.right
-                                anchors.rightMargin: 14
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 20
-                                height: 20
-                                radius: 4
-                                color: splitCloseMouse.containsMouse ? "#0A000000" : "transparent"
-
-                                Canvas {
-                                    anchors.centerIn: parent
-                                    width: 16
-                                    height: 16
-
-                                    onPaint: {
-                                        var ctx = getContext("2d")
-                                        ctx.reset()
-                                        ctx.strokeStyle = "#D9000000"
-                                        ctx.lineWidth = 1.4
-                                        ctx.lineCap = "round"
-                                        ctx.beginPath()
-                                        ctx.moveTo(2.5, 2.5)
-                                        ctx.lineTo(13.5, 13.5)
-                                        ctx.moveTo(13.5, 2.5)
-                                        ctx.lineTo(2.5, 13.5)
-                                        ctx.stroke()
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: splitCloseMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    // 并排时产物在中栏这个 tab 里，切回「输入文件」；
-                                    // 普通模式才收起右侧面板
-                                    onClicked: newTaskRec.closeArtifactPanel()
-                                }
-
-                                ToolTip.visible: splitCloseMouse.containsMouse
-                                ToolTip.text: qsTr("收起产物面板")
-                            }
-                        }
-
-                        // 筛选胶囊：只有真的存在该类产物时才出现
-                        Row {
-                            id: artifactFilters
-
-                            anchors.left: parent.left
-                            anchors.leftMargin: 12
-                            anchors.top: splitArtifactsHeader.bottom
-                            spacing: 8
-
-                            Repeater {
-                                model: newTaskRec.splitArtifactFilterChips
-
-                                delegate: Rectangle {
-                                    id: artifactFilterChip
-
-                                    required property var modelData
-
-                                    readonly property bool active:
-                                        newTaskRec.splitArtifactFilter === modelData.key
-
-                                    width: newTaskRec.splitArtifactChipWidth
-                                    height: 29
-                                    radius: 8
-                                    color: "#F7F9FA"
-
-                                    // 激活态：蓝底 6% + 蓝字（设计稿 fill #006BFF @0.06）
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 8
-                                        color: "#006BFF"
-                                        opacity: artifactFilterChip.active ? 0.06 : 0
-                                    }
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 8
-                                        color: "#0F000000"
-                                        opacity: artifactFilterChip.active || chipMouse.containsMouse ? 0 : 1
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: artifactFilterChip.modelData.label
-                                        color: artifactFilterChip.active ? "#006BFF" : "#A6000000"
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 14
-                                    }
-
-                                    MouseArea {
-                                        id: chipMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: newTaskRec.splitArtifactFilter
-                                                   = artifactFilterChip.modelData.key
-                                    }
-                                }
-                            }
-                        }
-
-                        ListView {
-                            id: splitArtifactList
-
-                            // 「关键图像」改由下面的缩略图网格显示
-                            visible: newTaskRec.splitArtifactFilter !== "image"
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: artifactFilters.bottom
-                            anchors.bottom: parent.bottom
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 8
-                            anchors.topMargin: 12
-                            anchors.bottomMargin: 12
-                            clip: true
-                            // 设计稿：行高 24、行距 36（间距 12）
-                            spacing: 12
-                            model: newTaskRec.splitArtifactRows
-                            boundsBehavior: Flickable.StopAtBounds
-
-                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                            delegate: Rectangle {
-                                id: artifactRowItem
-
-                                required property var modelData
-
-                                readonly property bool isDir: modelData.isDir === true
-                                readonly property int depth: modelData.depth || 0
-
-                                width: splitArtifactList.width
-                                height: 24
-                                radius: 8
-                                color: "transparent"
-
-                                // 缩进引导线（设计稿里每级一条细竖线，末项拐成 └）
-                                Repeater {
-                                    model: artifactRowItem.depth
-
-                                    delegate: Rectangle {
-                                        required property int index
-
-                                        readonly property bool isLastLevel:
-                                            index === artifactRowItem.depth - 1
-                                        readonly property bool lastChild:
-                                            artifactRowItem.modelData.last === true
-
-                                        x: 4 + index * 20
-                                        width: 1
-                                        y: 0
-                                        height: isLastLevel && lastChild
-                                                ? parent.height / 2 : parent.height
-                                        color: "#1F000000"
-                                    }
-                                }
-
-                                // 横向小尾巴，连到图标
-                                Rectangle {
-                                    visible: artifactRowItem.depth > 0
-                                    x: 4 + (artifactRowItem.depth - 1) * 20
-                                    width: 16
-                                    height: 1
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    color: "#1F000000"
-                                }
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 8
-                                    anchors.rightMargin: 8
-                                    anchors.topMargin: 0
-                                    radius: 8
-                                    color: artifactRowMouse.containsMouse ? "#F4F6F9" : "transparent"
-                                }
-
-                                Row {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: artifactRowItem.depth * 20
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 4
-
-                                    Image {
-                                        width: 20
-                                        height: 20
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        source: artifactRowItem.isDir
-                                                ? "qrc:/images/folder-orange.svg"
-                                                : newTaskRec.artifactIcon(artifactRowItem.modelData)
-                                        fillMode: Image.PreserveAspectFit
-                                    }
-
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: Math.max(0, splitArtifactList.width
-                                                        - 4 - artifactRowItem.depth * 20
-                                                        - 24 - 40)
-                                        text: artifactRowItem.modelData.name
-                                        color: "#D9000000"
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 16
-                                        elide: Text.ElideMiddle
-                                    }
-                                }
-
-                                Canvas {
-                                    visible: artifactRowItem.isDir
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 16
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 16
-                                    height: 16
-                                    rotation: artifactRowItem.modelData.collapsed ? 0 : 90
-
-                                    onPaint: {
-                                        var ctx = getContext("2d")
-                                        ctx.reset()
-                                        ctx.strokeStyle = "#8A000000"
-                                        ctx.lineWidth = 1.2
-                                        ctx.lineCap = "round"
-                                        ctx.lineJoin = "round"
-                                        ctx.beginPath()
-                                        ctx.moveTo(6, 4.5)
-                                        ctx.lineTo(10.5, 8)
-                                        ctx.lineTo(6, 11.5)
-                                        ctx.stroke()
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: artifactRowMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        if (artifactRowItem.isDir)
-                                            newTaskRec.toggleArtifactFolder(artifactRowItem.modelData.path)
-                                        else
-                                            newTaskRec.openArtifactPath(artifactRowItem.modelData.path)
-                                    }
-                                }
-                            }
-
-                            Text {
-                                anchors.centerIn: parent
-                                visible: splitArtifactList.count === 0
-                                text: qsTr("还没有产物")
-                                color: "#40000000"
-                                font.family: "Alibaba PuHuiTi 3.0"
-                                font.pixelSize: 13
-                            }
-                        }
-
-                        // 「关键图像」用缩略图网格看：影像缩略图 + 文件名
-                        GridView {
-                            id: splitArtifactGrid
-
-                            visible: newTaskRec.splitArtifactFilter === "image"
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: artifactFilters.bottom
-                            anchors.bottom: parent.bottom
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 8
-                            anchors.topMargin: 12
-                            anchors.bottomMargin: 12
-                            clip: true
-                            cellWidth: Math.max(88, Math.floor(width / 2))
-                            cellHeight: Math.round(cellWidth * 0.80)
-                            model: newTaskRec.artifactImageCells
-                            boundsBehavior: Flickable.StopAtBounds
-
-                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                            delegate: Item {
-                                id: imageCell
-
-                                required property var modelData
-
-                                width: splitArtifactGrid.cellWidth
-                                height: splitArtifactGrid.cellHeight
-
-                                Rectangle {
-                                    id: imageCellCard
-
-                                    x: 2
-                                    y: 2
-                                    width: parent.width - 8
-                                    height: parent.height - 24
-                                    radius: 6
-                                    color: "#F4F6F9"
-                                    border.width: 1
-                                    border.color: imageCellMouse.containsMouse ? "#006BFF" : "#0F000000"
-                                    clip: true
-
-                                    readonly property string thumb:
-                                        String(newTaskRec.artifactThumbs[imageCell.modelData.path] || "")
-
-                                    Image {
-                                        anchors.fill: parent
-                                        anchors.margins: 1
-                                        source: imageCellCard.thumb
-                                        visible: imageCellCard.thumb.length > 0
-                                        // 看片要看到整幅，别裁边
-                                        fillMode: Image.PreserveAspectFit
-                                        asynchronous: true
-                                        cache: false
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: imageCellCard.thumb.length === 0
-                                        text: qsTr("生成中…")
-                                        color: "#40000000"
-                                        font.family: "Alibaba PuHuiTi 3.0"
-                                        font.pixelSize: 12
-                                    }
-
-                                    Component.onCompleted:
-                                        newTaskRec.requestArtifactThumb(imageCell.modelData.path)
-                                }
-
-                                Text {
-                                    anchors.left: imageCellCard.left
-                                    anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 2
-                                    text: imageCell.modelData.name
-                                    color: "#A6000000"
-                                    font.family: "Alibaba PuHuiTi 3.0"
-                                    font.pixelSize: 12
-                                    elide: Text.ElideMiddle
-                                }
-
-                                MouseArea {
-                                    id: imageCellMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: newTaskRec.openArtifactPath(imageCell.modelData.path)
-                                }
-                            }
-                        }
-                    }
 
                     Item {
                         id: resourcePopover
