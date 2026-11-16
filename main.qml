@@ -11792,6 +11792,11 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: raised ? 11 : 8
                                     color: "#FFFFFF"
+                                    // 有选中时，没选中的那些置灰（设计稿：opacity 0.5）；
+                                    // 鼠标划过去的那张仍按原色，方便点第二次取消
+                                    opacity: (newTaskRec.selectedImagingDomains.length > 0
+                                              && !raised) ? 0.5 : 1.0
+                                    Behavior on opacity { NumberAnimation { duration: 140 } }
                                     rotation: raised ? 0 : (imagingDomainSlot.domain.tilt || 0)
                                     scale: raised ? 1.07 : 1.0
                                     z: hovered ? 20 : (chosen ? 10 : index)
