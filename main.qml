@@ -6960,6 +6960,8 @@ ApplicationWindow {
                     InputFileTree {
                         id: splitTree
                         zoomScale: newTaskRec.splitTreeZoom
+                        // 工作区开着就一直留着 WebEngine，切到「产物」再切回来不再重新加载
+                        keepAlive: newTaskRec.splitMode
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: splitFilesHeader.bottom

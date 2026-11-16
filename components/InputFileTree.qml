@@ -26,6 +26,9 @@ Item {
     /// 页面还没加载完时先记下来，加载完成后再送过去
     property var pendingPaths: []
     property bool pageReady: false
+    // 面板只是被切走（不是整个工作区关掉）时，别卸载 WebEngine：
+    // 每次重建都会重新加载 file-tree.html，切 tab 时就是那一下白闪。
+    property bool keepAlive: false
     /// 树字号/行高缩放（宿主用 −/+ 按钮调，1.0 是默认）
     property real zoomScale: 1.0
 
@@ -132,8 +135,8 @@ Item {
     Loader {
         id: treeLoader
         anchors.fill: parent
-        // 只在面板露出来时才创建 WebEngine（并排模式关掉就卸掉）
-        active: root.visible
+        // 面板露出来、或者整个工作区还开着（keepAlive）就保持 WebEngine 不卸载
+        active: root.visible || root.keepAlive
         sourceComponent: WebEngineView {
             anchors.fill: parent
             backgroundColor: "transparent"
