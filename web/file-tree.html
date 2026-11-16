@@ -423,6 +423,11 @@
         + '<circle cx="13.33" cy="1.67" r="1.67"/></g></svg>';
       menuBtn.addEventListener('click', function(ev) {
         ev.stopPropagation();
+        // 再点一次同一个「⋯」就收起
+        if (rowMenuEl && rowMenuPath === node.path) {
+          closeRowMenu();
+          return;
+        }
         openRowMenu(node.path, menuBtn);
       });
       card.appendChild(menuBtn);
@@ -658,6 +663,10 @@
   });
   // 滚动/重排之后气泡位置就不对了，直接关掉
   document.addEventListener('scroll', function() { closeRowMenu(); }, true);
+  // 指针离开页面（比如去点右边的标签/别的面板）、窗口失焦也关：
+  // 否则页面内部的 click 收不到，气泡会一直挂着。
+  document.addEventListener('mouseleave', function() { closeRowMenu(); });
+  window.addEventListener('blur', function() { closeRowMenu(); });
 
   /** 切换某个节点的勾选状态，并通知宿主 */
   function toggleCheck(path, box) {
