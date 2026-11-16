@@ -7044,6 +7044,14 @@ ApplicationWindow {
                         onRootRemoved: function(path) {
                             newTaskRec.removeSplitRoot(path)
                         }
+                        onRowMenuRequested: function(path, anchorX, anchorY) {
+                            // 页面坐标 → 窗口坐标；气泡由 QML 画，位置和关闭都可靠
+                            var pt = splitTree.mapToItem(window.contentItem, anchorX, anchorY)
+                            treeRowMenu.anchorPath = path
+                            treeRowMenu.sourceX = pt.x
+                            treeRowMenu.sourceY = pt.y
+                            treeRowMenu.openAt()
+                        }
                         onDropPaths: function(paths) {
                             newTaskRec.handleDroppedRoots(paths)
                         }
@@ -19282,6 +19290,105 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: newTaskRec.splitViewEnabled
         onActivated: splitFolderDialog.open()
+    }
+
+    /// 文件树根行「⋯」的删除气泡（设计稿 5424-81853：180x52、r8、白底+阴影，
+    /// 条目 164x36 r6、垃圾桶 16 + 「删除」14px #FF3D40）。
+    /// 画在 QML 而不是页面里：页面里 position:fixed 在这种内嵌 WebEngine 里
+    /// 定位/关闭都不可靠（会出现两个气泡、点别处关不掉）。
+    Popup {
+        id: treeRowMenu
+
+        property string anchorPath: ""
+        property real sourceX: 0
+        property real sourceY: 0
+
+        function openAt() {
+            var winWidth = window.width
+            var winHeight = window.height
+            x = Math.min(Math.max(8, sourceX - width + 4), winWidth - width - 8)
+            y = sourceY + 6
+            if (y + height > winHeight - 8)
+                y = Math.max(8, sourceY - height - 10)
+            open()
+        }
+
+        parent: Overlay.overlay
+        width: 180
+        padding: 0
+        modal: false
+        closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnEscape
+
+        background: Rectangle {
+            radius: 8
+            color: "#FFFFFF"
+            border.width: 1
+            border.color: "#1A000000"
+
+            layer.enabled: true
+            layer.effect: DropShadow {
+                transparentBorder: true
+                horizontalOffset: 0
+                verticalOffset: 8
+                radius: 20
+                samples: 41
+                color: "#1F1A1A1A"
+                cached: true
+            }
+        }
+
+        contentItem: Item {
+            implicitWidth: 180
+            implicitHeight: 52
+
+            Rectangle {
+                id: treeRowMenuDelete
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                height: 36
+                radius: 6
+                color: treeRowMenuDeleteMouse.containsMouse ? "#FFF1F1" : "transparent"
+
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    spacing: 8
+
+                    Image {
+                        width: 16
+                        height: 16
+                        source: "qrc:/images/imaging/trash-red.svg"
+                        fillMode: Image.PreserveAspectFit
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Label {
+                        text: qsTr("删除")
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 14
+                        color: "#FF3D40"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                MouseArea {
+                    id: treeRowMenuDeleteMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        var target = treeRowMenu.anchorPath
+                        treeRowMenu.close()
+                        newTaskRec.removeSplitRoot(target)
+                    }
+                }
+            }
+        }
     }
 
     FolderDialog {

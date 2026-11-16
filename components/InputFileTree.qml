@@ -33,6 +33,8 @@ Item {
     property real zoomScale: 1.0
     /// 用户点了某个根目录行尾「⋯」→「删除」
     signal rootRemoved(string path)
+    /// 点了「⋯」：给出根目录路径 + 页面坐标系里的锚点（右上角）
+    signal rowMenuRequested(string path, real anchorX, real anchorY)
 
     onZoomScaleChanged: applyZoom()
 
@@ -170,6 +172,11 @@ Item {
                 }
                 if (payload.type === "openFile") {
                     root.fileSelected(String(payload.path || ""))
+                } else if (payload.type === "rowMenu") {
+                    // 根行「⋯」被点：把路径和锚点（页面坐标）交给宿主，气泡由 QML 画
+                    root.rowMenuRequested(String(payload.path || ""),
+                                          Number(payload.x) || 0,
+                                          Number(payload.y) || 0)
                 } else if (payload.type === "removeRoot") {
                     // 行尾「⋯」→「删除」：把这个根目录从列表里去掉
                     root.rootRemoved(String(payload.path || ""))
