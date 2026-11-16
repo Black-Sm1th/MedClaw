@@ -172,6 +172,16 @@ Item {
                 }
                 if (payload.type === "openFile") {
                     root.fileSelected(String(payload.path || ""))
+                } else if (payload.type === "checkDebug") {
+                    console.log("[FileTreeCheck] path=" + payload.path
+                                + " size=" + payload.size + " box=" + payload.checked)
+                } else if (payload.type === "pathsDebug") {
+                    console.log("[FileTreePaths] push count=" + payload.count
+                                + " selectionBefore=" + payload.selBefore)
+                } else if (payload.type === "clickDebug") {
+                    console.log("[FileTreeClick] path=" + payload.path
+                                + " tag=" + payload.tag + " cls=" + payload.cls
+                                + " at=" + payload.x + "," + payload.y)
                 } else if (payload.type === "rowMenu") {
                     // 根行「⋯」被点：把路径和锚点（页面坐标）交给宿主，气泡由 QML 画
                     root.rowMenuRequested(String(payload.path || ""),

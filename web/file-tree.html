@@ -616,6 +616,8 @@
       if (box) box.classList.add('checked');
     }
     post({ type: 'selection', paths: Array.from(selectedSet) });
+    post({ type: 'checkDebug', path: path, size: selectedSet.size,
+           checked: box ? box.className : '', cls: box ? String(box.className) : '' });
   }
 
   // ── 展开 / 折叠 ─────────────────────────────────────
@@ -894,6 +896,7 @@
       mountRoots([]);
       return;
     }
+    post({ type: 'pathsDebug', count: items.length, selBefore: selectedSet.size });
     clearSelection();
     if (items.length === 1 && items[0].isDir) {
       setHostRoot(items[0].path);
