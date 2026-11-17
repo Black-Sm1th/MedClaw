@@ -12208,6 +12208,125 @@ ApplicationWindow {
                             }
                         }
                     }
+
+                    // 底部操作条（设计稿 5460-31496 的「多选」）：已选 N 个 + 关闭 / 确认。
+                    // 318x64、r12、白底 + 1px #E6EAEF、内边距 12/32、两组间距 40、按钮间距 12。
+                    Rectangle {
+                        id: imagingDomainActionBar
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: 593
+                        width: 318
+                        height: 64
+                        radius: 12
+                        color: "#FFFFFF"
+                        border.width: 1
+                        border.color: "#E6EAEF"
+
+                        // 稿子是两道投影（y10/blur20/12%、y5/blur10/8%）；DropShadow
+                        // 只能挂一道，取更明显的那个近似。
+                        layer.enabled: true
+                        layer.effect: DropShadow {
+                            transparentBorder: true
+                            horizontalOffset: 0
+                            verticalOffset: 8
+                            radius: 22
+                            samples: 41
+                            color: "#1F17294C"
+                            cached: true
+                        }
+
+                        // 条内空白处不该「点空白关浮层」，这里先把点击吃掉（按钮的 MouseArea 在更上层）
+                        MouseArea {
+                            anchors.fill: parent
+                        }
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 40
+
+                            Row {
+                                spacing: 8
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                Label {
+                                    text: qsTr("已选")
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 16
+                                    color: "#73000000"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                Label {
+                                    text: String(newTaskRec.selectedImagingDomains.length)
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 16
+                                    color: "#006BFF"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                Label {
+                                    text: qsTr("个")
+                                    font.family: "Alibaba PuHuiTi 3.0"
+                                    font.pixelSize: 16
+                                    color: "#73000000"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            Row {
+                                spacing: 12
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                Rectangle {
+                                    width: 64
+                                    height: 40
+                                    radius: 4
+                                    color: imagingDomainCloseBtn.containsMouse ? "#F2F7FF" : "#FFFFFF"
+                                    border.width: 1
+                                    border.color: "#006BFF"
+
+                                    Label {
+                                        anchors.centerIn: parent
+                                        text: qsTr("关闭")
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 16
+                                        color: "#006BFF"
+                                    }
+
+                                    MouseArea {
+                                        id: imagingDomainCloseBtn
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.imagingDomainPickerOpen = false
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 64
+                                    height: 40
+                                    radius: 4
+                                    color: imagingDomainConfirmBtn.containsMouse ? "#0058D6" : "#006BFF"
+
+                                    Label {
+                                        anchors.centerIn: parent
+                                        text: qsTr("确认")
+                                        font.family: "Alibaba PuHuiTi 3.0"
+                                        font.pixelSize: 16
+                                        color: "#FFFFFF"
+                                    }
+
+                                    MouseArea {
+                                        id: imagingDomainConfirmBtn
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: newTaskRec.imagingDomainPickerOpen = false
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
             }
