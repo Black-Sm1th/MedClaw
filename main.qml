@@ -6447,16 +6447,11 @@ ApplicationWindow {
                         }
                         if (locals.length === 0)
                             return
-                        // 有目录才进入并排模式；纯文件交给输入框自己处理
-                        var described = fileTreeProvider.describeAll(locals)
-                        var dirs = []
-                        for (var j = 0; j < described.length; ++j) {
-                            if (described[j].isDir)
-                                dirs.push(String(described[j].path || ""))
-                        }
-                        if (dirs.length === 0)
-                            return
-                        newTaskRec.enterSplit(dirs)
+                        // 目录和散装文件走同一条路：都进「输入文件」并把中栏切到 files。
+                        // 之前这里只处理"带目录"的拖入（纯文件 `return` 掉），而这个 DropArea
+                        // 在 onEntered 时已经认领了拖拽，于是落在对话区（输入框上方）的纯文件
+                        // 会被吃掉——表现就是"拖进去不一定跳到输入文件"。
+                        newTaskRec.handleMiddleDrop(locals)
                         drop.acceptProposedAction()
                     }
                 }
@@ -19802,8 +19797,9 @@ ApplicationWindow {
         }
     }
 
-    // 兜底：整窗接收文件夹拖放。输入框有自己的 DropArea（z 更高）会先接管普通文件；
-    // 这里只处理"含目录"的拖放，任何位置拖进来都能进入并排视图。
+    // 兜底：整窗接收拖放。输入框/中栏有自己的 DropArea（z 更高）会先接管；
+    // 落到别处（对话区空白、侧栏等）也按"进输入文件"处理——目录和散装文件都一样，
+    // 否则纯文件会在这里被 return 掉、看起来像"拖进去没反应"。
     DropArea {
         id: windowDropArea
         anchors.fill: parent
@@ -19825,16 +19821,7 @@ ApplicationWindow {
             }
             if (locals.length === 0)
                 return
-            var described = fileTreeProvider.describeAll(locals)
-            var dirs = []
-            for (var j = 0; j < described.length; ++j) {
-                if (described[j].isDir)
-                    dirs.push(String(described[j].path || ""))
-            }
-            if (dirs.length === 0)
-                return
-            console.log("[SplitDrop] window drop " + JSON.stringify(dirs))
-            newTaskRec.enterSplit(dirs)
+            newTaskRec.handleMiddleDrop(locals)
             drop.acceptProposedAction()
         }
     }
