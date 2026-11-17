@@ -11514,20 +11514,18 @@ ApplicationWindow {
                     anchors.right: newTaskRec.splitMode ? artifactSidebar.left : parent.right
                     z: 2
 
-                    // 欢迎页右上角的「医学影像 AI Agent」挂绳徽章（设计稿 node 5458-28605）：
-                    // 距内容区右缘 230。按稿子的原始尺寸 209x269 画（之前缩到 200x257，
-                    // 看起来比稿子小一圈）；稿子 y=-12 让挂绳从顶栏探出去，这里照做——
-                    // 下沿 = -12 + 269 ≈ 顶栏下 257，正好离输入框顶还有 3~4px，不压输入框。
+                    // 欢迎页右上角的「医学影像 AI Agent」挂绳徽章（设计稿 node 5458-28606
+                    // 那个 Mask group 的导出件）：209x257，顶在分隔线下方 1px，下沿离输入框顶 3px。
                     Image {
                         id: imagingAgentBadge
                         visible: window.imagingEdition && parent.width >= 1000
                         source: "qrc:/images/imaging/agent-badge.png"
-                        sourceSize: Qt.size(418, 538)
+                        sourceSize: Qt.size(418, 514)
                         width: 209
-                        height: 269
+                        height: 257
                         fillMode: Image.PreserveAspectFit
                         x: parent.width - 230 - width
-                        y: -12
+                        y: 1
                         z: -1
                     }
 
