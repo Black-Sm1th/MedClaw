@@ -1,4 +1,5 @@
 #include "auth_controller.h"
+#include "product_config.h"
 
 #include <QDir>
 #include <QDebug>
@@ -26,9 +27,6 @@ const char kTestApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 const char kInternalApiBaseUrl[] = "http://192.168.0.83:8002";
 const char kDefaultInternalApiHost[] = "192.168.0.83";
 const int kInternalApiPort = 8002;
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-const char kGovernmentEnterpriseCode[] = "gov-01";
-#endif
 
 QString normalizedBaseUrl(QString url)
 {
@@ -42,20 +40,28 @@ QString apiEnvironmentFromEnvironment()
 {
     const QString configuredEnvironment
         = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
-    if (configuredEnvironment == QStringLiteral("test")
-        || configuredEnvironment == QStringLiteral("prod")
-        || configuredEnvironment == QStringLiteral("internal"))
+    if (configuredEnvironment == QStringLiteral("test"))
         return configuredEnvironment;
-    if (!configuredEnvironment.isEmpty()) {
-        qWarning().noquote()
-            << "[API] Unsupported MEDCLAW_API_ENV value" << configuredEnvironment
-            << "- using the edition default";
+    if (configuredEnvironment == QStringLiteral("prod")
+        || configuredEnvironment == QStringLiteral("internal")) {
+        const QString requiredEnvironment = ProductConfig::isInternalNetwork()
+                                                ? QStringLiteral("internal")
+                                                : QStringLiteral("prod");
+        if (configuredEnvironment == requiredEnvironment)
+            return configuredEnvironment;
+        qWarning().noquote() << "[API] Ignoring MEDCLAW_API_ENV incompatible with this product:"
+                             << configuredEnvironment;
+        return requiredEnvironment;
     }
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-    return QStringLiteral("internal");
-#else
-    return QStringLiteral("prod");
-#endif
+    const QString expectedEnvironment = ProductConfig::isInternalNetwork()
+                                            ? QStringLiteral("internal")
+                                            : QStringLiteral("prod");
+    if (!configuredEnvironment.isEmpty() && configuredEnvironment != expectedEnvironment) {
+        qWarning().noquote() << "[API] Unsupported or incompatible MEDCLAW_API_ENV value"
+                             << configuredEnvironment << "; using"
+                             << expectedEnvironment;
+    }
+    return expectedEnvironment;
 }
 
 QString apiBaseUrlForEnvironment(const QString &environment)
@@ -277,12 +283,10 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     QJsonObject modelsConfig = config.value(QStringLiteral("models")).toObject();
     QJsonObject providers = modelsConfig.value(QStringLiteral("providers")).toObject();
     QJsonObject provider;
-    const QString managedProviderName
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-        = QStringLiteral("hospital-chang2-primary");
-#else
-        = QStringLiteral("medclaw-primary");
-#endif
+    const QString managedProviderName = ProductConfig::isBusiness()
+                                            ? QStringLiteral("%1-primary").arg(
+                                                  ProductConfig::tenantKey())
+                                            : QStringLiteral("medclaw-primary");
     QString providerBaseUrl = normalizedBaseUrl(apiBaseUrl);
     if (!providerBaseUrl.endsWith(QStringLiteral("/v1")))
         providerBaseUrl += QStringLiteral("/v1");
@@ -361,7 +365,7 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     }
     agents[QStringLiteral("defaults")] = defaults;
     config[QStringLiteral("agents")] = agents;
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+#if defined(MEDCLAW_TENANT_HOSPITAL_CHANG2) && defined(MEDCLAW_NETWORK_INTERNAL)
     // 内网版：影像工具的两个服务跟 API 在同一台盒子上，只是端口不同。
     // 以前这两个地址要人工改每台机器的 ~/.openclaw/openclaw.json，漏改就会
     // 退回插件内置的公网默认值（111.6.178.34:22301/22302），内网必然失败。
@@ -402,15 +406,41 @@ AuthController::AuthController(QObject *parent)
     m_creditsRefreshTimer.setInterval(15000);
     connect(&m_creditsRefreshTimer, &QTimer::timeout, this, &AuthController::refreshCredits);
     QSettings settings;
+    // Keep account sessions partitioned by product, tenant, and network.
+    if (ProductConfig::isBusiness()
+        && !settings.value(QStringLiteral("auth/productSettingsMigrationComplete"), false)
+                .toBool()) {
+        QSettings *legacyProductSettings = nullptr;
+#if defined(MEDCLAW_TENANT_GOVERNMENT) && defined(MEDCLAW_NETWORK_PUBLIC)
+        QSettings legacy(QStringLiteral("AetherMED"),
+                         QStringLiteral("Aether study Government"));
+        legacyProductSettings = &legacy;
+#elif defined(MEDCLAW_TENANT_HOSPITAL_CHANG2) && defined(MEDCLAW_NETWORK_INTERNAL)
+        QSettings legacy(QStringLiteral("AetherMED hospital-chang2"),
+                         QStringLiteral("Aether study"));
+        legacyProductSettings = &legacy;
+#endif
+        if (legacyProductSettings
+            && settings.value(QStringLiteral("auth/accessToken")).toString().isEmpty()) {
+            const QStringList credentialKeys = {QStringLiteral("auth/accessToken"),
+                                                QStringLiteral("auth/refreshToken"),
+                                                QStringLiteral("auth/userId"),
+                                                QStringLiteral("auth/phone"),
+                                                QStringLiteral("auth/creditsBalance"),
+                                                QStringLiteral("auth/internalApiHost")};
+            for (const QString &key : credentialKeys) {
+                if (!settings.contains(key))
+                    settings.setValue(key, legacyProductSettings->value(key));
+            }
+        }
+        settings.setValue(QStringLiteral("auth/productSettingsMigrationComplete"), true);
+        settings.sync();
+    }
     // Import credentials from an earlier product name once. Without the marker,
     // a later logout could be undone by importing the stale token on next launch.
     const QString migrationKey = QStringLiteral("auth/legacyMigrationCompleted");
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-    // Government and main editions have separate accounts. Never import the
-    // legacy main-edition token into the government settings namespace.
-    const bool allowLegacyCredentialMigration = false;
-#elif defined(MEDCLAW_EDITION_HOSPITAL_CHANG2)
-    // This edition uses a separate account namespace; don't inherit main-edition credentials.
+#ifdef MEDCLAW_PRODUCT_B
+    // B accounts must never inherit the C product's saved login session.
     const bool allowLegacyCredentialMigration = false;
 #else
     const bool allowLegacyCredentialMigration = true;
@@ -443,11 +473,11 @@ AuthController::AuthController(QObject *parent)
         settings.setValue(migrationKey, true);
         settings.sync();
     }
-    // The hospital-chang2 edition defaults to the internal API. Main and government
-    // editions continue to default to production unless explicitly overridden.
+    // The network is a build property so a B package cannot silently switch between
+    // its public and internal deployments at runtime.
     m_apiEnvironment = apiEnvironmentFromEnvironment();
     m_apiBaseUrl = normalizedBaseUrl(apiBaseUrlForEnvironment(m_apiEnvironment));
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+#ifdef MEDCLAW_NETWORK_INTERNAL
     if (m_apiEnvironment == QStringLiteral("internal")) {
         const QString configuredHost = settings
                                            .value(QStringLiteral("auth/internalApiHost"),
@@ -553,23 +583,29 @@ QString AuthController::apiBaseUrl() const
 }
 bool AuthController::enterpriseCredentialLoginEnabled() const
 {
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-    return m_apiEnvironment == QStringLiteral("test");
-#elif defined(MEDCLAW_EDITION_HOSPITAL_CHANG2)
-    return m_apiEnvironment == QStringLiteral("internal")
-           || m_apiEnvironment == QStringLiteral("test");
-#else
-    return false;
-#endif
+    return ProductConfig::isBusiness();
+}
+
+bool AuthController::businessProduct() const
+{
+    return ProductConfig::isBusiness();
+}
+
+QString AuthController::tenantDisplayName() const
+{
+    return ProductConfig::tenantDisplayName();
+}
+
+QString AuthController::networkDisplayName() const
+{
+    return ProductConfig::isInternalNetwork() ? QStringLiteral("内网")
+                                               : QStringLiteral("公网");
 }
 
 bool AuthController::internalApiHostInputEnabled() const
 {
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-    return m_apiEnvironment == QStringLiteral("internal");
-#else
-    return false;
-#endif
+    return ProductConfig::isBusiness() && ProductConfig::isInternalNetwork()
+           && m_apiEnvironment == QStringLiteral("internal");
 }
 
 QString AuthController::internalApiHost() const
@@ -579,7 +615,7 @@ QString AuthController::internalApiHost() const
 
 bool AuthController::setInternalApiHost(const QString &host)
 {
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+#ifdef MEDCLAW_NETWORK_INTERNAL
     if (!internalApiHostInputEnabled())
         return false;
 
@@ -729,6 +765,10 @@ void AuthController::fetchAndApplyModelConfig(const QString &token,
 
 void AuthController::sendSmsCode(const QString &phone)
 {
+    if (ProductConfig::isBusiness()) {
+        setErrorMessage(QStringLiteral("B端请使用账号密码登录"));
+        return;
+    }
     const QString normalizedPhone = phone.trimmed();
     if (!QRegularExpression(QStringLiteral("^1[3-9]\\d{9}$")).match(normalizedPhone).hasMatch()) {
         setErrorMessage(QStringLiteral("请输入正确的 11 位手机号"));
@@ -766,6 +806,10 @@ void AuthController::sendSmsCode(const QString &phone)
 
 void AuthController::loginWithPhone(const QString &phone, const QString &smsCode)
 {
+    if (ProductConfig::isBusiness()) {
+        setErrorMessage(QStringLiteral("B端请使用账号密码登录"));
+        return;
+    }
     const QString normalizedPhone = phone.trimmed();
     const QString normalizedCode = smsCode.trimmed();
     if (!QRegularExpression(QStringLiteral("^1[3-9]\\d{9}$")).match(normalizedPhone).hasMatch()) {
@@ -787,10 +831,6 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), normalizedPhone);
     payload.insert(QStringLiteral("code"), normalizedCode);
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-    payload.insert(QStringLiteral("enterprise_code"),
-                   QString::fromLatin1(kGovernmentEnterpriseCode));
-#endif
     const QByteArray requestBody = QJsonDocument(payload).toJson(QJsonDocument::Compact);
     logApiRequest("POST", request, requestBody);
     QNetworkReply *reply = m_network->post(request, requestBody);
@@ -858,6 +898,10 @@ void AuthController::loginWithPhone(const QString &phone, const QString &smsCode
 
 void AuthController::loginWithCredentials(const QString &username, const QString &password)
 {
+    if (!ProductConfig::isBusiness()) {
+        setErrorMessage(QStringLiteral("C端请使用手机号验证码登录"));
+        return;
+    }
     const QString normalizedUsername = username.trimmed();
     if (normalizedUsername.isEmpty()) {
         setErrorMessage(QStringLiteral("请输入账号"));
@@ -879,6 +923,7 @@ void AuthController::loginWithCredentials(const QString &username, const QString
     QJsonObject payload;
     payload.insert(QStringLiteral("username"), normalizedUsername);
     payload.insert(QStringLiteral("password"), password);
+    payload.insert(QStringLiteral("enterprise_code"), ProductConfig::tenantCode());
     const QByteArray requestBody = QJsonDocument(payload).toJson(QJsonDocument::Compact);
     logApiRequest("POST", request, requestBody);
     QNetworkReply *reply = m_network->post(request, requestBody);

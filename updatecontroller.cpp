@@ -1,4 +1,5 @@
 #include "updatecontroller.h"
+#include "product_config.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -31,40 +32,32 @@ namespace {
 const char productionApiBaseUrl[] = "https://www.aethermind.cn/aether";
 const char testApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 const char internalApiBaseUrl[] = "http://192.168.0.83:8002";
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-const char governmentEnterpriseCode[] = "gov-01";
-#elif defined(MEDCLAW_EDITION_IMAGING)
-const char imagingEnterpriseCode[] = "image-01";
-#endif
 const QString clientVersion(QStringLiteral("v1.2.15"));
 
 QString clientDisplayVersion()
 {
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-    return clientVersion + QStringLiteral("-gov");
-#elif defined(MEDCLAW_EDITION_HOSPITAL_CHANG2)
-    return clientVersion + QStringLiteral("-chang2");
-#else
-    return clientVersion;
-#endif
+    if (!ProductConfig::isBusiness())
+        return clientVersion;
+    return clientVersion + ProductConfig::updateVersionSuffix();
 }
 
 QString apiEnvironment()
 {
     const QString environment = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
-    if (environment == QStringLiteral("test") || environment == QStringLiteral("prod")
-        || environment == QStringLiteral("internal"))
+    if (environment == QStringLiteral("test"))
+        return environment;
+    const QString requiredEnvironment = ProductConfig::isInternalNetwork()
+                                            ? QStringLiteral("internal")
+                                            : QStringLiteral("prod");
+    if (environment == requiredEnvironment)
         return environment;
     if (!environment.isEmpty()) {
         qWarning().noquote()
             << "[Update API] Unsupported MEDCLAW_API_ENV value" << environment
             << "- using the edition default";
     }
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-    return QStringLiteral("internal");
-#else
-    return QStringLiteral("prod");
-#endif
+    return ProductConfig::isInternalNetwork() ? QStringLiteral("internal")
+                                               : QStringLiteral("prod");
 }
 
 QString apiBaseUrl()
@@ -73,7 +66,7 @@ QString apiBaseUrl()
     if (environment == QStringLiteral("test"))
         return QString::fromLatin1(testApiBaseUrl);
     if (environment == QStringLiteral("internal")) {
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
+#ifdef MEDCLAW_NETWORK_INTERNAL
         const QString configuredHost
             = QSettings().value(QStringLiteral("auth/internalApiHost"),
                                 QStringLiteral("192.168.0.83"))
@@ -101,22 +94,12 @@ QUrl releaseUrl()
 {
     QUrl url(apiBaseUrl() + apiRoutePath(QStringLiteral("/api/app/releases/latest")));
     QUrlQuery query;
-    query.addQueryItem(QStringLiteral("app_key"),
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-                       QStringLiteral("hospital-chang2"));
-#else
-                       QStringLiteral("aether-study"));
-#endif
+    query.addQueryItem(QStringLiteral("app_key"), ProductConfig::updateAppKey());
     query.addQueryItem(QStringLiteral("channel"), QStringLiteral("STABLE"));
     query.addQueryItem(QStringLiteral("platform"), QStringLiteral("WINDOWS"));
     query.addQueryItem(QStringLiteral("arch"), QStringLiteral("x64"));
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-    query.addQueryItem(QStringLiteral("enterprise_code"),
-                       QString::fromLatin1(governmentEnterpriseCode));
-#elif defined(MEDCLAW_EDITION_IMAGING)
-    query.addQueryItem(QStringLiteral("enterprise_code"),
-                       QString::fromLatin1(imagingEnterpriseCode));
-#endif
+    if (ProductConfig::isBusiness())
+        query.addQueryItem(QStringLiteral("enterprise_code"), ProductConfig::tenantCode());
     url.setQuery(query);
     return url;
 }
