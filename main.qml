@@ -12074,7 +12074,8 @@ ApplicationWindow {
 
                     Row {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        y: 202
+                        // 稿子（5460-31496，1440x800）里标题在窗口 y=214，扣掉顶栏 55 得到 159
+                        y: 159
                         spacing: 10
 
                         Label {
@@ -12114,10 +12115,11 @@ ApplicationWindow {
                     Item {
                         id: imagingDomainCards
                         anchors.horizontalCenter: parent.horizontalCenter
-                        // 设计稿：卡片 175x218，横向步进 ~142（互相压一点），整体居中
+                        // 设计稿：卡片 175x218，横向步进 ~142（互相压一点），整体居中；
+                        // 稿子里卡片顶在窗口 y=311，扣掉顶栏 55 → 256
                         width: 6 * 142 + 33
                         height: 250
-                        y: 300
+                        y: 256
 
                         Repeater {
                             model: newTaskRec.imagingDomains
@@ -12207,7 +12209,8 @@ ApplicationWindow {
                     Rectangle {
                         id: imagingDomainActionBar
                         anchors.horizontalCenter: parent.horizontalCenter
-                        y: 593
+                        // 稿子里条顶在窗口 y=608，扣掉顶栏 55 → 553（与卡片底留 79）
+                        y: 553
                         width: 318
                         height: 64
                         radius: 12
