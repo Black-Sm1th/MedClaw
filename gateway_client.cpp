@@ -12,6 +12,7 @@
  *   7. 业务方法（会话管理、历史加载、聊天发送）
  */
 #include "gateway_client.h"
+#include "product_config.h"
 #include "chat_message_visibility.h"
 #include <QAbstractSocket>
 #include <QCoreApplication>
@@ -453,13 +454,7 @@ QString defaultTaskWorkspaceRoot()
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     if (dataRoot.trimmed().isEmpty())
         dataRoot = QDir::homePath();
-    const QString editionDirectory
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-        = QStringLiteral("hospital-chang2");
-#else
-        = QStringLiteral("AetherStudy");
-#endif
-    return QDir(dataRoot).absoluteFilePath(editionDirectory + QStringLiteral("/workspace"));
+    return QDir(dataRoot).absoluteFilePath(ProductConfig::workspaceRootRelativePath());
 }
 
 QString resolvedBackendRoot()

@@ -39,6 +39,7 @@
 #include <cstdio>
 #include "CommonFunc.h"
 #include "auth_controller.h"
+#include "product_config.h"
 #include "filetreeprovider.h"
 #include "thumbnailer.h"
 #include "chatmodel.h"
@@ -379,35 +380,20 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
     QApplication app(argc, argv);
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-    QCoreApplication::setOrganizationName(QStringLiteral("AetherMED hospital-chang2"));
-#else
-    QCoreApplication::setOrganizationName(QStringLiteral("AetherMED"));
-#endif
+    QCoreApplication::setOrganizationName(ProductConfig::settingsOrganizationName());
     // 尽早装上：后面的网关/会话/产物采集日志都要能落盘
     installFileMessageHandler();
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-    QCoreApplication::setApplicationName(QStringLiteral("Aether study Government"));
-#else
-    QCoreApplication::setApplicationName(QStringLiteral("Aether study"));
-#endif
+    QCoreApplication::setApplicationName(ProductConfig::settingsApplicationName());
     installWebGlUserScript();
 
     // Keep relative runtime data paths stable and carry existing installs forward.
     const QString genericDataRoot = QStandardPaths::writableLocation(
         QStandardPaths::GenericDataLocation);
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
     const QString preferredDataRoot
-        = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy-hospital-chang2"));
+        = QDir(genericDataRoot).filePath(ProductConfig::dataDirectoryName());
     QString dataRoot = preferredDataRoot;
-#elif defined(MEDCLAW_EDITION_IMAGING)
-    const QString preferredDataRoot
-        = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy-imaging"));
-    QString dataRoot = preferredDataRoot;
-#else
-    const QString preferredDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("AetherStudy"));
+#ifndef MEDCLAW_PRODUCT_B
     const QString legacyDataRoot = QDir(genericDataRoot).filePath(QStringLiteral("Aether_ClawDESK"));
-    QString dataRoot = preferredDataRoot;
     if (!QFileInfo::exists(preferredDataRoot) && QFileInfo::exists(legacyDataRoot)
         && !QDir(genericDataRoot)
                 .rename(QStringLiteral("Aether_ClawDESK"), QStringLiteral("AetherStudy"))) {
@@ -559,16 +545,13 @@ int main(int argc, char *argv[])
                                              savedWindowSize.width());
     engine.rootContext()->setContextProperty(QStringLiteral("initialWindowHeight"),
                                              savedWindowSize.height());
-#ifdef MEDCLAW_EDITION_GOVERNMENT
-    engine.rootContext()->setContextProperty(QStringLiteral("buildGovernmentEdition"), true);
-#else
-    engine.rootContext()->setContextProperty(QStringLiteral("buildGovernmentEdition"), false);
-#endif
-#ifdef MEDCLAW_EDITION_IMAGING
-    engine.rootContext()->setContextProperty(QStringLiteral("buildImagingEdition"), true);
-#else
-    engine.rootContext()->setContextProperty(QStringLiteral("buildImagingEdition"), false);
-#endif
+    engine.rootContext()->setContextProperty("buildGovernmentEdition",
+                                             ProductConfig::tenantKey() == QStringLiteral("government"));
+    engine.rootContext()->setContextProperty("buildImagingEdition",
+                                             ProductConfig::tenantKey() == QStringLiteral("imaging"));
+    engine.rootContext()->setContextProperty("buildProductB", ProductConfig::isBusiness());
+    engine.rootContext()->setContextProperty("buildInternalNetwork",
+                                             ProductConfig::isInternalNetwork());
     engine.rootContext()->setContextProperty("$MainViewController",
                                              GET_SINGLETON(MainViewController));
     engine.rootContext()->setContextProperty(QStringLiteral("wsClient"), &wsClient);

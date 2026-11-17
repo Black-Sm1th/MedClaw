@@ -6,20 +6,50 @@ TARGET = AetherStudy
 
 CONFIG += c++17
 
-# Build editions from the same source tree. The default build is the main
-# edition; pass edition_government, edition_hospital_chang2, or edition_imaging to qmake.
+# Product model: one C build (phone/SMS, public) or B builds selected by
+# product_b + one tenant + one network. Legacy edition_* flags remain aliases.
 contains(CONFIG, edition_government) {
-    DEFINES += MEDCLAW_EDITION_GOVERNMENT
-    message("MedClaw build edition: government")
-} else:contains(CONFIG, edition_hospital_chang2) {
-    DEFINES += MEDCLAW_EDITION_HOSPITAL_CHANG2
-    message("MedClaw build edition: hospital-chang2")
-} else:contains(CONFIG, edition_imaging) {
-    DEFINES += MEDCLAW_EDITION_IMAGING
-    message("MedClaw build edition: imaging")
+    CONFIG += product_b tenant_government network_public
+}
+contains(CONFIG, edition_imaging) {
+    CONFIG += product_b tenant_imaging network_public
+}
+contains(CONFIG, edition_hospital_chang2) {
+    CONFIG += product_b tenant_hospital_chang2 network_internal
+}
+
+contains(CONFIG, product_b) {
+    !contains(CONFIG, tenant_government):!contains(CONFIG, tenant_imaging):!contains(CONFIG, tenant_hospital_chang2): error("B product requires one tenant_government, tenant_imaging, or tenant_hospital_chang2")
+    contains(CONFIG, tenant_government) {
+        contains(CONFIG, tenant_imaging): error("B product can only have one tenant")
+        contains(CONFIG, tenant_hospital_chang2): error("B product can only have one tenant")
+    }
+    contains(CONFIG, tenant_imaging):contains(CONFIG, tenant_hospital_chang2): error("B product can only have one tenant")
+    !contains(CONFIG, network_public):!contains(CONFIG, network_internal): error("B product requires network_public or network_internal")
+    contains(CONFIG, network_public):contains(CONFIG, network_internal): error("B product can only have one network mode")
+    DEFINES += MEDCLAW_PRODUCT_B
+    contains(CONFIG, network_public): DEFINES += MEDCLAW_NETWORK_PUBLIC
+    contains(CONFIG, network_internal): DEFINES += MEDCLAW_NETWORK_INTERNAL
+    contains(CONFIG, tenant_government) {
+        DEFINES += MEDCLAW_TENANT_GOVERNMENT MEDCLAW_EDITION_GOVERNMENT
+        message("MedClaw product: B, tenant: government, network: configured")
+    }
+    contains(CONFIG, tenant_imaging) {
+        DEFINES += MEDCLAW_TENANT_IMAGING MEDCLAW_EDITION_IMAGING
+        message("MedClaw product: B, tenant: imaging, network: configured")
+    }
+    contains(CONFIG, tenant_hospital_chang2) {
+        DEFINES += MEDCLAW_TENANT_HOSPITAL_CHANG2 MEDCLAW_EDITION_HOSPITAL_CHANG2
+        message("MedClaw product: B, tenant: hospital-chang2, network: configured")
+    }
 } else {
-    DEFINES += MEDCLAW_EDITION_MAIN
-    message("MedClaw build edition: main")
+    contains(CONFIG, tenant_government): error("A tenant can only be set for product_b")
+    contains(CONFIG, tenant_imaging): error("A tenant can only be set for product_b")
+    contains(CONFIG, tenant_hospital_chang2): error("A tenant can only be set for product_b")
+    contains(CONFIG, network_public): error("Network mode can only be set for product_b; C product is public")
+    contains(CONFIG, network_internal): error("Network mode can only be set for product_b; C product is public")
+    DEFINES += MEDCLAW_PRODUCT_C MEDCLAW_NETWORK_PUBLIC MEDCLAW_EDITION_MAIN
+    message("MedClaw product: C, public network")
 }
 
 msvc: QMAKE_CXXFLAGS += /utf-8
@@ -33,6 +63,7 @@ linux:QMAKE_LFLAGS += -fuse-ld=gold
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000
 
 HEADERS += \
+    product_config.h \
     chat_message_visibility.h \
     mainviewcontroller.h \
     CommonFunc.h \

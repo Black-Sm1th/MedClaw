@@ -19,6 +19,9 @@ class AuthController : public QObject
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     Q_PROPERTY(QString apiBaseUrl READ apiBaseUrl NOTIFY apiBaseUrlChanged)
     Q_PROPERTY(bool enterpriseCredentialLoginEnabled READ enterpriseCredentialLoginEnabled CONSTANT)
+    Q_PROPERTY(bool businessProduct READ businessProduct CONSTANT)
+    Q_PROPERTY(QString tenantDisplayName READ tenantDisplayName CONSTANT)
+    Q_PROPERTY(QString networkDisplayName READ networkDisplayName CONSTANT)
     Q_PROPERTY(bool internalApiHostInputEnabled READ internalApiHostInputEnabled CONSTANT)
     Q_PROPERTY(QString internalApiHost READ internalApiHost NOTIFY internalApiHostChanged)
     Q_PROPERTY(QString creditsBalance READ creditsBalance NOTIFY creditsBalanceChanged)
@@ -36,6 +39,9 @@ public:
     QString errorMessage() const;
     QString apiBaseUrl() const;
     bool enterpriseCredentialLoginEnabled() const;
+    bool businessProduct() const;
+    QString tenantDisplayName() const;
+    QString networkDisplayName() const;
     bool internalApiHostInputEnabled() const;
     QString internalApiHost() const;
     QString creditsBalance() const;

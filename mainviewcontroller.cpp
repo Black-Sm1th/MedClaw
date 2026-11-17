@@ -21,6 +21,7 @@
 #include <QUuid>
 #include "chatmodel.h"
 #include "gateway_client.h"
+#include "product_config.h"
 
 namespace {
 bool looksLikeDicomFile(const QString &path)
@@ -619,11 +620,8 @@ QVariantList MainViewController::importClipboardFiles() const
         return result;
 
     const QString tempRoot = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-    const QString dirPath = QDir(tempRoot).filePath(QStringLiteral("hospital-chang2/clipboard"));
-#else
-    const QString dirPath = QDir(tempRoot).filePath(QStringLiteral("AetherStudy/clipboard"));
-#endif
+    const QString dirPath = QDir(tempRoot).filePath(
+        ProductConfig::dataDirectoryName() + QStringLiteral("/clipboard"));
     if (!QDir().mkpath(dirPath))
         return result;
 
@@ -676,11 +674,8 @@ QString MainViewController::resolveLocalFileLink(const QString &link, const QStr
         addSearchRoot(m_wsClient->currentTaskWorkspace());
         addSearchRoot(m_wsClient->agentIdentity().value(QStringLiteral("workspace")).toString());
     }
-#ifdef MEDCLAW_EDITION_HOSPITAL_CHANG2
-    addSearchRoot(QDir::homePath() + QStringLiteral("/.openclaw/workspace-hospital-chang2"));
-#else
-    addSearchRoot(QDir::homePath() + QStringLiteral("/.openclaw/workspace"));
-#endif
+    addSearchRoot(QDir::homePath() + QStringLiteral("/.openclaw/%1")
+                                       .arg(ProductConfig::openClawWorkspaceDirectoryName()));
 
     if (searchRoots.isEmpty())
         return QString();
