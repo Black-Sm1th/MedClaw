@@ -1381,6 +1381,10 @@ void ViewerHost::handleRequest(QTcpSocket *socket, const QByteArray &request)
           || relative == QStringLiteral("webgl-compat.js")
           || relative == QStringLiteral("webgl2-compat.js")
           || relative == QStringLiteral("cornerstone3d/webgl2-compat.js")
+          // 查看器 JS（bundle.stripdel01.js 等）会随客户端一起更新，不能挂
+          // 1 小时的强缓存：否则换了 bundle 页面还在跑旧代码（2026-11-18 踩过，
+          // 表现为"Mask 名字修了但界面没变"）。本地服务，每次都读盘代价可忽略。
+          || relative.endsWith(QStringLiteral(".js"), Qt::CaseInsensitive)
           || relative.startsWith(QStringLiteral("h5wasm/"))
           || relative.startsWith(QStringLiteral("markdown/"))
           || relative.startsWith(QStringLiteral("pptist/"))
