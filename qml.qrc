@@ -71,7 +71,6 @@
         <file>images/knowledge/word.png</file>
         <file>images/delete-white.png</file>
         <file>images/upload-white.png</file>
-        <file>images/icon.ico</file>
         <file>images/logoImage.png</file>
         <file>images/star.png</file>
         <file>images/imaging/step-1.png</file>
@@ -326,5 +325,6 @@
         <file>images/template/65.png</file>
         <file>images/template/66.png</file>
         <file>images/template/67.png</file>
+        <file>images/icon.ico</file>
     </qresource>
 </RCC>
