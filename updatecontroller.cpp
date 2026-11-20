@@ -100,6 +100,9 @@ QUrl releaseUrl()
     query.addQueryItem(QStringLiteral("arch"), QStringLiteral("x64"));
     if (ProductConfig::isBusiness())
         query.addQueryItem(QStringLiteral("enterprise_code"), ProductConfig::tenantCode());
+    // 影像版走独立发布基线，避免和其他版本互相覆盖更新
+    if (ProductConfig::isImagingEdition())
+        query.addQueryItem(QStringLiteral("branch"), QStringLiteral("imaging"));
     url.setQuery(query);
     return url;
 }
