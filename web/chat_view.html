@@ -688,6 +688,17 @@
       font-weight: bold;
       color: #000000;
     }
+    .tool-meta {
+      margin-left: 8px;
+      font-family: "Alibaba PuHuiTi Regular", "Microsoft YaHei", Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 400;
+      color: rgba(0, 0, 0, .45);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
     .tool-arrow {
       margin-left: 2px;
       color: rgba(0, 0, 0, .55);
@@ -840,6 +851,391 @@
       function escapeAttr(value) {
         return escapeHtml(value).replace(/`/g, '&#96;');
       }
+
+      var TOOL_TITLES = {
+        "data_execute_code": "执行数据分析代码",
+        "data_explore": "数据结构探索",
+        "data_profile": "列级数据画像",
+        "data_clean": "数据清理",
+        "diffs": "Diffs",
+        "docx_add_comment": "添加 Word 批注",
+        "docx_fonts": "公文字体检查 / 安装",
+        "docx_generate": "生成公文 DOCX",
+        "html_inline_assets": "内嵌 HTML 本地图表资源为自包含单文件",
+        "html_template_extract": "抽取 HTML 模板的 Jinja2 变量清单",
+        "html_template_render": "按 HTML 模板渲染终稿",
+        "journal_assemble": "按 TemplateSpec 装配结构化文档终稿（spec 驱动，通用）",
+        "journal_compliance_check": "结构化文档确定性合规校验（按 TemplateSpec，通用）",
+        "references_format": "按 CSL 样式格式化参考文献",
+        "references_pool_add": "真实文献落盘引用池",
+        "report_assemble": "按模板装配研报 DOCX",
+        "template_extract": "抽取 DOCX 模板样式与槽位",
+        "template_spec_extract": "抽取期刊/研报模板规格 TemplateSpec",
+        "echarts_inline": "内联数据生成 ECharts 图表",
+        "echarts_render": "直接渲染 ECharts 图表",
+        "echarts_transform": "生成 ECharts 图表配置",
+        "feishu_bitable_get_meta": "Feishu Bitable Get Meta",
+        "feishu_bitable_list_fields": "Feishu Bitable List Fields",
+        "feishu_bitable_list_records": "Feishu Bitable List Records",
+        "feishu_bitable_get_record": "Feishu Bitable Get Record",
+        "feishu_bitable_create_record": "Feishu Bitable Create Record",
+        "feishu_bitable_update_record": "Feishu Bitable Update Record",
+        "feishu_bitable_create_app": "Feishu Bitable Create App",
+        "feishu_bitable_create_field": "Feishu Bitable Create Field",
+        "feishu_chat": "Feishu Chat",
+        "feishu_doc": "Feishu Doc",
+        "feishu_app_scopes": "Feishu App Scopes",
+        "feishu_drive": "Feishu Drive",
+        "feishu_perm": "Feishu Perm",
+        "feishu_wiki": "Feishu Wiki",
+        "convert_document": "文件格式转换",
+        "file_extract": "解压文件",
+        "file_list_archive": "查看压缩包内容",
+        "firecrawl_scrape": "Firecrawl Scrape",
+        "firecrawl_search": "Firecrawl Search",
+        "imaging_dicom_inspect": "DICOM盘点",
+        "imaging_dicom_anonymize": "DICOM去标识",
+        "imaging_dicom_decompress": "DICOM解压",
+        "imaging_dicom_multiframe": "DICOM多帧抽帧",
+        "imaging_dicom_to_nifti": "DICOM转NIfTI",
+        "imaging_nifti_io_qc": "NIfTI质控",
+        "imaging_xray_io": "X线读写",
+        "imaging_preprocess": "影像预处理",
+        "imaging_register": "影像配准",
+        "imaging_mask_qc": "掩膜质控",
+        "imaging_radiomics": "影像组学",
+        "imaging_report_extract": "报告文本抽取",
+        "imaging_seg_classic": "经典解剖分割",
+        "imaging_seg_dl": "掩膜验收",
+        "imaging_seg_radar": "腹部分割（RADAR）",
+        "imaging_case": "病例报告",
+        "imaging_ct_report": "CT报告问答（NV-Reason-CT）",
+        "imaging_deepprep_env": "环境安装（DeepPrep）",
+        "imaging_bids_prepare": "数据准备（BIDS）",
+        "imaging_deepprep": "脑MRI预处理（DeepPrep）",
+        "imaging_viewer": "阅片控制（桌面）",
+        "imaging_nd_dcm2niix": "DICOM 转 NIfTI",
+        "imaging_nd_dcm2bids": "BIDS 整理",
+        "imaging_nd_heudiconv": "HeuDiConv",
+        "imaging_nd_totalsegmentator": "全身器官分割",
+        "imaging_nd_mrtrix3": "MRtrix 工具集",
+        "imaging_nd_amico": "NODDI 建模",
+        "imaging_nd_dwidenoise2": "DWI 去噪",
+        "imaging_nd_tractseg": "纤维束分割",
+        "imaging_nd_mne": "MNE 工具集",
+        "imaging_nd_mneextended": "MNE 扩展",
+        "imaging_nd_romeo": "QSM 相位解缠",
+        "imaging_nd_clearswi": "SWI 处理",
+        "imaging_nd_mritools": "QSM 工具集(备用)",
+        "imaging_nd_fitlins": "fMRI 一阶 GLM",
+        "imaging_nd_glmsingle": "单试次 GLM",
+        "imaging_nd_rapidtide": "滞后分析",
+        "imaging_nd_panoptica": "分割质量评估",
+        "imaging_nd_functionnectome": "功能连接组",
+        "imaging_nd_pydeface": "面部去标识",
+        "imaging_nd_quickshear": "面部去标识(备)",
+        "imaging_nd_hdbet": "去颅骨(GPU)",
+        "imaging_nd_fsl": "FSL 工具集",
+        "imaging_nd_synthstrip": "去颅骨",
+        "imaging_nd_niimath": "图像运算",
+        "imaging_nd_ants": "高精度形变配准",
+        "imaging_nd_elastix": "可调参配准",
+        "imaging_nd_niftyreg": "快速刚性配准",
+        "imaging_nd_bart": "MRI 重建",
+        "imaging_nd_skan": "骨架 / 形态分析",
+        "imaging_nd_petu": "儿童脑肿瘤分割",
+        "imaging_nd_fastsurfer": "全脑分割",
+        "imaging_nd_lung_nodules": "肺结节分割",
+        "imaging_nd_kidney_cysts": "肾囊肿分割",
+        "imaging_nd_liver_lesions": "肝病灶分割",
+        "imaging_nd_lung_vessels": "肺血管分割",
+        "imaging_neurodesk_run": "远程影像工具",
+        "kb_ingest": "知识库入库",
+        "kb_search": "知识库检索",
+        "kb_manage": "知识库管理",
+        "lobster": "Lobster Workflow",
+        "ask_user": "提问",
+        "med_intel_fetch_url": "竞情页面抓取",
+        "med_intel_search_trials": "竞情临床试验查询",
+        "med_intel_search_regulatory": "竞情监管注册查询",
+        "med_intel_search_pubmed": "竞情 PubMed 检索",
+        "med_intel_save_card": "竞情情报卡片保存",
+        "med_intel_generate_report": "竞情 HTML 报告生成",
+        "med_intel_target_config": "竞情目标池配置",
+        "med_intel_target_read": "竞情目标池读取",
+        "med_intel_threat_score": "竞情威胁评分",
+        "med_intel_threat_summary": "竞情威胁矩阵汇总",
+        "mi_ai_reviewer": "MI AI 预审核（Human Gate 前置检查）",
+        "mi_save_competitor_analysis": "MI 保存竞品对标分析",
+        "mi_save_kol_analysis": "MI 保存 KOL 观点综合",
+        "mi_save_insights": "MI 保存策略洞察",
+        "cer_screen_literature": "CER 文献筛选（PRISMA）",
+        "cer_appraise_quality": "CER 文献质量评级（RoB/GRADE）",
+        "cer_extract_data": "CER 临床数据提取",
+        "evidence_log": "证据台账落盘",
+        "mi_screen_literature": "MI 文献筛选（通用）",
+        "mi_extract_evidence": "MI 证据提取与合成（通用）",
+        "mi_generate_executive_digest": "MI 生成高管精简汇报",
+        "mi_get_phase_rules": "MI 获取当前阶段规则",
+        "mi_get_step_instruction": "MI 获取步骤详细指令",
+        "mi_save_kol_candidates": "MI 保存 KOL 候选人档案",
+        "mi_save_kol_scores": "MI 保存 KOL AI 评分与分层",
+        "mi_save_kol_map": "MI 保存 KOL 互动地图（MSL 确认版）",
+        "mi_lookup_kol": "KOL 专家学术档案查询",
+        "mi_draft_mir_response": "MI 医学信息回复起草（MIR/SRD）",
+        "mi_save_monitor_snapshot": "MI 保存情报监测快照",
+        "mi_load_monitor": "MI 加载监测记录",
+        "mi_list_monitors": "MI 列出所有监测记录",
+        "mi_list_pptx_layouts": "MI 浏览 PPT 版式目录",
+        "mi_prepare_pptx_template": "MI 导入 PPT 品牌模板",
+        "mi_prepare_data": "MI 数据准备",
+        "mi_read_internal_file": "读取内部上传文件",
+        "mi_get_report_template": "MI 获取报告章节模板",
+        "mi_medical_review": "MI 医学审核与平衡性把关",
+        "mi_run_model": "MI 运行统计/ML 模型",
+        "mi_save_analysis": "MI 保存中间分析对象",
+        "mi_save_model_results": "MI 保存模型分析结果",
+        "mi_save_plan": "MI 保存分析规划",
+        "mi_normalize_dedupe": "情报数据规范化与去重",
+        "mi_save_search_log": "MI 保存检索日志",
+        "mi_search_hta": "HTA 卫生技术评估检索",
+        "mi_search_pubmed": "PubMed 文献检索",
+        "mi_search_regulatory": "监管注册官网检索",
+        "mi_search_rwe": "MI RWE 数据源检索",
+        "mi_search_safety_signals": "上市后安全信号检索",
+        "mi_search_trials": "临床试验注册库检索",
+        "mi_generate_slides": "MI 生成幻灯片",
+        "mi_start_report": "MI 报告生成计划",
+        "target_config": "MI 目标池配置",
+        "threat_score": "MI 威胁评分",
+        "threat_score_summary": "MI 威胁评分汇总",
+        "mi_save_training_content": "MI 保存培训内容",
+        "mi_verify_phase": "MI 验证阶段输出",
+        "memory_recall": "Memory Recall",
+        "memory_store": "Memory Store",
+        "memory_forget": "Memory Forget",
+        "mip_cite": "MIP 引用管理",
+        "mip_fetch_url": "MIP Fetch URL",
+        "mip_get_phase_rules": "MIP 获取当前阶段规则",
+        "mip_get_step_instruction": "MIP 获取步骤详细指令",
+        "mip_review_finding": "MIP 报告审阅记录",
+        "mip_save_analysis": "MIP 保存分析结论",
+        "mip_save_plan": "MIP 保存搜索规划",
+        "mip_search_clinicaltrials": "ClinicalTrials.gov 实时查询",
+        "mip_search_openfda": "openFDA 医疗器械查询",
+        "mip_start_report": "MIP 竞品报告生成计划",
+        "mip_verify_phase": "MIP 验证阶段输出",
+        "model_explain": "模型可解释性分析",
+        "ml_export_model": "导出最终模型",
+        "ml_recommend_models": "查看推荐模型",
+        "ml_run_pipeline": "运行ML流水线",
+        "omics_integrate": "多组学整合分析",
+        "metabolomics_xcms_preprocessing": "LC-MS 代谢组预处理",
+        "metabolomics_peak_detection": "代谢组峰检测",
+        "metabolomics_annotation": "代谢物注释",
+        "metabolomics_quantification": "代谢组定量（填充+归一化）",
+        "metabolomics_normalization": "代谢组归一化",
+        "metabolomics_differential": "代谢物差异分析",
+        "metabolomics_pathway_enrichment": "代谢通路富集分析（ORA）",
+        "metabolomics_statistics": "代谢组统计检验",
+        "proteomics_data_import": "蛋白组数据导入",
+        "proteomics_ms_qc": "蛋白组质谱 QC",
+        "proteomics_identification": "肽段鉴定统计",
+        "proteomics_quantification": "蛋白质定量",
+        "proteomics_differential_abundance": "蛋白质差异丰度分析",
+        "proteomics_ptm_analysis": "PTM 位点分析",
+        "proteomics_pathway_enrichment": "蛋白通路富集分析（ORA）",
+        "proteomics_structural": "交联质谱（XL-MS）分析",
+        "pandoc_convert": "通用文档格式转换",
+        "pandoc_formats": "查询 pandoc 支持的格式",
+        "period_compare": "同比环比统计",
+        "png_chart": "生成图表 PNG（matplotlib，无浏览器）",
+        "png_normalize": "图片规范化为可嵌入 PNG",
+        "fact_check_cache": "事实核查数据库检索",
+        "pubmed_fetch": "PubMed 摘要全文获取",
+        "pubmed_search": "PubMed 文献检索",
+        "semantic_scholar_search": "Semantic Scholar 学术检索",
+        "citation_trace": "引用链追溯",
+        "scrna_annotate": "scRNA-seq 细胞类型注释",
+        "scrna_cluster": "scRNA-seq 聚类分析",
+        "scrna_preprocess": "scRNA-seq 质控与预处理",
+        "scrna_validate": "scRNA-seq 读取并合并样本",
+        "spatial_cluster": "空间转录组 降维聚类",
+        "spatial_deg": "空间转录组 差异基因分析",
+        "spatial_enrichment": "空间转录组 通路富集分析",
+        "spatial_load": "空间转录组 加载数据",
+        "spatial_qc": "空间转录组 质量控制",
+        "stats_association": "关联分析（多变量相关矩阵）",
+        "stats_comparative": "比较分析（组间差异）",
+        "stats_correlation": "相关性分析",
+        "stats_crosstab": "交叉分析",
+        "stats_linear_regression": "线性回归分析",
+        "stats_logistic_regression": "逻辑回归分析",
+        "read_file_content": "读取文件内容",
+        "stats_tableone": "描述性统计 / Table One",
+        "tavily_extract": "Tavily Extract",
+        "tavily_search": "Tavily Search",
+        "tlon": "Tlon CLI",
+        "voice_call": "Voice Call",
+        "zalouser": "Zalo Personal"
+      };
+
+      var CORE_TOOL_TITLES = {
+        "read": "读取文件", "write": "写入文件", "edit": "编辑文件",
+        "apply_patch": "应用补丁", "exec": "执行命令", "process": "进程管理",
+        "browser": "浏览器", "canvas": "画布", "message": "发送消息",
+        "agents_list": "列出智能体", "session_status": "会话状态",
+        "sessions_history": "会话历史", "sessions_list": "列出会话",
+        "sessions_send": "发送到会话", "sessions_spawn": "创建子会话",
+        "sessions_yield": "移交会话", "subagents": "子智能体",
+        "memory_get": "读取记忆", "memory_search": "搜索记忆",
+        "cron": "定时任务", "gateway": "网关控制", "nodes": "节点",
+        "llm-task": "LLM 任务", "lobster": "Lobster 工作流",
+        "image": "图像", "image_generate": "生成图像", "tts": "语音合成",
+        "web_fetch": "网页抓取", "web_search": "网页搜索",
+        "list_files": "列出文件", "ask_user": "提问"
+      };
+
+      function toolTitle(name) {
+        var n = String(name || '');
+        if (TOOL_TITLES[n]) return TOOL_TITLES[n];
+        if (CORE_TOOL_TITLES[n]) return CORE_TOOL_TITLES[n];
+        return humanizeFallback(n);
+      }
+
+      function humanizeFallback(name) {
+        var n = String(name || '')
+          .replace(/^mcp__[a-z0-9_-]+__/i, '')
+          .replace(/^imaging_nd_/, '')
+          .replace(/^imaging_/, '')
+          .replace(/^med_intel_/, '')
+          .replace(/^mi_/, '')
+          .replace(/^mip_/, '')
+          .replace(/^cer_/, '')
+          .replace(/_/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return n || '工具';
+      }
+
+      // 把工具返回的机器味文案翻译成人话。只作用于客户端展示，
+      // 模型看到的仍然是原始全文，不影响其判断。
+      var TOOL_TEXT_REWRITES = [
+        { re: /Command still running \(session [^)]+\).*?for follow-up\./is, zh: '命令仍在后台运行，可用「进程管理」查看或终止' },
+        { re: /Process exited with code 0\./i, zh: '进程已正常结束' },
+        { re: /Process exited with code (\d+)\./i, zh: '进程异常退出（退出码 $1）' },
+        { re: /Process exited with signal ([A-Z0-9_]+)\./i, zh: '进程被信号 $1 终止' },
+        { re: /Process still running\./i, zh: '进程仍在运行' },
+        { re: /RADAR service unavailable \(503\)\.\s*Wait until \/health reports radar_loaded=true\./i, zh: 'RADAR 分割服务暂不可用（服务端模型未加载）' },
+        { re: /\{[^{}\r\n]*"(?:detail|error|message)"\s*:\s*"[^"]*"[^{}\r\n]*\}/g, zh: '' },
+        { re: /\(no output recorded[^)]*\)/i, zh: '（无输出）' }
+      ];
+
+      function cleanToolText(raw) {
+        var t = String(raw || '');
+        // 机器可读的交付物标记：客户端另有产物面板，正文不展示 JSON
+        t = t.replace(/<medclaw-deliverables>[\s\S]*?<\/medclaw-deliverables>/g, '');
+        // 去掉行首状态 emoji（状态图标已表达）
+        t = t.replace(/^[✅❌⚠️]\s*/u, '');
+        t = t.replace(/\n[✅❌⚠️]\s*/gu, '\n');
+        // 绝对路径折叠：只留末段目录名
+        t = t.replace(/📁\s*输出目录[：:]\s*([A-Za-z]:[\\/][^\r\n]*)/g, function (m, p) {
+          var seg = String(p).replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+          return '输出目录：' + (seg || p);
+        });
+        // 交付物长列表截断：前 5 个 + 总数
+        t = t.replace(/📦\s*交付物[（(](\d+)[）)][：:]\s*([^\r\n]*)/g, function (m, n, list) {
+          var items = String(list).split(/[、,，]/).map(function (s) { return s.trim(); }).filter(Boolean);
+          var shown = items.slice(0, 5).join('、');
+          var tail = items.length > 5 ? '、…' : '';
+          return '交付物：' + n + ' 个' + (shown ? '（' + shown + tail + '）' : '');
+        });
+        // 内核 write / edit 文案：英文 + 绝对路径 → 中文 + 文件名
+        t = t.replace(/Successfully wrote (\d+) bytes to ([^\r\n]+)/g, function (m, n, p) {
+          return "已写入 " + argBasename(p.trim()) + "（" + n + " 字节）";
+        });
+        t = t.replace(/Successfully replaced text in ([^\r\n]+)/g, function (m, p) {
+          return "已修改 " + argBasename(p.trim());
+        });
+        // 英文/机器文案 → 中文
+        for (var i = 0; i < TOOL_TEXT_REWRITES.length; i++) {
+          t = t.replace(TOOL_TEXT_REWRITES[i].re, TOOL_TEXT_REWRITES[i].zh);
+        }
+        return t;
+      }
+
+      function toolMetaText(raw) {
+        var m = String(raw || '').match(/用时\s*([0-9.]+)\s*秒/i);
+        return m ? '用时 ' + m[1] + ' 秒' : '';
+      }
+
+      // 运行中展示的是工具参数（JSON）。参数也要说人话，不要甩原始 JSON。
+      var ARG_LABELS = {
+        input: "输入", inputs: "输入", file: "文件", files: "文件", path: "路径",
+        output: "输出", output_dir: "输出目录", tool: "工具", tool_name: "工具",
+        args: "参数", region: "区域", modality: "模态", target: "目标",
+        patient_id: "患者ID", backend: "后端", timeout: "超时",
+        demo: "演示数据", force: "强制覆盖",
+        command: "命令", cwd: "工作目录", url: "网址", query: "查询",
+        prompt: "提示词", model: "模型", message: "消息", to: "收件人",
+        action: "操作", session_id: "会话", sessionId: "会话",
+        limit: "条数上限", offset: "偏移", subject: "主题", style: "样式"
+      };
+
+      function argBasename(value) {
+        var s = String(value == null ? "" : value).replace(/[\\/]+$/, "");
+        var parts = s.split(/[\\/]/);
+        return parts[parts.length - 1] || s;
+      }
+
+      function humanizeArgValue(value) {
+        if (value === null || value === undefined) return "";
+        if (Array.isArray(value)) {
+          return value.map(humanizeArgValue).filter(function (s) { return s; }).join("、");
+        }
+        if (typeof value === "object") return JSON.stringify(value);
+        var s = String(value);
+        if (value === true) return "是";
+        if (value === false) return "否";
+        // 绝对路径只留末段
+        if (/^[A-Za-z]:[\\/]/.test(s) || /^[\\/]/.test(s)) return argBasename(s);
+        return s;
+      }
+
+      function humanizeToolArgs(toolName, argsText) {
+        var raw = String(argsText || "");
+        if (!raw) return "准备中…";
+        var obj;
+        try { obj = JSON.parse(raw); } catch (e) {
+          return raw.length > 300 ? raw.slice(0, 300) + "…" : raw;
+        }
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+          return raw.length > 300 ? raw.slice(0, 300) + "…" : raw;
+        }
+        var parts = [];
+        var seen = {};
+        function push(key) {
+          if (seen[key] || !(key in obj)) return;
+          var value = humanizeArgValue(obj[key]);
+          if (!value) return;
+          seen[key] = true;
+          parts.push((ARG_LABELS[key] || key) + "：" + value);
+        }
+        ["input", "inputs", "file", "files", "path", "output", "output_dir",
+         "tool", "tool_name", "region", "modality", "target"].forEach(push);
+        // 其余标量字段（跳过已用、空值、false、嵌套对象）
+        Object.keys(obj).forEach(function (key) {
+          if (seen[key]) return;
+          var value = obj[key];
+          if (value === false || value === null || value === undefined || value === "") return;
+          if (typeof value === "object" && !Array.isArray(value)) return;
+          push(key);
+        });
+        if (!parts.length) return raw.length > 300 ? raw.slice(0, 300) + "…" : raw;
+        return parts.join("\n");
+      }
+
+
 
       function normalizeNumericSpacing(value) {
         var text = String(value || '').replace(/[\u00a0\u2007\u202f]/g, ' ');
@@ -1342,19 +1738,25 @@
       function renderToolCall(msg, index) {
         var completed = toolVisuallyComplete(messages, index, conversationRunning);
         var hasOutput = String(msg.toolResultText || '').length > 0;
-        var detail = completed || hasOutput ? msg.toolResultText : msg.toolArgs;
+        var isResult = completed || hasOutput;
+        var detail = isResult ? msg.toolResultText : msg.toolArgs;
         var key = toolKey(msg, index);
         var expanded = Object.prototype.hasOwnProperty.call(expandedTools, key)
           ? expandedTools[key] === true : msg.isError === true;
+        var title = toolTitle(msg.toolName);
+        var meta = (completed || hasOutput) ? toolMetaText(msg.toolResultText) : '';
         var html = [];
         html.push('<div class="tool" data-row="' + index + '">');
         html.push('<div class="tool-header" data-tool-key="' + escapeAttr(key)
           + '" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '">');
         html.push('<span class="status-slot">' + statusIcon(msg, completed) + '</span>');
-        html.push('<span class="tool-name">' + escapeHtml(msg.toolName || '工具') + '</span>');
+        html.push('<span class="tool-name">' + escapeHtml(title) + '</span>');
+        if (meta) html.push('<span class="tool-meta">' + escapeHtml(meta) + '</span>');
         html.push('<span class="tool-arrow" aria-hidden="true">' + (expanded ? '▾' : '▸') + '</span>');
         html.push('</div>');
-        var detailText = detail || '';
+        var detailText = isResult
+          ? cleanToolText(detail || '')
+          : humanizeToolArgs(msg.toolName, detail || '');
         if (expanded && String(detailText).length > 0)
           html.push('<div class="tool-detail-text' + (msg.isError ? ' error' : '')
             + (completed || hasOutput ? '" data-tool-result-row="' + index : '') + '">'
@@ -1363,13 +1765,65 @@
         return html.join('');
       }
 
+      // 一条工具结果压成一行摘要，供折叠状态显示
+      function summarizeToolContent(toolName, text) {
+        var t = String(text || "");
+        if (!t.trim()) return "";
+        var w = t.match(/Successfully wrote (\d+) bytes to ([^\r\n]+)/);
+        if (w) return "已写入 " + argBasename(w[2].trim()) + "（" + w[1] + " 字节）";
+        var r = t.match(/Successfully replaced text in ([^\r\n]+)/);
+        if (r) return "已修改 " + argBasename(r[1].trim());
+        // PowerShell / dir 的 FullName+Length 表格
+        if (/FullName/.test(t) && /Length/.test(t) && /-{4,}/.test(t)) {
+          var paths = t.match(/[A-Za-z]:\\[^\r\n]+/g) || [];
+          var names = [];
+          for (var i = 0; i < paths.length; i++) {
+            var cell = paths[i].trim().split(/\s{2,}/)[0];
+            var nm = argBasename(cell);
+            if (nm && names.indexOf(nm) < 0) names.push(nm);
+          }
+          if (names.length)
+            return "列出 " + names.length + " 项：" + names.slice(0, 5).join("、")
+                   + (names.length > 5 ? "…" : "");
+          return "目录列表";
+        }
+        // JSON 内容（read 之类）
+        var trimmed = t.trim();
+        if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+          try {
+            var parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === "object") {
+              var n = Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length;
+              return (Array.isArray(parsed) ? "数组" : "JSON") + " · " + n + " 项";
+            }
+          } catch (e) { /* 不是 JSON，走兜底 */ }
+        }
+        var first = trimmed.split(/\r?\n/).filter(function (s) { return s.trim(); })[0] || "";
+        return first.length > 40 ? first.slice(0, 40) + "…" : first;
+      }
+
+      // 孤立 toolResult：默认收起，只显示「标题 + 一行摘要」，点开才看原文
       function renderOrphanToolResult(msg, index) {
-        return '<div class="message" data-row="' + index + '">'
-          + '<div class="orphan-tool' + (msg.isError ? ' error' : '') + '">'
-          + '<div class="orphan-tool-title"><span class="status-slot">' + statusIcon({ isError: msg.isError }, true) + '</span>'
-          + '<span>' + escapeHtml(msg.toolName || '工具结果') + '</span></div>'
-          + plainTextHtml(msg.content || '')
-          + '</div></div>';
+        var key = toolKey(msg, index);
+        var expanded = Object.prototype.hasOwnProperty.call(expandedTools, key)
+          ? expandedTools[key] === true : false;
+        var summary = summarizeToolContent(msg.toolName, msg.content);
+        var html = [];
+        html.push('<div class="message" data-row="' + index + '">');
+        html.push('<div class="tool">');
+        html.push('<div class="tool-header" data-tool-key="' + escapeAttr(key)
+          + '" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '">');
+        html.push('<span class="status-slot">' + statusIcon({ isError: msg.isError }, true) + '</span>');
+        html.push('<span class="tool-name">' + escapeHtml(toolTitle(msg.toolName)) + '</span>');
+        if (summary) html.push('<span class="tool-meta">' + escapeHtml(summary) + '</span>');
+        html.push('<span class="tool-arrow" aria-hidden="true">' + (expanded ? '▾' : '▸') + '</span>');
+        html.push('</div>');
+        if (expanded)
+          html.push('<div class="tool-detail-text' + (msg.isError ? ' error' : '') + '">'
+            + plainTextHtml(cleanToolText(msg.content || '')) + '</div>');
+        html.push('</div>');
+        html.push('</div>');
+        return html.join('');
       }
 
       function renderTextMessage(msg, index) {
@@ -1770,7 +2224,7 @@
           if (!node.isConnected) return;
           for (var count = 0; count < batchSize && cursor < parts.length; count++)
             shown += parts[cursor++];
-          node.innerHTML = plainTextHtml(shown);
+          node.innerHTML = plainTextHtml(cleanToolText(shown));
           node.scrollTop = node.scrollHeight;
           if (followBottom) scrollToBottom();
           if (cursor < parts.length)
@@ -2050,7 +2504,7 @@
               node = app.querySelector('[data-tool-result-row="' + row + '"]');
             }
             if (node) {
-              node.innerHTML = plainTextHtml(messages[row].toolResultText || '');
+              node.innerHTML = plainTextHtml(cleanToolText(messages[row].toolResultText || ''));
               node.scrollTop = node.scrollHeight;
             }
             restoreViewport(viewport, followBottom);

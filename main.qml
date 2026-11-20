@@ -1149,7 +1149,8 @@ ApplicationWindow {
 
     function stripKnowledgePolicyText(value) {
         var text = String(value || "")
-        var tags = ["knowledge-base-policy", "workspace-policy", "template-parameters"]
+        var tags = ["knowledge-base-policy", "workspace-policy", "template-parameters",
+                    "imaging-domain"]
         for (var i = 0; i < tags.length; i++) {
             var begin = "<" + tags[i] + ">"
             var end = "</" + tags[i] + ">"
@@ -5819,6 +5820,73 @@ ApplicationWindow {
                         list.push(target)
                     selectedImagingDomains = list
                 }
+                function imagingDomainByName(name) {
+                    var target = String(name || "")
+                    for (var i = 0; i < imagingDomains.length; i++) {
+                        if (imagingDomains[i].name === target)
+                            return imagingDomains[i]
+                    }
+                    return null
+                }
+                // 浮层底部的一行提示：选中学组的能力数 + 边界（点「确认」之前就看得到）
+                // 单选给完整 note（两行内放得下）；多选不拼 note，否则会被 elide 吃掉，
+                // 改成「已选 N 个 · 共 M 项能力」，M 按去重并集算（多个学组共用同一工具不重复计）。
+                readonly property string imagingDomainHint: {
+                    var list = selectedImagingDomains || []
+                    if (list.length === 0)
+                        return ""
+                    if (list.length === 1) {
+                        var only = imagingDomainByName(list[0])
+                        if (!only)
+                            return ""
+                        return only.name + " · " + (only.toolIds || []).length + " 项能力：" + (only.note || "")
+                    }
+                    var names = []
+                    var seen = ({})
+                    var union = 0
+                    for (var i = 0; i < list.length; i++) {
+                        var domain = imagingDomainByName(list[i])
+                        if (!domain)
+                            continue
+                        names.push(domain.name)
+                        var ids = domain.toolIds || []
+                        for (var j = 0; j < ids.length; j++) {
+                            if (!seen[ids[j]]) {
+                                seen[ids[j]] = true
+                                union += 1
+                            }
+                        }
+                    }
+                    if (names.length === 0)
+                        return ""
+                    return "已选 " + names.length + " 个学组（" + names.join("、")
+                            + "）· 共 " + union + " 项能力"
+                }
+                // 学组只是「入口」：不改工具白名单，发送时把选中学组的能力清单注入任务上下文，
+                // 让模型按领域挑工具（与 <template-parameters> 用的是同一套做法）。
+                function imagingDomainPromptBlock() {
+                    var list = selectedImagingDomains || []
+                    if (list.length === 0)
+                        return ""
+                    var lines = []
+                    for (var i = 0; i < list.length; i++) {
+                        var domain = imagingDomainByName(list[i])
+                        if (!domain)
+                            continue
+                        var ids = domain.toolIds || []
+                        lines.push("- " + domain.name + "（可用工具 " + ids.length + " 个"
+                                   + (ids.length > 0 ? "：" + ids.join("、") : "")
+                                   + "）\n  能力边界：" + (domain.note || ""))
+                    }
+                    if (lines.length === 0)
+                        return ""
+                    // 多选时给一句路由约束，避免模型把腹部工具套到胸部片上
+                    var scopeNote = list.length > 1
+                            ? "\n注意：选了多个学组，按这例影像实际所属部位挑工具，不要跨部位混用。"
+                            : ""
+                    return "\n\n<imaging-domain>\n影像领域（用户已选）：\n"
+                            + lines.join("\n") + scopeNote + "\n</imaging-domain>"
+                }
                 // 胶囊里最多显示 1 个学组 + 一个「+N」
                 readonly property var imagingPillChips: {
                     var list = selectedImagingDomains || []
@@ -5829,13 +5897,57 @@ ApplicationWindow {
                         chips.push({ name: "+" + (list.length - 1), removable: false })
                     return chips
                 }
+                // 每个学组挂上「当前真的能调」的工具；note 连能力边界一起写，
+                // 避免卡片上的学组名被当成能力承诺（没有专属壳子的脑科研工具不列入）。
                 readonly property var imagingDomains: [
-                    { name: "神经学组", image: "qrc:/images/imaging/domain-neuro.png", tilt: -3 },
-                    { name: "头颈学组", image: "qrc:/images/imaging/domain-headneck.png", tilt: 1 },
-                    { name: "心胸学组", image: "qrc:/images/imaging/domain-chest.png", tilt: -2 },
-                    { name: "腹部学组", image: "qrc:/images/imaging/domain-abdomen.png", tilt: 0 },
-                    { name: "骨肌学组", image: "qrc:/images/imaging/domain-msk.png", tilt: 2 },
-                    { name: "乳腺学组", image: "qrc:/images/imaging/domain-breast.png", tilt: -4 }
+                    {
+                        name: "神经学组",
+                        image: "qrc:/images/imaging/domain-neuro.png",
+                        tilt: -3,
+                        note: "脑结构分区与体积、儿童脑肿瘤分割、去颅骨、BIDS 准备；暂无卒中/脑出血/白质病变",
+                        toolIds: ["imaging_nd_fastsurfer", "imaging_nd_petu", "imaging_nd_hdbet",
+                                  "imaging_nd_synthstrip", "imaging_bids_prepare", "imaging_deepprep",
+                                  "imaging_radiomics", "imaging_mask_qc"]
+                    },
+                    {
+                        name: "头颈学组",
+                        image: "qrc:/images/imaging/domain-headneck.png",
+                        tilt: 1,
+                        note: "暂无专属工具，只能借全身器官结构分割与 CT 报告；颈部淋巴结、甲状腺、鼻窦、颞骨、喉未覆盖",
+                        toolIds: ["imaging_nd_totalsegmentator", "imaging_ct_report"]
+                    },
+                    {
+                        name: "心胸学组",
+                        image: "qrc:/images/imaging/domain-chest.png",
+                        tilt: -2,
+                        note: "肺/气道/骨分割、肺结节与肺血管掩膜、全身器官结构、胸部 CT 语言报告、胸片读取；无冠脉 CTA、肺气肿定量、Lung-RADS 随访、心功能",
+                        toolIds: ["imaging_seg_classic", "imaging_nd_lung_nodules",
+                                  "imaging_nd_lung_vessels", "imaging_nd_totalsegmentator",
+                                  "imaging_ct_report", "imaging_xray_io", "imaging_case"]
+                    },
+                    {
+                        name: "腹部学组",
+                        image: "qrc:/images/imaging/domain-abdomen.png",
+                        tilt: 0,
+                        note: "腹部器官标签与疾病分数、肝病灶/肾囊肿掩膜、全身器官结构、器官体积与组学报告、腹部 CT 报告；无肿瘤分期与肝硬化分级",
+                        toolIds: ["imaging_seg_radar", "imaging_nd_liver_lesions",
+                                  "imaging_nd_kidney_cysts", "imaging_nd_totalsegmentator",
+                                  "imaging_case", "imaging_radiomics", "imaging_ct_report"]
+                    },
+                    {
+                        name: "骨肌学组",
+                        image: "qrc:/images/imaging/domain-msk.png",
+                        tilt: 2,
+                        note: "仅骨/体轮廓分割、骨段结构清单、骨架形态；无骨折检测、关节软骨、骨密度",
+                        toolIds: ["imaging_seg_classic", "imaging_nd_totalsegmentator", "imaging_nd_skan"]
+                    },
+                    {
+                        name: "乳腺学组",
+                        image: "qrc:/images/imaging/domain-breast.png",
+                        tilt: -4,
+                        note: "仅能读取 MG/X 线像素、调窗、读体位与侧别；无 BI-RADS、肿块钙化检测、腺体密度",
+                        toolIds: ["imaging_xray_io"]
+                    }
                 ]
 
                 // 影像版欢迎页的 STEP 卡片（设计稿 node 5441-29653）：
@@ -6200,6 +6312,9 @@ ApplicationWindow {
                                 + "\n使用SKILLS：report-from-template"
                                 + "\n</template-parameters>"
                     }
+                    // 影像版：把用户选的学组连同可用工具清单注入任务上下文，
+                    // 学组本身不裁剪工具白名单（选 0 个学组时这里返回空串）。
+                    msg += newTaskRec.imagingDomainPromptBlock()
                     newTaskRec.commitChatSelections()
                     wsClient.setPendingCollaborationAgents(
                         newTaskRec.isNewTaskWelcome ? selectedCollaborationAgentIds : [])
@@ -6899,7 +7014,9 @@ ApplicationWindow {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.top: parent.top
-                                height: 52
+                                // 标题已隐藏，只有「本轮筛选」胶囊需要这块空间；
+                                // 否则只留 12px 呼吸感，不要在标签行下留一大块空白
+                                height: newTaskRec.artifactTurnFilter.length > 0 ? 52 : 12
 
                                 Text {
                                     id: splitArtifactsTitle
@@ -8218,7 +8335,9 @@ ApplicationWindow {
                     Rectangle {
                         id: splitActionBar
 
+                        // 只在「输入文件」标签页显示：切到阅片台/产物时不浮这条操作条
                         visible: newTaskRec.splitSelection.length > 0
+                                 && newTaskRec.splitMiddleTab === "files"
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.bottom
                         anchors.bottomMargin: 16
@@ -12202,6 +12321,28 @@ ApplicationWindow {
                                 }
                             }
                         }
+                    }
+
+                    // 选中学组的能力提示：压在卡片底（506）和操作条（553）之间的一条窄行，
+                    // 只在有选中时出现，不改动设计稿的卡片与操作条尺寸。
+                    Label {
+                        id: imagingDomainHintLabel
+                        visible: newTaskRec.imagingDomainHint.length > 0
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        // 卡片底 506、操作条 553：两行提示占 510–544，留 9px 呼吸
+                        y: 510
+                        width: Math.min(820, imagingDomainCards.width)
+                        height: 34
+                        text: newTaskRec.imagingDomainHint
+                        font.family: "Alibaba PuHuiTi 3.0"
+                        font.pixelSize: 13
+                        color: "#73000000"
+                        // 单选要两行才放得下完整能力边界；QQC2 的 Label 没有 maximumLineCount，
+                        // 靠固定高度 + clip 兜底，避免压到下面的操作条。
+                        wrapMode: Text.WordWrap
+                        clip: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
                     }
 
                     // 底部操作条（设计稿 5460-31496 的「多选」）：已选 N 个 + 关闭 / 确认。

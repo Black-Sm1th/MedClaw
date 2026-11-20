@@ -9,7 +9,8 @@ static QString chatDisplayContent(const QString &content)
     QString display = content;
     const QStringList tags{QStringLiteral("knowledge-base-policy"),
                            QStringLiteral("workspace-policy"),
-                           QStringLiteral("template-parameters")};
+                           QStringLiteral("template-parameters"),
+                           QStringLiteral("imaging-domain")};
     for (const QString &tag : tags) {
         const QString begin = QStringLiteral("<%1>").arg(tag);
         const QString end = QStringLiteral("</%1>").arg(tag);
@@ -268,6 +269,34 @@ void ChatModel::addToolCall(const QString &toolName,
             emit dataChanged(midx, midx, {IsIntermediateRole});
         }
         break;
+    }
+
+    // 事件乱序或丢事件时，结果可能先于调用到达（孤立 toolResult）。
+    // 找到同 id（或同名、无 id）的孤儿就地升级成 toolCall，避免并排再插一张空卡。
+    for (int i = m_messages.count() - 1; i >= 0; --i) {
+        ChatMessage &orphan = m_messages[i];
+        if (orphan.msgType != QStringLiteral("toolResult"))
+            continue;
+        const bool idMatch = !toolCallId.isEmpty() && orphan.toolCallId == toolCallId;
+        const bool nameMatch = toolCallId.isEmpty() && !toolName.isEmpty()
+                               && orphan.toolName == toolName;
+        if (!idMatch && !nameMatch)
+            continue;
+        orphan.msgType = QStringLiteral("toolCall");
+        orphan.role = QStringLiteral("assistant");
+        orphan.toolResultText = orphan.content;
+        orphan.content.clear();
+        orphan.toolName = toolName;
+        orphan.toolArgs = toolArgs;
+        orphan.toolCallId = toolCallId;
+        orphan.hasToolResult = true;
+        const QModelIndex orphanIdx = index(i);
+        emit dataChanged(orphanIdx, orphanIdx,
+                         {MsgTypeRole, RoleRole, ContentRole, ToolNameRole, ToolArgsRole,
+                          ToolCallIdRole, ToolResultTextRole, HasToolResultRole, IsErrorRole});
+        emit toolCallChanged(i, messages().at(i).toMap());
+        emit messagePayloadChanged();
+        return;
     }
 
     const int idx = m_messages.count();
@@ -614,6 +643,30 @@ void ChatModel::mergeHistorySnapshot(const QVariantList &messages)
 {
     ChatModel snapshot;
     snapshot.loadHistory(messages);
+    // 快照已把结果配对进 toolCall；删掉此前残留的孤儿 toolResult，避免同一结果出现两张卡。
+    for (int row = m_messages.size() - 1; row >= 0; --row) {
+        if (m_messages.at(row).msgType != QStringLiteral("toolResult"))
+            continue;
+        const QString orphanId = m_messages.at(row).toolCallId;
+        if (orphanId.isEmpty())
+            continue;
+        bool covered = false;
+        for (const ChatMessage &incoming : snapshot.m_messages) {
+            if (incoming.msgType == QStringLiteral("toolCall")
+                && incoming.toolCallId == orphanId) {
+                covered = true;
+                break;
+            }
+        }
+        if (!covered)
+            continue;
+        beginRemoveRows(QModelIndex(), row, row);
+        m_messages.removeAt(row);
+        endRemoveRows();
+        if (m_streamFlushRow > row)
+            --m_streamFlushRow;
+        emit countChanged();
+    }
 
     auto sameMessage = [](const ChatMessage &left, const ChatMessage &right) {
         if (left.msgType != right.msgType || left.role != right.role)
