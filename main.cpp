@@ -200,13 +200,25 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     appendChromiumFlag(flags, "--enable-webgl");
 #ifdef Q_OS_WIN
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    // Qt6.8 是 Chromium 122，默认后端就是 ANGLE/D3D11，**不要**再强制
-    // --use-gl=desktop：那条桌面 OpenGL 路径是给 Qt5.15(Chromium 83) 绕共享
-    // GLES2 上下文用的。同型号不同驱动的机器上桌面 GL 初始化会失败，表现是
-    // 查看器日志停在「四视图应用启动完成」、volume 永远建不出来，而同一个页面
-    // 用 Chrome 打开完全正常（2026-11-20 实测就是这样一对机器）。
-    // 需要时用 MEDCLAW_WEBENGINE_ANGLE=d3d11|gl|vulkan 指定后端。
-    const QByteArray angleBackend = qgetenv("MEDCLAW_WEBENGINE_ANGLE").trimmed();
+    // Qt6.8 是 Chromium 122，默认后端是 ANGLE/D3D11，**不要**再无条件强制
+    // --use-gl=desktop：那条原生桌面 OpenGL(WGL) 路径是给 Qt5.15(Chromium 83)
+    // 绕共享 GLES2 上下文用的。有的机器上它会直接丢上下文：
+    //   gl_context_wgl.cc: Unable to make gl context current
+    //   shared_context_state: Failed to make current since context is marked as lost
+    // 之后 2D 视口全黑、而 3D 点开偶发正常（2026-11-20 现场）。
+    // MEDCLAW_WEBENGINE_GL=angle   → 走 ANGLE（Chrome 在同机验证过的那条路）
+    // MEDCLAW_WEBENGINE_GL=desktop → 退回 Qt5 时代的老路径
+    // MEDCLAW_WEBENGINE_ANGLE=d3d11|gl|vulkan 单独指定 ANGLE 后端
+    const QByteArray glBackend = qgetenv("MEDCLAW_WEBENGINE_GL").trimmed().toLower();
+    QByteArray angleBackend = qgetenv("MEDCLAW_WEBENGINE_ANGLE").trimmed();
+    if (glBackend == QByteArray("angle")) {
+        if (angleBackend.isEmpty())
+            angleBackend = QByteArray("d3d11");
+        appendChromiumFlag(flags, "--use-gl=angle");
+    } else if (glBackend == QByteArray("desktop")) {
+        appendChromiumFlag(flags, "--use-gl=desktop");
+        angleBackend.clear();
+    }
     if (!angleBackend.isEmpty())
         appendChromiumFlag(flags, QByteArray("--use-angle=") + angleBackend);
 #else
