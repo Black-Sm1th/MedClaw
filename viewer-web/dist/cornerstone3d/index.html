@@ -9,6 +9,39 @@
       var inputBound = false;
       var loading = false;
 
+      // Qt 把 console 转发给宿主时只保留字符串，bundle 里 console.log('2D MPR
+      // render backend:', [...]) 这种对象就被打成 [object Object]。这里在 bundle
+      // 执行前把对象参数序列化，换来可读的 backend / renderMode / 档位信息。
+      (function expandConsoleObjects() {
+        function wrap(orig) {
+          return function () {
+            var args = Array.prototype.slice.call(arguments);
+            for (var i = 0; i < args.length; i += 1) {
+              var a = args[i];
+              if (a === null || typeof a !== 'object')
+                continue;
+              if (a instanceof Error) {
+                args[i] = (a.name || 'Error') + ': ' + (a.message || '');
+                continue;
+              }
+              try {
+                var text = JSON.stringify(a);
+                if (text === undefined) text = String(a);
+                if (text.length > 1500) text = text.slice(0, 1500) + '…(截断)';
+                args[i] = text;
+              } catch (err) {
+                args[i] = '[unserializable]';
+              }
+            }
+            return orig.apply(console, args);
+          };
+        }
+        ['log', 'info', 'warn', 'error'].forEach(function (name) {
+          if (typeof console[name] === 'function')
+            console[name] = wrap(console[name]);
+        });
+      }());
+
       // 显卡/WebGL 能力探针：这两项是「同一份代码，别人电脑打不开」最常见的原因，
       // 而且只能从日志里看，所以启动时先把它打进客户端日志。
       (function probeGpu() {
