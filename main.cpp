@@ -179,12 +179,18 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     const QStringList args = QProcess::splitCommand(QString::fromLocal8Bit(flags));
     flags.clear();
     for (const QString &arg : args) {
-        if (arg.startsWith("--use-gl=") || arg.startsWith("--use-angle=")
+        bool drop = arg.startsWith("--use-gl=")
             || arg == "--disable-gpu" || arg == "--disable-webgl"
             || arg == "--disable-gpu-process-crash-limit"
             || arg == "--ignore-gpu-blacklist" || arg == "--ignore-gpu-blocklist"
             || arg == "--enable-gpu-rasterization" || arg == "--enable-accelerated-2d-canvas"
-            || arg == "--enable-unsafe-swiftshader" || arg == "--in-process-gpu")
+            || arg == "--enable-unsafe-swiftshader" || arg == "--in-process-gpu";
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        // Chromium 83 时代 --use-angle 是坑（见下面 Qt5 分支的 --use-gl=desktop），
+        // Qt6 则允许透传：现场排障时靠它切 d3d11 / gl / vulkan。
+        drop = drop || arg.startsWith("--use-angle=");
+#endif
+        if (drop)
             continue;
         QByteArray token = arg.toLocal8Bit();
         if (token.contains(' '))
@@ -193,7 +199,19 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     }
     appendChromiumFlag(flags, "--enable-webgl");
 #ifdef Q_OS_WIN
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt6.8 是 Chromium 122，默认后端就是 ANGLE/D3D11，**不要**再强制
+    // --use-gl=desktop：那条桌面 OpenGL 路径是给 Qt5.15(Chromium 83) 绕共享
+    // GLES2 上下文用的。同型号不同驱动的机器上桌面 GL 初始化会失败，表现是
+    // 查看器日志停在「四视图应用启动完成」、volume 永远建不出来，而同一个页面
+    // 用 Chrome 打开完全正常（2026-11-20 实测就是这样一对机器）。
+    // 需要时用 MEDCLAW_WEBENGINE_ANGLE=d3d11|gl|vulkan 指定后端。
+    const QByteArray angleBackend = qgetenv("MEDCLAW_WEBENGINE_ANGLE").trimmed();
+    if (!angleBackend.isEmpty())
+        appendChromiumFlag(flags, QByteArray("--use-angle=") + angleBackend);
+#else
     appendChromiumFlag(flags, "--use-gl=desktop");
+#endif
     if (!hardwareGpu)
         appendChromiumFlag(flags, "--enable-webgl-software-rendering");
 #endif

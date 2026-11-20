@@ -9,6 +9,29 @@
       var inputBound = false;
       var loading = false;
 
+      // 显卡/WebGL 能力探针：这两项是「同一份代码，别人电脑打不开」最常见的原因，
+      // 而且只能从日志里看，所以启动时先把它打进客户端日志。
+      (function probeGpu() {
+        try {
+          var canvas = document.createElement('canvas');
+          var gl2 = canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: false });
+          var gl = gl2 || canvas.getContext('webgl', { failIfMajorPerformanceCaveat: false });
+          var info = { webgl2: !!gl2, webgl1: !!gl };
+          if (gl) {
+            var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            info.vendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+            info.renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+            info.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+            info.max3DTextureSize = gl2 ? gl2.getParameter(gl2.MAX_3D_TEXTURE_SIZE) : null;
+            var lose = gl.getExtension('WEBGL_lose_context');
+            if (lose) lose.loseContext();
+          }
+          console.log('[MedViewer] GPU: ' + JSON.stringify(info));
+        } catch (e) {
+          console.log('[MedViewer] GPU probe failed: ' + e);
+        }
+      }());
+
       function setLayout(layout) {
         layout = layout === 'mpr' || layout === 'four' || layout === '3d' ? layout : 'single';
         if (layout === '3d') layout = 'four';
@@ -80,6 +103,9 @@
       };
 
       function setStatus(message, error) {
+        // 面板上的进度/错误以前只写 DOM，客户端日志里看不到；
+        // 远程排障（例如别人电脑上打不开影像）只能靠这行把它带出来。
+        try { console.log('[MedViewer] ' + message); } catch (e) { /* ignore */ }
         var diagnostic = document.getElementById('diagnosticMessage');
         if (diagnostic) diagnostic.textContent = message;
         var panel = document.getElementById('diagnosticPanel');
@@ -160,6 +186,7 @@
           setStatus('已提交 ' + transfer.files.length + ' 个影像文件');
         } catch (error) {
           loading = false;
+          console.error('[MedViewer] 加载失败:', error);
           setStatus(error && error.message ? error.message : String(error), true);
         }
       }

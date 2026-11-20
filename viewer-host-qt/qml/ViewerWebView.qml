@@ -202,9 +202,14 @@ WebEngineView {
     }
 
     onLoadingChanged: function(info) {
-        console.log("[ViewerWeb] loading", viewer.url, "status", info ? info.status : -1,
-                    "error", info && info.errorString ? info.errorString : "")
         var status = info ? info.status : -1
+        // Qt 6.8 在 HTTP 200 成功加载时也会往 errorString 里塞「网页可能暂时无法
+        // 连接」那段错误页模板（本机 Qt 6.8.3 实测：status=2 / domain=7 / code=200
+        // 仍然有这串字），只有 LoadFailedStatus(3) 时它才有意义，真实网络错误是
+        // net::ERR_*。不区分就会把"页面其实加载成功了"误读成打不开的原因。
+        var loadError = status === 3 && info && info.errorString ? info.errorString : ""
+        console.log("[ViewerWeb] loading", viewer.url, "status", status,
+                    loadError ? "error " + loadError : "ok")
         var failed = status === 3
         var succeeded = status === 2
         if (typeof WebEngineLoadingInfo !== "undefined") {
