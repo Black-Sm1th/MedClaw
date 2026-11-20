@@ -32,6 +32,29 @@
         }
       }());
 
+      // WebGL 上下文丢失/恢复 + 视口尺寸：QtWebEngine 上「影像已加载但视口全黑」
+      // 多半是这一层（显卡切换、显存不足、合成器重配、canvas 被算成 0×0）。
+      (function watchWebGlState() {
+        var tag = function (e) {
+          var t = e && e.target;
+          try { return (t && (t.id || t.className)) || 'canvas'; } catch (err) { return 'canvas'; }
+        };
+        window.addEventListener('webglcontextlost', function (e) {
+          console.log('[MedViewer] WebGL 上下文丢失: ' + tag(e));
+        }, true);
+        window.addEventListener('webglcontextrestored', function (e) {
+          console.log('[MedViewer] WebGL 上下文恢复: ' + tag(e));
+        }, true);
+        setTimeout(function () {
+          var ax = document.getElementById('container-axial');
+          var cv = ax && ax.querySelector('canvas');
+          console.log('[MedViewer] 视口尺寸: container='
+                      + (ax ? ax.clientWidth + 'x' + ax.clientHeight : 'null')
+                      + ' canvas=' + (cv ? cv.width + 'x' + cv.height : 'null')
+                      + ' visibility=' + document.visibilityState);
+        }, 3000);
+      }());
+
       function setLayout(layout) {
         layout = layout === 'mpr' || layout === 'four' || layout === '3d' ? layout : 'single';
         if (layout === '3d') layout = 'four';
