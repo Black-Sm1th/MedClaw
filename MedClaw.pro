@@ -6,19 +6,33 @@ TARGET = AetherStudy
 
 CONFIG += c++17
 
-# Product model: one C build (phone/SMS, public) or B builds selected by
-# product_b + one tenant + one network. Legacy edition_* flags remain aliases.
-contains(CONFIG, edition_government) {
-    CONFIG += product_b tenant_government network_public
+# Product model: C (consumer: phone/SMS login, public network, no tenant) or
+# B (product_b + one tenant + one network). The content edition is orthogonal:
+# edition_imaging ships either as B (tenant_imaging) or as C
+# (product_c edition_imaging). Legacy edition_* flags remain aliases for B.
+contains(CONFIG, product_b):contains(CONFIG, product_c) {
+    error("product_b and product_c are mutually exclusive")
 }
-contains(CONFIG, edition_imaging) {
-    CONFIG += product_b tenant_imaging network_public
-}
-contains(CONFIG, edition_hospital_chang2) {
-    CONFIG += product_b tenant_hospital_chang2 network_internal
+
+# Bare edition_* flags still mean their historical B target. They must not
+# rewrite the product type once product_b/product_c is set explicitly.
+!contains(CONFIG, product_b):!contains(CONFIG, product_c) {
+    contains(CONFIG, edition_government) {
+        CONFIG += product_b tenant_government network_public
+    }
+    contains(CONFIG, edition_imaging) {
+        CONFIG += product_b tenant_imaging network_public
+    }
+    contains(CONFIG, edition_hospital_chang2) {
+        CONFIG += product_b tenant_hospital_chang2 network_internal
+    }
 }
 
 contains(CONFIG, product_b) {
+    # edition_imaging alone also picks the imaging tenant for B builds.
+    !contains(CONFIG, tenant_government):!contains(CONFIG, tenant_imaging):!contains(CONFIG, tenant_hospital_chang2):contains(CONFIG, edition_imaging) {
+        CONFIG += tenant_imaging
+    }
     !contains(CONFIG, tenant_government):!contains(CONFIG, tenant_imaging):!contains(CONFIG, tenant_hospital_chang2): error("B product requires one tenant_government, tenant_imaging, or tenant_hospital_chang2")
     contains(CONFIG, tenant_government) {
         contains(CONFIG, tenant_imaging): error("B product can only have one tenant")
@@ -43,13 +57,23 @@ contains(CONFIG, product_b) {
         message("MedClaw product: B, tenant: hospital-chang2, network: configured")
     }
 } else {
-    contains(CONFIG, tenant_government): error("A tenant can only be set for product_b")
-    contains(CONFIG, tenant_imaging): error("A tenant can only be set for product_b")
+    # Under product_c a tenant name carries no tenant code; tenant_imaging is
+    # accepted as a shorthand for the imaging content edition so builds written
+    # as "product_c tenant_imaging network_public" keep working.
+    contains(CONFIG, tenant_imaging): CONFIG += edition_imaging
+    contains(CONFIG, tenant_government): error("A tenant can only be set for product_b; the C imaging build uses product_c edition_imaging")
     contains(CONFIG, tenant_hospital_chang2): error("A tenant can only be set for product_b")
-    contains(CONFIG, network_public): error("Network mode can only be set for product_b; C product is public")
     contains(CONFIG, network_internal): error("Network mode can only be set for product_b; C product is public")
-    DEFINES += MEDCLAW_PRODUCT_C MEDCLAW_NETWORK_PUBLIC MEDCLAW_EDITION_MAIN
-    message("MedClaw product: C, public network")
+    contains(CONFIG, edition_government): error("edition_government is a B target; use product_b tenant_government")
+    contains(CONFIG, edition_hospital_chang2): error("edition_hospital_chang2 is a B target; use product_b tenant_hospital_chang2")
+    DEFINES += MEDCLAW_PRODUCT_C MEDCLAW_NETWORK_PUBLIC
+    contains(CONFIG, edition_imaging) {
+        DEFINES += MEDCLAW_EDITION_IMAGING
+        message("MedClaw product: C, public network, imaging edition")
+    } else {
+        DEFINES += MEDCLAW_EDITION_MAIN
+        message("MedClaw product: C, public network")
+    }
 }
 
 msvc: QMAKE_CXXFLAGS += /utf-8

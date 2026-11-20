@@ -23,6 +23,17 @@ inline bool isInternalNetwork()
 #endif
 }
 
+// Content edition, independent of the product type: the imaging UI ships both
+// as B (tenant_imaging) and as C (product_c edition_imaging).
+inline bool isImagingEdition()
+{
+#ifdef MEDCLAW_EDITION_IMAGING
+    return true;
+#else
+    return false;
+#endif
+}
+
 inline QString tenantCode()
 {
 #ifdef MEDCLAW_TENANT_GOVERNMENT

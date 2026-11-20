@@ -566,7 +566,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("buildGovernmentEdition",
                                              ProductConfig::tenantKey() == QStringLiteral("government"));
     engine.rootContext()->setContextProperty("buildImagingEdition",
-                                             ProductConfig::tenantKey() == QStringLiteral("imaging"));
+                                             ProductConfig::isImagingEdition());
     engine.rootContext()->setContextProperty("buildProductB", ProductConfig::isBusiness());
     engine.rootContext()->setContextProperty("buildInternalNetwork",
                                              ProductConfig::isInternalNetwork());
