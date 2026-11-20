@@ -68,18 +68,27 @@
             }
             var d = fn() || {};
             var viewports = (d.viewports || []).map(function (v) {
+              var c = v.camera || null;
               return {
                 id: v.id,
                 type: v.type,
                 cpu: v.cpu,
                 canvas: v.canvas,
+                camera: c ? {
+                  position: c.position,
+                  focalPoint: c.focalPoint,
+                  viewUp: c.viewUp,
+                  parallelScale: c.parallelScale,
+                  clippingRange: c.clippingRange
+                } : null,
                 actors: (v.actors || []).map(function (a) {
                   return {
                     uid: a.uid,
                     visible: a.visible,
                     dims: a.dimensions,
                     scalar: a.scalarRange,
-                    color: a.colorRange
+                    color: a.colorRange,
+                    opacity: a.opacityRange
                   };
                 })
               };
@@ -93,8 +102,9 @@
             console.log('[MedViewer] 渲染诊断失败(' + tagText + '): ' + e);
           }
         }
-        setTimeout(function () { dump('6s'); }, 6000);
-        setTimeout(function () { dump('12s'); }, 12000);
+        [6, 12, 20, 30, 45, 60].forEach(function (sec) {
+          setTimeout(function () { dump(sec + 's'); }, sec * 1000);
+        });
       }());
 
       function setLayout(layout) {
@@ -213,6 +223,16 @@
             }
             await window.__medclawLoadFromHostEntries(entries);
             setStatus('已提交 ' + entries.length + ' 个影像文件');
+            // 体数据挂载完再 fit 两次：Qt 宿主在页面 load 完成时就会调
+            // __medclawFitViewport，那一刻 volume 还没挂进视口，相机可能被算成
+            // 空的/错的（症状是 2D 视口全黑、而 3D 点开后有自己的相机所以正常）。
+            // 这里在挂载后补一次，等于自动点一下「复位视图」。
+            [1500, 4000].forEach(function (ms) {
+              setTimeout(function () {
+                if (typeof window.__medclawFitViewport === 'function')
+                  window.__medclawFitViewport();
+              }, ms);
+            });
             return;
           }
           while (!inputBound && Date.now() - started < 60000) {
