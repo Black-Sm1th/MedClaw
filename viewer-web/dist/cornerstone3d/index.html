@@ -55,6 +55,48 @@
         }, 3000);
       }());
 
+      // 渲染诊断：3D 能画、三个 2D 视口全黑时，要区分「2D 走了 CPU 回退」
+      // 「actor 没数据」「数据在但没画上来」。页面自带
+      // window.__medclawRenderingDiagnostics()，这里压成一条紧凑 JSON。
+      (function logRenderingDiagnostics() {
+        function dump(tagText) {
+          try {
+            var fn = window.__medclawRenderingDiagnostics;
+            if (typeof fn !== 'function') {
+              console.log('[MedViewer] 渲染诊断钩子缺失(' + tagText + ')');
+              return;
+            }
+            var d = fn() || {};
+            var viewports = (d.viewports || []).map(function (v) {
+              return {
+                id: v.id,
+                type: v.type,
+                cpu: v.cpu,
+                canvas: v.canvas,
+                actors: (v.actors || []).map(function (a) {
+                  return {
+                    uid: a.uid,
+                    visible: a.visible,
+                    dims: a.dimensions,
+                    scalar: a.scalarRange,
+                    color: a.colorRange
+                  };
+                })
+              };
+            });
+            console.log('[MedViewer] 渲染诊断(' + tagText + '): ' + JSON.stringify({
+              useGpuRendering: d.useGpuRendering,
+              renderer: d.renderer,
+              viewports: viewports
+            }));
+          } catch (e) {
+            console.log('[MedViewer] 渲染诊断失败(' + tagText + '): ' + e);
+          }
+        }
+        setTimeout(function () { dump('6s'); }, 6000);
+        setTimeout(function () { dump('12s'); }, 12000);
+      }());
+
       function setLayout(layout) {
         layout = layout === 'mpr' || layout === 'four' || layout === '3d' ? layout : 'single';
         if (layout === '3d') layout = 'four';
