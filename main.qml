@@ -5837,9 +5837,15 @@ ApplicationWindow {
                         return ""
                     if (list.length === 1) {
                         var only = imagingDomainByName(list[0])
-                        if (!only)
-                            return ""
-                        return only.name + " · " + (only.toolIds || []).length + " 项能力：" + (only.note || "")
+                        if (!only) {
+                            // 学组名对不上表（改过名/选择记录是旧的）时不能整条空白，
+                            // 至少把名字显示出来，否则这块区域看着像"没内容"。
+                            return String(list[0])
+                        }
+                        var count = (only.toolIds || []).length
+                        var note = String(only.note || "")
+                        return only.name + " · " + count + " 项能力"
+                                + (note.length > 0 ? "：" + note : "")
                     }
                     var names = []
                     var seen = ({})
@@ -12328,17 +12334,21 @@ ApplicationWindow {
                     Label {
                         id: imagingDomainHintLabel
                         visible: newTaskRec.imagingDomainHint.length > 0
+                        // 卡片（y256 + 218 = 474，抬起来会到 ~490）之上一层，别被卡片盖住
+                        z: 60
                         anchors.horizontalCenter: parent.horizontalCenter
-                        // 卡片底 506、操作条 553：两行提示占 510–544，留 9px 呼吸
-                        y: 510
-                        width: Math.min(820, imagingDomainCards.width)
-                        height: 34
+                        // 卡片底 506、操作条 553：两行提示占 508–548，留 5px 呼吸
+                        y: 506
+                        width: Math.min(820, imagingDomainCards.width - 24)
+                        // 13px 两行 + 行距 ≈ 40，之前 34 会把第二行下半截裁掉
+                        height: 42
                         text: newTaskRec.imagingDomainHint
                         font.family: "Alibaba PuHuiTi 3.0"
                         font.pixelSize: 13
+                        lineHeight: 1.25
                         color: "#73000000"
                         // 单选要两行才放得下完整能力边界；QQC2 的 Label 没有 maximumLineCount，
-                        // 靠固定高度 + clip 兜底，避免压到下面的操作条。
+                        // 靠固定高度 + clip 兜底，避免压到下面的操作条（553）。
                         wrapMode: Text.WordWrap
                         clip: true
                         horizontalAlignment: Text.AlignHCenter
