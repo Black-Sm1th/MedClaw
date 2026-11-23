@@ -1,5 +1,10 @@
 QT += concurrent quick quickcontrols2 websockets sql network webenginequick widgets core5compat pdf pdfquick
 
+# thumbnailer uses zlib's raw DEFLATE API to decode gzip payloads. Depend on
+# the platform zlib instead of Qt's private, SDK-dependent QtZlib headers.
+unix|win32-g++: LIBS += -lz
+win32-msvc: LIBS += zlib.lib
+
 include(viewer-host-qt/viewer-host-qt.pri)
 
 TARGET = AetherStudy
