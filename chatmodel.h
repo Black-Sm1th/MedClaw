@@ -29,6 +29,7 @@ struct ChatMessage
     /// 合并到 toolCall 行：收到 toolResult 后写入，不再单独插入一行
     QString toolResultText;
     bool hasToolResult = false;
+    bool isCancelled = false;
     /// 当前消息是否处于流式接收态（用于 QML 切换 textFormat / 走增量追加路径）
     bool isStreaming = false;
     /// 工具调用之间的中间助手文本（区别于最终回答）：QML 用斜体渲染。
@@ -66,6 +67,7 @@ public:
         IsErrorRole,
         ToolResultTextRole,
         HasToolResultRole,
+        IsCancelledRole,
         IsStreamingRole,
         IsIntermediateRole,
         ArtifactsRole,
@@ -96,6 +98,8 @@ public:
                                    const QString &content,
                                    const QString &toolCallId,
                                    bool isError = false);
+    /// Stop pending tool spinners when the user cancels the current run.
+    Q_INVOKABLE void cancelPendingToolCalls();
     Q_INVOKABLE void addQuestion(const QString &toolCallId,
                                  const QString &question,
                                  const QVariantList &options,

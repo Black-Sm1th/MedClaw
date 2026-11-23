@@ -6200,6 +6200,7 @@ void GatewayClient::abortChat(const QString &sessionKey)
 
     // Reflect the user's stop action immediately in the local task list;
     // the server's aborted event remains the authoritative cleanup path.
+    emit chatAborted(key);
     setTaskSessionCancelled(key);
     m_chatRunningSessionKeys.remove(key);
     updateChatRunningForCurrentSession();
@@ -6700,6 +6701,8 @@ void GatewayClient::handleEvent(const QJsonObject &msg)
         if (!eventAppliesToCurrentUiSession(payload))
             return;
         const QString runId = payload.value(QStringLiteral("runId")).toString().trimmed();
+        if (runId.isEmpty() || runId == m_activeChatRunId)
+            emit chatAborted(abortedKey);
         if (runId.isEmpty() || m_activeChatRunId.isEmpty() || runId == m_activeChatRunId) {
             if (m_session.isStreaming()) {
                 m_session.setStreaming(false);

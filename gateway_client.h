@@ -622,6 +622,7 @@ signals:
     void streamingStarted();                ///< 流式输出开始
     void streamingFinished();               ///< 流式输出结束
     void chatRunningChanged();              ///< 当前聊天运行状态变化
+    void chatAborted(const QString &sessionKey); ///< 当前会话收到用户终止操作
 
     // ── 工具调用 ──
     void artifactsDetected(const QString &sessionKey, const QVariantList &artifacts);

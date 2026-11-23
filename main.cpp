@@ -473,6 +473,14 @@ int main(int argc, char *argv[])
     QObject::connect(&wsClient, &GatewayClient::streamingFinished, [&chatModel]() {
         chatModel.endStreaming();
     });
+    QObject::connect(&wsClient, &GatewayClient::chatAborted,
+                     [&chatModel, &wsClient](const QString &sessionKey) {
+                         QString visibleSession = wsClient.currentViewSessionKey().trimmed();
+                         if (visibleSession.isEmpty())
+                             visibleSession = wsClient.currentTaskSessionKey().trimmed();
+                         if (sessionKey.trimmed() == visibleSession)
+                             chatModel.cancelPendingToolCalls();
+                     });
 
     QObject::connect(&wsClient,
                      &GatewayClient::artifactsDetected,
@@ -561,6 +569,15 @@ int main(int argc, char *argv[])
                          wsClient.rememberInputFilesFromHistory(messages);
                          chatModel.loadHistory(
                              wsClient.restoreSessionArtifacts(sessionKey, messages));
+                         for (const QVariant &task : wsClient.taskSessionList()) {
+                             const QVariantMap row = task.toMap();
+                             if (row.value(QStringLiteral("session_id")).toString() == sessionKey
+                                 && row.value(QStringLiteral("taskStatus")).toString()
+                                     == QLatin1String("cancelled")) {
+                                 chatModel.cancelPendingToolCalls();
+                                 break;
+                             }
+                         }
                      });
 
     // ── 本地会话历史读取器 ──
