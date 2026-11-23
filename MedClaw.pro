@@ -82,6 +82,7 @@ msvc: QMAKE_CXXFLAGS += /utf-8
 # GNU ld.bfd ".dynsym local symbol" diagnostics on newer Linux toolchains.
 # gold links the same library cleanly.
 linux:QMAKE_LFLAGS += -fuse-ld=gold
+unix: LIBS += -lz
 
 # Uncomment to make code fail on deprecated API usage
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000

@@ -735,6 +735,7 @@
       border-radius: 50%;
     }
     .dot.error { background: #EF4444; animation: none; }
+    .dot.cancelled { background: #9CA3AF; animation: none; }
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -1524,6 +1525,7 @@
 
       function toolVisuallyComplete(items, index, isRunning) {
         var msg = items[index] || {};
+        if (msg.isCancelled === true) return true;
         if (msg.hasToolResult !== true) return false;
         if (msg.isError === true) return true;
         for (var next = index + 1; next < items.length; next++) {
@@ -1545,6 +1547,7 @@
       function statusIcon(msg, completed) {
         if (!completed) return '<span class="spinner"></span>';
         if (msg.isError) return '<span class="dot error"></span>';
+        if (msg.isCancelled === true) return '<span class="dot cancelled"></span>';
         return '<img class="status-icon" src="qrc:///images/toolSuccess.png" alt="">';
       }
 
@@ -2142,6 +2145,7 @@
           && a.isError === b.isError
           && a.toolResultText === b.toolResultText
           && a.hasToolResult === b.hasToolResult
+          && a.isCancelled === b.isCancelled
           && a.isStreaming === b.isStreaming
           && a.isIntermediate === b.isIntermediate
           && JSON.stringify(a.artifacts || []) === JSON.stringify(b.artifacts || [])

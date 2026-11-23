@@ -172,6 +172,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const
         return msg.toolResultText;
     case HasToolResultRole:
         return msg.hasToolResult;
+    case IsCancelledRole:
+        return msg.isCancelled;
     case IsStreamingRole:
         return msg.isStreaming;
     case IsIntermediateRole:
@@ -210,6 +212,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const
             {IsErrorRole, "isError"},
             {ToolResultTextRole, "toolResultText"},
             {HasToolResultRole, "hasToolResult"},
+            {IsCancelledRole, "isCancelled"},
             {IsStreamingRole, "isStreaming"},
             {IsIntermediateRole, "isIntermediate"},
             {ArtifactsRole, "artifacts"},
@@ -332,9 +335,14 @@ void ChatModel::appendToolResult(const QString &toolName,
         const bool idMatches = !toolCallId.isEmpty() && msg.toolCallId == toolCallId;
         const bool fallbackMatches = toolCallId.isEmpty() && !toolName.isEmpty()
                                      && msg.toolName == toolName && !msg.hasToolResult;
-        if (msg.msgType != QStringLiteral("toolCall") || (!idMatches && !fallbackMatches)) {
+        if (msg.msgType != QStringLiteral("toolCall"))
             continue;
-        }
+        // A late progress event after explicit cancellation must not recreate
+        // the just-closed card as a second, apparently running tool call.
+        if (idMatches && msg.hasToolResult)
+            return;
+        if (!idMatches && !fallbackMatches)
+            continue;
 
         // 网关可能发送 delta，也可能发送不断增长的完整快照。
         QString delta;
@@ -368,12 +376,14 @@ void ChatModel::addToolResult(const QString &toolName,
     for (int i = m_messages.count() - 1; i >= 0; --i) {
         if (m_messages[i].msgType == QStringLiteral("toolCall") && !toolCallId.isEmpty()
             && m_messages[i].toolCallId == toolCallId) {
-            if (!content.isEmpty())
+            if (!content.isEmpty() || m_messages[i].isCancelled)
                 m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
+            m_messages[i].isCancelled = false;
             m_messages[i].isError = toolResultIsError(content, isError);
             const QModelIndex idx = index(i);
-            emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
+            emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole,
+                                        IsCancelledRole});
             emit messagePayloadChanged();
             emit toolCallChanged(i, messages().at(i).toMap());
             return;
@@ -388,12 +398,14 @@ void ChatModel::addToolResult(const QString &toolName,
                 || m_messages[i].toolName != toolName) {
                 continue;
             }
-            if (!content.isEmpty())
+            if (!content.isEmpty() || m_messages[i].isCancelled)
                 m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
+            m_messages[i].isCancelled = false;
             m_messages[i].isError = toolResultIsError(content, isError);
             const QModelIndex idx = index(i);
-            emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
+            emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole,
+                                        IsCancelledRole});
             emit messagePayloadChanged();
             emit toolCallChanged(i, messages().at(i).toMap());
             return;
@@ -426,6 +438,37 @@ void ChatModel::appendToLastMessage(const QString &text)
     const QModelIndex idx = index(last);
     emit dataChanged(idx, idx, {ContentRole});
     emit messagePayloadChanged();
+}
+
+void ChatModel::cancelPendingToolCalls()
+{
+    bool changed = false;
+    const QString cancellationText = QStringLiteral("已由用户终止");
+    int lastUserRow = -1;
+    for (int i = m_messages.size() - 1; i >= 0; --i) {
+        if (m_messages.at(i).role == QLatin1String("user")) {
+            lastUserRow = i;
+            break;
+        }
+    }
+    for (int i = lastUserRow + 1; i < m_messages.size(); ++i) {
+        ChatMessage &msg = m_messages[i];
+        if (msg.msgType != QLatin1String("toolCall") || msg.hasToolResult)
+            continue;
+
+        msg.hasToolResult = true;
+        msg.isCancelled = true;
+        if (msg.toolResultText.isEmpty())
+            msg.toolResultText = cancellationText;
+        else
+            msg.toolResultText += QLatin1Char('\n') + cancellationText;
+        const QModelIndex idx = index(i);
+        emit dataChanged(idx, idx, {ToolResultTextRole, HasToolResultRole, IsCancelledRole});
+        emit toolCallChanged(i, messages().at(i).toMap());
+        changed = true;
+    }
+    if (changed)
+        emit messagePayloadChanged();
 }
 
 void ChatModel::clear()
@@ -567,6 +610,7 @@ QVariantList ChatModel::messages() const
         item.insert(QStringLiteral("isError"), msg.isError);
         item.insert(QStringLiteral("toolResultText"), msg.toolResultText);
         item.insert(QStringLiteral("hasToolResult"), msg.hasToolResult);
+        item.insert(QStringLiteral("isCancelled"), msg.isCancelled);
         item.insert(QStringLiteral("isStreaming"), msg.isStreaming);
         item.insert(QStringLiteral("isIntermediate"), msg.isIntermediate);
         item.insert(QStringLiteral("artifacts"), msg.artifacts);
@@ -699,21 +743,27 @@ void ChatModel::mergeHistorySnapshot(const QVariantList &messages)
         ChatMessage &current = m_messages[row];
         if (current.msgType == QLatin1String("toolCall")
             && incoming.msgType == QLatin1String("toolCall")) {
-            const QString resultText = incoming.toolResultText.size() >= current.toolResultText.size()
-                ? incoming.toolResultText : current.toolResultText;
+            const QString resultText = current.isCancelled && incoming.hasToolResult
+                ? incoming.toolResultText
+                : (incoming.toolResultText.size() >= current.toolResultText.size()
+                       ? incoming.toolResultText : current.toolResultText);
             const bool hasResult = current.hasToolResult || incoming.hasToolResult;
             const bool isError = current.isError || incoming.isError;
+            const bool isCancelled = incoming.hasToolResult
+                ? incoming.isCancelled : current.isCancelled;
             if (current.toolArgs.isEmpty())
                 current.toolArgs = incoming.toolArgs;
             const bool changed = current.toolResultText != resultText
-                || current.hasToolResult != hasResult || current.isError != isError;
+                || current.hasToolResult != hasResult || current.isError != isError
+                || current.isCancelled != isCancelled;
             current.toolResultText = resultText;
             current.hasToolResult = hasResult;
             current.isError = isError;
+            current.isCancelled = isCancelled;
             if (changed) {
                 const QModelIndex idx = index(row);
                 emit dataChanged(idx, idx,
-                                 {IsErrorRole, ToolResultTextRole, HasToolResultRole,
+                                 {IsErrorRole, ToolResultTextRole, HasToolResultRole, IsCancelledRole,
                                   ToolArgsRole});
                 emit toolCallChanged(row, this->messages().at(row).toMap());
                 emit messagePayloadChanged();
