@@ -2849,6 +2849,8 @@ ApplicationWindow {
                     text: window.governmentEdition ? "政务智能体" : "Aether study"
                     font.family: "Alimama ShuHeiTi"
                     font.pixelSize: 18
+                    // 不写 color 会走 Fusion 风格的 palette.windowText，系统深色模式下变白色
+                    color: "#D9000000"
                     anchors.left: logoImage.right
                     anchors.leftMargin: 8
                     visible: window.sidebarExpanded

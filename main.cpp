@@ -23,6 +23,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStringList>
+#include <QStyleHints>
 #include <QSurfaceFormat>
 #include <QTextStream>
 #include <QSystemTrayIcon>
@@ -425,6 +426,11 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
     QApplication app(argc, argv);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    // 应用整体是浅色设计，固定浅色调色板。否则系统深色模式下 Fusion 会把
+    // palette.windowText 等默认文字色翻成白色，没显式写 color 的控件就成了白字白底。
+    app.styleHints()->setColorScheme(Qt::ColorScheme::Light);
+#endif
     QCoreApplication::setOrganizationName(ProductConfig::settingsOrganizationName());
     // 尽早装上：后面的网关/会话/产物采集日志都要能落盘
     installFileMessageHandler();
