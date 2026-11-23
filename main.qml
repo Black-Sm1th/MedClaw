@@ -4966,32 +4966,32 @@ ApplicationWindow {
                 }
 
                 /// 从阅片列表里移除一个影像（只出列表，不动磁盘文件）。
-                /// 它如果就是当前的阅片标签，顺手把对应标签关掉，让视图切到下一个。
+                /// 删掉的是"当前正在看"的那张时，切到列表里相邻的一张；只有列表
+                /// 空了才关掉阅片台标签。旧实现只要命中 tab.path 就 closeOfficeTabNow，
+                /// 而所有影像共用一个宿主标签、且 rememberMedicalPath 把最新打开的
+                /// 放在列表最前面，于是"点第一张的 ×" = 删掉当前项 = 整个阅片台被关。
                 function forgetMedicalPath(path) {
                     var target = String(path || "")
                     if (target.length === 0)
                         return
                     var key = medicalPathKey(target)
                     console.log("[ReaderStrip] remove " + target)
-                    // 1) 关掉指向同一文件的阅片标签（从后往前，避免下标错位）
-                    for (var i = officeTabs.count - 1; i >= 0; --i) {
-                        var tab = officeTabs.get(i)
-                        if (String(tab.kind || "") !== "medical")
-                            continue
-                        if (medicalPathKey(tab.path) !== key)
-                            continue
-                        closeOfficeTabNow(i)
-                    }
-                    // 2) 从历史列表里去掉（缩略图条的数据源）
+
+                    // 1) 从历史列表里去掉（缩略图条的数据源），记住它原来的位置
                     var list = (medicalHistory || []).slice(0)
                     var kept = []
+                    var removedIndex = -1
                     for (var j = 0; j < list.length; ++j) {
-                        if (medicalPathKey(list[j].path) === key)
+                        if (medicalPathKey(list[j].path) === key) {
+                            if (removedIndex < 0)
+                                removedIndex = j
                             continue
+                        }
                         kept.push(list[j])
                     }
                     medicalHistory = kept
-                    // 3) 顺手丢掉这一项的缩略图缓存
+
+                    // 2) 顺手丢掉这一项的缩略图缓存
                     var thumbs = readerThumbs || ({})
                     var stale = false
                     for (var k in thumbs) {
@@ -5009,6 +5009,36 @@ ApplicationWindow {
                         }
                         readerThumbs = next
                     }
+
+                    // 3) 标签：删的不是当前这张时，列表/缩略图更新完就够了
+                    var tabIndex = -1
+                    for (var i = officeTabs.count - 1; i >= 0; --i) {
+                        var tab = officeTabs.get(i)
+                        if (String(tab.kind || "") !== "medical")
+                            continue
+                        if (medicalPathKey(tab.path) !== key)
+                            continue
+                        tabIndex = i
+                        break
+                    }
+                    if (tabIndex < 0)
+                        return
+                    if (kept.length === 0) {
+                        // 真的没有可看的影像了，才关掉阅片台
+                        closeOfficeTabNow(tabIndex)
+                        return
+                    }
+                    // 还有别的影像：切到它原来位置的相邻一张（优先后面的，末尾就往前取）
+                    var pick = kept[Math.min(Math.max(removedIndex, 0), kept.length - 1)]
+                    if (!pick)
+                        pick = kept[0]
+                    var nextPath = String(pick.path || "")
+                    console.log("[ReaderStrip] switch after remove -> " + nextPath)
+                    openMedicalImageFile({ path: nextPath,
+                                           name: String(pick.name
+                                                        || nextPath.split("/").pop()
+                                                        || ""),
+                                           extension: fileExtension(nextPath) })
                 }
 
                 function isNeverOpenFile(file) {
