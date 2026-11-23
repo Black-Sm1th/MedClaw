@@ -5858,46 +5858,6 @@ ApplicationWindow {
                     }
                     return null
                 }
-                // 浮层底部的一行提示：选中学组的能力数 + 边界（点「确认」之前就看得到）
-                // 单选给完整 note（两行内放得下）；多选不拼 note，否则会被 elide 吃掉，
-                // 改成「已选 N 个 · 共 M 项能力」，M 按去重并集算（多个学组共用同一工具不重复计）。
-                readonly property string imagingDomainHint: {
-                    var list = selectedImagingDomains || []
-                    if (list.length === 0)
-                        return ""
-                    if (list.length === 1) {
-                        var only = imagingDomainByName(list[0])
-                        if (!only) {
-                            // 学组名对不上表（改过名/选择记录是旧的）时不能整条空白，
-                            // 至少把名字显示出来，否则这块区域看着像"没内容"。
-                            return String(list[0])
-                        }
-                        var count = (only.toolIds || []).length
-                        var note = String(only.note || "")
-                        return only.name + " · " + count + " 项能力"
-                                + (note.length > 0 ? "：" + note : "")
-                    }
-                    var names = []
-                    var seen = ({})
-                    var union = 0
-                    for (var i = 0; i < list.length; i++) {
-                        var domain = imagingDomainByName(list[i])
-                        if (!domain)
-                            continue
-                        names.push(domain.name)
-                        var ids = domain.toolIds || []
-                        for (var j = 0; j < ids.length; j++) {
-                            if (!seen[ids[j]]) {
-                                seen[ids[j]] = true
-                                union += 1
-                            }
-                        }
-                    }
-                    if (names.length === 0)
-                        return ""
-                    return "已选 " + names.length + " 个学组（" + names.join("、")
-                            + "）· 共 " + union + " 项能力"
-                }
                 // 学组只是「入口」：不改工具白名单，发送时把选中学组的能力清单注入任务上下文，
                 // 让模型按领域挑工具（与 <template-parameters> 用的是同一套做法）。
                 function imagingDomainPromptBlock() {
@@ -12357,32 +12317,6 @@ ApplicationWindow {
                                 }
                             }
                         }
-                    }
-
-                    // 选中学组的能力提示：压在卡片底（506）和操作条（553）之间的一条窄行，
-                    // 只在有选中时出现，不改动设计稿的卡片与操作条尺寸。
-                    Label {
-                        id: imagingDomainHintLabel
-                        visible: newTaskRec.imagingDomainHint.length > 0
-                        // 卡片（y256 + 218 = 474，抬起来会到 ~490）之上一层，别被卡片盖住
-                        z: 60
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        // 卡片底 506、操作条 553：两行提示占 508–548，留 5px 呼吸
-                        y: 506
-                        width: Math.min(820, imagingDomainCards.width - 24)
-                        // 13px 两行 + 行距 ≈ 40，之前 34 会把第二行下半截裁掉
-                        height: 42
-                        text: newTaskRec.imagingDomainHint
-                        font.family: "Alibaba PuHuiTi 3.0"
-                        font.pixelSize: 13
-                        lineHeight: 1.25
-                        color: "#73000000"
-                        // 单选要两行才放得下完整能力边界；QQC2 的 Label 没有 maximumLineCount，
-                        // 靠固定高度 + clip 兜底，避免压到下面的操作条（553）。
-                        wrapMode: Text.WordWrap
-                        clip: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
                     }
 
                     // 底部操作条（设计稿 5460-31496 的「多选」）：已选 N 个 + 关闭 / 确认。
