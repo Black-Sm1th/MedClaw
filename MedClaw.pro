@@ -89,6 +89,7 @@ linux:QMAKE_LFLAGS += -fuse-ld=gold
 HEADERS += \
     product_config.h \
     chat_message_visibility.h \
+    tool_result_status.h \
     mainviewcontroller.h \
     CommonFunc.h \
     gateway_client.h \

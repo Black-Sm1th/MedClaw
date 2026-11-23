@@ -4,6 +4,7 @@
  */
 #include "session_reader.h"
 #include "chat_message_visibility.h"
+#include "tool_result_status.h"
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -371,7 +372,7 @@ QVariantList SessionReader::readSessionMessages(const QString &filePath)
             entry[QStringLiteral("msgType")] = QStringLiteral("toolResult");
             entry[QStringLiteral("toolName")] = tName;
             entry[QStringLiteral("toolCallId")] = tcId;
-            entry[QStringLiteral("isError")] = isErr;
+            entry[QStringLiteral("isError")] = toolResultIsError(resultText, isErr);
             messages.append(entry);
             continue;
         }
@@ -595,7 +596,7 @@ QVariantList SessionReader::parseResponseFile(const QString &filePath)
             entry[QStringLiteral("msgType")] = QStringLiteral("toolResult");
             entry[QStringLiteral("toolName")] = tName;
             entry[QStringLiteral("toolCallId")] = tcId;
-            entry[QStringLiteral("isError")] = isErr;
+            entry[QStringLiteral("isError")] = toolResultIsError(resultText, isErr);
             result.append(entry);
             continue;
         }

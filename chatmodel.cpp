@@ -1,4 +1,5 @@
 #include "chatmodel.h"
+#include "tool_result_status.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -370,7 +371,7 @@ void ChatModel::addToolResult(const QString &toolName,
             if (!content.isEmpty())
                 m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
-            m_messages[i].isError = isError;
+            m_messages[i].isError = toolResultIsError(content, isError);
             const QModelIndex idx = index(i);
             emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
             emit messagePayloadChanged();
@@ -390,7 +391,7 @@ void ChatModel::addToolResult(const QString &toolName,
             if (!content.isEmpty())
                 m_messages[i].toolResultText = content;
             m_messages[i].hasToolResult = true;
-            m_messages[i].isError = isError;
+            m_messages[i].isError = toolResultIsError(content, isError);
             const QModelIndex idx = index(i);
             emit dataChanged(idx, idx, {IsErrorRole, ToolResultTextRole, HasToolResultRole});
             emit messagePayloadChanged();
@@ -408,7 +409,7 @@ void ChatModel::addToolResult(const QString &toolName,
     msg.msgType = QStringLiteral("toolResult");
     msg.toolName = toolName;
     msg.toolCallId = toolCallId;
-    msg.isError = isError;
+    msg.isError = toolResultIsError(content, isError);
     m_messages.append(msg);
     endInsertRows();
     emit countChanged();
@@ -966,7 +967,8 @@ void ChatModel::loadHistory(const QVariantList &messages)
                             && !m_messages[i].hasToolResult))) {
                     m_messages[i].toolResultText = m.value(QStringLiteral("content")).toString();
                     m_messages[i].hasToolResult = true;
-                    m_messages[i].isError = m.value(QStringLiteral("isError")).toBool();
+                    m_messages[i].isError = toolResultIsError(
+                        content, m.value(QStringLiteral("isError")).toBool());
                     merged = true;
                     break;
                 }
@@ -983,7 +985,8 @@ void ChatModel::loadHistory(const QVariantList &messages)
                     }
                     m_messages[i].toolResultText = content;
                     m_messages[i].hasToolResult = true;
-                    m_messages[i].isError = m.value(QStringLiteral("isError")).toBool();
+                    m_messages[i].isError = toolResultIsError(
+                        content, m.value(QStringLiteral("isError")).toBool());
                     merged = true;
                     break;
                 }
@@ -998,7 +1001,8 @@ void ChatModel::loadHistory(const QVariantList &messages)
             msg.msgType = QStringLiteral("toolResult");
             msg.toolName = m.value(QStringLiteral("toolName")).toString();
             msg.toolCallId = toolCallId;
-            msg.isError = m.value(QStringLiteral("isError")).toBool();
+            msg.isError = toolResultIsError(
+                msg.content, m.value(QStringLiteral("isError")).toBool());
             m_messages.append(msg);
             continue;
         }

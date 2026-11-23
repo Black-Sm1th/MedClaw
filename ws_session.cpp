@@ -4,6 +4,7 @@
  */
 #include "ws_session.h"
 #include "chat_message_visibility.h"
+#include "tool_result_status.h"
 #include <QDebug>
 #include <QJsonDocument>
 #include <QUuid>
@@ -348,7 +349,7 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
             entry[QStringLiteral("msgType")] = QStringLiteral("toolResult");
             entry[QStringLiteral("toolName")] = tName;
             entry[QStringLiteral("toolCallId")] = tcId;
-            entry[QStringLiteral("isError")] = isErr;
+            entry[QStringLiteral("isError")] = toolResultIsError(resultText, isErr);
             history.append(entry);
             continue;
         }
