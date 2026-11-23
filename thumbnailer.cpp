@@ -11,7 +11,7 @@
 #include <QStandardPaths>
 #include <QtConcurrent/QtConcurrent>
 #include <QtEndian>
-#include <zlib.h>
+#include <QtZlib/zlib.h>   // Qt 自带 zlib；zconf.h 里的 Z_PREFIX 已把符号映射到 Qt6Core 导出的 z_*
 
 #include <algorithm>
 #include <cmath>
