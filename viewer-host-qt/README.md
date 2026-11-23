@@ -40,12 +40,22 @@ save, save-as, and external links. Other viewer events are emitted through
 
 ## Windows WebGL rendering
 
-MedClaw uses desktop OpenGL for both Qt Quick and Qt WebEngine. This avoids
-ANGLE/D3D11 device loss (`0x887A0020`) while keeping hardware WebGL2 enabled
-for MPR and volume rendering. GPU rasterization and unbounded GPU crash
-retries are no longer forced. Restart the application after rebuilding.
+Qt Quick and Qt WebEngine must share one GPU backend. On Windows the default
+is D3D11 on both sides: Qt Quick uses the RHI D3D11 backend and Qt WebEngine
+uses ANGLE/D3D11, the same stack Chrome uses there. This is required for
+Cornerstone's WebGL: with native desktop OpenGL the volume loads and reports
+correct dimensions, but the viewports paint black. It also avoids the
+`Compositor returned null texture` failure that turns every WebEngine page
+blank (DOM still clickable) when one side is on ANGLE and the other on desktop
+OpenGL. Keep hardware WebGL2 enabled for MPR and volume rendering. GPU
+rasterization and unbounded GPU crash retries are not forced. Restart the
+application after rebuilding.
 
-For drivers that also fail on desktop OpenGL, launch with
+`MEDCLAW_WEBENGINE_GL=desktop` moves **both** Qt Quick and Qt WebEngine back to
+desktop OpenGL (troubleshooting only; Cornerstone viewports will be black on
+affected drivers, and the old WGL shared-context loss can reappear).
+
+For drivers that also fail with hardware WebGL, launch with
 `MEDCLAW_SOFTWARE_OPENGL=1`. This selects Qt's Mesa `opengl32sw.dll`; include
 that DLL from the matching Qt kit when deploying. Software WebGL2 supports
 3D textures but large volumes may render slowly. Qt 6.8.3 builds disable

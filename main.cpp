@@ -164,14 +164,26 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     if (qEnvironmentVariableIsEmpty("QTWEBENGINE_DISABLE_SANDBOX"))
         qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
 
-    // Keep Qt Quick and WebEngine on the same desktop OpenGL implementation.
-    // The Windows compatibility path uses Qt's bundled Mesa software renderer:
-    // Qt 6.8 builds disable SwiftShader, so --use-angle=swiftshader cannot work.
+    // Qt Quick 和 Qt WebEngine 必须落在同一个 GPU 后端上，否则 WebEngine 的
+    // GPU 进程给不出共享纹理（"Compositor returned null texture"），页面纯白。
+    // 默认两边都走 D3D11：Quick 用 RHI D3D11，WebEngine 用 ANGLE/D3D11。
+    // 这也是 Chrome 在 Windows 上走的同一条路——Cornerstone 的 WebGL 在原生
+    // 桌面 OpenGL 下会画成黑图（2026-11-21 现场：dims/相机都正常，像素全黑），
+    // 在 ANGLE/D3D11 下正常。
+    // MEDCLAW_WEBENGINE_GL=desktop → 两边一起退回桌面 OpenGL（排障用）
+    // MEDCLAW_SOFTWARE_OPENGL=1    → 两边一起走 Qt 自带 Mesa 软件渲染
 #ifdef Q_OS_WIN
     const bool hardwareGpu = qEnvironmentVariableIntValue("MEDCLAW_SOFTWARE_OPENGL") != 1;
-    qputenv("QT_OPENGL", hardwareGpu ? "desktop" : "software");
-    qputenv("QSG_RHI_BACKEND", "opengl");
-    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    const QByteArray glBackend = qgetenv("MEDCLAW_WEBENGINE_GL").trimmed().toLower();
+    const bool desktopGl = !hardwareGpu || glBackend == QByteArray("desktop");
+    if (desktopGl) {
+        qputenv("QT_OPENGL", hardwareGpu ? "desktop" : "software");
+        qputenv("QSG_RHI_BACKEND", "opengl");
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    } else {
+        qputenv("QSG_RHI_BACKEND", "d3d11");
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Direct3D11);
+    }
 #endif
 
     QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
@@ -200,24 +212,27 @@ static void configureQtWebEngineRuntime(const char *executablePath)
     appendChromiumFlag(flags, "--enable-webgl");
 #ifdef Q_OS_WIN
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    // Qt6.8 是 Chromium 122，默认后端是 ANGLE/D3D11，**不要**再无条件强制
-    // --use-gl=desktop：那条原生桌面 OpenGL(WGL) 路径是给 Qt5.15(Chromium 83)
-    // 绕共享 GLES2 上下文用的。有的机器上它会直接丢上下文：
+    // Qt6.8 是 Chromium 122。默认跟 Quick 一起走 D3D11：WebEngine 明确指定
+    // ANGLE/D3D11（Chrome 在 Windows 上也是这条），Cornerstone 的 WebGL 才能
+    // 正常出图；两边后端不一致时 GPU 进程拿不到共享纹理：
+    //   Compositor returned null texture
+    // 表现就是文件树/阅片台/聊天这些 WebEngine 页面一片纯白，但 DOM 还活着、
+    // 能点能勾选（2026-11-21 现场）。
+    // 退桌面 OpenGL（MEDCLAW_WEBENGINE_GL=desktop）时，Quick 也一起退（见上），
+    // 否则同样会纯白；那条老路径在部分机器上还会丢共享上下文：
     //   gl_context_wgl.cc: Unable to make gl context current
     //   shared_context_state: Failed to make current since context is marked as lost
-    // 之后 2D 视口全黑、而 3D 点开偶发正常（2026-11-20 现场）。
-    // MEDCLAW_WEBENGINE_GL=angle   → 走 ANGLE（Chrome 在同机验证过的那条路）
-    // MEDCLAW_WEBENGINE_GL=desktop → 退回 Qt5 时代的老路径
+    // MEDCLAW_WEBENGINE_GL=angle   → --use-gl=angle（默认）
+    // MEDCLAW_WEBENGINE_GL=desktop → --use-gl=desktop
     // MEDCLAW_WEBENGINE_ANGLE=d3d11|gl|vulkan 单独指定 ANGLE 后端
-    const QByteArray glBackend = qgetenv("MEDCLAW_WEBENGINE_GL").trimmed().toLower();
     QByteArray angleBackend = qgetenv("MEDCLAW_WEBENGINE_ANGLE").trimmed();
-    if (glBackend == QByteArray("angle")) {
+    if (desktopGl) {
+        appendChromiumFlag(flags, "--use-gl=desktop");
+        angleBackend.clear();
+    } else {
         if (angleBackend.isEmpty())
             angleBackend = QByteArray("d3d11");
         appendChromiumFlag(flags, "--use-gl=angle");
-    } else if (glBackend == QByteArray("desktop")) {
-        appendChromiumFlag(flags, "--use-gl=desktop");
-        angleBackend.clear();
     }
     if (!angleBackend.isEmpty())
         appendChromiumFlag(flags, QByteArray("--use-angle=") + angleBackend);
