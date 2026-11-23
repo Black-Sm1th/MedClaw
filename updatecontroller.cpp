@@ -322,6 +322,13 @@ void UpdateController::handleReleaseReply(QNetworkReply *reply)
     m_updateAvailable = available;
     if (belowMinimum)
         m_forceUpdate = true;
+    if (numericComponentCount(version) > numericComponentCount(clientVersion))
+        qWarning().noquote() << "[Update API] release version" << version
+                             << "carries more components than the client version"
+                             << clientVersion << "- extra components are ignored";
+    qInfo().noquote() << "[Update API] version check - current:" << clientDisplayVersion()
+                      << "latest:" << version << "available:" << available
+                      << "forceUpdate:" << m_forceUpdate;
     emit latestVersionChanged();
     emit updateAvailableChanged();
     emit updateCheckFinished(available);
@@ -350,6 +357,17 @@ QString UpdateController::resolveDownloadUrl(const QVariantMap &release)
     return downloadOrigin().resolved(QUrl(relative)).toString();
 }
 
+int UpdateController::numericComponentCount(const QString &version)
+{
+    QString base = version.trimmed().toLower();
+    if (base.startsWith(QLatin1Char('v')))
+        base.remove(0, 1);
+    const int dash = base.indexOf(QLatin1Char('-'));
+    if (dash >= 0)
+        base = base.left(dash);
+    return base.split(QLatin1Char('.'), Qt::KeepEmptyParts).size();
+}
+
 bool UpdateController::isNewerVersion(const QString &candidate, const QString &current)
 {
     const auto parse = [](const QString &value, QString *suffix) {
@@ -374,7 +392,11 @@ bool UpdateController::isNewerVersion(const QString &candidate, const QString &c
     QString candidateSuffix, currentSuffix;
     const QVector<int> candidateParts = parse(candidate, &candidateSuffix);
     const QVector<int> currentParts = parse(current, &currentSuffix);
-    for (int i = 0; i < qMax(candidateParts.size(), currentParts.size()); ++i) {
+    // 发布记录可能带打包序号（安装包 1.2.15-1 记成 "1.2.15.1"），而客户端只知道
+    // 自己编译进去的版本（"v1.2.15"）。多出来的段一旦参与比较，装完之后仍会判定
+    // “有新版本”，于是无限提示更新。比较长度以客户端自身的精度为准。
+    const int compareLength = qMin(4, qMax(3, numericComponentCount(current)));
+    for (int i = 0; i < compareLength; ++i) {
         const int a = i < candidateParts.size() ? candidateParts.at(i) : 0;
         const int b = i < currentParts.size() ? currentParts.at(i) : 0;
         if (a != b)

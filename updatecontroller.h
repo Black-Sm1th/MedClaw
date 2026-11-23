@@ -79,6 +79,7 @@ private:
     bool verifyDownloadedFile(const QString &path);
     bool launchDownloadedFile(const QString &path);
     static bool isNewerVersion(const QString &candidate, const QString &current);
+    static int numericComponentCount(const QString &version);
     static QString resolveDownloadUrl(const QVariantMap &release);
 
     QNetworkAccessManager *m_network = nullptr;
