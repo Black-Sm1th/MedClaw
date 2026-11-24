@@ -32,7 +32,7 @@ namespace {
 const char productionApiBaseUrl[] = "https://www.aethermind.cn/aether";
 const char testApiBaseUrl[] = "http://111.6.178.34:23212/aether";
 const char internalApiBaseUrl[] = "http://192.168.0.83:8002";
-const QString clientVersion(QStringLiteral("v2.0.0"));
+const QString clientVersion(QStringLiteral("v2.0.1"));
 
 QString clientDisplayVersion()
 {

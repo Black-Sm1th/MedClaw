@@ -1,9 +1,10 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import MedClaw.Theme 1.0
 
 Rectangle {
     id: root
-    color: "#FFFFFF"
+    color: Theme.surface
 
     property var agentList: []
     property string searchText: ""
@@ -320,9 +321,9 @@ Rectangle {
                     height: 206
                     radius: 8
                     clip: true
-                    color: activeHover ? "#F7FAFF" : "#FFFFFF"
+                    color: activeHover ? Theme.accentSoftBg : Theme.surface
                     border.width: 1
-                    border.color: activeHover ? "#8AB9FF" : "#E4E7EC"
+                    border.color: activeHover ? Theme.accentHover : Theme.borderLight
 
                     Image {
                         anchors.left: parent.left
@@ -347,23 +348,23 @@ Rectangle {
                         anchors.top: parent.top
                         anchors.topMargin: 20
                         spacing: 6
-                        Label { width: parent.width; text: expertCard.profile ? expertCard.profile.name : ""; font.pixelSize: 20; font.weight: Font.Bold; color: "#D9000000"; elide: Text.ElideRight }
-                        Label { width: parent.width; text: expertCard.profile ? expertCard.profile.domain : ""; font.pixelSize: 14; color: "#73000000"; elide: Text.ElideRight }
+                        Label { width: parent.width; text: expertCard.profile ? expertCard.profile.name : ""; font.pixelSize: 20; font.weight: Font.Bold; color: Theme.textPrimary; elide: Text.ElideRight }
+                        Label { width: parent.width; text: expertCard.profile ? expertCard.profile.domain : ""; font.pixelSize: 14; color: Theme.textTertiary; elide: Text.ElideRight }
                         Row {
                             spacing: 6
                             Repeater {
                                 model: expertCard.profile ? expertCard.profile.categories : []
                                 Rectangle {
                                     width: categoryText.implicitWidth + 14; height: 26
-                                    color: "#F7F8FA"; border.width: 1; border.color: "#E6E7EB"
-                                    Label { id: categoryText; anchors.centerIn: parent; text: modelData; font.pixelSize: 12; color: "#73000000" }
+                                    color: Theme.surfaceMuted; border.width: 1; border.color: Theme.surfaceSelected
+                                    Label { id: categoryText; anchors.centerIn: parent; text: modelData; font.pixelSize: 12; color: Theme.textTertiary }
                                 }
                             }
                         }
                         Label {
                             width: parent.width; height: 58
                             text: expertCard.profile ? expertCard.profile.intro : ""
-                            font.pixelSize: 14; lineHeight: 1.35; color: "#99000000"
+                            font.pixelSize: 14; lineHeight: 1.35; color: Theme.textDim
                             wrapMode: Text.Wrap
                         }
                     }
@@ -374,7 +375,7 @@ Rectangle {
                         width: 72; height: 38
                         visible: expertCard.activeHover && !expertCard.installingThisCard
                         text: "召唤"; fontSize: 14; buttonRadius: 6
-                        backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
+                        backgroundColor: Theme.accent; textColor: Theme.textInverse; borderWidth: 0
                         onClicked: root.openExpert(expertCard.agent)
                     }
 
@@ -382,7 +383,7 @@ Rectangle {
                         id: expertCardInstallOverlay
                         visible: expertCard.installingThisCard
                         anchors.fill: parent
-                        color: "#DFFFFFFF"
+                        color: Theme.textInverse
                         z: 2
 
                         Column {
@@ -401,7 +402,7 @@ Rectangle {
                                     text: root.installMessage || qsTr("专家安装中...")
                                     font.pixelSize: 14
                                     font.weight: Font.DemiBold
-                                    color: "#A6000000"
+                                    color: Theme.textSecondary
                                     elide: Text.ElideRight
                                 }
                                 Label {
@@ -409,7 +410,7 @@ Rectangle {
                                     text: root.installProgress + "%"
                                     font.pixelSize: 14
                                     font.weight: Font.DemiBold
-                                    color: "#006BFF"
+                                    color: Theme.accent
                                 }
                             }
 
@@ -417,13 +418,13 @@ Rectangle {
                                 width: parent.width
                                 height: 8
                                 radius: 4
-                                color: "#E6E7EB"
+                                color: Theme.surfaceSelected
                                 Rectangle {
                                     width: parent.width * Math.max(0, Math.min(100,
                                         root.installProgress)) / 100
                                     height: parent.height
                                     radius: 4
-                                    color: "#006BFF"
+                                    color: Theme.accent
                                     Behavior on width {
                                         NumberAnimation { duration: 180 }
                                     }
@@ -445,7 +446,7 @@ Rectangle {
                 width: cardGrid.width; height: 120
                 text: "未找到匹配的专家"
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                font.pixelSize: 14; color: "#73000000"
+                font.pixelSize: 14; color: Theme.textTertiary
             }
         }
     }
@@ -463,8 +464,8 @@ Rectangle {
         padding: 0
         onOpened: root.detailPopupActive = true
         onClosed: root.detailPopupActive = false
-        Overlay.modal: Rectangle { color: "#99000000" }
-        background: Rectangle { radius: 8; color: "#FFFFFF" }
+        Overlay.modal: Rectangle { color: Theme.textDim }
+        background: Rectangle { radius: 8; color: Theme.surface }
 
         contentItem: Item {
             ScrollView {
@@ -492,17 +493,17 @@ Rectangle {
                         }
                         Column {
                             width: parent.width - 210; anchors.verticalCenter: parent.verticalCenter; spacing: 5
-                            Label { width: parent.width; text: root.selectedProfile ? root.selectedProfile.name : ""; font.pixelSize: 21; font.weight: Font.Bold; color: "#D9000000"; elide: Text.ElideRight }
+                            Label { width: parent.width; text: root.selectedProfile ? root.selectedProfile.name : ""; font.pixelSize: 21; font.weight: Font.Bold; color: Theme.textPrimary; elide: Text.ElideRight }
                             Rectangle {
                                 visible: root.selectedProfile && String(root.selectedProfile.domain || "").length > 0
-                                width: expertDomainText.implicitWidth + 14; height: 26; radius: 3; color: "#0F006BFF"
-                                Label { id: expertDomainText; anchors.centerIn: parent; text: root.selectedProfile ? "专家团 · " + root.selectedProfile.domain : ""; font.pixelSize: 12; color: "#006BFF" }
+                                width: expertDomainText.implicitWidth + 14; height: 26; radius: 3; color: Theme.accentTintBg
+                                Label { id: expertDomainText; anchors.centerIn: parent; text: root.selectedProfile ? "专家团 · " + root.selectedProfile.domain : ""; font.pixelSize: 12; color: Theme.accent }
                             }
                         }
                         CustomButton {
                             width: 120; height: 42; anchors.verticalCenter: parent.verticalCenter
                             text: "召唤"; fontSize: 16; buttonRadius: 6
-                            backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
+                            backgroundColor: Theme.accent; textColor: Theme.textInverse; borderWidth: 0
                             enabled: !root.installBusy
                             onClicked: {
                                 var prompt = root.selectedProfile ? root.selectedProfile.promptTemplate || "" : ""
@@ -511,11 +512,11 @@ Rectangle {
                         }
                     }
 
-                    Label { width: parent.width - 80; text: root.selectedProfile ? root.selectedProfile.ability : ""; font.pixelSize: 14; color: "#A6000000"; wrapMode: Text.Wrap }
+                    Label { width: parent.width - 80; text: root.selectedProfile ? root.selectedProfile.ability : ""; font.pixelSize: 14; color: Theme.textSecondary; wrapMode: Text.Wrap }
                     Item { width: 1; height: 12; }
                     Label {
                         visible: root.expertSubagents(root.selectedAgent).length > 0
-                        width: parent.width - 80; text: "子专员团队 · 技能清单"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000"
+                        width: parent.width - 80; text: "子专员团队 · 技能清单"; font.pixelSize: 16; font.weight: Font.Bold; color: Theme.textPrimary
                     }
 
                     Grid {
@@ -528,12 +529,12 @@ Rectangle {
                             model: root.expertSubagents(root.selectedAgent)
                             Rectangle {
                                 width: parent.cellWidth; height: 130; radius: 8
-                                color: "#FFFFFF"; border.width: 1; border.color: "#E4E7EC"
+                                color: Theme.surface; border.width: 1; border.color: Theme.borderLight
                                 Image { anchors.left: parent.left; anchors.leftMargin: 12; anchors.top: parent.top; anchors.topMargin: 12; width: 42; height: 42; source: modelData.image; fillMode: Image.PreserveAspectCrop }
                                 Column {
                                     anchors.left: parent.left; anchors.leftMargin: 66; anchors.right: parent.right; anchors.rightMargin: 12; anchors.top: parent.top; anchors.topMargin: 12; spacing: 4
-                                    Label { width: parent.width; text: modelData.name; font.pixelSize: 14; font.weight: Font.Bold; color: "#D9000000"; elide: Text.ElideRight }
-                                    Text { width: parent.width; height: 40; text: modelData.desc; font.pixelSize: 14; lineHeight: 1; color: "#73000000"; wrapMode: Text.WrapAtWordBoundaryOrAnywhere; font.family: "Alibaba PuHuiTi 3.0"; maximumLineCount: 2}
+                                    Label { width: parent.width; text: modelData.name; font.pixelSize: 14; font.weight: Font.Bold; color: Theme.textPrimary; elide: Text.ElideRight }
+                                    Text { width: parent.width; height: 40; text: modelData.desc; font.pixelSize: 14; lineHeight: 1; color: Theme.textTertiary; wrapMode: Text.WrapAtWordBoundaryOrAnywhere; font.family: "Alibaba PuHuiTi 3.0"; maximumLineCount: 2}
                                     Rectangle{
                                         width: 1
                                         height: 12
@@ -546,8 +547,8 @@ Rectangle {
                                             Rectangle {
                                                 width: modelData.overflow ? 30 : chipText.implicitWidth + 12
                                                 height: 24
-                                                color: "#F7F8FA"
-                                                Label { id: chipText; anchors.centerIn: parent; text: modelData.text; font.pixelSize: 12; color: "#A6000000" }
+                                                color: Theme.surfaceMuted
+                                                Label { id: chipText; anchors.centerIn: parent; text: modelData.text; font.pixelSize: 12; color: Theme.textSecondary }
                                             }
                                         }
                                     }
@@ -558,7 +559,7 @@ Rectangle {
                     Item { width: 1; height: 12; }
                     Label {
                         visible: root.selectedProfile && root.selectedProfile.questions.length > 0
-                        width: parent.width - 80; text: "试试这样问我"; font.pixelSize: 16; font.weight: Font.Bold; color: "#D9000000"
+                        width: parent.width - 80; text: "试试这样问我"; font.pixelSize: 16; font.weight: Font.Bold; color: Theme.textPrimary
                     }
                     Item { width: 1; height: 4; }
                     Column {
@@ -568,10 +569,10 @@ Rectangle {
                             model: root.selectedProfile ? root.selectedProfile.questions : []
                             Rectangle {
                                 width: parent.width; height: 50; radius: 4
-                                color: questionMouse.containsMouse ? "#F0F5FF" : "#F7F8FA"
-                                border.width: 1; border.color: questionMouse.containsMouse ? "#8AB9FF" : "#E4E7EC"
-                                Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.right: questionArrow.left; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: "\"" + modelData + "\""; font.pixelSize: 14; color: "#D9000000"; elide: Text.ElideRight }
-                                Label { id: questionArrow; anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: "→"; font.pixelSize: 20; color: "#73000000" }
+                                color: questionMouse.containsMouse ? Theme.accentSoftBg : Theme.surfaceMuted
+                                border.width: 1; border.color: questionMouse.containsMouse ? Theme.accentHover : Theme.borderLight
+                                Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.right: questionArrow.left; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: "\"" + modelData + "\""; font.pixelSize: 14; color: Theme.textPrimary; elide: Text.ElideRight }
+                                Label { id: questionArrow; anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: "→"; font.pixelSize: 20; color: Theme.textTertiary }
                                 MouseArea { id: questionMouse; anchors.fill: parent; hoverEnabled: true; enabled: !root.installBusy; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: { var prompt = modelData; root.summonRequested(root.selectedAgent.id, prompt) } }
                             }
                         }
@@ -584,7 +585,7 @@ Rectangle {
                 anchors.right: parent.right; anchors.rightMargin: 14; anchors.top: parent.top; anchors.topMargin: 10
                 width: 28; height: 28; text: "×"; font.pixelSize: 22
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                color: closeMouse.containsMouse ? "#D9000000" : "#73000000"
+                color: closeMouse.containsMouse ? Theme.textPrimary : Theme.textTertiary
                 MouseArea { id: closeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: expertDetailPopup.close() }
             }
         }
@@ -604,9 +605,9 @@ Rectangle {
         Overlay.modal: Rectangle { color: "transparent" }
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
+            color: Theme.surface
             border.width: 1
-            border.color: "#E4E7EC"
+            border.color: Theme.borderLight
         }
 
         contentItem: Column {
@@ -624,7 +625,7 @@ Rectangle {
                     width: parent.width - installPercentLabel.width - 16
                     text: root.installMessage || qsTr("专家召唤中...")
                     font.pixelSize: 14
-                    color: "#A6000000"
+                    color: Theme.textSecondary
                     elide: Text.ElideRight
                 }
 
@@ -633,7 +634,7 @@ Rectangle {
                     text: root.installProgress + "%"
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
-                    color: "#006BFF"
+                    color: Theme.accent
                 }
             }
 
@@ -641,14 +642,14 @@ Rectangle {
                 width: parent.width - 48
                 height: 8
                 radius: 4
-                color: "#E6E7EB"
+                color: Theme.surfaceSelected
 
                 Rectangle {
                     width: parent.width * Math.max(0, Math.min(100,
                         root.installProgress)) / 100
                     height: parent.height
                     radius: 4
-                    color: "#006BFF"
+                    color: Theme.accent
                     Behavior on width {
                         enabled: root.selectedInstalling
                                  && root.installProgress > 0

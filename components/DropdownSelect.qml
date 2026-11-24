@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Window 2.15
+import MedClaw.Theme 1.0
 
 Item {
     id: root
@@ -8,12 +9,12 @@ Item {
     property var model: []
     property int currentIndex: 0
     property string currentText: model.length > 0 ? model[currentIndex] : ""
-    property color textColor: "#D9000000"
-    property color hoverColor: "#0A000000"
-    property color pressedColor: "#14000000"
-    property color popupBorderColor: "#14000000"
-    property color popupBackgroundColor: "#FFFFFF"
-    property color selectedItemColor: "#0A006BFF"
+    property color textColor: Theme.textPrimary
+    property color hoverColor: Theme.surfaceHover
+    property color pressedColor: Theme.divider
+    property color popupBorderColor: Theme.divider
+    property color popupBackgroundColor: Theme.surface
+    property color selectedItemColor: Theme.accentTintSoft
     property int fontSize: 14
     property int dropdownRadius: 8
     property int itemHeight: 36
@@ -106,7 +107,7 @@ Item {
                 onPaint: {
                     var ctx = getContext("2d")
                     ctx.reset()
-                    ctx.strokeStyle = "#80000000"
+                    ctx.strokeStyle = Theme.textDim.toString()
                     ctx.lineWidth = 1.5
                     ctx.lineCap = "round"
                     ctx.lineJoin = "round"

@@ -1,5 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import MedClaw.Theme 1.0
+import Qt5Compat.GraphicalEffects
 
 Item {
     id: root
@@ -20,7 +22,7 @@ Item {
         height: 6
         radius: 3
         anchors.centerIn: parent
-        color: "#006BFF"
+        color: Theme.accent
         visible: !root.running && !root.failed && root.unread && !root.showingMore
     }
 
@@ -34,7 +36,7 @@ Item {
         onPaint: {
             var ctx = getContext("2d")
             ctx.reset()
-            ctx.strokeStyle = "#006BFF"
+            ctx.strokeStyle = Theme.accent.toString()
             ctx.lineWidth = 3
             ctx.lineCap = "round"
             ctx.beginPath()
@@ -64,7 +66,7 @@ Item {
             radius: 1
             anchors.centerIn: parent
             rotation: 45
-            color: "#E5484D"
+            color: Theme.danger
         }
 
         Rectangle {
@@ -73,7 +75,7 @@ Item {
             radius: 1
             anchors.centerIn: parent
             rotation: -45
-            color: "#E5484D"
+            color: Theme.danger
         }
     }
 
@@ -81,7 +83,7 @@ Item {
         anchors.fill: parent
         radius: 6
         visible: root.showingMore
-        color: moreMouse.containsMouse ? "#10000000" : "transparent"
+        color: moreMouse.containsMouse ? Theme.surfaceHover : "transparent"
 
         Image {
             anchors.centerIn: parent
@@ -89,6 +91,8 @@ Item {
             height: 16
             source: "qrc:/images/more.png"
             fillMode: Image.PreserveAspectFit
+            layer.enabled: true
+            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
         }
 
         MouseArea {

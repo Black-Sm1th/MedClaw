@@ -4,6 +4,7 @@ import QtQuick.Window 2.2
 import QtQuick.Dialogs
 import QtCore
 import Qt5Compat.GraphicalEffects
+import MedClaw.Theme 1.0
 import "./components"
 import "data/TemplatePrompts.js" as TemplatePrompts
 import "data/ToolCategories.js" as ToolCategories
@@ -18,6 +19,7 @@ ApplicationWindow {
         // 0: 最小化到任务栏；1: 直接退出
         property int closeBehavior: 0
         property bool showClosePrompt: true
+        property string theme: "light"
     }
     function requestClose() {
         if (workspaceSettings.showClosePrompt) {
@@ -54,18 +56,18 @@ ApplicationWindow {
             selectedCloseBehavior = workspaceSettings.closeBehavior
             suppressFuturePrompt.checked = false
         }
-        Overlay.modal: Rectangle { color: "#59000000" }
+        Overlay.modal: Rectangle { color: Theme.scrim }
         background: Rectangle {
             radius: 12
-            color: "#FFFFFF"
-            border.color: "#E8EBF0"
+            color: Theme.surface
+            border.color: Theme.borderLight
         }
         contentItem: Item {
             Text {
                 x: 24
                 y: 22
-                text: "关闭 Aether study"
-                color: "#1F2329"
+                text: window.imagingEdition ? "关闭 Aether.Imaging" : "关闭 Aether study"
+                color: Theme.textTitle
                 font.family: "Alibaba PuHuiTi 3.0"
                 font.pixelSize: 18
                 font.weight: Font.DemiBold
@@ -75,7 +77,7 @@ ApplicationWindow {
                 y: 59
                 width: parent.width - 48
                 text: "请选择关闭后的操作"
-                color: "#646A73"
+                color: Theme.textMutedSolid
                 font.family: "Alibaba PuHuiTi 3.0"
                 font.pixelSize: 14
             }
@@ -103,21 +105,21 @@ ApplicationWindow {
                     width: 18
                     height: 18
                     radius: width / 2
-                    color: "#FFFFFF"
-                    border.color: minimizeOption.checked ? "#006BFF" : "#B8BEC8"
+                    color: Theme.textInverse
+                    border.color: minimizeOption.checked ? Theme.accent : Theme.borderStrong
                     Rectangle {
                         anchors.centerIn: parent
                         width: 10
                         height: 10
                         radius: width / 2
-                        color: "#006BFF"
+                        color: Theme.accent
                         visible: minimizeOption.checked
                     }
                 }
                 contentItem: Text {
                     leftPadding: minimizeOption.indicator.width + minimizeOption.spacing
                     text: minimizeOption.text
-                    color: "#323842"
+                    color: Theme.textTitle
                     font: minimizeOption.font
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -143,21 +145,21 @@ ApplicationWindow {
                     width: 18
                     height: 18
                     radius: width / 2
-                    color: "#FFFFFF"
-                    border.color: exitOption.checked ? "#006BFF" : "#B8BEC8"
+                    color: Theme.textInverse
+                    border.color: exitOption.checked ? Theme.accent : Theme.borderStrong
                     Rectangle {
                         anchors.centerIn: parent
                         width: 10
                         height: 10
                         radius: width / 2
-                        color: "#006BFF"
+                        color: Theme.accent
                         visible: exitOption.checked
                     }
                 }
                 contentItem: Text {
                     leftPadding: exitOption.indicator.width + exitOption.spacing
                     text: exitOption.text
-                    color: "#323842"
+                    color: Theme.textTitle
                     font: exitOption.font
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -178,12 +180,12 @@ ApplicationWindow {
                     width: 18
                     height: 18
                     radius: 4
-                    color: suppressFuturePrompt.checked ? "#006BFF" : "#FFFFFF"
-                    border.color: suppressFuturePrompt.checked ? "#006BFF" : "#B8BEC8"
+                    color: suppressFuturePrompt.checked ? Theme.accent : Theme.surface
+                    border.color: suppressFuturePrompt.checked ? Theme.accent : Theme.borderStrong
                     Text {
                         anchors.centerIn: parent
                         text: "✓"
-                        color: "#FFFFFF"
+                        color: Theme.textInverse
                         font.pixelSize: 13
                         visible: suppressFuturePrompt.checked
                     }
@@ -191,7 +193,7 @@ ApplicationWindow {
                 contentItem: Text {
                     leftPadding: suppressFuturePrompt.indicator.width + suppressFuturePrompt.spacing
                     text: suppressFuturePrompt.text
-                    color: "#646A73"
+                    color: Theme.textMutedSolid
                     font: suppressFuturePrompt.font
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -208,13 +210,13 @@ ApplicationWindow {
                     width: 80
                     height: 40
                     radius: 6
-                    color: cancelMouse.pressed ? "#F2F3F5"
-                         : cancelMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
-                    border.color: "#D7DCE3"
+                    color: cancelMouse.pressed ? Theme.surfaceAlt
+                         : cancelMouse.containsMouse ? Theme.surfaceMuted : Theme.surface
+                    border.color: Theme.borderInput
                     Text {
                         anchors.centerIn: parent
                         text: "取消"
-                        color: "#4E5662"
+                        color: Theme.textMutedSolid
                         font.family: "Alibaba PuHuiTi 3.0"
                         font.pixelSize: 14
                     }
@@ -230,12 +232,12 @@ ApplicationWindow {
                     width: 80
                     height: 40
                     radius: 6
-                    color: confirmMouse.pressed ? "#0056D6"
-                         : confirmMouse.containsMouse ? "#1677FF" : "#006BFF"
+                    color: confirmMouse.pressed ? Theme.accentPressed
+                         : confirmMouse.containsMouse ? Theme.accentHover : Theme.accent
                     Text {
                         anchors.centerIn: parent
                         text: "确定"
-                        color: "#FFFFFF"
+                        color: Theme.textInverse
                         font.family: "Alibaba PuHuiTi 3.0"
                         font.pixelSize: 14
                     }
@@ -357,13 +359,13 @@ ApplicationWindow {
                               initialWindowHeight > 0 ? initialWindowHeight
                                                      : Math.min(800, Math.max(480, availableScreenHeight - 80))))
     visible: true
-    title: qsTr("Aether study")
+    title: window.imagingEdition ? "Aether.Imaging" : qsTr("Aether study")
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint
     color: "transparent"
     font.family: "Alibaba PuHuiTi 3.0"
     font.pixelSize: 14
-    palette.highlight: "#006BFF"
-    palette.accent: "#006BFF"
+    palette.highlight: Theme.accent
+    palette.accent: Theme.accent
     property bool isNewTask: true
     property int leftSelectedIndex: 0
     onLeftSelectedIndexChanged: {
@@ -617,7 +619,7 @@ ApplicationWindow {
         closePolicy: updateController.forceUpdate || updateController.downloading ? Popup.NoAutoClose
                                                    : Popup.CloseOnEscape
         Overlay.modal: Rectangle {
-            color: "#40000000"
+            color: Theme.scrimSoft
         }
         background: Rectangle { color: "transparent" }
         contentItem: Item {
@@ -657,8 +659,11 @@ ApplicationWindow {
                 width: parent.width
                 height: parent.height
                 anchors.centerIn: parent
-                radius: 10
-                color: "#FFFFFF"
+                radius: Theme.dark ? 8 : 10
+                // 设计稿（5627-83181）：对话框 800x440、r8、左栏 #212224、1px #262B30 描边
+                color: Theme.dark ? "#212224" : Theme.surface
+                border.width: Theme.dark ? 1 : 0
+                border.color: "#262B30"
                 clip: true
                 visible: !updateController.downloading
 
@@ -667,13 +672,24 @@ ApplicationWindow {
                 readonly property real leftPanelWidth: width * 0.58
                 readonly property real contentInset: 40
 
+                // 设计稿里图片一侧有一层蓝色辉光，向右逐渐加深
+                Rectangle {
+                    visible: Theme.dark
+                    anchors.fill: parent
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.55; color: "#002766FA" }
+                        GradientStop { position: 1.0; color: "#592766FA" }
+                    }
+                }
+
                 Rectangle {
                     id: updateArtworkPanel
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     width: updateCard.width - updateCard.leftPanelWidth
-                    color: "#EAF4FF"
+                    color: Theme.accentSoftBg
                     layer.enabled: true
                     layer.effect: OpacityMask {
                         maskSource: Item {
@@ -691,7 +707,9 @@ ApplicationWindow {
 
                     Image {
                         anchors.fill: parent
-                        source: "qrc:/images/updateImage.png"
+                        // 深色用设计稿（5627-83181）右侧的深色 3D 图；浅色仍是原来的浅色图
+                        source: Theme.dark ? "qrc:/images/updateImage-dark.png"
+                                           : "qrc:/images/updateImage.png"
                         fillMode: Image.PreserveAspectCrop
                         horizontalAlignment: Image.AlignRight
                         smooth: true
@@ -704,10 +722,11 @@ ApplicationWindow {
                     width: 40
                     height: parent.height
                     z: 1
+                    // 用左栏底色淡出到透明；之前写死 #FFFFFFFF，深色下会是一条白条
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#FFFFFFFF" }
-                        GradientStop { position: 1.0; color: "#00FFFFFF" }
+                        GradientStop { position: 0.0; color: Theme.dark ? "#FF212224" : "#FFFFFFFF" }
+                        GradientStop { position: 1.0; color: Theme.dark ? "#00212224" : "#00FFFFFF" }
                     }
                 }
 
@@ -749,7 +768,7 @@ ApplicationWindow {
                                     Label {
                                         width: parent.width - 16
                                         text: modelData
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                         font.pixelSize: 16
                                         wrapMode: Text.Wrap
                                     }
@@ -761,7 +780,7 @@ ApplicationWindow {
                             width: parent.width
                             visible: updateController.errorMessage.length > 0
                             text: updateController.errorMessage
-                            color: "#C62828"
+                            color: Theme.danger
                             font.pixelSize: 13
                             wrapMode: Text.Wrap
                         }
@@ -778,14 +797,14 @@ ApplicationWindow {
                         width: versionBadgeContent.implicitWidth + 16
                         height: 25
                         radius: 13
-                        color: "#1F0080FF"
+                        color: Theme.accentTintBg
                         Row {
                             id: versionBadgeContent
                             anchors.centerIn: parent
                             spacing: 4
                             Label {
                                 text: updateController.latestVersion
-                                color: "#0080FF"
+                                color: Theme.accentHover
                                 font.pixelSize: 14
                                 font.weight: Font.Medium
                                 anchors.verticalCenter: parent.verticalCenter
@@ -801,7 +820,7 @@ ApplicationWindow {
                     Label {
                         width: parent.width
                         text: "发现新版本"
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         font.pixelSize: 36
                         font.weight: Font.ExtraBold
                     }
@@ -815,7 +834,7 @@ ApplicationWindow {
                                 dateText = dateText.substring(0, 10)
                             return "约 " + sizeText + "  " + (dateText ? dateText + " 发布" : "")
                         }
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         font.pixelSize: 14
                         elide: Text.ElideRight
                     }
@@ -832,11 +851,12 @@ ApplicationWindow {
                         buttonWidth: 200
                         buttonHeight: 56
                         buttonRadius: 28
-                        textColor: "#FFFFFF"
+                        textColor: Theme.textInverse
                         borderWidth: 0
                         useGradient: true
                         gradientStartColor: "#05ABFF"
-                        gradientEndColor: "#1678FF"
+                        // 设计稿按钮渐变是 #05ABFF → #1678FF；深色不能用 accentHover（#55A4FF 偏浅）
+                        gradientEndColor: Theme.dark ? "#1678FF" : Theme.accentHover
                         text: updateController.downloading
                               ? "下载中 " + Math.round(updateController.downloadProgress * 100) + "%"
                               : "立即更新"
@@ -848,7 +868,7 @@ ApplicationWindow {
                         text: "稍后提醒"
                         visible: !updateController.forceUpdate
                         opacity: updateController.downloading ? 0.5 : 1
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         font.pixelSize: 14
                         anchors.verticalCenter: parent.verticalCenter
                         MouseArea {
@@ -879,7 +899,7 @@ ApplicationWindow {
                 id: updateProgressCard
                 anchors.fill: parent
                 radius: 12
-                color: "#FFFFFF"
+                color: Theme.surface
                 visible: updateController.downloading
                 Column {
                     anchors.centerIn: parent
@@ -889,7 +909,9 @@ ApplicationWindow {
                         width: 128
                         height: 84
                         anchors.horizontalCenter: parent.horizontalCenter
-                        source: "qrc:/images/loading.gif"
+                        // 下载进度卡底色是 Theme.surface，深色用同底色的反相版 loader
+                        source: Theme.dark ? "qrc:/images/loading-dark-surface.gif"
+                                           : "qrc:/images/loading.gif"
                         playing: updateController.downloading
                     }
                     Label {
@@ -897,7 +919,7 @@ ApplicationWindow {
                         text: updateController.downloadProgress >= 1
                               ? "正在安装更新" : "正在下载更新 " + Math.round(updateController.downloadProgress * 100) + "%"
                         horizontalAlignment: Text.AlignHCenter
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         font.pixelSize: 20
                         font.weight: Font.Medium
                     }
@@ -907,7 +929,7 @@ ApplicationWindow {
                               ? "更新即将完成，应用将自动重启，请稍候..."
                               : "正在下载更新，完成后将自动安装并重启，请稍候..."
                         horizontalAlignment: Text.AlignHCenter
-                        color: "#A6000000"
+                        color: Theme.textSecondary
                         font.pixelSize: 14
                         elide: Text.ElideRight
                     }
@@ -916,7 +938,7 @@ ApplicationWindow {
                         width: parent.width
                         height: 8
                         radius: 4
-                        color: "#E8E9ED"
+                        color: Theme.borderLight
                         Rectangle {
                             width: updateController.downloadTotalBytes > 0
                                    ? parent.width * updateController.downloadProgress
@@ -925,7 +947,7 @@ ApplicationWindow {
                             x: updateController.downloadTotalBytes > 0
                                ? 0 : updateDownloadProgressTrack.width * updateProgressSweep.progress
                             radius: parent.radius
-                            color: "#0080FF"
+                            color: Theme.accentHover
                             visible: updateController.downloadTotalBytes > 0 || updateController.downloadProgress < 1
                         }
                     }
@@ -935,7 +957,7 @@ ApplicationWindow {
                               ? Math.round(updateController.downloadProgress * 100) + "%"
                               : "正在获取下载进度..."
                         horizontalAlignment: Text.AlignHCenter
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         font.pixelSize: 14
                     }
                 }
@@ -2373,8 +2395,37 @@ ApplicationWindow {
         return result
     }
 
+    // 主题偏好：light / dark / system（跟随系统，设计稿 5581-37752 的「主题」页）。
+    // 只有 system 模式才跟随 Qt.styleHints.colorScheme 的变化。
+    function systemPrefersDark() {
+        try {
+            if (Qt.styleHints && Qt.styleHints.colorScheme !== undefined)
+                return Qt.styleHints.colorScheme === Qt.ColorScheme.Dark
+        } catch (e) {
+        }
+        return false
+    }
+    function applyThemePreference() {
+        var pref = workspaceSettings.theme
+        Theme.dark = pref === "dark" ? true
+                   : pref === "light" ? false
+                   : systemPrefersDark()
+    }
+    function setThemePreference(pref) {
+        workspaceSettings.theme = pref
+        applyThemePreference()
+    }
+
+    Connections {
+        target: Qt.styleHints
+        enabled: workspaceSettings.theme === "system"
+        function onColorSchemeChanged() { window.applyThemePreference() }
+    }
+
     // Only connect to the Gateway after the user has an authenticated session.
     Component.onCompleted: {
+        // 应用启动即按上次选择恢复主题（浅色/深色/跟随系统）
+        applyThemePreference()
         // 记下开局尺寸，作为第一次“还原”的目标
         rememberWindowedGeometry()
         // Protect the packaged local backend as soon as the application opens,
@@ -2387,6 +2438,14 @@ ApplicationWindow {
             kbLoadMetadata()
             wsClient.connectToServer(wsClient.serverUrl)
         }
+    }
+
+    // 启动瞬间再兜一次主题（极少数情况下 Settings 的值在 onCompleted 时读到的不是最终值）
+    Timer {
+        interval: 0
+        running: true
+        repeat: false
+        onTriggered: window.applyThemePreference()
     }
 
     Timer {
@@ -2660,7 +2719,7 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape
         z: 20000
 
-        Overlay.modal: Rectangle { color: "#59000000" }
+        Overlay.modal: Rectangle { color: Theme.scrim }
         background: Rectangle { color: "transparent" }
 
         contentItem: Item {
@@ -2671,7 +2730,7 @@ ApplicationWindow {
                 height: Math.min(410, parent.height - 40)
                 anchors.centerIn: parent
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
 
                 Column {
                     anchors.fill: parent
@@ -2681,7 +2740,7 @@ ApplicationWindow {
                     Label {
                         width: parent.width
                         text: qsTr("本机服务无法启动")
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
                     }
@@ -2695,11 +2754,11 @@ ApplicationWindow {
                             readOnly: true
                             wrapMode: Text.Wrap
                             selectByMouse: true
-                            color: "#A6000000"
+                            color: Theme.textSecondary
                             font.pixelSize: 14
                             background: Rectangle {
                                 radius: 8
-                                color: "#F7F9FA"
+                                color: Theme.sidebarBg
                             }
                         }
                     }
@@ -2731,9 +2790,9 @@ ApplicationWindow {
         width: Math.min(kbUploadFormatMessageContent.implicitWidth + 32, window.width - 80)
         height: 44
         radius: 6
-        color: "#FFFFFF"
+        color: Theme.surface
         border.width: 1
-        border.color: "#12000000"
+        border.color: Theme.divider
         anchors.top: parent.top
         anchors.topMargin: 32
         anchors.horizontalCenter: parent.horizontalCenter
@@ -2754,13 +2813,13 @@ ApplicationWindow {
                 width: 18
                 height: 18
                 radius: 9
-                color: "#FF8A34"
+                color: Theme.warning
                 anchors.verticalCenter: parent.verticalCenter
 
                 Label {
                     anchors.centerIn: parent
                     text: "!"
-                    color: "#FFFFFF"
+                    color: Theme.textInverse
                     font.pixelSize: 14
                     font.bold: true
                 }
@@ -2769,7 +2828,7 @@ ApplicationWindow {
             Label {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("不支持该文件格式，请上传PDF，Word，TXT，MD，XLSX格式")
-                color: "#D9000000"
+                color: Theme.textPrimary
                 font.pixelSize: 14
             }
         }
@@ -2790,7 +2849,7 @@ ApplicationWindow {
         width: Math.min(errorToastLabel.implicitWidth + 40, window.width - 80)
         height: 44
         radius: 8
-        color: "#CC000000"
+        color: Theme.scrimHeavy
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 60
@@ -2798,7 +2857,7 @@ ApplicationWindow {
         Label {
             id: errorToastLabel
             text: errorToast.text
-            color: "#FFFFFF"
+            color: Theme.textInverse
             font.pixelSize: 14
             anchors.centerIn: parent
             width: parent.width - 32
@@ -2822,7 +2881,7 @@ ApplicationWindow {
         height: parent.height
         anchors.left: parent.left
         anchors.top: parent.top
-        color: "#F7F9FA"
+        color: Theme.sidebarBg
         clip: true
 
         Behavior on width {
@@ -2842,15 +2901,19 @@ ApplicationWindow {
                     id: logoImage
                     width: 28
                     height: 28
-                    source: "qrc:/images/logoImage.png"
+                    source: Theme.dark ? "qrc:/images/imaging/logo-dark.png"
+                                       : "qrc:/images/logoImage.png"
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Label{
-                    text: window.governmentEdition ? "政务智能体" : "Aether study"
+                    // 影像版两种主题都用 Aether.Imaging（设计稿 5460-32003 浅色版也是这个品牌名）
+                    text: window.governmentEdition ? "政务智能体"
+                          : (window.imagingEdition ? "Aether.Imaging"
+                                                   : "Aether study")
                     font.family: "Alimama ShuHeiTi"
                     font.pixelSize: 18
                     // 不写 color 会走 Fusion 风格的 palette.windowText，系统深色模式下变白色
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                     anchors.left: logoImage.right
                     anchors.leftMargin: 8
                     visible: window.sidebarExpanded
@@ -2909,8 +2972,8 @@ ApplicationWindow {
                                 width: leftMidPanel.width
                                 height: 36
                                 radius: 8
-                                color: isSelected ? "#E6E7EB"
-                                     : selItemMouse.containsMouse ? "#0A000000"
+                                color: isSelected ? Theme.surfaceSelected
+                                     : selItemMouse.containsMouse ? Theme.surfaceHover
                                      : "transparent"
                                 Row {
                                     height: parent.height
@@ -2937,11 +3000,13 @@ ApplicationWindow {
                                                 return "qrc:/images/puzzle.png"
                                             }
                                         }
+                                        layer.enabled: true
+                                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                     }
                                     Label{
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: modelData
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                     }
                                 }
                                 MouseArea {
@@ -2972,11 +3037,11 @@ ApplicationWindow {
                                     visible: modelData === "定时任务" && selItemMouse.containsMouse
                                     text: qsTr("可设置task开机联网后定时启动")
                                     delay: 400
-                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    background: Rectangle { color: Theme.tooltipBg; radius: 4 }
                                     contentItem: Text {
                                         text: scheduledTaskMenuTip.text
                                         font.pixelSize: 14
-                                        color: "#FFFFFF"
+                                        color: Theme.textInverse
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         wrapMode: Text.Wrap
                                     }
@@ -3004,8 +3069,8 @@ ApplicationWindow {
                                 width: leftMidPanel.width
                                 height: 36
                                 radius: 8
-                                color: isSelected ? "#E6E7EB"
-                                     : selItemMouseCollapse.containsMouse ? "#0A000000"
+                                color: isSelected ? Theme.surfaceSelected
+                                     : selItemMouseCollapse.containsMouse ? Theme.surfaceHover
                                      : "transparent"
                                 Image{
                                     anchors.centerIn: parent
@@ -3026,6 +3091,8 @@ ApplicationWindow {
                                             return "qrc:/images/puzzle.png"
                                         }
                                     }
+                                    layer.enabled: true
+                                    layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                 }
                                 MouseArea {
                                     id: selItemMouseCollapse
@@ -3055,11 +3122,11 @@ ApplicationWindow {
                                     visible: modelData === "定时任务" && selItemMouseCollapse.containsMouse
                                     text: qsTr("创建定时任务，让 AI 按计划自动执行")
                                     delay: 400
-                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    background: Rectangle { color: Theme.tooltipBg; radius: 4 }
                                     contentItem: Text {
                                         text: scheduledTaskMenuTipCollapsed.text
                                         font.pixelSize: 14
-                                        color: "#FFFFFF"
+                                        color: Theme.surface
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         wrapMode: Text.Wrap
                                     }
@@ -3071,14 +3138,16 @@ ApplicationWindow {
                             width: leftMidPanel.width
                             height: 36
                             radius: 8
-                            color: collapsedHistoryPopup.visible ? "#E6E7EB"
-                                 : collapsedHistoryTriggerMouse.containsMouse ? "#0A000000"
+                            color: collapsedHistoryPopup.visible ? Theme.surfaceSelected
+                                 : collapsedHistoryTriggerMouse.containsMouse ? Theme.surfaceHover
                                  : "transparent"
                             Image {
                                 anchors.centerIn: parent
                                 width: 16
                                 height: 16
                                 source: "qrc:/images/history.png"
+                                layer.enabled: true
+                                layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                             }
                             MouseArea {
                                 id: collapsedHistoryTriggerMouse
@@ -3126,7 +3195,7 @@ ApplicationWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("项目")
                             font.pixelSize: 12
-                            color: "#80000000"
+                            color: Theme.textDim
                         }
 
                         Rectangle {
@@ -3137,15 +3206,15 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.rightMargin: 4
                             anchors.verticalCenter: parent.verticalCenter
-                            color: projectAddMouse.pressed ? "#14000000"
-                                 : projectAddMouse.containsMouse ? "#0A000000"
+                            color: projectAddMouse.pressed ? Theme.divider
+                                 : projectAddMouse.containsMouse ? Theme.surfaceHover
                                  : "transparent"
 
                             Label {
                                 anchors.centerIn: parent
                                 text: "+"
                                 font.pixelSize: 20
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
                             MouseArea {
                                 id: projectAddMouse
@@ -3166,13 +3235,13 @@ ApplicationWindow {
                                 text: qsTr("新建项目")
                                 delay: 500
                                 background: Rectangle {
-                                    color: "#A6000000"
+                                    color: Theme.textSecondary
                                     radius: 4
                                 }
                                 contentItem: Text {
                                     text: projectAddTip.text
                                     font.pixelSize: 14
-                                    color: "#FFFFFF"
+                                    color: Theme.textInverse
                                     font.family: "Alibaba PuHuiTi 3.0"
                                 }
                             }
@@ -3245,7 +3314,7 @@ ApplicationWindow {
                         id: taskRecordLabel
                         text: "任务记录"
                         font.pixelSize: 12
-                        color: "#80000000"
+                        color: Theme.textDim
                         anchors.left: parent.left
                         anchors.leftMargin: 12
                         anchors.top: projectListScrollView.bottom
@@ -3281,9 +3350,9 @@ ApplicationWindow {
                                     color: {
                                         var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
                                         var isPinned = modelData.pinned || false
-                                        if (isActive) return isPinned ? "#D5D9DF" : "#E6E7EB"
-                                        if (agentItemRect.hovered) return isPinned ? "#E2E5E9" : "#0A000000"
-                                        return isPinned ? "#ECEEF1" : "transparent"
+                                        if (isActive) return isPinned ? Theme.borderInput : Theme.surfaceSelected
+                                        if (agentItemRect.hovered) return isPinned ? Theme.borderLight : Theme.surfaceHover
+                                        return isPinned ? Theme.surfaceSelectedAlt : "transparent"
                                     }
 
                                     Column {
@@ -3305,13 +3374,13 @@ ApplicationWindow {
                                                 }
                                                 text: qsTr("[定时]")
                                                 font.pixelSize: 14
-                                                color: "#73000000"
+                                                color: Theme.textTertiary
                                                 height: 21
                                             }
                                             Label {
                                                 text: window.taskSessionDisplayTitle(modelData)
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 height: 21
                                                 elide: Text.ElideRight
                                                 width: agentListCronTag.visible
@@ -3328,7 +3397,7 @@ ApplicationWindow {
                                                 return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
                                             }
                                             font.pixelSize: 12
-                                            color: "#73000000"
+                                            color: Theme.textTertiary
                                         }
                                     }
 
@@ -3384,7 +3453,7 @@ ApplicationWindow {
             anchors.bottomMargin: 12
             height: 44
             radius: 6
-            color: accountMouse.containsMouse || accountPopup.visible ? "#E6E7EB" : "transparent"
+            color: accountMouse.containsMouse || accountPopup.visible ? Theme.surfaceSelected : "transparent"
             Label {
                 id: accountPhone
                 anchors.left: parent.left
@@ -3393,7 +3462,7 @@ ApplicationWindow {
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 text: window.accountMaskedPhone(authController.phone)
-                color: "#D9000000"
+                color: Theme.textPrimary
                 font.pixelSize: 14
                 elide: Text.ElideMiddle
             }
@@ -3403,7 +3472,7 @@ ApplicationWindow {
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: "›"
-                color: "#73000000"
+                color: Theme.textTertiary
                 font.pixelSize: 24
             }
             MouseArea {
@@ -3435,31 +3504,46 @@ ApplicationWindow {
             }
             return false
         }
-        width: 272
-        height: 158 + creditGroups.length * 43 + (creditGroups.length + 1) * 8
+        // 设计稿（5627-83753）：气泡卡片 248x290、r8，三行积分时正好 290 高
+        width: 248
+        height: 150 + creditGroups.length * 36 + (creditGroups.length + 1) * 8
         padding: 8
         modal: false
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle {
-            color: "#FFFFFF"
-            radius: 7
+            color: Theme.surface
+            radius: 8
             border.width: 1
-            border.color: "#16000000"
+            border.color: Theme.divider
         }
         contentItem: Column {
-            spacing: 4
+            spacing: 0
             Rectangle {
                 width: parent.width
-                height: 62 + accountPopup.creditGroups.length * 43 + (accountPopup.creditGroups.length + 1) * 8
+                height: 62 + accountPopup.creditGroups.length * 36 + (accountPopup.creditGroups.length + 1) * 8
                 radius: 5
                 color: "transparent"
 
+                // 浅色用原来的套餐背景图；深色设计稿是一块比卡片略浅的深灰面板（#303236），
+                // 不透明浅色图直接铺在深色上会变成一块亮卡。
                 Image {
+                    visible: !Theme.dark
                     anchors.fill: parent
                     source: accountPopup.planBackground
                     fillMode: Image.Stretch
                     smooth: true
+                }
+                Rectangle {
+                    visible: Theme.dark
+                    anchors.fill: parent
+                    radius: 5
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "#2E3035" }
+                        GradientStop { position: 0.55; color: "#303236" }
+                        GradientStop { position: 1.0; color: "#33363C" }
+                    }
                 }
 
                 Column {
@@ -3477,7 +3561,7 @@ ApplicationWindow {
                             anchors.right: purchaseButton.left
                             anchors.rightMargin: 8
                             text: accountPopup.planTitle
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                             font.pixelSize: 12
                             elide: Text.ElideRight
                         }
@@ -3490,13 +3574,17 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.rightMargin: 12
                             color: purchaseMouse.containsMouse
-                                   ? (accountPopup.hasPaidPlan ? "#343A40" : "#005EDB")
-                                   : (accountPopup.hasPaidPlan ? "#20252B" : "#006BFF")
+                                   ? (accountPopup.hasPaidPlan ? Theme.textTitle : Theme.accentPressed)
+                                   : (accountPopup.hasPaidPlan ? Theme.textTitle : Theme.accent)
 
                             Label {
                                 anchors.centerIn: parent
                                 text: accountPopup.hasPaidPlan ? "购买加量包" : "升级"
-                                color: "#FFFFFF"
+                                // 深色下「购买加量包」胶囊是白底（textTitle=#FFFFFF），文字必须用深色；
+                                // 「升级」是无填充蓝底，仍用白字
+                                color: accountPopup.hasPaidPlan
+                                       ? (Theme.dark ? "#14171A" : Theme.textInverse)
+                                       : Theme.textInverse
                                 font.pixelSize: 12
                             }
                             MouseArea {
@@ -3517,7 +3605,7 @@ ApplicationWindow {
                         delegate: Item {
                             required property var modelData
                             width: parent.width
-                            height: 43
+                            height: 36
 
                             Label {
                                 id: remainingCredits
@@ -3525,7 +3613,7 @@ ApplicationWindow {
                                 anchors.leftMargin: 12
                                 anchors.top: parent.top
                                 text: window.accountFormatCredits(modelData.remaining)
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                                 font.pixelSize: 20
                                 font.weight: Font.Bold
                             }
@@ -3534,7 +3622,7 @@ ApplicationWindow {
                                 anchors.leftMargin: 2
                                 anchors.baseline: remainingCredits.baseline
                                 text: "/" + window.accountFormatCredits(modelData.total)
-                                color: "#73000000"
+                                color: Theme.textTertiary
                                 font.pixelSize: 12
                             }
                             Label {
@@ -3542,7 +3630,7 @@ ApplicationWindow {
                                 anchors.rightMargin: 12
                                 anchors.baseline: remainingCredits.baseline
                                 text: modelData.label
-                                color: "#73000000"
+                                color: Theme.textTertiary
                                 font.pixelSize: 12
                             }
                             Rectangle {
@@ -3555,7 +3643,7 @@ ApplicationWindow {
                                 anchors.bottomMargin: 5
                                 height: 4
                                 radius: 111
-                                color: "#0F000000"
+                                color: Theme.surfaceHover
 
                                 Rectangle {
                                     width: parent.width * Math.max(0, Math.min(1,
@@ -3563,8 +3651,10 @@ ApplicationWindow {
                                                 ? Number(modelData.remaining) / Number(modelData.total) : 0))
                                     height: parent.height
                                     radius: parent.radius
-                                    color: accountPopup.planBackground === "qrc:/images/user/yearly.png"
-                                            ? "#6B3FFF" : "#006BFF"
+                                    // 深色设计稿的进度条是亮蓝 #3F98FF
+                                    color: Theme.dark ? "#3F98FF"
+                                                      : (accountPopup.planBackground === "qrc:/images/user/yearly.png"
+                                                         ? "#6B3FFF" : Theme.accent)
                                 }
                             }
                         }
@@ -3583,7 +3673,7 @@ ApplicationWindow {
                                   ? Qt.formatDateTime(new Date(accountPopup.earliestExpiry),
                                                       "yyyy-MM-dd hh:mm:ss")
                                   : "暂无有效套餐"
-                            color: "#40000000"
+                            color: Theme.textFaint
                             font.pixelSize: 12
                         }
                         Label {
@@ -3591,7 +3681,7 @@ ApplicationWindow {
                             anchors.rightMargin: 13
                             anchors.verticalCenter: parent.verticalCenter
                             text: "›"
-                            color: "#73000000"
+                            color: Theme.textTertiary
                             font.pixelSize: 18
                         }
                         MouseArea {
@@ -3611,7 +3701,7 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 5
-                color: updateMouse.containsMouse ? "#F2F3F5" : "transparent"
+                color: updateMouse.containsMouse ? Theme.surfaceAlt : "transparent"
                 Image {
                     anchors.left: parent.left
                     anchors.leftMargin: 12
@@ -3619,13 +3709,15 @@ ApplicationWindow {
                     width: 16
                     height: 16
                     source: "qrc:/images/infoCircle.png"
+                    layer.enabled: true
+                    layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                 }
                 Label {
                     anchors.left: parent.left
                     anchors.leftMargin: 36
                     anchors.verticalCenter: parent.verticalCenter
                     text: updateController.checking ? "正在检查..." : "检查更新"
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                     font.pixelSize: 14
                 }
                 Label {
@@ -3633,7 +3725,7 @@ ApplicationWindow {
                     anchors.rightMargin: updateAvailableDot.visible ? 4 : 0
                     anchors.verticalCenter: parent.verticalCenter
                     text: updateController.currentVersion
-                    color: "#40000000"
+                    color: Theme.textFaint
                     font.pixelSize: 14
                 }
                 Rectangle {
@@ -3642,7 +3734,7 @@ ApplicationWindow {
                     width: 6
                     height: 6
                     radius: 3
-                    color: "#FF3D40"
+                    color: Theme.danger
                     anchors.right: parent.right
                     anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
@@ -3666,7 +3758,7 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 5
-                color: logoutMouse.containsMouse ? "#FFF0F0" : "transparent"
+                color: logoutMouse.containsMouse ? Theme.dangerSoftBg : "transparent"
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: 12
@@ -3677,8 +3769,11 @@ ApplicationWindow {
                         width: 16
                         height: 16
                         source: logoutMouse.containsMouse ? "qrc:/images/logoutHover.png" : "qrc:/images/logout.png"
+                        // logout.png 是黑色线框图标，深色下要转浅（hover 的红色图标保持原样）
+                        layer.enabled: Theme.dark && !logoutMouse.containsMouse
+                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                     }
-                    Label { text: authController.busy ? "正在退出..." : "退出登录"; color: logoutMouse.containsMouse ? "#FF4D4F" : "#D9000000"; font.pixelSize: 14 }
+                    Label { text: authController.busy ? "正在退出..." : "退出登录"; color: logoutMouse.containsMouse ? Theme.dangerSoft : Theme.textPrimary; font.pixelSize: 14 }
                 }
                 MouseArea {
                     id: logoutMouse
@@ -3726,9 +3821,9 @@ ApplicationWindow {
 
         background: Rectangle {
             radius: 10
-            color: "#FFFFFF"
+            color: Theme.surface
             border.width: 1
-            border.color: "#14000000"
+            border.color: Theme.divider
         }
 
         contentItem: ScrollView {
@@ -3757,9 +3852,9 @@ ApplicationWindow {
                         color: {
                             var isActive = (modelData.session_id === wsClient.currentTaskSessionKey)
                             var isPinned = modelData.pinned || false
-                            if (isActive) return isPinned ? "#D5D9DF" : "#E6E7EB"
-                            if (histPopAgentRect.hovered) return isPinned ? "#E2E5E9" : "#0A000000"
-                            return isPinned ? "#ECEEF1" : "transparent"
+                            if (isActive) return isPinned ? Theme.borderInput : Theme.surfaceSelected
+                            if (histPopAgentRect.hovered) return isPinned ? Theme.borderLight : Theme.surfaceHover
+                            return isPinned ? Theme.surfaceSelectedAlt : "transparent"
                         }
 
                         Column {
@@ -3781,13 +3876,13 @@ ApplicationWindow {
                                     }
                                     text: qsTr("[定时]")
                                     font.pixelSize: 14
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                     height: 21
                                 }
                                 Label {
                                     text: window.taskSessionDisplayTitle(modelData)
                                     font.pixelSize: 14
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                     height: 21
                                     elide: Text.ElideRight
                                     width: histPopCronTag.visible
@@ -3803,7 +3898,7 @@ ApplicationWindow {
                                     return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd hh:mm")
                                 }
                                 font.pixelSize: 12
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
                         }
 
@@ -3854,7 +3949,7 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.left: leftContainer.right
         anchors.right: parent.right
-        color: "#FFFFFF"
+        color: Theme.windowBg
         Rectangle{
             id: rightTopPanel
             anchors.left: parent.left
@@ -3868,7 +3963,7 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 height: 1
-                color: "#14000000"
+                color: Theme.divider
             }
 
             // 标题栏拖动：越过几个像素才用 startSystemMove() 交给系统（这样单击/双击
@@ -3918,7 +4013,7 @@ ApplicationWindow {
             }
             Rectangle{
                 visible: window.userSessionReady
-                color: "#F7F9FA"
+                color: Theme.sidebarBg
                 width: statusRow.width
                 height: 31
                 anchors.verticalCenter: parent.verticalCenter
@@ -3940,10 +4035,10 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         color: {
                             switch (wsClient.connectionState) {
-                            case 0: return "#D32F2F"  // Disconnected
-                            case 1: return "#FF9800"  // Connecting
-                            case 2: return "#FF9800"  // Handshaking
-                            case 3: return "#006BFF"  // Connected
+                            case 0: return Theme.danger  // Disconnected
+                            case 1: return Theme.warning  // Connecting
+                            case 2: return Theme.warning  // Handshaking
+                            case 3: return Theme.accent  // Connected
                             default: return "#9E9E9E"
                             }
                         }
@@ -3956,7 +4051,7 @@ ApplicationWindow {
                     Label {
                         text: wsClient.statusText
                         font.pixelSize: 14
-                        color: "#A6000000"
+                        color: Theme.textSecondary
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -3999,7 +4094,7 @@ ApplicationWindow {
                     visible: window.userSessionReady
                     width: 1
                     height: 16
-                    color: "#1F000000"
+                    color: Theme.dividerTopbar
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Rectangle{
@@ -4055,6 +4150,7 @@ ApplicationWindow {
             Rectangle{
                 id: newTaskRec
                 anchors.fill: parent
+                color: Theme.windowBg
                 visible: window.leftSelectedIndex === 0 || window.leftSelectedIndex === 6
                 property bool hasMessages: chatModel.count > 0
                 // 待答的 ask_user 问题：提问卡由 QML 渲染（见 AskUserCard），
@@ -5901,6 +5997,7 @@ ApplicationWindow {
                     {
                         name: "神经学组",
                         image: "qrc:/images/imaging/domain-neuro.png",
+                        imageDark: "qrc:/images/imaging/domain-neuro-dark.png",
                         tilt: -3,
                         note: "脑结构分区与体积、儿童脑肿瘤分割、去颅骨、BIDS 准备；暂无卒中/脑出血/白质病变",
                         toolIds: ["imaging_nd_fastsurfer", "imaging_nd_petu", "imaging_nd_hdbet",
@@ -5910,6 +6007,7 @@ ApplicationWindow {
                     {
                         name: "头颈学组",
                         image: "qrc:/images/imaging/domain-headneck.png",
+                        imageDark: "qrc:/images/imaging/domain-headneck-dark.png",
                         tilt: 1,
                         note: "暂无专属工具，只能借全身器官结构分割与 CT 报告；颈部淋巴结、甲状腺、鼻窦、颞骨、喉未覆盖",
                         toolIds: ["imaging_nd_totalsegmentator", "imaging_ct_report"]
@@ -5917,6 +6015,7 @@ ApplicationWindow {
                     {
                         name: "心胸学组",
                         image: "qrc:/images/imaging/domain-chest.png",
+                        imageDark: "qrc:/images/imaging/domain-chest-dark.png",
                         tilt: -2,
                         note: "肺/气道/骨分割、肺结节与肺血管掩膜、全身器官结构、胸部 CT 语言报告、胸片读取；无冠脉 CTA、肺气肿定量、Lung-RADS 随访、心功能",
                         toolIds: ["imaging_seg_classic", "imaging_nd_lung_nodules",
@@ -5926,6 +6025,7 @@ ApplicationWindow {
                     {
                         name: "腹部学组",
                         image: "qrc:/images/imaging/domain-abdomen.png",
+                        imageDark: "qrc:/images/imaging/domain-abdomen-dark.png",
                         tilt: 0,
                         note: "腹部器官标签与疾病分数、肝病灶/肾囊肿掩膜、全身器官结构、器官体积与组学报告、腹部 CT 报告；无肿瘤分期与肝硬化分级",
                         toolIds: ["imaging_seg_radar", "imaging_nd_liver_lesions",
@@ -5935,6 +6035,7 @@ ApplicationWindow {
                     {
                         name: "骨肌学组",
                         image: "qrc:/images/imaging/domain-msk.png",
+                        imageDark: "qrc:/images/imaging/domain-msk-dark.png",
                         tilt: 2,
                         note: "仅骨/体轮廓分割、骨段结构清单、骨架形态；无骨折检测、关节软骨、骨密度",
                         toolIds: ["imaging_seg_classic", "imaging_nd_totalsegmentator", "imaging_nd_skan"]
@@ -5942,6 +6043,7 @@ ApplicationWindow {
                     {
                         name: "乳腺学组",
                         image: "qrc:/images/imaging/domain-breast.png",
+                        imageDark: "qrc:/images/imaging/domain-breast-dark.png",
                         tilt: -4,
                         note: "仅能读取 MG/X 线像素、调窗、读体位与侧别；无 BI-RADS、肿块钙化检测、腺体密度",
                         toolIds: ["imaging_xray_io"]
@@ -5955,6 +6057,7 @@ ApplicationWindow {
                         step: "STEP.1",
                         title: "数据接入与预处理",
                         image: "qrc:/images/imaging/step-1.png",
+                        imageDark: "qrc:/images/imaging/step-1-dark.png",
                         detail: "DICOM 盘点、去标识、转 NIfTI，统一方向与层厚，重采样、强度标准化与配准。",
                         prompt: "帮我做数据接入与预处理：先盘点这批数据有几个序列、有没有缺层/混序列/身份信息，需要外发就先做去标识；再把每个序列转成带 HU 和空间信息的 NIfTI，统一方向、重采到同一层厚，按需做强度标准化或偏置场校正，随访影像配准到基线。识别到的序列先列出来给我确认，处理哪些由我定。"
                     },
@@ -5962,6 +6065,7 @@ ApplicationWindow {
                         step: "STEP.2",
                         title: "分割与掩膜质控",
                         image: "qrc:/images/imaging/step-2.png",
+                        imageDark: "qrc:/images/imaging/step-2-dark.png",
                         detail: "密度分割肺/骨/体轮廓，腹部器官与病灶走深度学习，掩膜自动校验网格与体积。",
                         prompt: "帮我对这批影像做分割：先列出能分的结构（肺实质、骨骼、体轮廓、腹部器官、肺结节等）让我选，再输出整数标签掩膜；分完逐个校验是否与底图同网格、体积是否合理、有没有孤立噪点，不合格的标出来，不要偷偷重采样。"
                     },
@@ -5969,6 +6073,7 @@ ApplicationWindow {
                         step: "STEP.3",
                         title: "定量与组学",
                         image: "qrc:/images/imaging/step-3.png",
+                        imageDark: "qrc:/images/imaging/step-3-dark.png",
                         detail: "逐物体算体积、长径短径、HU 统计，按 MIRP（IBSI）提组学特征，需要时接建模流水线。",
                         prompt: "帮我在通过质控的掩膜上做定量：逐物体算体积、长径短径、HU 均值与范围；需要预测模型时，再按 MIRP 的 IBSI 剖面提取组学特征并交给建模流水线。只对掩膜通过质控的病例计算，bin 宽度、剖面这类口径要写进结果。"
                     },
@@ -5976,6 +6081,7 @@ ApplicationWindow {
                         step: "STEP.4",
                         title: "报告与复核",
                         image: "qrc:/images/imaging/step-4.png",
+                        imageDark: "qrc:/images/imaging/step-4-dark.png",
                         detail: "底图、分割、测量、组学汇总成病例报告，并可在阅片窗口逐层对照复核。",
                         prompt: "帮我把这个病例汇总成报告：底图、分割产物、测量表和组学表放一起，按病灶或按器官生成带配图的结构化报告，报告要点单独给一份；结论只用数据和测量能支持的说法，不做诊断，拿不准的列为待复核，并给我在阅片窗口逐层核对的入口。"
                     }
@@ -6413,7 +6519,7 @@ ApplicationWindow {
                         Text {
                             width: parent.width - 46
                             text: qsTr("今天想完成什么？")
-                            color: window.imagingEdition ? "#000000" : "#D9000000"
+                            color: window.imagingEdition ? Theme.textSolid : Theme.textPrimary
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.pixelSize: 40
                             font.bold: !window.imagingEdition
@@ -6432,7 +6538,7 @@ ApplicationWindow {
                         text: qsTr(window.governmentEdition
                                    ? "请描述目标，政务智能体会为您调用合适的专家、工具、模板与知识库"
                                    : "请描述目标，汇小智Aether study 会为您调用合适的专家、工具、模板与知识库")
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         font.family: "Alibaba PuHuiTi 3.0"
                         font.pixelSize: 16
                         horizontalAlignment: Text.AlignHCenter
@@ -6591,7 +6697,7 @@ ApplicationWindow {
 
                     Rectangle {
                         anchors.fill: parent
-                        color: "#E6FFFFFF"
+                        color: Theme.overlayVeil
                     }
 
                     Column {
@@ -6614,7 +6720,7 @@ ApplicationWindow {
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.pixelSize: 20
                             font.weight: Font.Medium
-                            color: "#000000"
+                            color: Theme.textSolid
                             horizontalAlignment: Text.AlignHCenter
                         }
 
@@ -6626,7 +6732,7 @@ ApplicationWindow {
                             font.pixelSize: 14
                             lineHeight: 21
                             lineHeightMode: Text.FixedHeight
-                            color: "#000000"
+                            color: Theme.textSolid
                             horizontalAlignment: Text.AlignHCenter
                         }
                     }
@@ -6669,7 +6775,7 @@ ApplicationWindow {
                     width: 28
                     height: 28
                     radius: 6
-                    color: splitRestoreMouse.containsMouse ? "#F4F6F9" : "transparent"
+                    color: splitRestoreMouse.containsMouse ? Theme.surfaceAlt : "transparent"
                     anchors.top: parent.top
                     anchors.topMargin: 16
                     // 贴着对话列真正的右边缘（中栏展开时是它的左缘）
@@ -6714,14 +6820,14 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     anchors.right: artifactSidebar.left
-                    color: "#FFFFFF"
+                    color: Theme.windowBg
 
                     Rectangle {
                         width: 1
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
-                        color: "#14000000"
+                        color: Theme.divider
                     }
 
                     Item {
@@ -6772,14 +6878,14 @@ ApplicationWindow {
                                     width: middleFixedLabel.implicitWidth + 24
                                     height: 28
                                     radius: 6
-                                    color: active ? "#E6E7EB"
-                                                  : (middleFixedMouse.containsMouse ? "#F4F6F9" : "transparent")
+                                    color: active ? Theme.surfaceSelected
+                                                  : (middleFixedMouse.containsMouse ? Theme.surfaceAlt : "transparent")
 
                                     Text {
                                         id: middleFixedLabel
                                         anchors.centerIn: parent
                                         text: middleFixedTab.modelData.label
-                                        color: middleFixedTab.active ? "#D9000000" : "#73000000"
+                                        color: middleFixedTab.active ? Theme.textPrimary : Theme.textTertiary
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 14
                                         font.weight: middleFixedTab.active
@@ -6836,8 +6942,8 @@ ApplicationWindow {
                                     width: Math.min(200, middleFileLabel.implicitWidth + 62)
                                     height: 28
                                     radius: 6
-                                    color: active ? "#EBEDF0"
-                                                  : (middleFileMouse.containsMouse ? "#F4F6F9" : "transparent")
+                                    color: active ? Theme.surfaceSelectedAlt
+                                                  : (middleFileMouse.containsMouse ? Theme.surfaceAlt : "transparent")
 
                                     Row {
                                         anchors.left: parent.left
@@ -6861,7 +6967,7 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             width: Math.max(0, middleFileTab.width - 54)
                                             text: middleFileTab.name
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 14
                                             elide: Text.ElideMiddle
@@ -6881,7 +6987,7 @@ ApplicationWindow {
                                         anchors.rightMargin: 8
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: "×"
-                                        color: "#73000000"
+                                        color: Theme.textTertiary
                                         font.pixelSize: 15
 
                                         MouseArea {
@@ -6918,12 +7024,12 @@ ApplicationWindow {
                                 width: 24
                                 height: 24
                                 radius: 6
-                                color: zoomOutMouse.containsMouse ? "#F4F6F9" : "transparent"
+                                color: zoomOutMouse.containsMouse ? Theme.surfaceAlt : "transparent"
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: "−"
-                                    color: newTaskRec.splitTreeZoom <= 0.8 ? "#33000000" : "#8A000000"
+                                    color: newTaskRec.splitTreeZoom <= 0.8 ? Theme.textFaint : Theme.textDim
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 16
                                 }
@@ -6945,7 +7051,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignHCenter
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: Math.round(newTaskRec.splitTreeZoom * 100) + "%"
-                                color: "#8A000000"
+                                color: Theme.textDim
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 11
                             }
@@ -6954,12 +7060,12 @@ ApplicationWindow {
                                 width: 24
                                 height: 24
                                 radius: 6
-                                color: zoomInMouse.containsMouse ? "#F4F6F9" : "transparent"
+                                color: zoomInMouse.containsMouse ? Theme.surfaceAlt : "transparent"
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: "+"
-                                    color: newTaskRec.splitTreeZoom >= 1.6 ? "#33000000" : "#8A000000"
+                                    color: newTaskRec.splitTreeZoom >= 1.6 ? Theme.textFaint : Theme.textDim
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 16
                                 }
@@ -6982,7 +7088,7 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             height: 1
-                            color: "#0F000000"
+                            color: Theme.surfaceHover
                         }
 
                     }
@@ -7024,7 +7130,7 @@ ApplicationWindow {
                                     anchors.leftMargin: 12
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: qsTr("产物")
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 16
                                     font.weight: Font.Medium
@@ -7041,14 +7147,14 @@ ApplicationWindow {
                                     width: turnFilterLabel.implicitWidth + 20
                                     height: 22
                                     radius: 11
-                                    color: turnFilterMouse.containsMouse ? "#DCE8FF" : "#F0F5FF"
+                                    color: turnFilterMouse.containsMouse ? Theme.accentSoftBg : Theme.accentSoftBg
 
                                     Text {
                                         id: turnFilterLabel
                                         anchors.centerIn: parent
                                         text: qsTr("本轮 %1 个 · 显示全部")
                                                   .arg(newTaskRec.splitArtifactFileCount)
-                                        color: "#006BFF"
+                                        color: Theme.accent
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 12
                                     }
@@ -7087,27 +7193,27 @@ ApplicationWindow {
                                         width: newTaskRec.splitArtifactChipWidth
                                         height: 29
                                         radius: 8
-                                        color: "#F7F9FA"
+                                        color: Theme.sidebarBg
 
                                         // 激活态：蓝底 6% + 蓝字（设计稿 fill #006BFF @0.06）
                                         Rectangle {
                                             anchors.fill: parent
                                             radius: 8
-                                            color: "#006BFF"
+                                            color: Theme.accent
                                             opacity: artifactFilterChip.active ? 0.06 : 0
                                         }
 
                                         Rectangle {
                                             anchors.fill: parent
                                             radius: 8
-                                            color: "#0F000000"
+                                            color: Theme.surfaceHover
                                             opacity: artifactFilterChip.active || chipMouse.containsMouse ? 0 : 1
                                         }
 
                                         Text {
                                             anchors.centerIn: parent
                                             text: artifactFilterChip.modelData.label
-                                            color: artifactFilterChip.active ? "#006BFF" : "#A6000000"
+                                            color: artifactFilterChip.active ? Theme.accent : Theme.textSecondary
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 14
                                         }
@@ -7175,7 +7281,7 @@ ApplicationWindow {
                                             y: 0
                                             height: isLastLevel && lastChild
                                                     ? parent.height / 2 : parent.height
-                                            color: "#1F000000"
+                                            color: Theme.dividerTopbar
                                         }
                                     }
 
@@ -7186,7 +7292,7 @@ ApplicationWindow {
                                         width: 16
                                         height: 1
                                         anchors.verticalCenter: parent.verticalCenter
-                                        color: "#1F000000"
+                                        color: Theme.dividerTopbar
                                     }
 
                                     Rectangle {
@@ -7195,7 +7301,7 @@ ApplicationWindow {
                                         anchors.rightMargin: 8
                                         anchors.topMargin: 0
                                         radius: 8
-                                        color: artifactRowMouse.containsMouse ? "#F4F6F9" : "transparent"
+                                        color: artifactRowMouse.containsMouse ? Theme.surfaceAlt : "transparent"
                                     }
 
                                     Row {
@@ -7220,7 +7326,7 @@ ApplicationWindow {
                                                             - 4 - artifactRowItem.depth * 20
                                                             - 24 - 40)
                                             text: artifactRowItem.modelData.name
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 16
                                             elide: Text.ElideMiddle
@@ -7239,7 +7345,7 @@ ApplicationWindow {
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = "#8A000000"
+                                            ctx.strokeStyle = Theme.textDim.toString()
                                             ctx.lineWidth = 1.2
                                             ctx.lineCap = "round"
                                             ctx.lineJoin = "round"
@@ -7269,7 +7375,7 @@ ApplicationWindow {
                                     anchors.centerIn: parent
                                     visible: splitArtifactList.count === 0
                                     text: qsTr("还没有产物")
-                                    color: "#40000000"
+                                    color: Theme.textFaint
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 13
                                 }
@@ -7312,9 +7418,9 @@ ApplicationWindow {
                                         width: parent.width - 8
                                         height: parent.height - 24
                                         radius: 6
-                                        color: "#F4F6F9"
+                                        color: Theme.surfaceAlt
                                         border.width: 1
-                                        border.color: imageCellMouse.containsMouse ? "#006BFF" : "#0F000000"
+                                        border.color: imageCellMouse.containsMouse ? Theme.accent : Theme.surfaceHover
                                         clip: true
 
                                         readonly property string thumb:
@@ -7335,7 +7441,7 @@ ApplicationWindow {
                                             anchors.centerIn: parent
                                             visible: imageCellCard.thumb.length === 0
                                             text: qsTr("生成中…")
-                                            color: "#40000000"
+                                            color: Theme.textFaint
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 12
                                         }
@@ -7350,7 +7456,7 @@ ApplicationWindow {
                                         anchors.bottom: parent.bottom
                                         anchors.bottomMargin: 2
                                         text: imageCell.modelData.name
-                                        color: "#A6000000"
+                                        color: Theme.textSecondary
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 12
                                         elide: Text.ElideMiddle
@@ -7418,7 +7524,7 @@ ApplicationWindow {
                             width: parent.width
                             text: qsTr("还没有打开影像
 在「输入文件」里双击 DICOM 序列或 .nii/.mgz，就会在这里打开")
-                            color: "#40000000"
+                            color: Theme.textFaint
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.pixelSize: 13
                             horizontalAlignment: Text.AlignHCenter
@@ -7430,12 +7536,12 @@ ApplicationWindow {
                             width: 132
                             height: 32
                             radius: 8
-                            color: openFilesMouse.containsMouse ? "#0058D6" : "#006BFF"
+                            color: openFilesMouse.containsMouse ? Theme.accentPressed : Theme.accent
 
                             Text {
                                 anchors.centerIn: parent
                                 text: qsTr("去输入文件选择")
-                                color: "#FFFFFF"
+                                color: Theme.textInverse
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 13
                             }
@@ -7509,7 +7615,7 @@ ApplicationWindow {
                         Text {
                             width: parent.width
                             text: qsTr("把一个文件夹拖到对话里，或按 Ctrl+Shift+W 选择")
-                            color: "#40000000"
+                            color: Theme.textFaint
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.pixelSize: 13
                             horizontalAlignment: Text.AlignHCenter
@@ -7521,13 +7627,13 @@ ApplicationWindow {
                             width: splitPickFolderLabel.implicitWidth + 32
                             height: 32
                             radius: 8
-                            color: splitPickFolderMouse.containsMouse ? "#0058D6" : "#006BFF"
+                            color: splitPickFolderMouse.containsMouse ? Theme.accentPressed : Theme.accent
 
                             Text {
                                 id: splitPickFolderLabel
                                 anchors.centerIn: parent
                                 text: qsTr("选择文件夹")
-                                color: "#FFFFFF"
+                                color: Theme.textInverse
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 13
                             }
@@ -7560,14 +7666,14 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.top: parent.top
                             height: 0
-                            color: "#FFFFFF"
+                            color: Theme.surface
 
                             Rectangle {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
                                 height: 1
-                                color: "#14000000"
+                                color: Theme.divider
                             }
 
                             // Keep the loading indicator inside the tab bar so it
@@ -7585,7 +7691,7 @@ ApplicationWindow {
                                           / Math.max(1, officeTabsRow.width - officeTabsViewport.width))
                                    : (parent.width - width) / 2
                                 anchors.bottom: parent.bottom
-                                color: "#E6E7EB"
+                                color: Theme.surfaceSelected
                                 visible: newTaskRec.officeDocumentVisible
                                          && officeTabsRow.width > officeTabsViewport.width
                                 z: 3
@@ -7628,8 +7734,8 @@ ApplicationWindow {
                                 anchors.left: parent.left
                                 anchors.leftMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: officeBackMouse.pressed ? "#14000000"
-                                     : officeBackMouse.containsMouse ? "#F7F9FA" : "transparent"
+                                color: officeBackMouse.pressed ? Theme.divider
+                                     : officeBackMouse.containsMouse ? Theme.sidebarBg : "transparent"
 
                                 Image {
                                     anchors.centerIn: parent
@@ -7699,8 +7805,8 @@ ApplicationWindow {
                                             width: 220
                                             height: 36
                                             radius: 8
-                                            color: active ? "#EBEDF0"
-                                                  : officeTabMouse.containsMouse ? "#F7F9FA" : "transparent"
+                                            color: active ? Theme.surfaceSelectedAlt
+                                                  : officeTabMouse.containsMouse ? Theme.sidebarBg : "transparent"
 
                                             Image {
                                                 id: officeTabIcon
@@ -7727,7 +7833,7 @@ ApplicationWindow {
                                                 elide: Text.ElideRight
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 font.pixelSize: 16
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                             }
 
                                             MouseArea {
@@ -7745,8 +7851,8 @@ ApplicationWindow {
                                                 anchors.right: parent.right
                                                 anchors.rightMargin: 4
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                color: officeTabCloseMouse.pressed ? "#1F000000"
-                                                     : officeTabCloseMouse.containsMouse ? "#14000000" : "transparent"
+                                                color: officeTabCloseMouse.pressed ? Theme.dividerTopbar
+                                                     : officeTabCloseMouse.containsMouse ? Theme.divider : "transparent"
                                                 opacity: officeTab.active || officeTabMouse.containsMouse
                                                          || officeTabCloseMouse.containsMouse ? 1 : 0
 
@@ -7754,7 +7860,7 @@ ApplicationWindow {
                                                     anchors.centerIn: parent
                                                     text: "\u00D7"
                                                     font.pixelSize: 18
-                                                    color: "#73000000"
+                                                    color: Theme.textTertiary
                                                 }
                                                 MouseArea {
                                                     id: officeTabCloseMouse
@@ -7775,8 +7881,8 @@ ApplicationWindow {
                                 anchors.right: parent.right
                                 anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: officeSidebarToggleMouse.pressed ? "#14000000"
-                                     : officeSidebarToggleMouse.containsMouse ? "#F7F9FA" : "transparent"
+                                color: officeSidebarToggleMouse.pressed ? Theme.divider
+                                     : officeSidebarToggleMouse.containsMouse ? Theme.sidebarBg : "transparent"
 
                                 Image {
                                     anchors.centerIn: parent
@@ -7806,8 +7912,8 @@ ApplicationWindow {
                                 anchors.right: officeSidebarToggleButton.left
                                 anchors.rightMargin: 4
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: officePanelMouse.pressed ? "#14000000"
-                                     : officePanelMouse.containsMouse ? "#F7F9FA" : "transparent"
+                                color: officePanelMouse.pressed ? Theme.divider
+                                     : officePanelMouse.containsMouse ? Theme.sidebarBg : "transparent"
 
                                 Image {
                                     anchors.centerIn: parent
@@ -7843,14 +7949,14 @@ ApplicationWindow {
                             anchors.right: parent.right
                             anchors.top: parent.top
                             height: newTaskRec.splitReaderPage ? 0 : 52
-                            color: "#FFFFFF"
+                            color: Theme.surface
 
                             Rectangle {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
                                 height: 1
-                                color: "#14000000"
+                                color: Theme.divider
                             }
 
                             Label {
@@ -7864,7 +7970,7 @@ ApplicationWindow {
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 20
                                 font.weight: Font.Medium
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
 
                             Rectangle {
@@ -7875,9 +7981,9 @@ ApplicationWindow {
                                 width: 36
                                 height: 36
                                 radius: 8
-                                color: newTaskRec.officeMoreMenuVisible ? "#EBEDF0"
-                                     : officeMoreMouse.pressed ? "#DDE0E5"
-                                     : officeMoreMouse.containsMouse ? "#EBEDF0" : "transparent"
+                                color: newTaskRec.officeMoreMenuVisible ? Theme.surfaceSelectedAlt
+                                     : officeMoreMouse.pressed ? Theme.borderLight
+                                     : officeMoreMouse.containsMouse ? Theme.surfaceSelectedAlt : "transparent"
 
                                 Row {
                                     anchors.centerIn: parent
@@ -7886,7 +7992,7 @@ ApplicationWindow {
                                         model: 3
                                         Rectangle {
                                             width: 4; height: 4; radius: 2
-                                            color: "#A6000000"
+                                            color: Theme.textSecondary
                                         }
                                     }
                                 }
@@ -7921,10 +8027,10 @@ ApplicationWindow {
                                 radius: 8
                                 // 编辑态按设计走蓝底主按钮（#006BFF），视图态保持原来的朴素样式
                                 color: officeActionButton.editMode
-                                       ? (officeActionMouse.pressed ? "#0059D6"
-                                          : officeActionMouse.containsMouse ? "#1A7AFF" : "#006BFF")
-                                       : (officeActionMouse.pressed ? "#14000000"
-                                          : officeActionMouse.containsMouse ? "#F7F9FA"
+                                       ? (officeActionMouse.pressed ? Theme.accentPressed
+                                          : officeActionMouse.containsMouse ? Theme.accentHover : Theme.accent)
+                                       : (officeActionMouse.pressed ? Theme.divider
+                                          : officeActionMouse.containsMouse ? Theme.sidebarBg
                                           : "transparent")
 
                                 Row {
@@ -7946,7 +8052,7 @@ ApplicationWindow {
                                         text: officeActionButton.editMode ? qsTr("保存") : qsTr("编辑")
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 14
-                                        color: officeActionButton.editMode ? "#FFFFFF" : "#A6000000"
+                                        color: officeActionButton.editMode ? Theme.surface : Theme.textSecondary
                                     }
                                 }
                                 MouseArea {
@@ -8006,7 +8112,7 @@ ApplicationWindow {
                                 verticalOffset: 10
                                 radius: 20
                                 samples: 41
-                                color: "#1F1A1A1A"
+                                color: Theme.divider
                                 transparentBorder: true
                             }
 
@@ -8014,9 +8120,9 @@ ApplicationWindow {
                                 id: officeMoreMenuCard
                                 anchors.fill: parent
                                 radius: 8
-                                color: "#FFFFFF"
+                                color: Theme.surface
                                 border.width: 1
-                                border.color: "#14000000"
+                                border.color: Theme.divider
 
                                 Column {
                                     anchors.fill: parent
@@ -8035,8 +8141,8 @@ ApplicationWindow {
                                             width: parent.width
                                             height: 36
                                             radius: 6
-                                            color: officeMenuRowMouse.pressed ? "#DDE0E5"
-                                                 : officeMenuRowMouse.containsMouse ? "#EBEDF0" : "transparent"
+                                            color: officeMenuRowMouse.pressed ? Theme.borderLight
+                                                 : officeMenuRowMouse.containsMouse ? Theme.surfaceSelectedAlt : "transparent"
 
                                             Row {
                                                 anchors.left: parent.left
@@ -8057,7 +8163,7 @@ ApplicationWindow {
                                                     font.family: "Alibaba PuHuiTi 3.0"
                                                     font.pixelSize: 14
                                                     font.weight: Font.Normal
-                                                    color: "#D9000000"
+                                                    color: Theme.textPrimary
                                                 }
                                             }
 
@@ -8158,7 +8264,7 @@ ApplicationWindow {
                                     anchors.right: parent.right
                                     height: officeViewHost.fileStale ? 40 : 0
                                     visible: height > 0
-                                    color: "#E6F4FF"
+                                    color: Theme.accentSoftBg
 
                                     Rectangle {
                                         id: staleBannerIcon
@@ -8168,13 +8274,13 @@ ApplicationWindow {
                                         width: 16
                                         height: 16
                                         radius: 8
-                                        color: "#1677FF"
+                                        color: Theme.accentHover
 
                                         Label {
                                             anchors.centerIn: parent
                                             anchors.verticalCenterOffset: -1
                                             text: "i"
-                                            color: "#FFFFFF"
+                                            color: Theme.textInverse
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 11
                                             font.weight: Font.DemiBold
@@ -8191,7 +8297,7 @@ ApplicationWindow {
                                         elide: Text.ElideRight
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 13
-                                        color: "#1F2329"
+                                        color: Theme.textTitle
                                     }
 
                                     Rectangle {
@@ -8206,9 +8312,9 @@ ApplicationWindow {
                                         width: staleRefreshLabel.implicitWidth + 24
                                         height: 28
                                         radius: 6
-                                        color: staleRefreshMouse.pressed ? "#D6E4FF"
-                                             : staleRefreshMouse.containsMouse ? "#F0F7FF"
-                                             : "#FFFFFF"
+                                        color: staleRefreshMouse.pressed ? Theme.accentSoftBg
+                                             : staleRefreshMouse.containsMouse ? Theme.accentSoftBg
+                                             : Theme.surface
 
                                         Label {
                                             id: staleRefreshLabel
@@ -8217,7 +8323,7 @@ ApplicationWindow {
                                                   ? qsTr("放弃并刷新") : qsTr("刷新")
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 13
-                                            color: "#1F2329"
+                                            color: Theme.textTitle
                                         }
 
                                         MouseArea {
@@ -8324,8 +8430,8 @@ ApplicationWindow {
                             running: newTaskRec.officePreviewPending
                             visible: running
                             z: 30
-                            palette.dark: "#006BFF"
-                            palette.mid: "#006BFF"
+                            palette.dark: Theme.accent
+                            palette.mid: Theme.accent
                         }
 
                     }
@@ -8342,9 +8448,9 @@ ApplicationWindow {
                         width: Math.min(parent.width - 24, splitActionRow.implicitWidth + 24)
                         height: 48
                         radius: 8
-                        color: "#FFFFFF"
+                        color: Theme.surface
                         border.width: 1
-                        border.color: "#E6E7EB"
+                        border.color: Theme.surfaceSelected
 
                         Row {
                             id: splitActionRow
@@ -8355,7 +8461,7 @@ ApplicationWindow {
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("已选 %1 个").arg(newTaskRec.splitSelection.length)
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 14
                             }
@@ -8365,15 +8471,15 @@ ApplicationWindow {
                                 height: 32
                                 radius: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: splitOpenMouse.containsMouse ? "#F4F6F9" : "#FFFFFF"
+                                color: splitOpenMouse.containsMouse ? Theme.surfaceAlt : Theme.surface
                                 border.width: 1
-                                border.color: "#E6E7EB"
+                                border.color: Theme.surfaceSelected
 
                                 Text {
                                     id: splitOpenLabel
                                     anchors.centerIn: parent
                                     text: qsTr("在阅片台打开")
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 14
                                 }
@@ -8392,13 +8498,13 @@ ApplicationWindow {
                                 height: 32
                                 radius: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: splitReferenceMouse.containsMouse ? "#0058D6" : "#006BFF"
+                                color: splitReferenceMouse.containsMouse ? Theme.accentPressed : Theme.accent
 
                                 Text {
                                     id: splitReferenceLabel
                                     anchors.centerIn: parent
                                     text: qsTr("在对话框中引用")
-                                    color: "#FFFFFF"
+                                    color: Theme.textInverse
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 14
                                 }
@@ -8425,7 +8531,7 @@ ApplicationWindow {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     anchors.right: parent.right
-                    color: "#FFFFFF"
+                    color: Theme.surface
                     border.width: 0
                     z: 20
 
@@ -8451,7 +8557,7 @@ ApplicationWindow {
                             verticalOffset: 10
                             radius: 20
                             samples: 41
-                            color: "#1F1A1A1A"
+                            color: Theme.divider
                             transparentBorder: true
                         }
 
@@ -8459,9 +8565,9 @@ ApplicationWindow {
                             id: resourcePopoverCard
                             anchors.fill: parent
                             radius: 8
-                            color: "#FFFFFF"
+                            color: Theme.surface
                             border.width: 1
-                            border.color: "#14000000"
+                            border.color: Theme.divider
 
                             Flickable {
                                 anchors.fill: parent
@@ -8490,7 +8596,7 @@ ApplicationWindow {
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 16
                                             font.weight: Font.Normal
-                                            color: "#73000000"
+                                            color: Theme.textTertiary
                                         }
 
                                         Column {
@@ -8517,7 +8623,7 @@ ApplicationWindow {
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 16
                                             font.weight: Font.Normal
-                                            color: "#73000000"
+                                            color: Theme.textTertiary
                                         }
 
                                         Column {
@@ -8537,7 +8643,7 @@ ApplicationWindow {
                                     contentItem: Rectangle {
                                         implicitWidth: 4
                                         radius: 2
-                                        color: "#40000000"
+                                        color: Theme.textFaint
                                     }
                                 }
                             }
@@ -8567,9 +8673,9 @@ ApplicationWindow {
                         width: parent ? parent.width : 268
                         height: 36
                         radius: 8
-                        color: sidebarFileMouse.pressed ? "#14000000"
-                             : sidebarFileMouse.containsMouse ? "#EBEDF0"
-                             : highlighted ? "#0F006BFF" : "transparent"
+                        color: sidebarFileMouse.pressed ? Theme.divider
+                             : sidebarFileMouse.containsMouse ? Theme.surfaceSelectedAlt
+                             : highlighted ? Theme.accentTintBg : "transparent"
 
                         Row {
                             anchors.fill: parent
@@ -8591,7 +8697,7 @@ ApplicationWindow {
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 font.pixelSize: 16
                                 font.weight: Font.Normal
-                                color: sidebarFileRow.highlighted ? "#006BFF" : "#D9000000"
+                                color: sidebarFileRow.highlighted ? Theme.accent : Theme.textPrimary
                             }
                         }
 
@@ -8630,7 +8736,9 @@ ApplicationWindow {
                                 width: 146
                                 height: 96
                                 anchors.centerIn: parent
-                                source: "qrc:/images/loading.gif"
+                                // 设计稿（4583-35113）的波形 loader 是白底黑条，深色下用窗口底色反相版
+                                source: Theme.dark ? "qrc:/images/loading-dark.gif"
+                                                   : "qrc:/images/loading.gif"
                                 playing: true
                             }
                         }
@@ -8641,7 +8749,7 @@ ApplicationWindow {
                             text: qsTr("等待模型响应")
                             font.pixelSize: 20
                             font.weight: Font.Bold
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
 
                         Label {
@@ -8650,7 +8758,7 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             text: qsTr("模型正在明确输出格式，减少无效展开和二次改写")
                             font.pixelSize: 14
-                            color: "#A6000000"
+                            color: Theme.textSecondary
                         }
                     }
                 }
@@ -9257,8 +9365,8 @@ ApplicationWindow {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         height: chatInputContainer.currentTextInputHeight + 76
-                        color: "#FFFFFF"
-                        border.color: "#40000000"
+                        color: Theme.surface
+                        border.color: Theme.textFaint
                         border.width: 1
                         radius: 20
                         z: 1
@@ -9331,6 +9439,8 @@ ApplicationWindow {
                         Rectangle{
                             height: 40
                             width: parent.width - 24
+                            // Rectangle 默认白底：深色主题下会整条发白
+                            color: "transparent"
                             Row {
                                 anchors.fill: parent
                                 spacing: 4
@@ -9433,9 +9543,9 @@ ApplicationWindow {
                                                 height: chatOptionsMenu.implicitHeight + 16
                                                 anchors.bottom: parent.bottom
                                                 radius: 10
-                                                color: "#FFFFFF"
+                                                color: Theme.surface
                                                 border.width: 1
-                                                border.color: "#14000000"
+                                                border.color: Theme.divider
                                                 layer.enabled: true
                                                 layer.effect: DropShadow {
                                                     transparentBorder: true
@@ -9457,10 +9567,10 @@ ApplicationWindow {
                                                     height: visible ? 38 : 0
                                                     visible: newTaskRec.canSelectExpert
                                                     radius: 6
-                                                    color: chatExpertMenuMouse.pressed ? "#14000000"
+                                                    color: chatExpertMenuMouse.pressed ? Theme.divider
                                                          : chatOptionsPopup.activeCategory === "expert"
-                                                           ? "#F0F2F5"
-                                                           : chatExpertMenuMouse.containsMouse ? "#0A000000"
+                                                           ? Theme.surfaceAlt
+                                                           : chatExpertMenuMouse.containsMouse ? Theme.surfaceHover
                                                            : "transparent"
                                                     Image {
                                                         width: 18; height: 18
@@ -9476,7 +9586,7 @@ ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: qsTr("专家")
                                                         font.pixelSize: 14
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                     }
                                                     Canvas {
                                                         width: 14; height: 14
@@ -9486,7 +9596,7 @@ ApplicationWindow {
                                                         onPaint: {
                                                             var ctx = getContext("2d")
                                                             ctx.reset()
-                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.strokeStyle = Theme.textTertiary.toString()
                                                             ctx.lineWidth = 1.2
                                                             ctx.lineCap = "round"
                                                             ctx.lineJoin = "round"
@@ -9512,10 +9622,10 @@ ApplicationWindow {
                                                     height: visible ? 38 : 0
                                                     visible: newTaskRec.canSelectKnowledgeBase
                                                     radius: 6
-                                                    color: chatKnowledgeMenuMouse.pressed ? "#14000000"
+                                                    color: chatKnowledgeMenuMouse.pressed ? Theme.divider
                                                          : chatOptionsPopup.activeCategory === "knowledge"
-                                                           ? "#F0F2F5"
-                                                           : chatKnowledgeMenuMouse.containsMouse ? "#0A000000"
+                                                           ? Theme.surfaceAlt
+                                                           : chatKnowledgeMenuMouse.containsMouse ? Theme.surfaceHover
                                                            : "transparent"
                                                     Image {
                                                         width: 18; height: 18
@@ -9531,7 +9641,7 @@ ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: qsTr("知识库")
                                                         font.pixelSize: 14
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                     }
                                                     Canvas {
                                                         width: 14; height: 14
@@ -9541,7 +9651,7 @@ ApplicationWindow {
                                                         onPaint: {
                                                             var ctx = getContext("2d")
                                                             ctx.reset()
-                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.strokeStyle = Theme.textTertiary.toString()
                                                             ctx.lineWidth = 1.2
                                                             ctx.lineCap = "round"
                                                             ctx.lineJoin = "round"
@@ -9567,10 +9677,10 @@ ApplicationWindow {
                                                     height: visible ? 38 : 0
                                                     visible: newTaskRec.canSelectTemplate
                                                     radius: 6
-                                                    color: chatTemplateMenuMouse.pressed ? "#14000000"
+                                                    color: chatTemplateMenuMouse.pressed ? Theme.divider
                                                          : chatOptionsPopup.activeCategory === "template"
-                                                           ? "#F0F2F5"
-                                                           : chatTemplateMenuMouse.containsMouse ? "#0A000000"
+                                                           ? Theme.surfaceAlt
+                                                           : chatTemplateMenuMouse.containsMouse ? Theme.surfaceHover
                                                            : "transparent"
                                                     Image {
                                                         width: 18; height: 18
@@ -9586,7 +9696,7 @@ ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: qsTr("模板")
                                                         font.pixelSize: 14
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                     }
                                                     Canvas {
                                                         width: 14; height: 14
@@ -9596,7 +9706,7 @@ ApplicationWindow {
                                                         onPaint: {
                                                             var ctx = getContext("2d")
                                                             ctx.reset()
-                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.strokeStyle = Theme.textTertiary.toString()
                                                             ctx.lineWidth = 1.2
                                                             ctx.lineCap = "round"
                                                             ctx.lineJoin = "round"
@@ -9631,9 +9741,9 @@ ApplicationWindow {
                                                         : 0
                                                 anchors.bottom: parent.bottom
                                                 radius: 10
-                                                color: "#FFFFFF"
+                                                color: Theme.surface
                                                 border.width: 1
-                                                border.color: "#14000000"
+                                                border.color: Theme.divider
                                                 layer.enabled: true
                                                 layer.effect: DropShadow {
                                                     transparentBorder: true
@@ -9676,9 +9786,9 @@ ApplicationWindow {
                                                         : 0
                                                 anchors.bottom: parent.bottom
                                                 radius: 10
-                                                color: "#FFFFFF"
+                                                color: Theme.surface
                                                 border.width: 1
-                                                border.color: "#14000000"
+                                                border.color: Theme.divider
                                                 layer.enabled: true
                                                 layer.effect: DropShadow {
                                                     transparentBorder: true
@@ -9707,8 +9817,8 @@ ApplicationWindow {
                                                     width: ListView.view.width
                                                     height: 38
                                                     radius: 6
-                                                    color: chatExpertOptionMouse.pressed ? "#14000000"
-                                                         : chatExpertOptionMouse.containsMouse ? "#0A000000"
+                                                    color: chatExpertOptionMouse.pressed ? Theme.divider
+                                                         : chatExpertOptionMouse.containsMouse ? Theme.surfaceHover
                                                          : "transparent"
                                                     Image {
                                                         width: 18; height: 18
@@ -9726,7 +9836,7 @@ ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: String(modelData.name || modelData.id || qsTr("未命名专家"))
                                                         font.pixelSize: 14
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                         elide: Text.ElideRight
                                                     }
                                                     Canvas {
@@ -9742,7 +9852,7 @@ ApplicationWindow {
                                                         onPaint: {
                                                             var ctx = getContext("2d")
                                                             ctx.reset()
-                                                            ctx.strokeStyle = "#006BFF"
+                                                            ctx.strokeStyle = Theme.accent.toString()
                                                             ctx.lineWidth = 1.8
                                                             ctx.lineCap = "round"
                                                             ctx.lineJoin = "round"
@@ -9775,8 +9885,8 @@ ApplicationWindow {
                                                     width: ListView.view.width
                                                     height: 38
                                                     radius: 6
-                                                    color: chatKnowledgeOptionMouse.pressed ? "#14000000"
-                                                         : chatKnowledgeOptionMouse.containsMouse ? "#0A000000"
+                                                    color: chatKnowledgeOptionMouse.pressed ? Theme.divider
+                                                         : chatKnowledgeOptionMouse.containsMouse ? Theme.surfaceHover
                                                          : "transparent"
                                                     Image {
                                                         width: 18; height: 18
@@ -9794,7 +9904,7 @@ ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: String(modelData.name || qsTr("未命名知识库"))
                                                         font.pixelSize: 14
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                         elide: Text.ElideRight
                                                     }
                                                     Canvas {
@@ -9807,7 +9917,7 @@ ApplicationWindow {
                                                         onPaint: {
                                                             var ctx = getContext("2d")
                                                             ctx.reset()
-                                                            ctx.strokeStyle = "#006BFF"
+                                                            ctx.strokeStyle = Theme.accent.toString()
                                                             ctx.lineWidth = 1.8
                                                             ctx.lineCap = "round"
                                                             ctx.lineJoin = "round"
@@ -9844,9 +9954,9 @@ ApplicationWindow {
                                                     height: 38
                                                     radius: 6
                                                     color: chatOptionsPopup.activeTemplateCategory === String(modelData)
-                                                           ? "#F0F2F5"
+                                                           ? Theme.surfaceAlt
                                                            : chatTemplateCategoryMouse.containsMouse
-                                                             ? "#0A000000" : "transparent"
+                                                             ? Theme.surfaceHover : "transparent"
                                                     Label {
                                                         anchors.left: parent.left
                                                         anchors.leftMargin: 10
@@ -9855,7 +9965,7 @@ ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: String(modelData)
                                                         font.pixelSize: 14
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                         elide: Text.ElideRight
                                                     }
                                                     Canvas {
@@ -9867,7 +9977,7 @@ ApplicationWindow {
                                                         onPaint: {
                                                             var ctx = getContext("2d")
                                                             ctx.reset()
-                                                            ctx.strokeStyle = "#73000000"
+                                                            ctx.strokeStyle = Theme.textTertiary.toString()
                                                             ctx.lineWidth = 1.2
                                                             ctx.lineCap = "round"
                                                             ctx.lineJoin = "round"
@@ -9902,8 +10012,8 @@ ApplicationWindow {
                                                     width: ListView.view.width
                                                     height: 38
                                                     radius: 6
-                                                    color: chatTemplateOptionMouse.pressed ? "#14000000"
-                                                         : chatTemplateOptionMouse.containsMouse ? "#0A000000"
+                                                    color: chatTemplateOptionMouse.pressed ? Theme.divider
+                                                         : chatTemplateOptionMouse.containsMouse ? Theme.surfaceHover
                                                          : "transparent"
                                                     Image {
                                                         width: 18; height: 18
@@ -9921,7 +10031,7 @@ ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: String(modelData.name || qsTr("未命名模板"))
                                                         font.pixelSize: 14
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                         elide: Text.ElideRight
                                                     }
                                                     Canvas {
@@ -9936,7 +10046,7 @@ ApplicationWindow {
                                                         onPaint: {
                                                             var ctx = getContext("2d")
                                                             ctx.reset()
-                                                            ctx.strokeStyle = "#006BFF"
+                                                            ctx.strokeStyle = Theme.accent.toString()
                                                             ctx.lineWidth = 1.8
                                                             ctx.lineCap = "round"
                                                             ctx.lineJoin = "round"
@@ -9983,7 +10093,7 @@ ApplicationWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: 8
-                                        color: "#F0F2F5"
+                                        color: Theme.surfaceAlt
 
                                         Row {
                                             id: templateTagRow
@@ -10003,7 +10113,7 @@ ApplicationWindow {
                                                                 implicitWidth)
                                                 text: String(newTaskRec.selectedDocxTemplate.name || "")
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 elide: Text.ElideRight
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
@@ -10026,6 +10136,8 @@ ApplicationWindow {
                                                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                     onClicked: newTaskRec.clearDocxTemplateSelection(true)
                                                 }
+                                                layer.enabled: true
+                                                layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                             }
                                         }
                                     }
@@ -10052,8 +10164,8 @@ ApplicationWindow {
                                         id: knowledgeTrigger
                                         anchors.fill: parent
                                         radius: 8
-                                        color: knowledgeTriggerMouse.pressed ? "#14000000"
-                                             : knowledgeTriggerMouse.containsMouse ? "#0A000000"
+                                        color: knowledgeTriggerMouse.pressed ? Theme.divider
+                                             : knowledgeTriggerMouse.containsMouse ? Theme.surfaceHover
                                              : "transparent"
 
                                         Row {
@@ -10078,7 +10190,7 @@ ApplicationWindow {
                                                 text: knowledgePickerWrap.selectedName
                                                 elide: Text.ElideRight
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                             }
                                         }
 
@@ -10097,7 +10209,7 @@ ApplicationWindow {
                                             onPaint: {
                                                 var ctx = getContext("2d")
                                                 ctx.reset()
-                                                ctx.strokeStyle = "#73000000"
+                                                ctx.strokeStyle = Theme.textTertiary.toString()
                                                 ctx.lineWidth = 1.2
                                                 ctx.lineCap = "round"
                                                 ctx.lineJoin = "round"
@@ -10143,9 +10255,9 @@ ApplicationWindow {
 
                                         background: Rectangle {
                                             radius: 8
-                                            color: "#FFFFFF"
+                                            color: Theme.surface
                                             border.width: 1
-                                            border.color: "#14000000"
+                                            border.color: Theme.divider
                                         }
 
                                         contentItem: ListView {
@@ -10163,8 +10275,8 @@ ApplicationWindow {
                                                 width: ListView.view.width
                                                 height: 40
                                                 radius: 6
-                                                color: knowledgeOptionMouse.pressed ? "#14000000"
-                                                     : knowledgeOptionMouse.containsMouse ? "#0A000000"
+                                                color: knowledgeOptionMouse.pressed ? Theme.divider
+                                                     : knowledgeOptionMouse.containsMouse ? Theme.surfaceHover
                                                      : "transparent"
 
                                                 Image {
@@ -10175,6 +10287,8 @@ ApplicationWindow {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     source: "qrc:/images/knowledge.png"
                                                     fillMode: Image.PreserveAspectFit
+                                                    layer.enabled: true
+                                                    layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                                 }
 
                                                 Label {
@@ -10186,7 +10300,7 @@ ApplicationWindow {
                                                     text: String(modelData.name || qsTr("未命名知识库"))
                                                     elide: Text.ElideRight
                                                     font.pixelSize: 14
-                                                    color: "#D9000000"
+                                                    color: Theme.textPrimary
                                                 }
 
                                                 Canvas {
@@ -10201,7 +10315,7 @@ ApplicationWindow {
                                                     onPaint: {
                                                         var ctx = getContext("2d")
                                                         ctx.reset()
-                                                        ctx.strokeStyle = "#D9000000"
+                                                        ctx.strokeStyle = Theme.textPrimary.toString()
                                                         ctx.lineWidth = 1.8
                                                         ctx.lineCap = "round"
                                                         ctx.lineJoin = "round"
@@ -10241,7 +10355,7 @@ ApplicationWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: 8
-                                        color: "#F0F2F5"
+                                        color: Theme.surfaceAlt
 
                                         Row {
                                             id: knowledgeTagRow
@@ -10261,7 +10375,7 @@ ApplicationWindow {
                                                                 implicitWidth)
                                                 text: window.kbCollectionName(window.chatKnowledgeCollection)
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 elide: Text.ElideRight
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
@@ -10284,6 +10398,8 @@ ApplicationWindow {
                                                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                     onClicked: window.kbToggleChatCollection(window.chatKnowledgeCollection)
                                                 }
+                                                layer.enabled: true
+                                                layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                             }
                                         }
                                     }
@@ -10324,7 +10440,7 @@ ApplicationWindow {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: 8
-                                        color: "#F7F9FA"
+                                        color: Theme.sidebarBg
 
                                         HoverHandler {
                                             id: expertTagInstallHover
@@ -10361,13 +10477,13 @@ ApplicationWindow {
                                                      text: qsTr("正在准备环境中")
                                                      delay: 500
                                                      background: Rectangle {
-                                                         color: "#A6000000"
+                                                         color: Theme.textSecondary
                                                          radius: 4
                                                      }
                                                      contentItem: Text {
                                                          text: expertTagInstallToolTip.text
                                                          font.pixelSize: 14
-                                                         color: "#FFFFFF"
+                                                         color: Theme.surface
                                                          font.family: "Alibaba PuHuiTi 3.0"
                                                      }
                                                  }
@@ -10377,7 +10493,7 @@ ApplicationWindow {
                                                 width: Math.min(170, implicitWidth)
                                                 text: expertSelectionTag.expertName
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 elide: Text.ElideRight
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
@@ -10401,6 +10517,8 @@ ApplicationWindow {
                                                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                     onClicked: newTaskRec.selectedCollaborationAgentIds = []
                                                 }
+                                                layer.enabled: true
+                                                layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                             }
                                         }
                                      }
@@ -10416,18 +10534,18 @@ ApplicationWindow {
                                          id: chatOptionsVisualButton
                                          anchors.fill: parent
                                          radius: 8
-                                         color: chatOptionsVisualButtonMouse.pressed ? "#14000000"
-                                              : chatOptionsVisualButtonMouse.containsMouse ? "#0A000000"
+                                         color: chatOptionsVisualButtonMouse.pressed ? Theme.divider
+                                              : chatOptionsVisualButtonMouse.containsMouse ? Theme.surfaceHover
                                               : "transparent"
                                          border.width: chatOptionsPopup.visible ? 1 : 0
-                                         border.color: "#26006BFF"
+                                         border.color: Theme.accentTintBg
 
                                          Label {
                                              anchors.centerIn: parent
                                              text: "+"
                                              font.pixelSize: 23
                                              font.weight: Font.Normal
-                                             color: "#73000000"
+                                             color: Theme.textTertiary
                                          }
 
                                          MouseArea {
@@ -10448,11 +10566,11 @@ ApplicationWindow {
                                              visible: chatOptionsVisualButtonMouse.containsMouse && !chatOptionsPopup.visible
                                              text: qsTr("添加专家、知识库或模板")
                                              delay: 500
-                                             background: Rectangle { color: "#A6000000"; radius: 4 }
+                                             background: Rectangle { color: Theme.tooltipBg; radius: 4 }
                                              contentItem: Text {
                                                  text: chatOptionsVisualButtonToolTip.text
                                                  font.pixelSize: 14
-                                                 color: "#FFFFFF"
+                                                 color: Theme.textInverse
                                                  font.family: "Alibaba PuHuiTi 3.0"
                                              }
                                          }
@@ -11226,6 +11344,7 @@ ApplicationWindow {
                                 //     }
                                 // }
                                  Rectangle{
+                                     color: "transparent"
                                      width: Math.max(0, parent.width - chatOptionsTrigger.width
                                                       - resourceTagRow.width
                                                       - chatOptionsVisualTrigger.width
@@ -11254,8 +11373,8 @@ ApplicationWindow {
                                             padding: 4
                                             background: Rectangle {
                                                 radius: 8
-                                                color: "#FFFFFF"
-                                                border.color: "#14000000"
+                                                color: Theme.surface
+                                                border.color: Theme.divider
                                                 border.width: 1
                                                 layer.enabled: true
                                                 layer.effect: DropShadow {
@@ -11268,10 +11387,10 @@ ApplicationWindow {
                                                 width: parent.width
                                                 Rectangle {
                                                     width: parent.width; height: 34; radius: 6
-                                                    color: umFile.containsMouse ? "#F0F2F5" : "transparent"
+                                                    color: umFile.containsMouse ? Theme.surfaceAlt : "transparent"
                                                     Label {
                                                         text: qsTr("上传文件")
-                                                        font.pixelSize: 14; color: "#D9000000"
+                                                        font.pixelSize: 14; color: Theme.textPrimary
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         anchors.left: parent.left; anchors.leftMargin: 10
                                                     }
@@ -11283,10 +11402,10 @@ ApplicationWindow {
                                                 }
                                                 Rectangle {
                                                     width: parent.width; height: 34; radius: 6
-                                                    color: umFolder.containsMouse ? "#F0F2F5" : "transparent"
+                                                    color: umFolder.containsMouse ? Theme.surfaceAlt : "transparent"
                                                     Label {
                                                         text: qsTr("上传文件夹")
-                                                        font.pixelSize: 14; color: "#D9000000"
+                                                        font.pixelSize: 14; color: Theme.textPrimary
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         anchors.left: parent.left; anchors.leftMargin: 10
                                                     }
@@ -11335,7 +11454,7 @@ ApplicationWindow {
                                     Rectangle{
                                         width: 1
                                         height: 16
-                                        color: "#1F000000"
+                                        color: Theme.dividerTopbar
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     CustomButton{
@@ -11349,7 +11468,7 @@ ApplicationWindow {
                                                   && !newTaskRec.expertInstallActive
                                                   && (wsClient.chatRunning
                                                       || textInputArea.text !== "")
-                                        backgroundColor: "#006BFF"
+                                        backgroundColor: Theme.accent
                                         iconSource: wsClient.chatRunning ? "qrc:/images/pause.svg" : "qrc:/images/send.png"
                                         onClicked: wsClient.chatRunning
                                                    ? wsClient.abortChat()
@@ -11367,7 +11486,7 @@ ApplicationWindow {
                         anchors.right: parent.right
                         height: chatInputSurface.height + 40
                         radius: 22
-                        color: "#EBEDF0"
+                        color: Theme.surfaceSelectedAlt
                         z: 0
                         Row {
                             id: composerSettingsRow
@@ -11403,6 +11522,8 @@ ApplicationWindow {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 16; height: 16
                                         source: "qrc:/images/folder.png"
+                                        layer.enabled: true
+                                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                     }
                                     Label {
                                         id: projectDialogNameLabel
@@ -11413,7 +11534,7 @@ ApplicationWindow {
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: wsClient.currentProjectTitle || qsTr("项目")
                                         font.pixelSize: 14
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                         elide: Text.ElideRight
 
                                         ToolTip {
@@ -11425,13 +11546,13 @@ ApplicationWindow {
                                             y: -height - 4
                                             width: Math.min(implicitContentWidth + 20, 360)
                                             background: Rectangle {
-                                                color: "#A6000000"
+                                                color: Theme.textSecondary
                                                 radius: 4
                                             }
                                             contentItem: Text {
                                                 text: projectDialogNameLabel.text
                                                 font.pixelSize: 14
-                                                color: "#FFFFFF"
+                                                color: Theme.textInverse
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 wrapMode: Text.Wrap
                                             }
@@ -11446,14 +11567,14 @@ ApplicationWindow {
                                         anchors.rightMargin: 4
                                         anchors.verticalCenter: parent.verticalCenter
                                         color: clearProjectMouse.containsMouse
-                                               ? "#1F000000" : "transparent"
+                                               ? Theme.dividerTopbar : "transparent"
 
                                         Label {
                                             anchors.centerIn: parent
                                             text: "\u00d7"
                                             font.pixelSize: 16
                                             color: clearProjectMouse.containsMouse
-                                                   ? "#D9000000" : "#73000000"
+                                                   ? Theme.textPrimary : Theme.textTertiary
                                         }
                                         MouseArea {
                                             id: clearProjectMouse
@@ -11580,7 +11701,7 @@ ApplicationWindow {
                                     model: [qsTr("加载中…")]
                                     icon: "qrc:/images/aiGrey.png"
                                     iconSize: 16
-                                    textColor: "#A6000000"
+                                    textColor: Theme.textSecondary
                                     currentIndex: 0
                                     alignment: Qt.AlignLeft
                                     popupMaxWidth: 320
@@ -11631,12 +11752,18 @@ ApplicationWindow {
                     Image {
                         id: imagingAgentBadge
                         visible: window.imagingEdition && parent.width >= 1000
-                        source: "qrc:/images/imaging/agent-badge.png"
+                        // 深色态用设计稿的另一张（暗底）徽章；浅色态用原白底徽章
+                        source: Theme.dark ? "qrc:/images/imaging/agent-badge-dark.png"
+                                           : "qrc:/images/imaging/agent-badge.png"
+                        // 两张都已按设计稿的 Mask group（209x269 裁到 257）裁好 209x257
                         sourceSize: Qt.size(418, 514)
                         width: 209
                         height: 257
                         fillMode: Image.PreserveAspectFit
-                        x: parent.width - 230 - width
+                        // 设计稿（node 5581-36808 / 5581-36688）：徽章卡片的可见右沿在输入框右沿
+                        // 左侧 91px；导出图自带 ~20px 透明边，所以图片框右沿取 70px。
+                        // 之前贴窗口右边 21px，窗口一宽就跑到输入框外面去了。
+                        x: chatInputContainer.x + chatInputContainer.width - 70 - width
                         y: 1
                         z: -1
                     }
@@ -11645,8 +11772,8 @@ ApplicationWindow {
                     Gradient {
                         id: imagingPillGradient
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#14006BFF" }
-                        GradientStop { position: 1.0; color: "#0A006BFF" }
+                        GradientStop { position: 0.0; color: Theme.accentTintBg }
+                        GradientStop { position: 1.0; color: Theme.accentTintSoft }
                     }
 
                     Row {
@@ -11683,9 +11810,9 @@ ApplicationWindow {
                                     // 注意：Qt 6 里 color 写成 "transparent" 时 gradient 不会被绘制，
                                     // 胶囊只剩文字、没有底色。影像版用白底托住半透明渐变
                                     // （页面本身是白底，视觉等价于稿子的 #006BFF 8%→4%）。
-                                    color: window.imagingEdition ? "#FFFFFF"
-                                          : shortcutTabItem.selected ? "#006BFF"
-                                          : tabMouse.containsMouse ? "#F5F7FA" : "transparent"
+                                    color: window.imagingEdition ? Theme.surface
+                                          : shortcutTabItem.selected ? Theme.accent
+                                          : tabMouse.containsMouse ? Theme.surfaceMuted : "transparent"
                                     gradient: window.imagingEdition ? imagingPillGradient : null
 
                                     Row {
@@ -11720,8 +11847,8 @@ ApplicationWindow {
                                                 font.pixelSize: 16
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 font.weight: window.imagingEdition ? Font.Medium : Font.Normal
-                                                color: window.imagingEdition ? "#006BFF"
-                                                     : shortcutTabItem.selected ? "#FFFFFF" : "#D9000000"
+                                                color: window.imagingEdition ? Theme.accent
+                                                     : shortcutTabItem.selected ? Theme.surface : Theme.textPrimary
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
                                         }
@@ -11735,7 +11862,7 @@ ApplicationWindow {
                                                 text: qsTr("选择影像领域")
                                                 font.pixelSize: 16
                                                 font.family: "Alibaba PuHuiTi 3.0"
-                                                color: "#000000"
+                                                color: Theme.textSolid
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
 
@@ -11749,9 +11876,9 @@ ApplicationWindow {
                                                     height: 26
                                                     width: chipContent.implicitWidth + 10
                                                     radius: 4
-                                                    color: "#0F006BFF"
+                                                    color: Theme.accentTintBg
                                                     border.width: 1
-                                                    border.color: "#0F006BFF"
+                                                    border.color: Theme.accentTintBg
                                                     anchors.verticalCenter: parent.verticalCenter
 
                                                     Row {
@@ -11763,7 +11890,7 @@ ApplicationWindow {
                                                             text: imagingDomainChipSlot.chip.name
                                                             font.pixelSize: 16
                                                             font.family: "Alibaba PuHuiTi 3.0"
-                                                            color: "#006BFF"
+                                                            color: Theme.accent
                                                             anchors.verticalCenter: parent.verticalCenter
                                                         }
 
@@ -11822,7 +11949,7 @@ ApplicationWindow {
                                     height: 16
                                     x: shortcutTab.width + 12
                                     anchors.verticalCenter: parent.verticalCenter
-                                    color: "#E6E7EB"
+                                    color: Theme.surfaceSelected
                                 }
                             }
                         }
@@ -11830,7 +11957,7 @@ ApplicationWindow {
 
                     Item {
                         id: shortcutCardHeader
-                        // 影像版用设计稿的 STEP 卡片，不再显示「最佳实践案例」这一栏
+                        // 影像版不显示「最佳实践案例」这一栏
                         visible: !!newTaskRec.selectedShortcut && !window.imagingEdition
                         width: chatInputContainer.width
                         height: 30
@@ -11857,7 +11984,7 @@ ApplicationWindow {
                                         text: modelData.title
                                         font.pixelSize: 16
                                         font.family: "Alibaba PuHuiTi 3.0"
-                                        color: medicalShortcutTab.selected ? "#006BFF" : "#73000000"
+                                        color: medicalShortcutTab.selected ? Theme.accent : Theme.textTertiary
                                         anchors.top: parent.top
                                     }
 
@@ -11866,7 +11993,7 @@ ApplicationWindow {
                                         width: parent.width
                                         height: 2
                                         radius: 1
-                                        color: "#006BFF"
+                                        color: Theme.accent
                                         anchors.bottom: parent.bottom
                                     }
 
@@ -11884,7 +12011,7 @@ ApplicationWindow {
                             text: "不知道做什么，试试最佳实践案例"
                             font.pixelSize: 16
                             font.family: "Alibaba PuHuiTi 3.0"
-                            color: "#73000000"
+                            color: Theme.textTertiary
                             anchors.verticalCenter: parent.verticalCenter
                         }
 
@@ -11898,13 +12025,13 @@ ApplicationWindow {
                                 height: 24
                                 radius: 12
                                 color: leftCardArrowMouse.containsMouse
-                                       && newTaskRec.canMoveShortcutCardsLeft ? "#F2F4F7" : "transparent"
+                                       && newTaskRec.canMoveShortcutCardsLeft ? Theme.surfaceAlt : "transparent"
                                 opacity: newTaskRec.canMoveShortcutCardsLeft ? 1 : 0.35
 
                                 Label {
                                     text: "‹"
                                     font.pixelSize: 20
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                     anchors.centerIn: parent
                                     anchors.verticalCenterOffset: -1
                                 }
@@ -11924,13 +12051,13 @@ ApplicationWindow {
                                 height: 24
                                 radius: 12
                                 color: rightCardArrowMouse.containsMouse
-                                       && newTaskRec.canMoveShortcutCardsRight ? "#F2F4F7" : "transparent"
+                                       && newTaskRec.canMoveShortcutCardsRight ? Theme.surfaceAlt : "transparent"
                                 opacity: newTaskRec.canMoveShortcutCardsRight ? 1 : 0.35
 
                                 Label {
                                     text: "›"
                                     font.pixelSize: 20
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                     anchors.centerIn: parent
                                     anchors.verticalCenterOffset: -1
                                 }
@@ -11973,9 +12100,9 @@ ApplicationWindow {
                                            / newTaskRec.shortcutCardsPerPage
                                     height: shortcutCardViewport.height
                                     radius: 8
-                                    color: "#F7F9FC"
+                                    color: Theme.surfaceMuted
                                     border.width: 1
-                                    border.color: largeCardMouse.containsMouse ? "#99B9FF" : "#E6E7EB"
+                                    border.color: largeCardMouse.containsMouse ? Theme.accentSoftBg : Theme.surfaceSelected
                                     clip: true
 
                                     Image {
@@ -11996,7 +12123,7 @@ ApplicationWindow {
 
                                     Rectangle {
                                         anchors.fill: parent
-                                        color: "#CFFFFFFF"
+                                        color: Theme.overlayVeil
                                         visible: largeCardMouse.containsMouse
                                     }
 
@@ -12008,7 +12135,7 @@ ApplicationWindow {
                                         font.pixelSize: 14
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.weight: Font.Medium
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                         wrapMode: Text.Wrap
                                         verticalAlignment: Text.AlignVCenter
                                         horizontalAlignment: Text.AlignLeft
@@ -12078,9 +12205,14 @@ ApplicationWindow {
                                         height: hovered ? imagingStepSlot.expandedHeight : 69
                                         anchors.bottom: parent.bottom
                                         radius: 16
-                                        color: "#FFFFFF"
+                                        // 深色设计稿（node 5581-36683）里卡片是**无填充**的：
+                                        // 只有 #242627 的 1px 描边。图标素材带一层暗色底，
+                                        // 靠 Figma 的 LIGHTEN 混色融进卡片；QML 没有这个混色，
+                                        // 卡片一旦有填充（#242627）那块暗底就会显成方块。
+                                        color: Theme.dark ? "transparent" : Theme.surface
                                         border.width: 1
-                                        border.color: hovered ? "#D8DEE7" : "#EBEDF0"
+                                        border.color: hovered ? Theme.borderLight
+                                                              : (Theme.dark ? "#242627" : Theme.surfaceSelectedAlt)
                                         clip: true
 
                                         Behavior on height {
@@ -12095,7 +12227,7 @@ ApplicationWindow {
                                             verticalOffset: 0
                                             radius: 20
                                             samples: 33
-                                            color: "#0D000000"
+                                            color: Theme.surfaceHover
                                             cached: true
                                         }
 
@@ -12106,7 +12238,8 @@ ApplicationWindow {
                                             font.family: "Poppins"
                                             font.pixelSize: 14
                                             font.weight: Font.DemiBold
-                                            color: "#40000000"
+                                            // 设计稿里 STEP.x 是白色 20%（#33FFFFFF）
+                                            color: Theme.dark ? "#33FFFFFF" : Theme.textFaint
                                         }
 
                                         Label {
@@ -12117,7 +12250,7 @@ ApplicationWindow {
                                             font.family: "Alibaba PuHuiTi 3.0"
                                             font.pixelSize: 16
                                             font.weight: Font.Medium
-                                            color: "#000000"
+                                            color: Theme.textSolid
                                             elide: Text.ElideRight
                                         }
 
@@ -12132,7 +12265,7 @@ ApplicationWindow {
                                             font.pixelSize: 14
                                             lineHeight: 21
                                             lineHeightMode: Text.FixedHeight
-                                            color: "#000000"
+                                            color: Theme.textSolid
                                             wrapMode: Text.Wrap
                                         }
 
@@ -12153,10 +12286,12 @@ ApplicationWindow {
                                             width: 56
                                             height: 56
                                             anchors.top: parent.top
-                                            anchors.topMargin: 6
+                                            // 设计稿：图标左上角在卡片 (147,7)，即上 7 / 右 1
+                                            anchors.topMargin: Theme.dark ? 7 : 6
                                             anchors.right: parent.right
-                                            anchors.rightMargin: 6
-                                            source: imagingStepSlot.step.image
+                                            anchors.rightMargin: Theme.dark ? 1 : 6
+                                            source: Theme.dark ? imagingStepSlot.step.imageDark
+                                                               : imagingStepSlot.step.image
                                             sourceSize: Qt.size(112, 112)
                                             fillMode: Image.PreserveAspectFit
                                         }
@@ -12180,7 +12315,7 @@ ApplicationWindow {
 
                     Rectangle {
                         anchors.fill: parent
-                        color: "#EAFFFFFF"
+                        color: Theme.overlayVeil
                     }
 
                     // 点空白处关掉
@@ -12200,7 +12335,7 @@ ApplicationWindow {
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.pixelSize: 20
                             font.weight: Font.Medium
-                            color: "#000000"
+                            color: Theme.textSolid
                             anchors.verticalCenter: parent.verticalCenter
                         }
 
@@ -12208,7 +12343,7 @@ ApplicationWindow {
                             width: 32
                             height: 32
                             radius: 8
-                            color: imagingDomainCloseMouse.containsMouse ? "#F2F4F7" : "transparent"
+                            color: imagingDomainCloseMouse.containsMouse ? Theme.surfaceAlt : "transparent"
                             anchors.verticalCenter: parent.verticalCenter
 
                             Image {
@@ -12257,7 +12392,7 @@ ApplicationWindow {
                                     readonly property bool raised: hovered || chosen
                                     anchors.fill: parent
                                     radius: raised ? 11 : 8
-                                    color: "#FFFFFF"
+                                    color: Theme.surface
                                     // 有选中时，没选中的那些置灰（设计稿：opacity 0.5）；
                                     // 鼠标划过去的那张仍按原色，方便点第二次取消
                                     opacity: (newTaskRec.selectedImagingDomains.length > 0
@@ -12281,7 +12416,7 @@ ApplicationWindow {
                                         verticalOffset: imagingDomainCard.raised ? 11 : 8
                                         radius: imagingDomainCard.raised ? 34 : 22
                                         samples: 41
-                                        color: imagingDomainCard.raised ? "#1F000000" : "#1A000000"
+                                        color: imagingDomainCard.raised ? Theme.dividerTopbar : Theme.divider
                                         cached: true
                                     }
 
@@ -12291,7 +12426,9 @@ ApplicationWindow {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         anchors.top: parent.top
                                         anchors.topMargin: 30
-                                        source: imagingDomainSlot.domain.image
+                                        // 深色用设计稿（5581-36956）导出的深底学组图；浅色保持原白底合成图
+                                        source: Theme.dark ? imagingDomainSlot.domain.imageDark
+                                                           : imagingDomainSlot.domain.image
                                         fillMode: Image.PreserveAspectFit
                                         sourceSize: Qt.size(188, 240)
                                     }
@@ -12304,7 +12441,7 @@ ApplicationWindow {
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 16
                                         font.weight: Font.Medium
-                                        color: "#000000"
+                                        color: Theme.textSolid
                                     }
 
                                     // 多选：点一张切换选中，浮层不关（选完点 ✕/空白处关闭）
@@ -12331,9 +12468,9 @@ ApplicationWindow {
                         width: 318
                         height: 64
                         radius: 12
-                        color: "#FFFFFF"
+                        color: Theme.surface
                         border.width: 1
-                        border.color: "#E6EAEF"
+                        border.color: Theme.borderLight
 
                         // 稿子是两道投影（y10/blur20/12%、y5/blur10/8%）；DropShadow
                         // 只能挂一道，取更明显的那个近似。
@@ -12344,7 +12481,7 @@ ApplicationWindow {
                             verticalOffset: 8
                             radius: 22
                             samples: 41
-                            color: "#1F17294C"
+                            color: Theme.divider
                             cached: true
                         }
 
@@ -12365,7 +12502,7 @@ ApplicationWindow {
                                     text: qsTr("已选")
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 16
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
 
@@ -12373,7 +12510,7 @@ ApplicationWindow {
                                     text: String(newTaskRec.selectedImagingDomains.length)
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 16
-                                    color: "#006BFF"
+                                    color: Theme.accent
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
 
@@ -12381,7 +12518,7 @@ ApplicationWindow {
                                     text: qsTr("个")
                                     font.family: "Alibaba PuHuiTi 3.0"
                                     font.pixelSize: 16
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
                             }
@@ -12394,16 +12531,16 @@ ApplicationWindow {
                                     width: 64
                                     height: 40
                                     radius: 4
-                                    color: imagingDomainCloseBtn.containsMouse ? "#F2F7FF" : "#FFFFFF"
+                                    color: imagingDomainCloseBtn.containsMouse ? Theme.accentSoftBg : Theme.surface
                                     border.width: 1
-                                    border.color: "#006BFF"
+                                    border.color: Theme.accent
 
                                     Label {
                                         anchors.centerIn: parent
                                         text: qsTr("关闭")
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 16
-                                        color: "#006BFF"
+                                        color: Theme.accent
                                     }
 
                                     MouseArea {
@@ -12419,14 +12556,14 @@ ApplicationWindow {
                                     width: 64
                                     height: 40
                                     radius: 4
-                                    color: imagingDomainConfirmBtn.containsMouse ? "#0058D6" : "#006BFF"
+                                    color: imagingDomainConfirmBtn.containsMouse ? Theme.accentPressed : Theme.accent
 
                                     Label {
                                         anchors.centerIn: parent
                                         text: qsTr("确认")
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.pixelSize: 16
-                                        color: "#FFFFFF"
+                                        color: Theme.textInverse
                                     }
 
                                     MouseArea {
@@ -12610,8 +12747,8 @@ ApplicationWindow {
                     anchors.fill: parent
                     radius: 8
                     opacity: dropdownSelectionWorkSpace.pickerLocked ? 0.85 : 1
-                    color: wsMouseArea.pressed ? "#14000000"
-                         : wsMouseArea.containsMouse ? "#0A000000"
+                    color: wsMouseArea.pressed ? Theme.divider
+                         : wsMouseArea.containsMouse ? Theme.surfaceHover
                          : "transparent"
                     Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -12626,11 +12763,11 @@ ApplicationWindow {
                             ? dropdownSelectionWorkSpace.effectiveWorkspacePath
                             : qsTr("input+output储存空间")
                         delay: 400
-                        background: Rectangle { color: "#A6000000"; radius: 4 }
+                        background: Rectangle { color: Theme.tooltipBg; radius: 4 }
                         contentItem: Text {
                             text: wsToolTip.text
                             font.pixelSize: 14
-                            color: "#FFFFFF"
+                            color: Theme.surface
                             font.family: "Alibaba PuHuiTi 3.0"
                             wrapMode: Text.Wrap
                         }
@@ -12649,6 +12786,8 @@ ApplicationWindow {
                             width: 16; height: 16
                             anchors.verticalCenter: parent.verticalCenter
                             fillMode: Image.PreserveAspectFit
+                            layer.enabled: true
+                            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                         }
                         Text {
                             id: workspaceNameLabel
@@ -12657,7 +12796,7 @@ ApplicationWindow {
                             elide: Text.ElideMiddle
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
-                            color: "#A6000000"
+                            color: Theme.textSecondary
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -12674,7 +12813,7 @@ ApplicationWindow {
                         onPaint: {
                             var ctx = getContext("2d")
                             ctx.reset()
-                            ctx.strokeStyle = "#80000000"
+                            ctx.strokeStyle = Theme.textDim.toString()
                             ctx.lineWidth = 1.5
                             ctx.lineCap = "round"
                             ctx.lineJoin = "round"
@@ -12724,15 +12863,15 @@ ApplicationWindow {
 
                     background: Rectangle {
                         radius: 8
-                        color: "#FFFFFF"
-                        border.color: "#14000000"
+                        color: Theme.surface
+                        border.color: Theme.divider
                         border.width: 1
                         layer.enabled: true
                         layer.effect: DropShadow {
                             transparentBorder: true
                             radius: 12
                             samples: 25
-                            color: "#1A000000"
+                            color: Theme.divider
                         }
                     }
 
@@ -12744,7 +12883,7 @@ ApplicationWindow {
                             text: qsTr("最近")
                             font.pixelSize: 12
                             font.family: "Alibaba PuHuiTi 3.0"
-                            color: "#73000000"
+                            color: Theme.textTertiary
                             leftPadding: 12
                             topPadding: 4
                             visible: dropdownSelectionWorkSpace.recentFolders.length > 0
@@ -12759,8 +12898,8 @@ ApplicationWindow {
                                 width: wsPopup.width - 16
                                 height: 36
                                 radius: 6
-                                color: recentMouse.pressed ? "#14000000"
-                                     : recentMouse.containsMouse ? "#0A000000"
+                                color: recentMouse.pressed ? Theme.divider
+                                     : recentMouse.containsMouse ? Theme.surfaceHover
                                      : "transparent"
                                 Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -12774,6 +12913,8 @@ ApplicationWindow {
                                         source: "qrc:/images/folder.png"
                                         width: 18; height: 18
                                         anchors.verticalCenter: parent.verticalCenter
+                                        layer.enabled: true
+                                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                     }
                                     Text {
                                         id: workspacePopName
@@ -12782,7 +12923,7 @@ ApplicationWindow {
                                         text: dropdownSelectionWorkSpace.folderDisplayName(modelData)
                                         font.pixelSize: 14
                                         font.family: "Alibaba PuHuiTi 3.0"
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                         anchors.verticalCenter: parent.verticalCenter
                                         ToolTip {
                                             visible: recentMouse.containsMouse && workspacePopName.truncated
@@ -12792,13 +12933,13 @@ ApplicationWindow {
                                             y: -height - 4
                                             width: implicitContentWidth + 20
                                             background: Rectangle {
-                                                color: "#A6000000"
+                                                color: Theme.textSecondary
                                                 radius: 4
                                             }
                                             contentItem: Text {
                                                 text: workspacePopName.text
                                                 font.pixelSize: 14
-                                                color: "#FFFFFF"
+                                                color: Theme.textInverse
                                                 font.family: "Alibaba PuHuiTi 3.0"
                                                 wrapMode: Text.Wrap
                                             }
@@ -12823,7 +12964,7 @@ ApplicationWindow {
                         Rectangle {
                             width: wsPopup.width - 16
                             height: 1
-                            color: "#EBEDF0"
+                            color: Theme.surfaceSelectedAlt
                             anchors.horizontalCenter: parent.horizontalCenter
                             visible: dropdownSelectionWorkSpace.recentFolders.length > 0
                         }
@@ -12833,8 +12974,8 @@ ApplicationWindow {
                             width: wsPopup.width - 16
                             height: 36
                             radius: 6
-                            color: wsOpenMouse.pressed ? "#14000000"
-                                 : wsOpenMouse.containsMouse ? "#0A000000"
+                            color: wsOpenMouse.pressed ? Theme.divider
+                                 : wsOpenMouse.containsMouse ? Theme.surfaceHover
                                  : "transparent"
                             Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -12848,12 +12989,14 @@ ApplicationWindow {
                                     source: "qrc:/images/folder.png"
                                     width: 18; height: 18
                                     anchors.verticalCenter: parent.verticalCenter
+                                    layer.enabled: true
+                                    layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                 }
                                 Text {
                                     text: qsTr("打开文件夹")
                                     font.pixelSize: 14
                                     font.family: "Alibaba PuHuiTi 3.0"
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
                             }
@@ -12904,6 +13047,7 @@ ApplicationWindow {
             Rectangle{
                 id: scheduledTaskRec
                 anchors.fill: parent
+                color: Theme.windowBg
                 visible: window.leftSelectedIndex === 1
                 property string searchText: ""
 
@@ -12961,12 +13105,12 @@ ApplicationWindow {
                                 text: qsTr("定时任务")
                                 font.pixelSize: 20
                                 font.weight: Font.Bold
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             Label{
                                 text: qsTr("创建定时任务，让 AI 按计划自动执行")
                                 font.pixelSize: 12
-                                color: "#A6000000"
+                                color: Theme.textSecondary
                             }
                         }
                         Row {
@@ -12986,11 +13130,11 @@ ApplicationWindow {
                             CustomButton {
                                 width: 112
                                 height: 36
-                                backgroundColor: "#FFFFFF"
-                                hoverBackgroundColor: "#F7F9FA"
-                                pressedBackgroundColor: "#F0F2F5"
-                                textColor: "#73000000"
-                                borderColor: "#E6E7EB"
+                                backgroundColor: Theme.surface
+                                hoverBackgroundColor: Theme.sidebarBg
+                                pressedBackgroundColor: Theme.surfaceAlt
+                                textColor: Theme.textTertiary
+                                borderColor: Theme.surfaceSelected
                                 borderWidth: 1
                                 iconSource: "qrc:/images/addIdea.png"
                                 iconSize: 16
@@ -13004,8 +13148,8 @@ ApplicationWindow {
                             CustomButton{
                                 width: 80
                                 height: 36
-                                backgroundColor: "#0F006BFF"
-                                textColor: "#006BFF"
+                                backgroundColor: Theme.accentTintBg
+                                textColor: Theme.accent
                                 borderWidth: 0
                                 text: "+ 新建"
                                 fontSize: 14
@@ -13062,19 +13206,26 @@ ApplicationWindow {
                                     Item {width: 1; height: 80}
                                     Image {
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        source: "qrc:/images/cron/mainImage.png"
+                                        width: 114
+                                        height: 86
+                                        // 深色用设计稿（5581-37683）导出的深底插画；原图是白底
+                                        source: window.imagingEdition && Theme.dark
+                                                ? "qrc:/images/cron/mainImage-dark.png"
+                                                : "qrc:/images/cron/mainImage.png"
+                                        sourceSize: window.imagingEdition && Theme.dark
+                                                    ? Qt.size(456, 344) : Qt.size(0, 0)
                                     }
                                     Label {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         text: qsTr("开启你的第一个自动化任务吧")
                                         font.pixelSize: 14
-                                        color: "#A6000000"
+                                        color: Theme.textSecondary
                                     }
                                     CustomButton {
                                         width: 80; height: 36
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        backgroundColor: "#006BFF"
-                                        textColor: "#FFFFFF"
+                                        backgroundColor: Theme.accent
+                                        textColor: Theme.textInverse
                                         borderWidth: 0
                                         text: qsTr("+ 新建")
                                         fontSize: 14
@@ -13110,12 +13261,14 @@ ApplicationWindow {
                                         text: qsTr("自动化任务灵感")
                                         font.pixelSize: 16
                                         font.weight: Font.DemiBold
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                     }
                                     Flow {
                                         width: parent.width
                                         height: childrenRect.height
                                         spacing: 8
+                                        // 只有影像版一个学组时没有可切换的分类，设计稿也不显示这排 chip
+                                        visible: window.cronTemplateCategories.length > 1
                                         Repeater {
                                             model: window.cronTemplateCategories
                                             delegate: Rectangle {
@@ -13123,13 +13276,13 @@ ApplicationWindow {
                                                 height: 30
                                                 radius: 6
                                                 color: index === window.selectedCronTemplateCategory
-                                                       ? "#0F006BFF" : (categoryMouse.containsMouse ? "#0A000000" : "#F7F9FA")
+                                                       ? Theme.accentTintBg : (categoryMouse.containsMouse ? Theme.surfaceHover : Theme.sidebarBg)
                                                 Label {
                                                     id: categoryLabel
                                                     anchors.centerIn: parent
                                                     text: modelData.name
                                                     font.pixelSize: 14
-                                                    color: index === window.selectedCronTemplateCategory ? "#006BFF" : "#A6000000"
+                                                    color: index === window.selectedCronTemplateCategory ? Theme.accent : Theme.textSecondary
                                                 }
                                                 MouseArea {
                                                     id: categoryMouse
@@ -13171,6 +13324,10 @@ ApplicationWindow {
                                                 delegate: Item {
                                                     id: cronTemplateCard
                                                     property var task: modelData
+                                                    // 深色 + 影像版：设计稿（5581-37683）的卡片是「渐变底 + 图标 + 标题」，
+                                                    // 不再是浅色那张白底合成图
+                                                    readonly property bool darkCard:
+                                                        window.imagingEdition && Theme.dark
                                                     width: 195
                                                     height: 100
 
@@ -13183,14 +13340,48 @@ ApplicationWindow {
                                                         samples: 29
                                                         color: "#26000000"
                                                         visible: templateMouse.containsMouse
+                                                                 && !cronTemplateCard.darkCard
                                                     }
 
                                                     Image {
                                                         id: cardImage
                                                         anchors.fill: parent
+                                                        visible: !cronTemplateCard.darkCard
                                                         source: "qrc:/images/cron/"
                                                                 + window.cronTemplateCategories[window.selectedCronTemplateCategory].imageCategory
                                                                 + "-" + (index + 1) + ".png"
+                                                    }
+
+                                                    Rectangle {
+                                                        visible: cronTemplateCard.darkCard
+                                                        anchors.fill: parent
+                                                        radius: 12
+                                                        border.width: 1
+                                                        border.color: "#262B30"
+                                                        gradient: Gradient {
+                                                            orientation: Gradient.Vertical
+                                                            GradientStop { position: 0.0; color: "#162C4B" }
+                                                            GradientStop { position: 0.3; color: "#00000000" }
+                                                        }
+
+                                                        Image {
+                                                            x: 17
+                                                            y: 17
+                                                            width: 30
+                                                            height: 30
+                                                            source: "qrc:/images/cron/4-" + (index + 1) + "-icon-dark.png"
+                                                            sourceSize: Qt.size(120, 120)
+                                                            fillMode: Image.PreserveAspectFit
+                                                        }
+                                                        Label {
+                                                            x: 17
+                                                            y: 59
+                                                            width: parent.width - 34
+                                                            text: cronTemplateCard.task.title
+                                                            font.pixelSize: 16
+                                                            color: "#FFFFFF"
+                                                            elide: Text.ElideRight
+                                                        }
                                                     }
 
                                                     Rectangle {
@@ -13201,14 +13392,14 @@ ApplicationWindow {
                                                         anchors.top: parent.top
                                                         anchors.rightMargin: 16
                                                         anchors.topMargin: 16
-                                                        color: templateMouse.pressed ? "#005CE6" : "#006BFF"
+                                                        color: templateMouse.pressed ? Theme.accentPressed : Theme.accent
                                                         visible: templateMouse.containsMouse
                                                         z: 2
                                                         Label {
                                                             anchors.centerIn: parent
                                                             text: qsTr("使用")
                                                             font.pixelSize: 14
-                                                            color: "#FFFFFF"
+                                                            color: Theme.textInverse
                                                         }
                                                     }
 
@@ -13239,8 +13430,8 @@ ApplicationWindow {
                                     color: {
                                         var isPinned = cronJobRow.job.pinned || false
                                         if (taskItemMouse.containsMouse)
-                                            return isPinned ? "#E2E5E9" : "#F0F2F5"
-                                        return isPinned ? "#ECEEF1" : "#F7F9FA"
+                                            return isPinned ? Theme.borderLight : Theme.surfaceAlt
+                                        return isPinned ? Theme.surfaceSelectedAlt : Theme.sidebarBg
                                     }
 
                                     Behavior on color { ColorAnimation { duration: 100 } }
@@ -13264,7 +13455,7 @@ ApplicationWindow {
                                             text: cronJobRow.job.name || ""
                                             font.pixelSize: 16
                                             font.weight: Font.Bold
-                                            color: cronJobRow.job.enabled ? "#D9000000" : "#80000000"
+                                            color: cronJobRow.job.enabled ? Theme.textPrimary : Theme.textDim
                                             width: parent.width
                                             elide: Text.ElideRight
                                         }
@@ -13275,7 +13466,7 @@ ApplicationWindow {
                                                           cronJobRow.job.scheduleKind || "",
                                                           cronJobRow.job.scheduleExpr || "")
                                                 font.pixelSize: 14
-                                                color: "#73000000"
+                                                color: Theme.textTertiary
                                             }
                                             Label {
                                                 text: {
@@ -13286,7 +13477,7 @@ ApplicationWindow {
                                                     return ""
                                                 }
                                                 font.pixelSize: 14
-                                                color: "#73000000"
+                                                color: Theme.textTertiary
                                                 visible: text !== ""
                                             }
                                             // 载荷类型标签
@@ -13295,13 +13486,13 @@ ApplicationWindow {
                                                 width: sysLabel.implicitWidth + 12
                                                 height: 20
                                                 radius: 4
-                                                color: "#0FFF8800"
+                                                color: Theme.warningTint
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 Label {
                                                     id: sysLabel
                                                     text: "系统事件"
                                                     font.pixelSize: 11
-                                                    color: "#FF8800"
+                                                    color: Theme.warning
                                                     anchors.centerIn: parent
                                                 }
                                             }
@@ -13336,8 +13527,8 @@ ApplicationWindow {
                                             closePolicy: Popup.CloseOnPressOutside
                                             background: Rectangle {
                                                 radius: 8
-                                                color: "#FFFFFF"
-                                                border.color: "#14000000"
+                                                color: Theme.surface
+                                                border.color: Theme.divider
                                                 border.width: 1
                                             }
                                             contentItem: Column {
@@ -13347,8 +13538,8 @@ ApplicationWindow {
                                                     width: 140
                                                     height: 36
                                                     radius: 6
-                                                    color: miPin.pressed ? "#14000000"
-                                                         : miPin.containsMouse ? "#EBEDF0" : "transparent"
+                                                    color: miPin.pressed ? Theme.divider
+                                                         : miPin.containsMouse ? Theme.surfaceSelectedAlt : "transparent"
                                                     Row {
                                                         anchors.left: parent.left
                                                         anchors.leftMargin: 12
@@ -13359,12 +13550,14 @@ ApplicationWindow {
                                                             height: 16
                                                             source: "qrc:/images/pin.png"
                                                             anchors.verticalCenter: parent.verticalCenter
+                                                            layer.enabled: true
+                                                            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                                         }
                                                         Label {
                                                             text: cronJobRow.job.pinned
                                                                   ? qsTr("取消置顶") : qsTr("置顶")
                                                             font.pixelSize: 14
-                                                            color: "#D9000000"
+                                                            color: Theme.textPrimary
                                                             anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                     }
@@ -13386,8 +13579,8 @@ ApplicationWindow {
                                                     width: 140
                                                     height: 36
                                                     radius: 6
-                                                    color: miRun.pressed ? "#14000000"
-                                                         : miRun.containsMouse ? "#EBEDF0" : "transparent"
+                                                    color: miRun.pressed ? Theme.divider
+                                                         : miRun.containsMouse ? Theme.surfaceSelectedAlt : "transparent"
                                                     Row {
                                                         anchors.left: parent.left
                                                         anchors.leftMargin: 12
@@ -13398,11 +13591,13 @@ ApplicationWindow {
                                                             height: 16
                                                             source: "qrc:/images/play.png"
                                                             anchors.verticalCenter: parent.verticalCenter
+                                                            layer.enabled: true
+                                                            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                                         }
                                                         Label {
                                                             text: qsTr("立即运行")
                                                             font.pixelSize: 14
-                                                            color: "#D9000000"
+                                                            color: Theme.textPrimary
                                                             anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                     }
@@ -13422,8 +13617,8 @@ ApplicationWindow {
                                                     width: 140
                                                     height: 36
                                                     radius: 6
-                                                    color: miEdit.pressed ? "#14000000"
-                                                         : miEdit.containsMouse ? "#EBEDF0" : "transparent"
+                                                    color: miEdit.pressed ? Theme.divider
+                                                         : miEdit.containsMouse ? Theme.surfaceSelectedAlt : "transparent"
                                                     Row {
                                                         anchors.left: parent.left
                                                         anchors.leftMargin: 12
@@ -13434,11 +13629,13 @@ ApplicationWindow {
                                                             height: 16
                                                             source: "qrc:/images/edit.png"
                                                             anchors.verticalCenter: parent.verticalCenter
+                                                            layer.enabled: true
+                                                            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                                         }
                                                         Label {
                                                             text: qsTr("编辑")
                                                             font.pixelSize: 14
-                                                            color: "#D9000000"
+                                                            color: Theme.textPrimary
                                                             anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                     }
@@ -13498,8 +13695,8 @@ ApplicationWindow {
                                                     width: 140
                                                     height: 36
                                                     radius: 6
-                                                    color: miDel.pressed ? "#14000000"
-                                                         : miDel.containsMouse ? "#EBEDF0" : "transparent"
+                                                    color: miDel.pressed ? Theme.divider
+                                                         : miDel.containsMouse ? Theme.surfaceSelectedAlt : "transparent"
                                                     Row {
                                                         anchors.left: parent.left
                                                         anchors.leftMargin: 12
@@ -13514,7 +13711,7 @@ ApplicationWindow {
                                                         Label {
                                                             text: qsTr("删除")
                                                             font.pixelSize: 14
-                                                            color: "#FF3D40"
+                                                            color: Theme.danger
                                                             anchors.verticalCenter: parent.verticalCenter
                                                         }
                                                     }
@@ -13567,7 +13764,7 @@ ApplicationWindow {
                                                 x: taskSwitch.leftPadding
                                                 y: parent.height / 2 - height / 2
                                                 radius: 12
-                                                color: taskSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                                color: taskSwitch.checked ? Theme.accent : Theme.disabledTrack
 
                                                 Behavior on color {
                                                     ColorAnimation { duration: 150 }
@@ -13579,7 +13776,7 @@ ApplicationWindow {
                                                     width: 18
                                                     height: 18
                                                     radius: 9
-                                                    color: "#FFFFFF"
+                                                    color: Theme.textInverse
 
                                                     Behavior on x {
                                                         NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
@@ -13601,7 +13798,7 @@ ApplicationWindow {
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 font.pixelSize: 14
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
                         }
                     }
@@ -13628,7 +13825,7 @@ ApplicationWindow {
                                     anchors.centerIn: parent
                                     text: qsTr("暂无执行记录")
                                     font.pixelSize: 14
-                                    color: "#A6000000"
+                                    color: Theme.textSecondary
                                 }
                             }
 
@@ -13641,7 +13838,7 @@ ApplicationWindow {
                                     width: cronHistoryScrollView.width - 120
                                     height: 76
                                     radius: 8
-                                    color: historyHover.containsMouse ? "#F0F2F5" : "#F7F9FA"
+                                    color: historyHover.containsMouse ? Theme.surfaceAlt : Theme.sidebarBg
 
                                     Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -13668,10 +13865,10 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             color: {
                                                 var s = historyRow.run.status || ""
-                                                if (s === "ok") return "#22C55E"
-                                                if (s === "error") return "#EF4444"
-                                                if (s === "skipped") return "#F59E0B"
-                                                return "#D9D9D9"
+                                                if (s === "ok") return Theme.success
+                                                if (s === "error") return Theme.dangerSoft
+                                                if (s === "skipped") return Theme.warning
+                                                return Theme.disabledTrack
                                             }
                                         }
 
@@ -13683,7 +13880,7 @@ ApplicationWindow {
                                                 text: historyRow.run.jobName || historyRow.run.jobId || ""
                                                 font.pixelSize: 16
                                                 font.weight: Font.Bold
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 width: parent.width
                                                 elide: Text.ElideRight
                                             }
@@ -13698,10 +13895,10 @@ ApplicationWindow {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     color: {
                                                         var s = historyRow.run.status || ""
-                                                        if (s === "ok") return "#0F22C55E"
-                                                        if (s === "error") return "#0FEF4444"
-                                                        if (s === "skipped") return "#0FF59E0B"
-                                                        return "#0A000000"
+                                                        if (s === "ok") return Theme.successTint
+                                                        if (s === "error") return Theme.dangerTint
+                                                        if (s === "skipped") return Theme.warningTint
+                                                        return Theme.surfaceHover
                                                     }
                                                 Label {
                                                         id: historyStatusText
@@ -13716,10 +13913,10 @@ ApplicationWindow {
                                                         font.pixelSize: 11
                                                     color: {
                                                             var s = historyRow.run.status || ""
-                                                        if (s === "ok") return "#22C55E"
-                                                        if (s === "error") return "#EF4444"
-                                                            if (s === "skipped") return "#F59E0B"
-                                                        return "#73000000"
+                                                        if (s === "ok") return Theme.success
+                                                        if (s === "error") return Theme.dangerSoft
+                                                            if (s === "skipped") return Theme.warning
+                                                        return Theme.textTertiary
                                                     }
                                                 }
                                                 }
@@ -13727,7 +13924,7 @@ ApplicationWindow {
                                                 Label {
                                                     text: (historyRow.run.startedAt || "").replace("T", " ").substring(0, 19)
                                                     font.pixelSize: 14
-                                                    color: "#73000000"
+                                                    color: Theme.textTertiary
                                                     visible: (historyRow.run.startedAt || "") !== ""
                                                     anchors.verticalCenter: parent.verticalCenter
                                                 }
@@ -13741,7 +13938,7 @@ ApplicationWindow {
                                                         return sec + " s"
                                                     }
                                                     font.pixelSize: 14
-                                                    color: "#A6000000"
+                                                    color: Theme.textSecondary
                                                     visible: text !== ""
                                                     anchors.verticalCenter: parent.verticalCenter
                                                 }
@@ -13761,7 +13958,7 @@ ApplicationWindow {
                                             id: historyErrorLabel
                                             text: historyRow.run.error || ""
                                         font.pixelSize: 12
-                                        color: "#EF4444"
+                                        color: Theme.dangerSoft
                                             visible: (historyRow.run.error || "") !== ""
                                             width: parent.width
                                         elide: Text.ElideRight
@@ -13775,13 +13972,13 @@ ApplicationWindow {
                                                 y: -height - 4
                                                 width: Math.min(implicitContentWidth + 20, 360)
                                                 background: Rectangle {
-                                                    color: "#A6000000"
+                                                    color: Theme.textSecondary
                                                     radius: 4
                                                 }
                                                 contentItem: Text {
                                                     text: historyErrorLabel.text
                                                     font.pixelSize: 14
-                                                    color: "#FFFFFF"
+                                                    color: Theme.textInverse
                                                     font.family: "Alibaba PuHuiTi 3.0"
                                                     wrapMode: Text.Wrap
                                                 }
@@ -13806,6 +14003,8 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 64
+                // Rectangle 不写 color 默认是白色，深色下会变成一条白底
+                color: Theme.windowBg
                 visible: window.imagingEdition
                          ? window.leftSelectedIndex === 4
                          : window.leftSelectedIndex === 2 || window.leftSelectedIndex === 4
@@ -13826,20 +14025,25 @@ ApplicationWindow {
                                ]
                         delegate: Rectangle {
                             readonly property int pageIndex: Number(modelData.pageIndex)
-                            width: 76
+                            // 影像版只有「工具」一个入口，设计稿（5581-37582）是 20px 标题文本、没有胶囊底
+                            readonly property bool plainTitle: window.imagingEdition
+                            width: plainTitle ? hubTabLabel.implicitWidth + 8 : 76
                             height: 36
                             radius: 6
-                            color: window.leftSelectedIndex === pageIndex ? "#F0F1F4"
-                                 : hubTabMouse.containsMouse ? "#F7F8FA" : "transparent"
+                            color: plainTitle ? "transparent"
+                                 : window.leftSelectedIndex === pageIndex ? Theme.surfaceAlt
+                                 : hubTabMouse.containsMouse ? Theme.surfaceMuted : "transparent"
 
                             Label {
+                                id: hubTabLabel
                                 anchors.centerIn: parent
                                 text: modelData.title
-                                font.pixelSize: 16
-                                font.weight: window.leftSelectedIndex === parent.pageIndex
-                                             ? Font.Bold : Font.Medium
+                                font.pixelSize: plainTitle ? 20 : 16
+                                font.weight: plainTitle ? Font.Medium
+                                             : window.leftSelectedIndex === parent.pageIndex
+                                               ? Font.Bold : Font.Medium
                                 color: window.leftSelectedIndex === parent.pageIndex
-                                     ? "#D9000000" : "#99000000"
+                                     ? Theme.textPrimary : Theme.textDim
                             }
 
                             MouseArea {
@@ -13902,8 +14106,8 @@ ApplicationWindow {
                         CustomButton {
                             id: addSkillBtn
                             anchors.fill: parent
-                            backgroundColor: "#0F006BFF"
-                            textColor: "#006BFF"
+                            backgroundColor: Theme.accentTintBg
+                            textColor: Theme.accent
                             borderWidth: 0
                             text: "+ 添加"
                             fontSize: 14
@@ -13919,15 +14123,15 @@ ApplicationWindow {
 
                             background: Rectangle {
                                 radius: 8
-                                color: "#FFFFFF"
-                                border.color: "#14000000"
+                                color: Theme.surface
+                                border.color: Theme.divider
                                 border.width: 1
                                 layer.enabled: true
                                 layer.effect: DropShadow {
                                     transparentBorder: true
                                     radius: 12
                                     samples: 25
-                                    color: "#1A000000"
+                                    color: Theme.divider
                                 }
                             }
 
@@ -13945,8 +14149,8 @@ ApplicationWindow {
                                         width: 172
                                         height: 36
                                         radius: 6
-                                        color: menuItemMouse.pressed ? "#14000000"
-                                             : menuItemMouse.containsMouse ? "#0A000000"
+                                        color: menuItemMouse.pressed ? Theme.divider
+                                             : menuItemMouse.containsMouse ? Theme.surfaceHover
                                              : "transparent"
 
                                         Behavior on color { ColorAnimation { duration: 100 } }
@@ -13968,7 +14172,7 @@ ApplicationWindow {
                                             Label {
                                                 text: modelData.text
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
                                         }
@@ -14011,6 +14215,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
+                color: Theme.windowBg
                 visible: !window.imagingEdition && window.leftSelectedIndex === 2
                 property string searchText: ""
 
@@ -14059,6 +14264,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
+                color: Theme.windowBg
                 visible: window.leftSelectedIndex === 3
                 property string skillSearchText: ""
                 property string selectedSkillCategory: "全部"
@@ -14236,8 +14442,8 @@ ApplicationWindow {
                                     width: categoryLabel.implicitWidth + 24
                                     height: 32
                                     radius: 6
-                                    color: selected ? "#0F006BFF"
-                                         : categoryMouse.containsMouse ? "#F7F8FA" : "#F7F9FA"
+                                    color: selected ? Theme.accentTintBg
+                                         : categoryMouse.containsMouse ? Theme.surfaceMuted : Theme.sidebarBg
 
                                     Label {
                                         id: categoryLabel
@@ -14245,7 +14451,7 @@ ApplicationWindow {
                                         text: modelData
                                         font.pixelSize: 14
                                         font.weight: parent.selected ? Font.Medium : Font.Normal
-                                        color: parent.selected ? "#006BFF" : "#A6000000"
+                                        color: parent.selected ? Theme.accent : Theme.textSecondary
                                     }
 
                                     MouseArea {
@@ -14280,9 +14486,9 @@ ApplicationWindow {
                                     width: skillGrid.cellWidth
                                     height: 68
                                     radius: 8
-                                    border.color: "#E6E7EB"
+                                    border.color: Theme.surfaceSelected
                                     border.width: 1
-                                    color: "#FFFFFF"
+                                    color: Theme.surface
 
                                     Row {
                                         anchors.left: parent.left
@@ -14318,7 +14524,7 @@ ApplicationWindow {
                                             text: modelData.name || modelData.skillKey || ""
                                             font.pixelSize: 14
                                             font.weight: Font.DemiBold
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                             anchors.verticalCenter: parent.verticalCenter
                                             elide: Text.ElideRight
                                         }
@@ -14335,8 +14541,8 @@ ApplicationWindow {
                                         fontSize: 13
                                         text: qsTr("已安装")
                                         enabled: false
-                                        disabledBackgroundColor: "#F7F9FA"
-                                        disabledTextColor: "#73000000"
+                                        disabledBackgroundColor: Theme.sidebarBg
+                                        disabledTextColor: Theme.textTertiary
                                     }
                                 }
                             }
@@ -14350,6 +14556,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
+                color: Theme.windowBg
                 visible: window.leftSelectedIndex === 4
                 property string toolSearchText: ""
                 readonly property string allToolCategoriesLabel: "全部"
@@ -14544,9 +14751,9 @@ ApplicationWindow {
                                        // 稿子（5506-41017）里这个 chip 就是 6% 蓝底；
                                        // 选中只靠字重区分，底色保持原样，hover 才略深
                                        ? (toolPrimaryCategoryMouse.containsMouse
-                                          ? "#1A006BFF" : "#0F006BFF")
-                                     : selected ? "#0F006BFF"
-                                     : toolPrimaryCategoryMouse.containsMouse ? "#F7F8FA" : "#F7F9FA"
+                                          ? Theme.accentTintBg : Theme.accentTintBg)
+                                     : selected ? Theme.accentTintBg
+                                     : toolPrimaryCategoryMouse.containsMouse ? Theme.surfaceMuted : Theme.surfaceAlt
 
                                 Row {
                                     id: toolPrimaryCategoryRow
@@ -14569,7 +14776,7 @@ ApplicationWindow {
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         font.weight: toolPrimaryCategoryChip.selected
                                                      ? Font.Medium : Font.Normal
-                                        color: "#006BFF"
+                                        color: Theme.accent
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
 
@@ -14577,7 +14784,7 @@ ApplicationWindow {
                                         text: toolsSettingRec.toolCount(modelData, "全部")
                                         font.pixelSize: 14
                                         font.family: "Alibaba PuHuiTi 3.0"
-                                        color: "#006BFF"
+                                        color: Theme.accent
                                         opacity: 0.4
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
@@ -14590,7 +14797,7 @@ ApplicationWindow {
                                     text: modelData + " (" + toolsSettingRec.toolCount(modelData, "全部") + ")"
                                     font.pixelSize: 14
                                     font.weight: toolPrimaryCategoryChip.selected ? Font.Medium : Font.Normal
-                                    color: toolPrimaryCategoryChip.selected ? "#006BFF" : "#A6000000"
+                                    color: toolPrimaryCategoryChip.selected ? Theme.accent : Theme.textSecondary
                                 }
 
                                 MouseArea {
@@ -14625,10 +14832,11 @@ ApplicationWindow {
                                 width: toolSecondaryCategoryLabel.implicitWidth + 22
                                 height: 30
                                 radius: 15
-                                color: selected ? "#EAF2FF"
-                                     : toolSecondaryCategoryMouse.containsMouse ? "#F0F3F8" : "#F7F9FA"
+                                color: selected ? Theme.accentSoftBg
+                                     : toolSecondaryCategoryMouse.containsMouse ? Theme.surfaceMuted
+                                     : Theme.surfaceAlt
                                 border.width: selected ? 1 : 0
-                                border.color: "#99BFFF"
+                                border.color: Theme.accentSoftBg
 
                                 Label {
                                     id: toolSecondaryCategoryLabel
@@ -14638,7 +14846,7 @@ ApplicationWindow {
                                               modelData) + ")"
                                     font.pixelSize: 13
                                     font.weight: parent.selected ? Font.Medium : Font.Normal
-                                    color: parent.selected ? "#006BFF" : "#73000000"
+                                    color: parent.selected ? Theme.accent : Theme.textTertiary
                                 }
 
                                 MouseArea {
@@ -14682,7 +14890,7 @@ ApplicationWindow {
                                       : qsTr("暂无“%1”工具").arg(
                                             toolsSettingRec.selectedToolSecondaryCategory)
                                 font.pixelSize: 14
-                                color: "#73000000"
+                                color: Theme.textTertiary
                                 wrapMode: Text.WordWrap
                             }
 
@@ -14707,9 +14915,11 @@ ApplicationWindow {
                                         width: toolCardGrid.cellWidth
                                         height: toolsLabelColumn.height
                                         radius: 8
-                                        border.color: "#E1E4EA"
+                                        border.color: Theme.borderLight
                                         border.width: 1
-                                        color: "#FFFFFF"
+                                        // 深色设计稿（5581-37582）里卡片是无填充 + 1px 描边；
+                                        // 之前写 Theme.textInverse 在深色下就是纯白卡、白字看不见
+                                        color: Theme.dark ? "transparent" : Theme.textInverse
 
                                         Column {
                                             id: toolsLabelColumn
@@ -14743,7 +14953,7 @@ ApplicationWindow {
                                                         text: toolCard.toolDetails.name
                                                         font.pixelSize: 14
                                                         font.weight: Font.DemiBold
-                                                        color: "#D9000000"
+                                                        color: Theme.textPrimary
                                                         elide: Text.ElideRight
                                                     }
 
@@ -14754,7 +14964,7 @@ ApplicationWindow {
                                                               + (modelData.pluginId
                                                                  || modelData.toolId || "")
                                                         font.pixelSize: 14
-                                                        color: "#40000000"
+                                                        color: Theme.textFaint
                                                         elide: Text.ElideRight
                                                     }
                                                 }
@@ -14784,7 +14994,7 @@ ApplicationWindow {
                                                         implicitHeight: 22
                                                         x: toolEnabledSwitch.leftPadding
                                                         radius: 11
-                                                        color: toolEnabledSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                                        color: toolEnabledSwitch.checked ? Theme.accent : Theme.disabledTrack
                                                         opacity: toolEnabledSwitch.enabled ? 1 : 0.55
                                                         Behavior on color { ColorAnimation { duration: 150 } }
                                                         Rectangle {
@@ -14793,7 +15003,7 @@ ApplicationWindow {
                                                             width: 18
                                                             height: 18
                                                             radius: 9
-                                                            color: "#FFFFFF"
+                                                            color: Theme.textInverse
                                                             Behavior on x {
                                                                 NumberAnimation {
                                                                     duration: 150
@@ -14811,7 +15021,7 @@ ApplicationWindow {
                                                 text: toolCard.toolDetails.description
                                                 font.pixelSize: 14
                                                 lineHeight: 1.35
-                                                color: "#73000000"
+                                                color: Theme.textTertiary
                                                 wrapMode: Text.Wrap
                                                 maximumLineCount: 1
                                                 elide: Text.ElideRight
@@ -14825,13 +15035,13 @@ ApplicationWindow {
                                                     width: Math.min(implicitContentWidth + 20,
                                                                     toolsScrollView.width / 2 - 40)
                                                     background: Rectangle {
-                                                        color: "#A6000000"
+                                                        color: Theme.textSecondary
                                                         radius: 4
                                                     }
                                                     contentItem: Text {
                                                         text: toolDescLabel.text
                                                         font.pixelSize: 14
-                                                        color: "#FFFFFF"
+                                                        color: Theme.textInverse
                                                         font.family: "Alibaba PuHuiTi 3.0"
                                                         wrapMode: Text.Wrap
                                                     }
@@ -14855,13 +15065,13 @@ ApplicationWindow {
                                                     width: parent.width
                                                     height: 6
                                                     radius: 3
-                                                    color: "#E6E7EB"
+                                                    color: Theme.surfaceSelected
                                                     Rectangle {
                                                         width: parent.width * Math.max(0, Math.min(100,
                                                             wsClient.toolInstallProgress)) / 100
                                                         height: parent.height
                                                         radius: 3
-                                                        color: "#006BFF"
+                                                        color: Theme.accent
                                                         Behavior on width {
                                                             enabled: wsClient.toolInstallBusy
                                                                      && wsClient.toolInstallProgress > 0
@@ -14874,7 +15084,7 @@ ApplicationWindow {
                                                     text: (wsClient.toolInstallMessage || "")
                                                           + "  " + wsClient.toolInstallProgress + "%"
                                                     font.pixelSize: 12
-                                                    color: "#73000000"
+                                                    color: Theme.textTertiary
                                                     elide: Text.ElideRight
                                                 }
                                             }
@@ -14946,7 +15156,7 @@ ApplicationWindow {
                 id: knowledgeBaseRec
                 anchors.fill: parent
                 visible: window.leftSelectedIndex === 7
-                color: "#FFFFFF"
+                color: Theme.surface
                 property string pendingDeleteName: ""
                 property string pendingDeleteKey: ""
                 property string pendingDeleteCollectionId: ""
@@ -15026,8 +15236,8 @@ ApplicationWindow {
                                             width: Math.min(180, Math.max(94, kbCollectionTabTextMetrics.advanceWidth + 52))
                                             height: 40
                                             radius: 4
-                                            color: selected ? "#F2F3F5"
-                                                            : hovered || actionMenuOpen ? "#F7F8FA" : "transparent"
+                                            color: selected ? Theme.surfaceAlt
+                                                            : hovered || actionMenuOpen ? Theme.surfaceMuted : "transparent"
 
                                             TextMetrics {
                                                 id: kbCollectionTabTextMetrics
@@ -15046,7 +15256,7 @@ ApplicationWindow {
                                                 elide: Text.ElideRight
                                                 font.pixelSize: 20
                                                 font.weight: kbCollectionTab.selected ? Font.Bold : Font.Medium
-                                                color: kbCollectionTab.selected ? "#D9000000" : "#A6000000"
+                                                color: kbCollectionTab.selected ? Theme.textPrimary : Theme.textSecondary
                                             }
 
                                             MouseArea {
@@ -15080,13 +15290,15 @@ ApplicationWindow {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 z: 2
                                                 visible: kbCollectionTab.hovered || kbCollectionTab.actionMenuOpen
-                                                color: kbCollectionTabMoreMouse.containsMouse ? "#14000000" : "#0A000000"
+                                                color: kbCollectionTabMoreMouse.containsMouse ? Theme.divider : Theme.surfaceHover
 
                                                 Image {
                                                     anchors.centerIn: parent
                                                     width: 20
                                                     height: 20
                                                     source: "qrc:/images/more.png"
+                                                    layer.enabled: true
+                                                    layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                                 }
 
                                                 MouseArea {
@@ -15142,12 +15354,12 @@ ApplicationWindow {
                                 Behavior on opacity { NumberAnimation { duration: 120 } }
                                 background: Rectangle {
                                     radius: height / 2
-                                    color: "#F7F9FA"
+                                    color: Theme.sidebarBg
                                 }
                                 contentItem: Rectangle {
                                     implicitHeight: 8
                                     radius: height / 2
-                                    color: "#E6E7EB"
+                                    color: Theme.surfaceSelected
                                 }
                                 onPositionChanged: {
                                     if (pressed)
@@ -15163,16 +15375,16 @@ ApplicationWindow {
                                 radius: 4
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: kbAddCollectionMouse.pressed ? "#F0F1F4"
-                                       : kbAddCollectionMouse.containsMouse ? "#F7F8FA" : "#FFFFFF"
+                                color: kbAddCollectionMouse.pressed ? Theme.surfaceAlt
+                                       : kbAddCollectionMouse.containsMouse ? Theme.surfaceMuted : Theme.surface
                                 border.width: 1
-                                border.color: "#D7D9DE"
+                                border.color: Theme.borderInput
 
                                 Label {
                                     anchors.centerIn: parent
                                     text: "+"
                                     font.pixelSize: 20
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                     verticalAlignment: Text.AlignVCenter
                                 }
 
@@ -15194,11 +15406,11 @@ ApplicationWindow {
                                     visible: kbAddCollectionMouse.containsMouse
                                     text: qsTr("新建知识库")
                                     delay: 400
-                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    background: Rectangle { color: Theme.tooltipBg; radius: 4 }
                                     contentItem: Text {
                                         text: kbAddCollectionTip.text
                                         font.pixelSize: 14
-                                        color: "#FFFFFF"
+                                        color: Theme.textInverse
                                         font.family: "Alibaba PuHuiTi 3.0"
                                     }
                                 }
@@ -15216,16 +15428,16 @@ ApplicationWindow {
                             padding: 8
                             closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                             background: Rectangle {
-                                color: "#FFFFFF"
+                                color: Theme.surface
                                 radius: 6
                                 border.width: 1
-                                border.color: "#E1E3E8"
+                                border.color: Theme.borderLight
                             }
                             contentItem: Column {
                                 Rectangle {
                                     width: parent.width
                                     height: 36
-                                    color: kbCollectionActionRenameMouse.containsMouse ? "#F7F8FA" : "transparent"
+                                    color: kbCollectionActionRenameMouse.containsMouse ? Theme.surfaceMuted : "transparent"
                                     radius: 6
                                     Row {
                                         anchors.verticalCenter: parent.verticalCenter
@@ -15237,12 +15449,14 @@ ApplicationWindow {
                                             height: 16
                                             anchors.verticalCenter: parent.verticalCenter
                                             source: "qrc:/images/edit.png"
+                                            layer.enabled: true
+                                            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                         }
                                         Label {
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: qsTr("重命名")
                                             font.pixelSize: 14
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                         }
                                     }
                                     MouseArea {
@@ -15260,7 +15474,7 @@ ApplicationWindow {
                                 Rectangle {
                                     width: parent.width
                                     height: 36
-                                    color: kbCollectionActionDeleteMouse.containsMouse ? "#FFF2F2" : "transparent"
+                                    color: kbCollectionActionDeleteMouse.containsMouse ? Theme.dangerSoftBg : "transparent"
                                     radius: 6
                                     Row {
                                         anchors.verticalCenter: parent.verticalCenter
@@ -15277,7 +15491,7 @@ ApplicationWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: qsTr("删除")
                                             font.pixelSize: 14
-                                            color: "#FF3D40"
+                                            color: Theme.danger
                                         }
                                     }
                                     MouseArea {
@@ -15321,7 +15535,7 @@ ApplicationWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("全部文件") + " " + window.kbVisibleEntries().length + qsTr(" 个")
                             font.pixelSize: 14
-                            color: "#73000000"
+                            color: Theme.textTertiary
                         }
                         CheckBox {
                             id: kbSelectAll
@@ -15335,14 +15549,14 @@ ApplicationWindow {
                             indicator: Rectangle {
                                 width: 22; height: 22; radius: 5
                                 anchors.centerIn: parent
-                                color: kbSelectAll.checked ? "#006BFF" : "#FFFFFF"
+                                color: kbSelectAll.checked ? Theme.accent : Theme.surface
                                 border.width: 1
-                                border.color: kbSelectAll.checked ? "#006BFF" : "#D7D9DE"
+                                border.color: kbSelectAll.checked ? Theme.accent : Theme.borderInput
                                 Label {
                                     anchors.centerIn: parent
                                     text: "✓"
                                     visible: kbSelectAll.checked
-                                    color: "#FFFFFF"
+                                    color: Theme.textInverse
                                     font.pixelSize: 14
                                 }
                             }
@@ -15359,7 +15573,7 @@ ApplicationWindow {
                                 width: visible ? 125 : 0
                                 height: 36
                                 radius: 6
-                                color: kbBatchDeleteMouse.pressed ? "#E72F33" : "#FF3D40"
+                                color: kbBatchDeleteMouse.pressed ? Theme.danger : Theme.danger
                                 Row {
                                     height: parent.height
                                     anchors.horizontalCenter: parent.horizontalCenter
@@ -15367,7 +15581,7 @@ ApplicationWindow {
                                     Image { source: "qrc:/images/delete-white.png";anchors.verticalCenter: parent.verticalCenter;width:16;height:16}
                                     Label {
                                         text: qsTr("批量删除") + "(" + window.kbSelectedKeys.length + ")"
-                                        color: "#FFFFFF"; font.pixelSize: 14; anchors.verticalCenter: parent.verticalCenter
+                                        color: Theme.textInverse; font.pixelSize: 14; anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
                                 MouseArea {
@@ -15388,7 +15602,7 @@ ApplicationWindow {
                                 width: 124
                                 height: 36
                                 radius: 6
-                                color: kbUploadMouse.pressed ? "#075BCC" : "#006BFF"
+                                color: kbUploadMouse.pressed ? Theme.accentPressed : Theme.accent
                                 opacity: kbUploadMouse.enabled ? 1 : 0.5
                                 Row {
                                     anchors.horizontalCenter: parent.horizontalCenter
@@ -15403,7 +15617,7 @@ ApplicationWindow {
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: qsTr("上传文件")
                                         font.pixelSize: 14
-                                        color: "#FFFFFF"
+                                        color: Theme.textInverse
                                     }
                                 }
                                 MouseArea {
@@ -15421,11 +15635,11 @@ ApplicationWindow {
                                     visible: kbUploadMouse.containsMouse
                                     text: qsTr("仅支持PDF，Word，TXT，MD，XLSX格式")
                                     delay: 400
-                                    background: Rectangle { color: "#A6000000"; radius: 4 }
+                                    background: Rectangle { color: Theme.tooltipBg; radius: 4 }
                                     contentItem: Text {
                                         text: kbUploadTip.text
                                         font.pixelSize: 14
-                                        color: "#FFFFFF"
+                                        color: Theme.textInverse
                                         font.family: "Alibaba PuHuiTi 3.0"
                                         wrapMode: Text.NoWrap
                                     }
@@ -15461,7 +15675,7 @@ ApplicationWindow {
                                             readonly property string entryKey: String(modelData.key || "")
                                             width: kbFileScroll.width
                                             height: 56
-                                            color: kbRowMouse.containsMouse ? "#F7F9FA" : "#FFFFFF"
+                                            color: kbRowMouse.containsMouse ? Theme.sidebarBg : Theme.surface
 
                                             MouseArea {
                                                 id: kbRowMouse
@@ -15479,12 +15693,12 @@ ApplicationWindow {
                                                 indicator: Rectangle {
                                                     width: 22; height: 22; radius: 5
                                                     anchors.centerIn: parent
-                                                    color: kbRowCheck.checked ? "#006BFF" : "#FFFFFF"
+                                                    color: kbRowCheck.checked ? Theme.accent : Theme.surface
                                                     border.width: 1
-                                                    border.color: kbRowCheck.checked ? "#006BFF" : "#D7D9DE"
+                                                    border.color: kbRowCheck.checked ? Theme.accent : Theme.borderInput
                                                     Label {
                                                         anchors.centerIn: parent; text: "✓"
-                                                        visible: kbRowCheck.checked; color: "#FFFFFF"; font.pixelSize: 14
+                                                        visible: kbRowCheck.checked; color: Theme.textInverse; font.pixelSize: 14
                                                     }
                                                 }
                                             }
@@ -15500,19 +15714,19 @@ ApplicationWindow {
                                                 text: kbFileRow.sourceName
                                                 elide: Text.ElideMiddle
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                             }
                                             Label {
                                                 x: parent.width * 0.64; width: 170
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 text: kbFileRow.pageController.formatAddedAt(modelData.addedAt)
-                                                font.pixelSize: 14; color: "#73000000"
+                                                font.pixelSize: 14; color: Theme.textTertiary
                                             }
                                             Label {
                                                 x: parent.width * 0.83; width: 100
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 text: String(modelData.size || "--")
-                                                font.pixelSize: 14; color: "#73000000"
+                                                font.pixelSize: 14; color: Theme.textTertiary
                                             }
                                             Rectangle {
                                                 id: kbDeleteButton
@@ -15521,7 +15735,7 @@ ApplicationWindow {
                                                 anchors.rightMargin: 16
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 visible: kbRowMouse.containsMouse || kbDeleteMouse.containsMouse
-                                                color: kbDeleteMouse.containsMouse ? "#0FFF3D40" : "transparent"
+                                                color: kbDeleteMouse.containsMouse ? Theme.dangerTint : "transparent"
                                                 Image {
                                                     anchors.centerIn: parent
                                                     width: 16; height: 16
@@ -15554,13 +15768,13 @@ ApplicationWindow {
                             text: !window.kbSelectedCollection ? qsTr("请先新建知识库")
                                   : window.kbSearchText ? qsTr("未找到匹配文件") : qsTr("暂无知识库文件")
                             font.pixelSize: 14
-                            color: "#73000000"
+                            color: Theme.textTertiary
                         }
 
                         Rectangle {
                             anchors.fill: parent
                             visible: window.kbLoading
-                            color: "#CCFFFFFF"
+                            color: Theme.overlayVeil
                             Column {
                                 anchors.centerIn: parent
                                 spacing: 10
@@ -15568,12 +15782,12 @@ ApplicationWindow {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     running: window.kbLoading
                                     width: 32; height: 32
-                                    palette.dark: "#006BFF"
-                                    palette.mid: "#006BFF"
+                                    palette.dark: Theme.accent
+                                    palette.mid: Theme.accent
                                 }
                                 Label {
                                     text: window.kbBusyText
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                     font.pixelSize: 14
                                 }
                             }
@@ -15591,8 +15805,8 @@ ApplicationWindow {
                     padding: 0
                     onOpened: kbCollectionNameInput.forceActiveFocus()
                     background: Rectangle {
-                        color: "#FFFFFF"; radius: 14
-                        border.width: 1; border.color: "#E1E3E8"
+                        color: Theme.surface; radius: 14
+                        border.width: 1; border.color: Theme.borderLight
                     }
                     contentItem: Item {
                         anchors.fill: parent
@@ -15605,7 +15819,7 @@ ApplicationWindow {
                             text: qsTr("新建知识库")
                             font.pixelSize: 16
                             font.weight: Font.Medium
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
 
                         Rectangle {
@@ -15617,13 +15831,13 @@ ApplicationWindow {
                             anchors.rightMargin: 14
                             anchors.top: parent.top
                             anchors.topMargin: 10
-                            color: kbCreateCloseMouse.containsMouse ? "#F2F3F5" : "transparent"
+                            color: kbCreateCloseMouse.containsMouse ? Theme.surfaceAlt : "transparent"
 
                             Label {
                                 anchors.centerIn: parent
                                 text: "×"
                                 font.pixelSize: 20
-                                color: "#A6000000"
+                                color: Theme.textSecondary
                             }
                             MouseArea {
                                 id: kbCreateCloseMouse
@@ -15640,7 +15854,7 @@ ApplicationWindow {
                             anchors.top: parent.top
                             anchors.topMargin: 49
                             height: 1
-                            color: "#E8E9ED"
+                            color: Theme.borderLight
                         }
 
                         Rectangle {
@@ -15653,9 +15867,9 @@ ApplicationWindow {
                             anchors.topMargin: 75
                             height: 32
                             radius: 6
-                            color: "#FFFFFF"
+                            color: Theme.surface
                             border.width: 1
-                            border.color: kbCollectionNameInput.activeFocus ? "#006BFF" : "#D7D9DE"
+                            border.color: kbCollectionNameInput.activeFocus ? Theme.accent : Theme.borderInput
 
                             TextField {
                                 id: kbCollectionNameInput
@@ -15669,11 +15883,11 @@ ApplicationWindow {
                                 bottomPadding: 0
                                 maximumLength: 40
                                 placeholderText: qsTr("请输入新建知识库名称")
-                                placeholderTextColor: "#40000000"
+                                placeholderTextColor: Theme.textFaint
                                 selectByMouse: true
                                 verticalAlignment: TextInput.AlignVCenter
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                                 background: Item {}
                                 onAccepted: {
                                     if (window.kbCreateCollection(text))
@@ -15688,7 +15902,7 @@ ApplicationWindow {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: kbCollectionNameInput.text.length + "/40"
                                 font.pixelSize: 14
-                                color: "#40000000"
+                                color: Theme.textFaint
                             }
                         }
 
@@ -15701,14 +15915,14 @@ ApplicationWindow {
                             CustomButton {
                                 width: 77; height: 33; text: qsTr("取消"); fontSize: 13
                                 buttonRadius: 4
-                                backgroundColor: "#F7F8FA"; textColor: "#73000000"
-                                borderWidth: 1; borderColor: "#E1E3E8"
+                                backgroundColor: Theme.surfaceMuted; textColor: Theme.textTertiary
+                                borderWidth: 1; borderColor: Theme.borderLight
                                 onClicked: kbCreateCollectionPopup.close()
                             }
                             CustomButton {
                                 width: 77; height: 33; text: qsTr("导入"); fontSize: 13
                                 buttonRadius: 4
-                                backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
+                                backgroundColor: Theme.accent; textColor: Theme.textInverse; borderWidth: 0
                                 onClicked: {
                                     if (window.kbCreateCollection(kbCollectionNameInput.text))
                                         kbCreateCollectionPopup.close()
@@ -15732,8 +15946,8 @@ ApplicationWindow {
                         kbRenameCollectionInput.selectAll()
                     }
                     background: Rectangle {
-                        color: "#FFFFFF"; radius: 14
-                        border.width: 1; border.color: "#E1E3E8"
+                        color: Theme.surface; radius: 14
+                        border.width: 1; border.color: Theme.borderLight
                     }
                     contentItem: Item {
                         anchors.fill: parent
@@ -15746,7 +15960,7 @@ ApplicationWindow {
                             text: qsTr("重命名知识库")
                             font.pixelSize: 17
                             font.weight: Font.Bold
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
 
                         Rectangle {
@@ -15755,7 +15969,7 @@ ApplicationWindow {
                             anchors.top: parent.top
                             anchors.topMargin: 49
                             height: 1
-                            color: "#E8E9ED"
+                            color: Theme.borderLight
                         }
 
                         Rectangle {
@@ -15767,9 +15981,9 @@ ApplicationWindow {
                             anchors.topMargin: 75
                             height: 32
                             radius: 6
-                            color: "#FFFFFF"
+                            color: Theme.surface
                             border.width: 1
-                            border.color: kbRenameCollectionInput.activeFocus ? "#006BFF" : "#D7D9DE"
+                            border.color: kbRenameCollectionInput.activeFocus ? Theme.accent : Theme.borderInput
 
                             TextField {
                                 id: kbRenameCollectionInput
@@ -15780,11 +15994,11 @@ ApplicationWindow {
                                 bottomPadding: 0
                                 maximumLength: 40
                                 placeholderText: qsTr("请输入知识库名称")
-                                placeholderTextColor: "#40000000"
+                                placeholderTextColor: Theme.textFaint
                                 selectByMouse: true
                                 verticalAlignment: TextInput.AlignVCenter
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                                 background: Item {}
                                 onAccepted: {
                                     if (window.kbRenameCollection(
@@ -15799,7 +16013,7 @@ ApplicationWindow {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: kbRenameCollectionInput.text.length + "/40"
                                 font.pixelSize: 14
-                                color: "#40000000"
+                                color: Theme.textFaint
                             }
                         }
 
@@ -15812,14 +16026,14 @@ ApplicationWindow {
                             CustomButton {
                                 width: 77; height: 33; text: qsTr("取消"); fontSize: 13
                                 buttonRadius: 4
-                                backgroundColor: "#F7F8FA"; textColor: "#73000000"
-                                borderWidth: 1; borderColor: "#E1E3E8"
+                                backgroundColor: Theme.surfaceMuted; textColor: Theme.textTertiary
+                                borderWidth: 1; borderColor: Theme.borderLight
                                 onClicked: kbRenameCollectionPopup.close()
                             }
                             CustomButton {
                                 width: 77; height: 33; text: qsTr("保存"); fontSize: 13
                                 buttonRadius: 4
-                                backgroundColor: "#006BFF"; textColor: "#FFFFFF"; borderWidth: 0
+                                backgroundColor: Theme.accent; textColor: Theme.textInverse; borderWidth: 0
                                 enabled: kbRenameCollectionInput.text.trim().length > 0
                                 onClicked: {
                                     if (window.kbRenameCollection(
@@ -15839,33 +16053,33 @@ ApplicationWindow {
                     modal: true
                     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                     background: Rectangle {
-                        color: "#FFFFFF"; radius: 8
-                        border.width: 1; border.color: "#E1E3E8"
+                        color: Theme.surface; radius: 8
+                        border.width: 1; border.color: Theme.borderLight
                     }
                     contentItem: Column {
                         anchors.fill: parent; anchors.margins: 24; spacing: 20
                         Label {
                             width: parent.width
                             text: qsTr("删除知识库")
-                            font.pixelSize: 17; font.weight: Font.Bold; color: "#D9000000"
+                            font.pixelSize: 17; font.weight: Font.Bold; color: Theme.textPrimary
                         }
                         Label {
                             width: parent.width
                             text: qsTr("删除后知识库内所有文件将无法恢复，确定删除“")
                                   + knowledgeBaseRec.pendingDeleteCollectionName + qsTr("”？")
                             wrapMode: Text.WordWrap
-                            font.pixelSize: 14; color: "#A6000000"
+                            font.pixelSize: 14; color: Theme.textSecondary
                         }
                         Row {
                             anchors.right: parent.right; spacing: 8
                             CustomButton {
                                 width: 72; height: 34; text: qsTr("取消"); fontSize: 13
-                                backgroundColor: "#F0F1F4"; textColor: "#D9000000"; borderWidth: 0
+                                backgroundColor: Theme.surfaceAlt; textColor: Theme.textPrimary; borderWidth: 0
                                 onClicked: kbDeleteCollectionConfirm.close()
                             }
                             CustomButton {
                                 width: 72; height: 34; text: qsTr("删除"); fontSize: 13
-                                backgroundColor: "#FF3D40"; textColor: "#FFFFFF"; borderWidth: 0
+                                backgroundColor: Theme.danger; textColor: Theme.textInverse; borderWidth: 0
                                 onClicked: {
                                     var collection = knowledgeBaseRec.pendingDeleteCollectionId
                                     kbDeleteCollectionConfirm.close()
@@ -15884,10 +16098,10 @@ ApplicationWindow {
                     modal: true
                     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
                     background: Rectangle {
-                        color: "#FFFFFF"
+                        color: Theme.surface
                         radius: 8
                         border.width: 1
-                        border.color: "#E1E3E8"
+                        border.color: Theme.borderLight
                     }
                     contentItem: Column {
                         anchors.fill: parent
@@ -15899,14 +16113,14 @@ ApplicationWindow {
                                   ? qsTr("批量删除") : qsTr("删除知识库项目")
                             font.pixelSize: 17
                             font.weight: Font.Bold
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         Label {
                             width: parent.width
                             text: qsTr("确定删除“") + knowledgeBaseRec.pendingDeleteName + qsTr("”？")
                             elide: Text.ElideMiddle
                             font.pixelSize: 14
-                            color: "#A6000000"
+                            color: Theme.textSecondary
                         }
                         Row {
                             anchors.right: parent.right
@@ -15915,8 +16129,8 @@ ApplicationWindow {
                                 width: 72; height: 34
                                 text: qsTr("取消")
                                 fontSize: 13
-                                backgroundColor: "#F0F1F4"
-                                textColor: "#D9000000"
+                                backgroundColor: Theme.surfaceAlt
+                                textColor: Theme.textPrimary
                                 borderWidth: 0
                                 onClicked: kbDeleteConfirm.close()
                             }
@@ -15924,8 +16138,8 @@ ApplicationWindow {
                                 width: 72; height: 34
                                 text: qsTr("删除")
                                 fontSize: 13
-                                backgroundColor: "#FF3D40"
-                                textColor: "#FFFFFF"
+                                backgroundColor: Theme.danger
+                                textColor: Theme.textInverse
                                 borderWidth: 0
                                 onClicked: {
                                     kbDeleteConfirm.close()
@@ -15989,12 +16203,12 @@ ApplicationWindow {
                                 text: qsTr("MCP")
                                 font.pixelSize: 20
                                 font.weight: Font.Bold
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             Label {
                                 text: qsTr("配置和管理 MCP（Model Context Protocol）服务器，为您的智能体扩展工具能力")
                                 font.pixelSize: 14
-                                color: "#A6000000"
+                                color: Theme.textSecondary
                             }
                             SingleLineTextInput {
                                 id: mcpSearchInput
@@ -16009,8 +16223,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 80
                             height: 36
-                            backgroundColor: "#0F006BFF"
-                            textColor: "#006BFF"
+                            backgroundColor: Theme.accentTintBg
+                            textColor: Theme.accent
                             borderWidth: 0
                             text: "+ 添加"
                             fontSize: 14
@@ -16050,7 +16264,7 @@ ApplicationWindow {
                                 topPadding: 40
                                 text: qsTr("暂无 MCP 服务，请点击「+ 添加」从网关配置写入 mcp.servers")
                                 font.pixelSize: 14
-                                color: "#73000000"
+                                color: Theme.textTertiary
                                 wrapMode: Text.WordWrap
                             }
 
@@ -16061,7 +16275,7 @@ ApplicationWindow {
                                 topPadding: 40
                                 text: qsTr("未找到匹配的 MCP 服务，请尝试其他关键词")
                                 font.pixelSize: 14
-                                color: "#73000000"
+                                color: Theme.textTertiary
                                 wrapMode: Text.WordWrap
                             }
 
@@ -16072,9 +16286,9 @@ ApplicationWindow {
                                     width: mcpInstalledGrid.cellWidth
                                     height: 100
                                     radius: 8
-                                    border.color: "#E6E7EB"
+                                    border.color: Theme.surfaceSelected
                                     border.width: 1
-                                    color: "#FFFFFF"
+                                    color: Theme.textInverse
 
                                     HoverHandler {
                                         id: mcpCardHover
@@ -16099,14 +16313,14 @@ ApplicationWindow {
                                                 text: modelData.title || modelData.name || ""
                                                 font.pixelSize: 16
                                                 font.weight: Font.Bold
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
                                         }
                                         Label {
                                             text: modelData.desc || ""
                                             font.pixelSize: 14
-                                            color: "#73000000"
+                                            color: Theme.textTertiary
                                             elide: Text.ElideRight
                                             width: parent.width
                                         }
@@ -16133,6 +16347,7 @@ ApplicationWindow {
                                         ImageButton {
                                             btnHeight: 16
                                             btnWidth: 16
+                                            colorize: false
                                             source: "qrc:/images/delete.png"
                                             anchors.verticalCenter: parent.verticalCenter
                                             visible: mcpCardHover.hovered
@@ -16160,7 +16375,7 @@ ApplicationWindow {
         padding: 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        Overlay.modal: Rectangle { color: "#59000000" }
+        Overlay.modal: Rectangle { color: Theme.scrim }
         background: Rectangle { color: "transparent" }
 
         contentItem: Item {
@@ -16177,7 +16392,7 @@ ApplicationWindow {
                 height: Math.min(440, parent.height - 80)
                 anchors.centerIn: parent
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
                 clip: true
 
                 MouseArea { anchors.fill: parent; onClicked: {} }
@@ -16194,7 +16409,7 @@ ApplicationWindow {
                         text: qsTr("灵感库")
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                     }
 
                     ImageButton {
@@ -16211,7 +16426,7 @@ ApplicationWindow {
                         width: parent.width
                         height: 1
                         anchors.bottom: parent.bottom
-                        color: "#14000000"
+                        color: Theme.divider
                     }
                 }
 
@@ -16235,8 +16450,8 @@ ApplicationWindow {
                                 height: 30
                                 radius: 6
                                 color: index === window.selectedCronTemplateCategory
-                                       ? "#0F006BFF"
-                                       : (ideaCategoryMouse.containsMouse ? "#0A000000" : "#F7F9FA")
+                                       ? Theme.accentTintBg
+                                       : (ideaCategoryMouse.containsMouse ? Theme.surfaceHover : Theme.sidebarBg)
 
                                 Label {
                                     id: ideaCategoryLabel
@@ -16244,7 +16459,7 @@ ApplicationWindow {
                                     text: modelData.name
                                     font.pixelSize: 14
                                     color: index === window.selectedCronTemplateCategory
-                                           ? "#006BFF" : "#A6000000"
+                                           ? Theme.accent : Theme.textSecondary
                                 }
 
                                 MouseArea {
@@ -16321,14 +16536,14 @@ ApplicationWindow {
                                         anchors.top: parent.top
                                         anchors.rightMargin: 16
                                         anchors.topMargin: 16
-                                        color: ideaCardMouse.pressed ? "#005CE6" : "#006BFF"
+                                        color: ideaCardMouse.pressed ? Theme.accentPressed : Theme.accent
                                         visible: ideaCardMouse.containsMouse
                                         z: 2
                                         Label {
                                             anchors.centerIn: parent
                                             text: qsTr("使用")
                                             font.pixelSize: 14
-                                            color: "#FFFFFF"
+                                            color: Theme.textInverse
                                         }
                                     }
 
@@ -16439,7 +16654,7 @@ ApplicationWindow {
         }
 
         Overlay.modal: Rectangle {
-            color: "#40000000"
+            color: Theme.scrimSoft
         }
 
         background: Rectangle {
@@ -16461,7 +16676,7 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 height: dialogTitleBar.height + dialogContent.implicitHeight + 24 + 16
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
 
                 MouseArea {
                     anchors.fill: parent
@@ -16478,7 +16693,7 @@ ApplicationWindow {
                         text: window.editingCronJobId ? qsTr("编辑定时任务") : qsTr("新建任务")
                         font.pixelSize: 20
                         font.weight: Font.Bold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.left: parent.left
                         anchors.leftMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
@@ -16495,7 +16710,7 @@ ApplicationWindow {
                     Rectangle {
                         width: parent.width
                         height: 1
-                        color: "#14000000"
+                        color: Theme.divider
                         anchors.bottom: parent.bottom
                     }
                 }
@@ -16515,7 +16730,7 @@ ApplicationWindow {
                         Label {
                             text: qsTr("标题")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         SingleLineTextInput {
                             id: newTaskTitleInput
@@ -16533,7 +16748,7 @@ ApplicationWindow {
                         Label {
                             text: qsTr("提示词")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         MultiLineTextInput {
                             id: newTaskPromptInput
@@ -16549,7 +16764,7 @@ ApplicationWindow {
                         Label {
                             text: qsTr("计划")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         Row {
                             width: parent.width
@@ -16560,7 +16775,7 @@ ApplicationWindow {
                                 height: 40
                                 model: ["不重复", "每天", "每周", "每小时", "自定义间隔"]
                                 currentIndex: 0
-                                borderColor: "#E6E7EB"
+                                borderColor: Theme.surfaceSelected
                                 borderWidth: 1
                                 alignment: Qt.AlignLeft
                                 onSelected: {
@@ -16607,13 +16822,13 @@ ApplicationWindow {
                             visible: window.pendingCronTemplateExpr !== ""
                             text: qsTr("触发时间：") + window.pendingCronTemplateTrigger
                             font.pixelSize: 12
-                            color: "#73000000"
+                            color: Theme.textTertiary
                         }
                         Label {
                             visible: window.pendingCronTemplateExpr !== ""
                             text: qsTr("Cron：") + window.pendingCronTemplateExpr
                             font.pixelSize: 12
-                            color: "#73000000"
+                            color: Theme.textTertiary
                         }
                     }
 
@@ -16626,7 +16841,7 @@ ApplicationWindow {
                         Label {
                             text: qsTr("执行间隔（秒）")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         SingleLineTextInput {
                             id: newTaskIntervalInput
@@ -16645,7 +16860,7 @@ ApplicationWindow {
                         Label {
                             text: qsTr("工作目录")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         Row {
                             width: parent.width
@@ -16662,9 +16877,9 @@ ApplicationWindow {
                             CustomButton {
                                 width: 80
                                 height: 40
-                                backgroundColor: "#F7F9FA"
-                                textColor: "#A6000000"
-                                borderColor: "#E6E7EB"
+                                backgroundColor: Theme.sidebarBg
+                                textColor: Theme.textSecondary
+                                borderColor: Theme.surfaceSelected
                                 borderWidth: 1
                                 text: qsTr("浏览")
                                 fontSize: 14
@@ -16680,8 +16895,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
+                            backgroundColor: Theme.accent
+                            textColor: Theme.textInverse
                             borderWidth: 0
                             text: window.editingCronJobId ? qsTr("保存") : qsTr("创建")
                             fontSize: 14
@@ -16829,9 +17044,9 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
+                            backgroundColor: Theme.sidebarBg
+                            textColor: Theme.textSecondary
+                            borderColor: Theme.surfaceSelected
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
@@ -16857,8 +17072,8 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#E6E7EB"
+            color: Theme.surface
+            border.color: Theme.surfaceSelected
             border.width: 1
         }
         contentItem: Column {
@@ -16870,7 +17085,7 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 6
-                color: pinProjectMouse.containsMouse ? "#0A000000" : "transparent"
+                color: pinProjectMouse.containsMouse ? Theme.surfaceHover : "transparent"
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
@@ -16882,11 +17097,13 @@ ApplicationWindow {
                         source: "qrc:/images/pin.png"
                         anchors.verticalCenter: parent.verticalCenter
                         fillMode: Image.PreserveAspectFit
+                        layer.enabled: true
+                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                     }
                     Label {
                         text: window.pendingProjectPinned ? qsTr("取消置顶") : qsTr("置顶")
                         font.pixelSize: 14
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -16909,14 +17126,16 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 6
-                color: openProjectFolderMouse.containsMouse ? "#0A000000" : "transparent"
+                color: openProjectFolderMouse.containsMouse ? Theme.surfaceHover : "transparent"
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
                     height: parent.height
                     spacing: 8
+                        layer.enabled: true
+                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                     Image { width: 16; height: 16; source: "qrc:/images/folder.png"; anchors.verticalCenter: parent.verticalCenter}
-                    Label { text: qsTr("在资源管理器打开"); font.pixelSize: 14; color: "#D9000000"; anchors.verticalCenter: parent.verticalCenter }
+                    Label { text: qsTr("在资源管理器打开"); font.pixelSize: 14; color: Theme.textPrimary; anchors.verticalCenter: parent.verticalCenter }
                 }
                 MouseArea {
                     id: openProjectFolderMouse
@@ -16936,7 +17155,7 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 6
-                color: renameProjectMenuMouse.containsMouse ? "#0A000000" : "transparent"
+                color: renameProjectMenuMouse.containsMouse ? Theme.surfaceHover : "transparent"
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
@@ -16948,11 +17167,13 @@ ApplicationWindow {
                         source: "qrc:/images/edit.png"
                         anchors.verticalCenter: parent.verticalCenter
                         fillMode: Image.PreserveAspectFit
+                        layer.enabled: true
+                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                     }
                     Label {
                         text: qsTr("重命名")
                         font.pixelSize: 14
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -16974,7 +17195,7 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 6
-                color: modifyProjectColorMouse.containsMouse ? "#0A000000" : "transparent"
+                color: modifyProjectColorMouse.containsMouse ? Theme.surfaceHover : "transparent"
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
@@ -16988,11 +17209,13 @@ ApplicationWindow {
                         height: 16
                         source: "qrc:/images/folder.png"
                         anchors.verticalCenter: parent.verticalCenter
+                        layer.enabled: true
+                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                     }
                     Label {
                         text: qsTr("修改颜色")
                         font.pixelSize: 14
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -17003,7 +17226,7 @@ ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u203a"
                     font.pixelSize: 20
-                    color: "#73000000"
+                    color: Theme.textTertiary
                 }
                 MouseArea {
                     id: modifyProjectColorMouse
@@ -17027,14 +17250,14 @@ ApplicationWindow {
                 width: parent.width
                 height: 36
                 radius: 6
-                color: deleteProjectMenuMouse.containsMouse ? "#0A000000" : "transparent"
+                color: deleteProjectMenuMouse.containsMouse ? Theme.surfaceHover : "transparent"
                 Row {
                     anchors.left: parent.left
                     anchors.leftMargin: 10
                     height: parent.height
                     spacing: 8
                     Image { width: 16; height: 16; source: "qrc:/images/delete.png"; anchors.verticalCenter: parent.verticalCenter }
-                    Label { text: qsTr("删除"); font.pixelSize: 14; color: "#E54545"; anchors.verticalCenter: parent.verticalCenter }
+                    Label { text: qsTr("删除"); font.pixelSize: 14; color: Theme.dangerSoft; anchors.verticalCenter: parent.verticalCenter }
                 }
                 MouseArea {
                     id: deleteProjectMenuMouse
@@ -17060,8 +17283,8 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#E6E7EB"
+            color: Theme.surface
+            border.color: Theme.surfaceSelected
             border.width: 1
         }
         contentItem: Row {
@@ -17077,7 +17300,7 @@ ApplicationWindow {
                     color: modelData
                     border.width: 2
                     border.color: window.pendingProjectColor === modelData
-                                         ? "#006BFF" : "transparent"
+                                         ? Theme.accent : "transparent"
 
                     MouseArea {
                         anchors.fill: parent
@@ -17111,8 +17334,8 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
         contentItem: Column {
@@ -17123,7 +17346,7 @@ ApplicationWindow {
                 text: qsTr("重命名项目")
                 font.pixelSize: 18
                 font.bold: true
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             TextField {
                 id: renameProjectInput
@@ -17139,9 +17362,9 @@ ApplicationWindow {
                 rightPadding: 10
                 background: Rectangle {
                     radius: 6
-                    color: "#FFFFFF"
+                    color: Theme.surface
                     border.width: 1
-                    border.color: renameProjectInput.activeFocus ? "#006BFF" : "#D9DCE1"
+                    border.color: renameProjectInput.activeFocus ? Theme.accent : Theme.borderInput
                 }
                 onAccepted: renameProjectButton.clicked()
             }
@@ -17155,8 +17378,8 @@ ApplicationWindow {
                     height: 36
                     text: qsTr("保存")
                     fontSize: 14
-                    backgroundColor: "#006BFF"
-                    textColor: "#FFFFFF"
+                    backgroundColor: Theme.accent
+                    textColor: Theme.textInverse
                     enabled: renameProjectInput.text.trim().length > 0
                     onClicked: {
                         wsClient.renameProject(window.pendingProjectId,
@@ -17169,9 +17392,9 @@ ApplicationWindow {
                     height: 36
                     text: qsTr("取消")
                     fontSize: 14
-                    backgroundColor: "#F7F9FA"
-                    textColor: "#A6000000"
-                    borderColor: "#E6E7EB"
+                    backgroundColor: Theme.sidebarBg
+                    textColor: Theme.textSecondary
+                    borderColor: Theme.surfaceSelected
                     borderWidth: 1
                     onClicked: renameProjectPopup.close()
                 }
@@ -17196,8 +17419,8 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
         contentItem: Column {
@@ -17207,12 +17430,12 @@ ApplicationWindow {
                 text: qsTr("新建项目")
                 font.pixelSize: 18
                 font.bold: true
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             Column {
                 width: parent.width
                 spacing: 6
-                Label { text: qsTr("项目名称"); font.pixelSize: 13; color: "#A6000000" }
+                Label { text: qsTr("项目名称"); font.pixelSize: 13; color: Theme.textSecondary }
                 TextField {
                     id: projectNameInput
                     width: parent.width
@@ -17227,9 +17450,9 @@ ApplicationWindow {
                     rightPadding: 10
                     background: Rectangle {
                         radius: 6
-                        color: "#FFFFFF"
+                        color: Theme.surface
                         border.width: 1
-                        border.color: projectNameInput.activeFocus ? "#006BFF" : "#D9DCE1"
+                        border.color: projectNameInput.activeFocus ? Theme.accent : Theme.borderInput
                     }
                     onAccepted: createProjectButton.clicked()
                 }
@@ -17237,7 +17460,7 @@ ApplicationWindow {
             Column {
                 width: parent.width
                 spacing: 6
-                Label { text: qsTr("项目颜色"); font.pixelSize: 13; color: "#A6000000" }
+                Label { text: qsTr("项目颜色"); font.pixelSize: 13; color: Theme.textSecondary }
                 Row {
                     spacing: 8
                     Repeater {
@@ -17249,7 +17472,7 @@ ApplicationWindow {
                             color: modelData
                             border.width: 2
                             border.color: window.newProjectColor === modelData
-                                                 ? "#006BFF" : "transparent"
+                                                 ? Theme.accent : "transparent"
 
                             MouseArea {
                                 anchors.fill: parent
@@ -17263,20 +17486,22 @@ ApplicationWindow {
             Column {
                 width: parent.width
                 spacing: 6
-                Label { text: qsTr("项目工作空间"); font.pixelSize: 13; color: "#A6000000" }
+                Label { text: qsTr("项目工作空间"); font.pixelSize: 13; color: Theme.textSecondary }
                 Rectangle {
                     width: parent.width
                     height: 40
                     radius: 6
-                    color: "#F7F9FA"
+                    color: Theme.sidebarBg
                     border.width: 1
-                    border.color: "#E6E7EB"
+                    border.color: Theme.surfaceSelected
                     Image {
                         anchors.left: parent.left
                         anchors.leftMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
                         width: 16; height: 16
                         source: "qrc:/images/folder.png"
+                        layer.enabled: true
+                        layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                     }
                     Label {
                         anchors.left: parent.left
@@ -17285,7 +17510,7 @@ ApplicationWindow {
                         anchors.rightMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
                         text: window.newProjectWorkspace || qsTr("自动创建项目文件夹")
-                        color: window.newProjectWorkspace ? "#D9000000" : "#73000000"
+                        color: window.newProjectWorkspace ? Theme.textPrimary : Theme.textTertiary
                         font.pixelSize: 13
                         elide: Text.ElideMiddle
                     }
@@ -17298,9 +17523,9 @@ ApplicationWindow {
                         height: 32
                         text: qsTr("选择")
                         fontSize: 13
-                        textColor: "#A6000000"
-                        backgroundColor: "#FFFFFF"
-                        borderColor: "#D9DCE1"
+                        textColor: Theme.textSecondary
+                        backgroundColor: Theme.surface
+                        borderColor: Theme.borderInput
                         borderWidth: 1
                         onClicked: projectFolderDialog.open()
                     }
@@ -17316,8 +17541,8 @@ ApplicationWindow {
                     height: 36
                     text: qsTr("创建")
                     fontSize: 14
-                    backgroundColor: "#006BFF"
-                    textColor: "#FFFFFF"
+                    backgroundColor: Theme.accent
+                    textColor: Theme.textInverse
                     enabled: projectNameInput.text.trim().length > 0
                     onClicked: {
                         var projectId = wsClient.createProject(
@@ -17332,9 +17557,9 @@ ApplicationWindow {
                     height: 36
                     text: qsTr("取消")
                     fontSize: 14
-                    backgroundColor: "#F7F9FA"
-                    textColor: "#A6000000"
-                    borderColor: "#E6E7EB"
+                    backgroundColor: Theme.sidebarBg
+                    textColor: Theme.textSecondary
+                    borderColor: Theme.surfaceSelected
                     borderWidth: 1
                     onClicked: createProjectPopup.close()
                 }
@@ -17366,8 +17591,8 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
         contentItem: Column {
@@ -17379,7 +17604,7 @@ ApplicationWindow {
                 text: qsTr("确定删除项目“%1”？\n项目及其会话将从列表移除，工作空间中的文件不会被删除。")
                       .arg(window.pendingProjectTitle)
                 font.pixelSize: 15
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             Row {
                 anchors.right: parent.right
@@ -17389,8 +17614,8 @@ ApplicationWindow {
                     width: 88; height: 36
                     text: qsTr("删除")
                     fontSize: 14
-                    backgroundColor: "#E54545"
-                    textColor: "#FFFFFF"
+                    backgroundColor: Theme.dangerSoft
+                    textColor: Theme.textInverse
                     onClicked: {
                         var deletingActive = window.pendingProjectId
                                 === String(wsClient.currentProjectId || "")
@@ -17407,9 +17632,9 @@ ApplicationWindow {
                     width: 88; height: 36
                     text: qsTr("取消")
                     fontSize: 14
-                    backgroundColor: "#F7F9FA"
-                    textColor: "#A6000000"
-                    borderColor: "#E6E7EB"
+                    backgroundColor: Theme.sidebarBg
+                    textColor: Theme.textSecondary
+                    borderColor: Theme.surfaceSelected
                     borderWidth: 1
                     onClicked: deleteProjectPopup.close()
                 }
@@ -17427,8 +17652,8 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#E6E7EB"
+            color: Theme.surface
+            border.color: Theme.surfaceSelected
             border.width: 1
         }
         contentItem: Column {
@@ -17469,7 +17694,7 @@ ApplicationWindow {
                     width: taskSessionMenuColumn.width
                     height: 36
                     radius: 6
-                    color: taskSessionMenuMouse.containsMouse ? "#0A000000" : "transparent"
+                    color: taskSessionMenuMouse.containsMouse ? Theme.surfaceHover : "transparent"
 
                     Row {
                         anchors.left: parent.left
@@ -17487,7 +17712,7 @@ ApplicationWindow {
                         Label {
                             text: modelData.text
                             font.pixelSize: 14
-                            color: modelData.danger ? "#E54545" : "#D9000000"
+                            color: modelData.danger ? Theme.dangerSoft : Theme.textPrimary
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -17537,8 +17762,8 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
         contentItem: Column {
@@ -17549,7 +17774,7 @@ ApplicationWindow {
                 text: qsTr("重命名任务")
                 font.pixelSize: 18
                 font.bold: true
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             TextField {
                 id: renameTaskSessionInput
@@ -17565,9 +17790,9 @@ ApplicationWindow {
                 rightPadding: 10
                 background: Rectangle {
                     radius: 6
-                    color: "#FFFFFF"
+                    color: Theme.surface
                     border.width: 1
-                    border.color: renameTaskSessionInput.activeFocus ? "#006BFF" : "#D9DCE1"
+                    border.color: renameTaskSessionInput.activeFocus ? Theme.accent : Theme.borderInput
                 }
                 onAccepted: renameTaskSessionButton.clicked()
             }
@@ -17581,8 +17806,8 @@ ApplicationWindow {
                     height: 36
                     text: qsTr("保存")
                     fontSize: 14
-                    backgroundColor: "#006BFF"
-                    textColor: "#FFFFFF"
+                    backgroundColor: Theme.accent
+                    textColor: Theme.textInverse
                     enabled: renameTaskSessionInput.text.trim().length > 0
                     onClicked: {
                         wsClient.renameTaskSession(window.pendingTaskSessionId,
@@ -17595,9 +17820,9 @@ ApplicationWindow {
                     height: 36
                     text: qsTr("取消")
                     fontSize: 14
-                    backgroundColor: "#F7F9FA"
-                    textColor: "#A6000000"
-                    borderColor: "#E6E7EB"
+                    backgroundColor: Theme.sidebarBg
+                    textColor: Theme.textSecondary
+                    borderColor: Theme.surfaceSelected
                     borderWidth: 1
                     onClicked: renameTaskSessionPopup.close()
                 }
@@ -17622,8 +17847,8 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 12
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
         contentItem: Column {
@@ -17634,7 +17859,7 @@ ApplicationWindow {
                 wrapMode: Text.WordWrap
                 text: qsTr("确定删除此任务？\n此操作会从任务列表移除该会话，不会删除 Agent。")
                 font.pixelSize: 15
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             Row {
                 spacing: 12
@@ -17643,8 +17868,8 @@ ApplicationWindow {
                 CustomButton {
                     width: 88
                     height: 36
-                    backgroundColor: "#E54545"
-                    textColor: "#FFFFFF"
+                    backgroundColor: Theme.dangerSoft
+                    textColor: Theme.textInverse
                     borderWidth: 0
                     text: qsTr("删除")
                     fontSize: 14
@@ -17667,9 +17892,9 @@ ApplicationWindow {
                 CustomButton {
                     width: 88
                     height: 36
-                    backgroundColor: "#F7F9FA"
-                    textColor: "#A6000000"
-                    borderColor: "#E6E7EB"
+                    backgroundColor: Theme.sidebarBg
+                    textColor: Theme.textSecondary
+                    borderColor: Theme.surfaceSelected
                     borderWidth: 1
                     text: qsTr("取消")
                     fontSize: 14
@@ -17690,8 +17915,8 @@ ApplicationWindow {
 
         background: Rectangle {
             radius: 12
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
         contentItem: Column {
@@ -17702,7 +17927,7 @@ ApplicationWindow {
                 wrapMode: Text.WordWrap
                 text: qsTr("确定删除定时任务「") + window.pendingDeleteCronJobName + qsTr("」？")
                 font.pixelSize: 15
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             Row {
                 spacing: 12
@@ -17711,8 +17936,8 @@ ApplicationWindow {
                 CustomButton {
                     width: 88
                     height: 36
-                    backgroundColor: "#E54545"
-                    textColor: "#FFFFFF"
+                    backgroundColor: Theme.dangerSoft
+                    textColor: Theme.textInverse
                     borderWidth: 0
                     text: qsTr("删除")
                     fontSize: 14
@@ -17727,9 +17952,9 @@ ApplicationWindow {
                 CustomButton {
                     width: 88
                     height: 36
-                    backgroundColor: "#F7F9FA"
-                    textColor: "#A6000000"
-                    borderColor: "#E6E7EB"
+                    backgroundColor: Theme.sidebarBg
+                    textColor: Theme.textSecondary
+                    borderColor: Theme.surfaceSelected
                     borderWidth: 1
                     text: qsTr("取消")
                     fontSize: 14
@@ -17748,7 +17973,7 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         padding: 0
 
-        Overlay.modal: Rectangle { color: "#40000000" }
+        Overlay.modal: Rectangle { color: Theme.scrimSoft }
         background: Rectangle { color: "transparent" }
 
         contentItem: Item {
@@ -17764,7 +17989,7 @@ ApplicationWindow {
                 anchors.centerIn: parent
                 height: agentEditorTitleBar.height + agentEditorContent.implicitHeight + 24 + 16
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
 
                 MouseArea {
                     anchors.fill: parent
@@ -17780,7 +18005,7 @@ ApplicationWindow {
                         text: window.agentEditorIsEdit ? qsTr("编辑专家") : qsTr("新增专家")
                         font.pixelSize: 18
                         font.weight: Font.Bold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.left: parent.left
                         anchors.leftMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
@@ -17797,7 +18022,7 @@ ApplicationWindow {
                     Rectangle {
                         width: parent.width
                         height: 1
-                        color: "#14000000"
+                        color: Theme.divider
                         anchors.bottom: parent.bottom
                     }
                 }
@@ -17819,12 +18044,12 @@ ApplicationWindow {
                             Label {
                                 text: qsTr("专家名称")
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             Label {
                                 text: "*"
                                 font.pixelSize: 14
-                                color: "#FF4D4F"
+                                color: Theme.dangerSoft
                             }
                         }
                         SingleLineTextInput {
@@ -17845,7 +18070,7 @@ ApplicationWindow {
                                   ? qsTr("IDENTITY.md（留空不修改）")
                                   : qsTr("IDENTITY.md（可选）")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         MultiLineTextInput {
                             id: agentEditorIdentityInput
@@ -17864,8 +18089,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
+                            backgroundColor: Theme.accent
+                            textColor: Theme.textInverse
                             borderWidth: 0
                             text: qsTr("保存")
                             fontSize: 14
@@ -17891,9 +18116,9 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
+                            backgroundColor: Theme.sidebarBg
+                            textColor: Theme.textSecondary
+                            borderColor: Theme.surfaceSelected
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
@@ -17919,8 +18144,8 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 12
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
         contentItem: Column {
@@ -17931,7 +18156,7 @@ ApplicationWindow {
                 wrapMode: Text.WordWrap
                 text: qsTr("确定删除专家「") + window.pendingDeleteAgentName + qsTr("」？")
                 font.pixelSize: 15
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             Row {
                 spacing: 12
@@ -17940,8 +18165,8 @@ ApplicationWindow {
                 CustomButton {
                     width: 88
                     height: 36
-                    backgroundColor: "#E54545"
-                    textColor: "#FFFFFF"
+                    backgroundColor: Theme.dangerSoft
+                    textColor: Theme.textInverse
                     borderWidth: 0
                     text: qsTr("删除")
                     fontSize: 14
@@ -17954,9 +18179,9 @@ ApplicationWindow {
                 CustomButton {
                     width: 88
                     height: 36
-                    backgroundColor: "#F7F9FA"
-                    textColor: "#A6000000"
-                    borderColor: "#E6E7EB"
+                    backgroundColor: Theme.sidebarBg
+                    textColor: Theme.textSecondary
+                    borderColor: Theme.surfaceSelected
                     borderWidth: 1
                     text: qsTr("取消")
                     fontSize: 14
@@ -18025,7 +18250,7 @@ ApplicationWindow {
         }
 
         Overlay.modal: Rectangle {
-            color: "#40000000"
+            color: Theme.scrimSoft
         }
 
         background: Rectangle {
@@ -18046,7 +18271,7 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 height: githubTitleBar.height + githubDialogContent.implicitHeight + 24 + 16
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
 
                 MouseArea {
                     anchors.fill: parent
@@ -18062,7 +18287,7 @@ ApplicationWindow {
                         text: qsTr("从 GitHub 导入")
                         font.pixelSize: 20
                         font.weight: Font.Bold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.left: parent.left
                         anchors.leftMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
@@ -18079,7 +18304,7 @@ ApplicationWindow {
                     Rectangle {
                         width: parent.width
                         height: 1
-                        color: "#14000000"
+                        color: Theme.divider
                         anchors.bottom: parent.bottom
                     }
                 }
@@ -18099,7 +18324,7 @@ ApplicationWindow {
                         Label {
                             text: "URL"
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         SingleLineTextInput {
                             id: githubUrlInput
@@ -18113,7 +18338,7 @@ ApplicationWindow {
                     Label {
                         text: qsTr("支持仓库链接与子目录链接，owner/repo 或 GitHub tree/blob 链接；\n若仓库内有多个技能，将自动全部导入。")
                         font.pixelSize: 14
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         lineHeight: 1.5
                     }
                     Row {
@@ -18123,8 +18348,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
+                            backgroundColor: Theme.accent
+                            textColor: Theme.textInverse
                             borderWidth: 0
                             text: qsTr("导入")
                             fontSize: 14
@@ -18136,9 +18361,9 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
+                            backgroundColor: Theme.sidebarBg
+                            textColor: Theme.textSecondary
+                            borderColor: Theme.surfaceSelected
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
@@ -18203,7 +18428,7 @@ ApplicationWindow {
         }
 
         Overlay.modal: Rectangle {
-            color: "#40000000"
+            color: Theme.scrimSoft
         }
 
         background: Rectangle {
@@ -18224,7 +18449,7 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 height: mcpDialogTitleBar.height + mcpDialogScrollView.height + mcpDialogFooter.height
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
 
                 MouseArea {
                     anchors.fill: parent
@@ -18240,7 +18465,7 @@ ApplicationWindow {
                         text: mcpServiceDialog.isEdit ? qsTr("编辑 MCP 服务") : qsTr("添加 MCP 服务")
                         font.pixelSize: 18
                         font.weight: Font.Bold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.left: parent.left
                         anchors.leftMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
@@ -18257,7 +18482,7 @@ ApplicationWindow {
                     Rectangle {
                         width: parent.width
                         height: 1
-                        color: "#14000000"
+                        color: Theme.divider
                         anchors.bottom: parent.bottom
                     }
                 }
@@ -18288,12 +18513,12 @@ ApplicationWindow {
                                 Label {
                                     text: qsTr("服务名称")
                                     font.pixelSize: 14
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                 }
                                 Label {
                                     text: "*"
                                     font.pixelSize: 14
-                                    color: "#FF4D4F"
+                                    color: Theme.dangerSoft
                                 }
                             }
                             SingleLineTextInput {
@@ -18312,7 +18537,7 @@ ApplicationWindow {
                             Label {
                                 text: qsTr("描述")
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             SingleLineTextInput {
                                 id: mcpDescInput
@@ -18332,12 +18557,12 @@ ApplicationWindow {
                                 Label {
                                     text: qsTr("传输类型")
                                     font.pixelSize: 14
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                 }
                                 Label {
                                     text: "*"
                                     font.pixelSize: 14
-                                    color: "#FF4D4F"
+                                    color: Theme.dangerSoft
                                 }
                             }
                             DropdownSelect {
@@ -18346,7 +18571,7 @@ ApplicationWindow {
                                 height: 40
                                 model: ["标准输入输出（stdio）", "HTTP (SSE)"]
                                 currentIndex: 0
-                                borderColor: "#E6E7EB"
+                                borderColor: Theme.surfaceSelected
                                 borderWidth: 1
                                 alignment: Qt.AlignLeft
                             }
@@ -18361,12 +18586,12 @@ ApplicationWindow {
                                 Label {
                                     text: qsTr("服务地址")
                                     font.pixelSize: 14
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                 }
                                 Label {
                                     text: "*"
                                     font.pixelSize: 14
-                                    color: "#FF4D4F"
+                                    color: Theme.dangerSoft
                                 }
                             }
                             SingleLineTextInput {
@@ -18388,12 +18613,12 @@ ApplicationWindow {
                                 Label {
                                     text: qsTr("命令")
                                     font.pixelSize: 14
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                 }
                                 Label {
                                     text: "*"
                                     font.pixelSize: 14
-                                    color: "#FF4D4F"
+                                    color: Theme.dangerSoft
                                 }
                             }
                             DropdownSelect {
@@ -18402,7 +18627,7 @@ ApplicationWindow {
                                 height: 40
                                 model: ["node", "npx", "uvx", "python"]
                                 currentIndex: 0
-                                borderColor: "#E6E7EB"
+                                borderColor: Theme.surfaceSelected
                                 borderWidth: 1
                                 alignment: Qt.AlignLeft
                             }
@@ -18415,7 +18640,7 @@ ApplicationWindow {
                             Label {
                                 text: qsTr("参数")
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             MultiLineTextInput {
                                 id: mcpArgsInput
@@ -18432,7 +18657,7 @@ ApplicationWindow {
                             Label {
                                 text: qsTr("环境变量")
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
 
                             Column {
@@ -18479,11 +18704,11 @@ ApplicationWindow {
                                         CustomButton{
                                             width: 36
                                             height: 36
-                                            borderColor: "#E6E7EB"
+                                            borderColor: Theme.surfaceSelected
                                             borderWidth: 1
                                             buttonRadius: 8
-                                            backgroundColor: "#FFFFFF"
-                                            textColor: "#73000000"
+                                            backgroundColor: Theme.surface
+                                            textColor: Theme.textTertiary
                                             text: "-"
                                             visible: envVarModel.count !== 1
                                             anchors.verticalCenter: parent.verticalCenter
@@ -18494,12 +18719,12 @@ ApplicationWindow {
                                         CustomButton{
                                             width: 36
                                             height: 36
-                                            borderColor: "#E6E7EB"
+                                            borderColor: Theme.surfaceSelected
                                             borderWidth: 1
                                             buttonRadius: 8
-                                            backgroundColor: "#FFFFFF"
+                                            backgroundColor: Theme.surface
                                             text: "+"
-                                            textColor: "#73000000"
+                                            textColor: Theme.textTertiary
                                             visible: isLast
                                             anchors.verticalCenter: parent.verticalCenter
                                             onClicked: {
@@ -18522,7 +18747,7 @@ ApplicationWindow {
                     Rectangle {
                         width: parent.width
                         height: 1
-                        color: "#14000000"
+                        color: Theme.divider
                         anchors.top: parent.top
                     }
 
@@ -18535,8 +18760,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
+                            backgroundColor: Theme.accent
+                            textColor: Theme.textInverse
                             borderWidth: 0
                             text: qsTr("保存")
                             fontSize: 14
@@ -18568,9 +18793,9 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
+                            backgroundColor: Theme.sidebarBg
+                            textColor: Theme.textSecondary
+                            borderColor: Theme.surfaceSelected
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
@@ -18599,7 +18824,7 @@ ApplicationWindow {
         }
 
         Overlay.modal: Rectangle {
-            color: "#40000000"
+            color: Theme.scrimSoft
         }
         background: Rectangle {
             color: "transparent"
@@ -18616,7 +18841,7 @@ ApplicationWindow {
                 height: deleteMcpCol.implicitHeight
                 anchors.centerIn: parent
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
 
                 MouseArea {
                     anchors.fill: parent
@@ -18633,13 +18858,13 @@ ApplicationWindow {
                         text: qsTr("确认删除")
                         font.pixelSize: 18
                         font.weight: Font.Bold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                     }
 
                     Label {
                         text: qsTr("确定要删除此 MCP 服务吗？此操作不可撤销。")
                         font.pixelSize: 14
-                        color: "#A6000000"
+                        color: Theme.textSecondary
                         wrapMode: Text.Wrap
                         width: parent.width - 48
                     }
@@ -18653,8 +18878,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#FF4D4F"
-                            textColor: "#FFFFFF"
+                            backgroundColor: Theme.dangerSoft
+                            textColor: Theme.textInverse
                             borderWidth: 0
                             text: qsTr("删除")
                             fontSize: 14
@@ -18666,9 +18891,9 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
+                            backgroundColor: Theme.sidebarBg
+                            textColor: Theme.textSecondary
+                            borderColor: Theme.surfaceSelected
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
@@ -18708,7 +18933,7 @@ ApplicationWindow {
         }
 
         Overlay.modal: Rectangle {
-            color: "#40000000"
+            color: Theme.scrimSoft
         }
 
         background: Rectangle {
@@ -18724,11 +18949,13 @@ ApplicationWindow {
             }
 
             Rectangle {
-                width: Math.min(720, parent.width - 32)
+                // 设计稿（5581-37752）：设置面板 800x600、r20（主题页三张 185 宽预览卡要放得下）
+                width: Math.min(800, parent.width - 32)
                 height: Math.min(600, Math.max(360, parent.height - 32))
                 anchors.centerIn: parent
-                radius: 16
-                color: "#FFFFFF"
+                radius: 20
+                // 设计稿（5581-37752）里设置面板和窗口同底色（#14171A）
+                color: Theme.dark ? Theme.windowBg : Theme.surface
 
                 MouseArea {
                     anchors.fill: parent
@@ -18744,7 +18971,7 @@ ApplicationWindow {
                         text: qsTr("设置")
                         font.pixelSize: 18
                         font.weight: Font.Bold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.left: parent.left
                         anchors.leftMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
@@ -18761,7 +18988,7 @@ ApplicationWindow {
                     Rectangle {
                         width: parent.width
                         height: 1
-                        color: "#14000000"
+                        color: Theme.divider
                         anchors.bottom: parent.bottom
                     }
                 }
@@ -18776,7 +19003,8 @@ ApplicationWindow {
                         id: settingsLeftNav
                         width: 180
                         height: parent.height
-                        color: "#FFFFFF"
+                        // 与面板同底色，靠右侧 1px 分隔线区分（设计稿 5581-37752）
+                        color: "transparent"
 
                         Column {
                             anchors.fill: parent
@@ -18788,6 +19016,7 @@ ApplicationWindow {
                                     { text: "模型", icon: "qrc:/images/category.png" },
                                     { text: "记忆", icon: "qrc:/images/category.png" },
                                     { text: "沙箱", icon: "qrc:/images/category.png" },
+                                    { text: "主题", icon: "qrc:/images/theme-moon.svg" },
                                     { text: "通用", icon: "qrc:/images/setting.png" }
                                 ]
 
@@ -18795,8 +19024,8 @@ ApplicationWindow {
                                     width: settingsLeftNav.width - 32
                                     height: 36
                                     radius: 8
-                                    color: index === settingsDialog.settingsTabIndex ? "#E6E7EB"
-                                         : settingsNavMouse.containsMouse ? "#E6E7EB"
+                                    color: index === settingsDialog.settingsTabIndex ? Theme.surfaceSelected
+                                         : settingsNavMouse.containsMouse ? Theme.surfaceSelected
                                          : "transparent"
 
                                     Row {
@@ -18809,11 +19038,14 @@ ApplicationWindow {
                                             width: 16; height: 16
                                             source: modelData.icon
                                             anchors.verticalCenter: parent.verticalCenter
+                                            // 图标都是黑色线框，深色下要转浅
+                                            layer.enabled: true
+                                            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                                         }
                                         Label {
                                             text: modelData.text
                                             font.pixelSize: 14
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                     }
@@ -18833,7 +19065,7 @@ ApplicationWindow {
                     Rectangle {
                         width: 1
                         height: parent.height
-                        color: "#14000000"
+                        color: Theme.divider
                     }
 
                     ScrollView {
@@ -18851,7 +19083,7 @@ ApplicationWindow {
                                 text: qsTr("模型")
                                 font.pixelSize: 18
                                 font.weight: Font.Bold
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
 
                             Label {
@@ -18862,7 +19094,7 @@ ApplicationWindow {
                                       ? qsTr("暂无可用模型，请稍后重试或检查网关配置。")
                                       : qsTr("未连接服务器，连接成功后将自动加载模型列表。")
                                 font.pixelSize: 14
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
 
                             Column {
@@ -18907,7 +19139,7 @@ ApplicationWindow {
                                                         return window.modelDisplayLabel(nm, pv)
                                                     }
                                                 font.pixelSize: 14
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 }
                                                 Label {
                                                     visible: (modelData.id || "") !== ""
@@ -18915,7 +19147,7 @@ ApplicationWindow {
                                                     elide: Text.ElideMiddle
                                                     text: modelData.id || ""
                                                     font.pixelSize: 12
-                                                    color: "#73000000"
+                                                    color: Theme.textTertiary
                                             }
                                         }
 
@@ -18930,13 +19162,13 @@ ApplicationWindow {
                                                     x: settingsModelSwitch.leftPadding
                                                 y: parent.height / 2 - height / 2
                                                 radius: 12
-                                                    color: settingsModelSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                                    color: settingsModelSwitch.checked ? Theme.accent : Theme.disabledTrack
                                                 Behavior on color { ColorAnimation { duration: 150 } }
                                                 Rectangle {
                                                         x: settingsModelSwitch.checked ? parent.width - width - 3 : 3
                                                     y: parent.height / 2 - height / 2
                                                     width: 18; height: 18; radius: 9
-                                                    color: "#FFFFFF"
+                                                    color: Theme.textInverse
                                                     Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                                     }
                                                 }
@@ -18962,7 +19194,7 @@ ApplicationWindow {
                                 text: qsTr("记忆")
                                 font.pixelSize: 16
                                 font.weight: Font.Bold
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             Row {
                                 width: parent.width - 32
@@ -18975,12 +19207,12 @@ ApplicationWindow {
                                         Label {
                                             text: qsTr("启用用户记忆")
                                             font.pixelSize: 16
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                         }
                                         Label {
                                             text: qsTr("将稳定事实注入到系统提示词中的 <userMemories> 区块。\n建议开启后直接使用下方“记忆条目管理”，无需额外配置。")
                                             font.pixelSize: 14
-                                            color: "#73000000"
+                                            color: Theme.textTertiary
                                             lineHeight: 1.4
                                         }
                                     }
@@ -18998,13 +19230,13 @@ ApplicationWindow {
                                         x: memorySwitch.leftPadding
                                         y: parent.height / 2 - height / 2
                                         radius: 12
-                                        color: memorySwitch.checked ? "#006BFF" : "#D9D9D9"
+                                        color: memorySwitch.checked ? Theme.accent : Theme.disabledTrack
                                         Behavior on color { ColorAnimation { duration: 150 } }
                                         Rectangle {
                                             x: memorySwitch.checked ? parent.width - width - 3 : 3
                                             y: parent.height / 2 - height / 2
                                             width: 18; height: 18; radius: 9
-                                            color: "#FFFFFF"
+                                            color: Theme.textInverse
                                             Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                         }
                                     }
@@ -19021,12 +19253,12 @@ ApplicationWindow {
                                         Label {
                                             text: qsTr("启用 LLM 二级判定")
                                             font.pixelSize: 16
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                         }
                                         Label {
                                             text: qsTr("仅对规则边界样本调用模型复核，提升准确率（会增加少量 API 调用）")
                                             font.pixelSize: 14
-                                            color: "#73000000"
+                                            color: Theme.textTertiary
                                             lineHeight: 1.4
                                         }
                                     }
@@ -19044,13 +19276,13 @@ ApplicationWindow {
                                         x: llmSwitch.leftPadding
                                         y: parent.height / 2 - height / 2
                                         radius: 12
-                                        color: llmSwitch.checked ? "#006BFF" : "#D9D9D9"
+                                        color: llmSwitch.checked ? Theme.accent : Theme.disabledTrack
                                         Behavior on color { ColorAnimation { duration: 150 } }
                                         Rectangle {
                                             x: llmSwitch.checked ? parent.width - width - 3 : 3
                                             y: parent.height / 2 - height / 2
                                             width: 18; height: 18; radius: 9
-                                            color: "#FFFFFF"
+                                            color: Theme.textInverse
                                             Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                         }
                                     }
@@ -19060,7 +19292,7 @@ ApplicationWindow {
                             Rectangle {
                                 width: parent.width - 32
                                 height: 1
-                                color: "#14000000"
+                                color: Theme.divider
                             }
 
                             Item {
@@ -19074,20 +19306,20 @@ ApplicationWindow {
                                         text: qsTr("记忆条目管理")
                                         font.pixelSize: 16
                                         font.weight: Font.Bold
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                     }
                                     Label {
                                         text: qsTr("你可以在这里查看、搜索、新增、编辑或删除记忆内容。")
                                         font.pixelSize: 14
-                                        color: "#73000000"
+                                        color: Theme.textTertiary
                                     }
                                 }
 
                                 CustomButton {
                                     width: 80
                                     height: 32
-                                    backgroundColor: "#0F006BFF"
-                                    textColor: "#006BFF"
+                                    backgroundColor: Theme.accentTintBg
+                                    textColor: Theme.accent
                                     borderWidth: 0
                                     text: "+ 新增"
                                     fontSize: 14
@@ -19138,7 +19370,7 @@ ApplicationWindow {
                                     horizontalAlignment: Text.AlignHCenter
                                     text: qsTr("暂无记忆条目，点击「+ 新增」添加")
                                     font.pixelSize: 14
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                 }
 
                                 Repeater {
@@ -19147,7 +19379,7 @@ ApplicationWindow {
                                     delegate: Rectangle {
                                         width: parent.width
                                         height: 48
-                                        color: memoryItemHover.hovered ? "#F7F9FA" : "transparent"
+                                        color: memoryItemHover.hovered ? Theme.sidebarBg : "transparent"
                                         radius: 8
                                         HoverHandler {
                                             id: memoryItemHover
@@ -19165,21 +19397,21 @@ ApplicationWindow {
                                                 text: modelData.title || ""
                                                 font.pixelSize: 14
                                                 font.weight: Font.DemiBold
-                                                color: "#D9000000"
+                                                color: Theme.textPrimary
                                                 elide: Text.ElideRight
                                                 width: Math.min(implicitWidth, 200)
                                             }
                                             Label {
                                                 text: modelData.content || ""
                                                 font.pixelSize: 14
-                                                color: "#73000000"
+                                                color: Theme.textTertiary
                                                 elide: Text.ElideRight
                                                 width: Math.min(implicitWidth, 180)
                                             }
                                             Label {
                                                 text: modelData.date || ""
                                                 font.pixelSize: 12
-                                                color: "#40000000"
+                                                color: Theme.textFaint
                                             }
                                         }
 
@@ -19205,6 +19437,7 @@ ApplicationWindow {
                                             ImageButton {
                                                 btnHeight: 16
                                                 btnWidth: 16
+                                                colorize: false
                                                 source: "qrc:/images/delete.png"
                                                 onClicked: {
                                                     wsClient.deleteMemoryEntry(modelData.id || "")
@@ -19235,13 +19468,13 @@ ApplicationWindow {
                                 text: qsTr("沙箱")
                                 font.pixelSize: 16
                                 font.weight: Font.Bold
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
 
                             Label {
                                 text: qsTr("执行模式")
                                 font.pixelSize: 14
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
 
                             Column {
@@ -19256,13 +19489,13 @@ ApplicationWindow {
                                         Rectangle {
                                             width: 20; height: 20
                                             radius: 10
-                                            border.color: sandboxPage.sandboxMode === 0 ? "#006BFF" : "#D9D9D9"
+                                            border.color: sandboxPage.sandboxMode === 0 ? Theme.accent : Theme.disabledTrack
                                             border.width: 2
                                             color: "transparent"
                                             anchors.verticalCenter: parent.verticalCenter
                                             Rectangle {
                                                 width: 10; height: 10; radius: 5
-                                                color: "#006BFF"
+                                                color: Theme.accent
                                                 anchors.centerIn: parent
                                                 visible: sandboxPage.sandboxMode === 0
                                             }
@@ -19275,7 +19508,7 @@ ApplicationWindow {
                                         Label {
                                             text: qsTr("自动（优先沙箱）")
                                             font.pixelSize: 16
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
 
@@ -19283,7 +19516,7 @@ ApplicationWindow {
                                     Label {
                                         text: qsTr("优先使用内置 VM 沙箱，不可用时回退本地")
                                         font.pixelSize: 16
-                                        color: "#73000000"
+                                        color: Theme.textTertiary
                                         leftPadding: 24
                                     }
                                 }
@@ -19296,13 +19529,13 @@ ApplicationWindow {
                                         Rectangle {
                                             width: 20; height: 20
                                             radius: 10
-                                            border.color: sandboxPage.sandboxMode === 1 ? "#006BFF" : "#D9D9D9"
+                                            border.color: sandboxPage.sandboxMode === 1 ? Theme.accent : Theme.disabledTrack
                                             border.width: 2
                                             color: "transparent"
                                             anchors.verticalCenter: parent.verticalCenter
                                             Rectangle {
                                                 width: 10; height: 10; radius: 5
-                                                color: "#006BFF"
+                                                color: Theme.accent
                                                 anchors.centerIn: parent
                                                 visible: sandboxPage.sandboxMode === 1
                                             }
@@ -19315,7 +19548,7 @@ ApplicationWindow {
                                         Label {
                                             text: qsTr("本地运行")
                                             font.pixelSize: 16
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
 
@@ -19323,7 +19556,7 @@ ApplicationWindow {
                                     Label {
                                         text: qsTr("始终在本机运行")
                                         font.pixelSize: 16
-                                        color: "#73000000"
+                                        color: Theme.textTertiary
                                         leftPadding: 24
                                     }
                                 }
@@ -19336,13 +19569,13 @@ ApplicationWindow {
                                         Rectangle {
                                             width: 20; height: 20
                                             radius: 10
-                                            border.color: sandboxPage.sandboxMode === 2 ? "#006BFF" : "#D9D9D9"
+                                            border.color: sandboxPage.sandboxMode === 2 ? Theme.accent : Theme.disabledTrack
                                             border.width: 2
                                             color: "transparent"
                                             anchors.verticalCenter: parent.verticalCenter
                                             Rectangle {
                                                 width: 10; height: 10; radius: 5
-                                                color: "#006BFF"
+                                                color: Theme.accent
                                                 anchors.centerIn: parent
                                                 visible: sandboxPage.sandboxMode === 2
                                             }
@@ -19355,7 +19588,7 @@ ApplicationWindow {
                                         Label {
                                             text: qsTr("仅沙箱（内置VM）")
                                             font.pixelSize: 16
-                                            color: "#D9000000"
+                                            color: Theme.textPrimary
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
 
@@ -19363,12 +19596,13 @@ ApplicationWindow {
                                     Label {
                                         text: qsTr("要求内置 VM 沙箱可用，否则报错")
                                         font.pixelSize: 16
-                                        color: "#73000000"
+                                        color: Theme.textTertiary
                                         leftPadding: 24
                                     }
                                     Rectangle{
                                         width: parent.width
                                         height: 2
+                                        color: "transparent"
                                     }
                                     Row {
                                         leftPadding: 24
@@ -19376,13 +19610,13 @@ ApplicationWindow {
                                         Label {
                                             text: qsTr("未检测到沙箱VM，")
                                             font.pixelSize: 14
-                                            color: "#73000000"
+                                            color: Theme.textTertiary
                                         }
                                         Label {
                                             text: qsTr("立即安装")
                                             font.pixelSize: 14
                                             font.underline: true
-                                            color: "#006BFF"
+                                            color: Theme.accent
                                             MouseArea {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
@@ -19395,12 +19629,105 @@ ApplicationWindow {
                         }
                     }
                     ScrollView {
-                        id: settingsContentScroll4
+                        id: settingsContentScrollTheme
                         width: parent.width - settingsLeftNav.width - 1
                         height: parent.height
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AsNeeded
                         visible: settingsDialog.settingsTabIndex === 3
+                        Column {
+                            width: settingsContentScrollTheme.width
+                            padding: 16
+                            spacing: 16
+                            Label {
+                                text: qsTr("主题")
+                                font.pixelSize: 16
+                                font.weight: Font.Medium
+                                color: Theme.textPrimary
+                            }
+                            Row {
+                                spacing: 16
+                                Repeater {
+                                    model: [
+                                        { key: "light", label: qsTr("浅色"),
+                                          thumb: "qrc:/images/theme/theme-light.png" },
+                                        { key: "dark", label: qsTr("深色"),
+                                          thumb: "qrc:/images/theme/theme-dark.png" },
+                                        { key: "system", label: qsTr("跟随系统"),
+                                          thumb: "qrc:/images/theme/theme-system.png" }
+                                    ]
+                                    delegate: Item {
+                                        id: themeOption
+                                        readonly property bool current:
+                                            workspaceSettings.theme === modelData.key
+                                        width: 185
+                                        height: 172
+
+                                        Rectangle {
+                                            id: themePreview
+                                            width: 185
+                                            height: 138
+                                            radius: 20
+                                            color: "transparent"
+                                            clip: true
+                                            Image {
+                                                anchors.fill: parent
+                                                source: modelData.thumb
+                                                sourceSize: Qt.size(370, 276)
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                            // 选中描边要盖在缩略图上面（Rectangle 的 border 会被子项盖住）
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 20
+                                                color: "transparent"
+                                                visible: themeOption.current
+                                                border.width: 2
+                                                border.color: Theme.accent
+                                            }
+                                            Rectangle {
+                                                visible: themeOption.current
+                                                z: 2
+                                                width: 20
+                                                height: 20
+                                                radius: 10
+                                                color: Theme.accent
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 10
+                                                anchors.bottom: parent.bottom
+                                                anchors.bottomMargin: 10
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: "✓"
+                                                    color: "#FFFFFF"
+                                                    font.pixelSize: 12
+                                                }
+                                            }
+                                        }
+                                        Label {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            anchors.bottom: parent.bottom
+                                            text: modelData.label
+                                            font.pixelSize: 14
+                                            color: Theme.textSecondary
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: window.setThemePreference(modelData.key)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        id: settingsContentScroll4
+                        width: parent.width - settingsLeftNav.width - 1
+                        height: parent.height
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                        visible: settingsDialog.settingsTabIndex === 4
                         Column {
                             width: settingsContentScroll4.width
                             padding: 16
@@ -19410,13 +19737,13 @@ ApplicationWindow {
                                 text: qsTr("通用")
                                 font.pixelSize: 16
                                 font.weight: Font.Bold
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
 
                             Label {
                                 text: qsTr("关闭窗口时")
                                 font.pixelSize: 14
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
 
                             ButtonGroup {
@@ -19441,7 +19768,7 @@ ApplicationWindow {
                                 leftPadding: 32
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: 13
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
 
                             RadioButton {
@@ -19462,7 +19789,7 @@ ApplicationWindow {
                                 leftPadding: 32
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: 13
-                                color: "#73000000"
+                                color: Theme.textTertiary
                             }
 
                             Label {
@@ -19470,7 +19797,7 @@ ApplicationWindow {
                                 text: qsTr("关闭方式和提示选项更改后立即保存。")
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: 12
-                                color: "#8A9099"
+                                color: Theme.textMutedSolid
                             }
 
                             CheckBox {
@@ -19486,12 +19813,12 @@ ApplicationWindow {
                                     width: 18
                                     height: 18
                                     radius: 4
-                                    color: settingsShowClosePromptOption.checked ? "#006BFF" : "#FFFFFF"
-                                    border.color: settingsShowClosePromptOption.checked ? "#006BFF" : "#B8BEC8"
+                                    color: settingsShowClosePromptOption.checked ? Theme.accent : Theme.surface
+                                    border.color: settingsShowClosePromptOption.checked ? Theme.accent : Theme.borderStrong
                                     Text {
                                         anchors.centerIn: parent
                                         text: "✓"
-                                        color: "#FFFFFF"
+                                        color: Theme.textInverse
                                         font.pixelSize: 13
                                         visible: settingsShowClosePromptOption.checked
                                     }
@@ -19500,7 +19827,7 @@ ApplicationWindow {
                                     leftPadding: settingsShowClosePromptOption.indicator.width
                                                  + settingsShowClosePromptOption.spacing
                                     text: settingsShowClosePromptOption.text
-                                    color: "#323842"
+                                    color: Theme.textTitle
                                     font: settingsShowClosePromptOption.font
                                     verticalAlignment: Text.AlignVCenter
                                 }
@@ -19521,7 +19848,7 @@ ApplicationWindow {
                     Rectangle {
                         width: parent.width
                         height: 1
-                        color: "#14000000"
+                        color: Theme.divider
                         anchors.top: parent.top
                     }
 
@@ -19534,8 +19861,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
+                            backgroundColor: Theme.accent
+                            textColor: Theme.textInverse
                             borderWidth: 0
                             text: qsTr("保存")
                             fontSize: 14
@@ -19557,9 +19884,9 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
+                            backgroundColor: Theme.sidebarBg
+                            textColor: Theme.textSecondary
+                            borderColor: Theme.surfaceSelected
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
@@ -19598,7 +19925,7 @@ ApplicationWindow {
             NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
         }
         Overlay.modal: Rectangle {
-            color: "#40000000"
+            color: Theme.scrimSoft
         }
         background: Rectangle {
             color: "transparent"
@@ -19615,7 +19942,7 @@ ApplicationWindow {
                 height: memEditCol.implicitHeight
                 anchors.centerIn: parent
                 radius: 16
-                color: "#FFFFFF"
+                color: Theme.surface
 
                 MouseArea {
                     anchors.fill: parent
@@ -19632,7 +19959,7 @@ ApplicationWindow {
                         text: memoryEditPopup.isEdit ? qsTr("编辑记忆") : qsTr("新增记忆")
                         font.pixelSize: 18
                         font.weight: Font.Bold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                     }
 
                     Column {
@@ -19643,12 +19970,12 @@ ApplicationWindow {
                             Label {
                                 text: qsTr("标题")
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             Label {
                                 text: "*"
                                 font.pixelSize: 14
-                                color: "#FF4D4F"
+                                color: Theme.dangerSoft
                             }
                         }
                         SingleLineTextInput {
@@ -19669,12 +19996,12 @@ ApplicationWindow {
                             Label {
                                 text: qsTr("内容")
                                 font.pixelSize: 14
-                                color: "#D9000000"
+                                color: Theme.textPrimary
                             }
                             Label {
                                 text: "*"
                                 font.pixelSize: 14
-                                color: "#FF4D4F"
+                                color: Theme.dangerSoft
                             }
                         }
                         MultiLineTextInput {
@@ -19694,8 +20021,8 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#006BFF"
-                            textColor: "#FFFFFF"
+                            backgroundColor: Theme.accent
+                            textColor: Theme.textInverse
                             borderWidth: 0
                             text: qsTr("保存")
                             fontSize: 14
@@ -19713,9 +20040,9 @@ ApplicationWindow {
                         CustomButton {
                             width: 96
                             height: 40
-                            backgroundColor: "#F7F9FA"
-                            textColor: "#A6000000"
-                            borderColor: "#E6E7EB"
+                            backgroundColor: Theme.sidebarBg
+                            textColor: Theme.textSecondary
+                            borderColor: Theme.surfaceSelected
                             borderWidth: 1
                             text: qsTr("取消")
                             fontSize: 14
@@ -19752,9 +20079,9 @@ ApplicationWindow {
             width: 220
             height: 64
             radius: 8
-            color: "#FFFFFF"
+            color: Theme.surface
             border.width: 1
-            border.color: "#14000000"
+            border.color: Theme.divider
             anchors.centerIn: parent
 
             Row {
@@ -19766,13 +20093,13 @@ ApplicationWindow {
                     height: 28
                     running: window.configurationUpdateActive
                     anchors.verticalCenter: parent.verticalCenter
-                    palette.dark: "#006BFF"
-                    palette.mid: "#006BFF"
+                    palette.dark: Theme.accent
+                    palette.mid: Theme.accent
                 }
 
                 Label {
                     text: qsTr("正在修改配置")
-                    color: "#A6000000"
+                    color: Theme.textSecondary
                     font.pixelSize: 16
                     anchors.verticalCenter: parent.verticalCenter
                 }
@@ -19808,7 +20135,7 @@ ApplicationWindow {
         radius: window.windowCornerRadius
         color: "transparent"
         border.width: 1
-        border.color: "#1A000000"
+        border.color: Theme.divider
         visible: !window.windowMaximized
                  && window.visibility !== Window.FullScreen
         z: 30000
@@ -19984,9 +20311,9 @@ ApplicationWindow {
 
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
+            color: Theme.surface
             border.width: 1
-            border.color: "#1A000000"
+            border.color: Theme.divider
 
             layer.enabled: true
             layer.effect: DropShadow {
@@ -19995,7 +20322,7 @@ ApplicationWindow {
                 verticalOffset: 8
                 radius: 20
                 samples: 41
-                color: "#1F1A1A1A"
+                color: Theme.divider
                 cached: true
             }
         }
@@ -20014,7 +20341,7 @@ ApplicationWindow {
                 anchors.rightMargin: 8
                 height: 36
                 radius: 6
-                color: treeRowMenuDeleteMouse.containsMouse ? "#FFF1F1" : "transparent"
+                color: treeRowMenuDeleteMouse.containsMouse ? Theme.dangerSoftBg : "transparent"
 
                 Row {
                     anchors.verticalCenter: parent.verticalCenter
@@ -20034,7 +20361,7 @@ ApplicationWindow {
                         text: qsTr("删除")
                         font.family: "Alibaba PuHuiTi 3.0"
                         font.pixelSize: 14
-                        color: "#FF3D40"
+                        color: Theme.danger
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }

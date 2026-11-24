@@ -1,15 +1,16 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import MedClaw.Theme 1.0
 
 Item {
     id: root
 
     property var tabs: []
     property int currentIndex: 0
-    property color activeColor: "#006BFF"
-    property color lineColor: "#14000000"
-    property color textColor: "#D9000000"
-    property color inactiveTextColor: "#A6000000"
+    property color activeColor: Theme.accent
+    property color lineColor: Theme.divider
+    property color textColor: Theme.textPrimary
+    property color inactiveTextColor: Theme.textSecondary
     property int fontSize: 16
     property int tabHeight: 40
     property int indicatorHeight: 2
@@ -59,7 +60,7 @@ Item {
                         width: badgeText.implicitWidth + 12
                         height: 20
                         radius: 10
-                        color: tabItem.isActive ? "#0F006BFF" : "#0A000000"
+                        color: tabItem.isActive ? Theme.accentTintBg : Theme.surfaceHover
                         anchors.verticalCenter: parent.verticalCenter
 
                         Behavior on color {

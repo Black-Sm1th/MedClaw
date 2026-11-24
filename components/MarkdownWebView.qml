@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtWebEngine
+import MedClaw.Theme 1.0
 
 Item {
     id: root
@@ -10,7 +11,7 @@ Item {
     property bool isIntermediate: false
     property int maxMarkdownChars: 500000
     property int markdownDelayMs: 80
-    property color foreground: isUser ? "#E5000000" : (isIntermediate ? "#8C000000" : "#D9000000")
+    property color foreground: isUser ? Theme.textPrimary : (isIntermediate ? Theme.textDim : Theme.textPrimary)
     property string fontFamily: "Arial, \"Alibaba PuHuiTi 3.0\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", \"Noto Color Emoji\", sans-serif"
     property int fontPixelSize: 16
 
@@ -78,6 +79,18 @@ Item {
             renderTimer.restart()
     }
 
+    function pushTheme() {
+        if (!webReady)
+            return
+        webView.runJavaScript("window.MedClawMarkdown && window.MedClawMarkdown.setTheme("
+                              + JSON.stringify(Theme.dark ? "dark" : "light") + ");")
+    }
+
+    Connections {
+        target: Theme
+        function onDarkChanged() { root.pushTheme() }
+    }
+
     onSourceTextChanged: {
         if (!streaming)
             scheduleFullRender()
@@ -134,6 +147,7 @@ Item {
                 succeeded = status === WebEngineView.LoadSucceededStatus
             if (succeeded) {
                 root.webReady = true
+                root.pushTheme()
                 root.pushText(root.sourceText, !root.streaming)
             }
         }

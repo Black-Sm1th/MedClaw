@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtWebEngine
 import QtQuick.Dialogs
+import MedClaw.Theme 1.0
 
 // 文件树弹层：快捷键唤出，把一个文件夹拖进来即可浏览。
 //
@@ -92,6 +93,19 @@ Item {
         return JSON.stringify(String(text))
     }
 
+    function pushTheme() {
+        if (!treeLoader.item)
+            return
+        treeLoader.item.runJavaScript(
+                    "window.__fileTree && window.__fileTree.setTheme("
+                    + JSON.stringify(Theme.dark ? "dark" : "light") + ")")
+    }
+
+    Connections {
+        target: Theme
+        function onDarkChanged() { root.pushTheme() }
+    }
+
     Component.onCompleted: {
         // 诊断：确认宿主侧的目录服务已注入（缺失时这里是 undefined）
         console.log("[TreePopup] fileTreeProvider=" + typeof fileTreeProvider)
@@ -141,7 +155,7 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            color: "#40000000"
+            color: Theme.textFaint
             MouseArea {
                 anchors.fill: parent
                 onClicked: root.close()
@@ -154,7 +168,7 @@ Item {
             height: Math.min(parent.height * 0.86, 820)
             anchors.centerIn: parent
             radius: 12
-            color: "#FFFFFF"
+            color: Theme.surface
             clip: true
 
             // 拦截点击，避免穿透到遮罩把自己的弹层关掉
@@ -172,6 +186,7 @@ Item {
                     onLoadingChanged: function(info) {
                         if (info.status === WebEngineView.LoadSucceededStatus) {
                             root.pageReady = true
+                            root.pushTheme()
                             if (root.pendingPaths && root.pendingPaths.length > 0)
                                 root.pushPaths()
                         }

@@ -1,28 +1,39 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import MedClaw.Theme 1.0
 
 Item {
     id: loginPage
     signal errorRequested(string message)
     property bool governmentEdition: false
     property bool imagingEdition: false
-    property bool showPhoneForm: false
+    // 影像版不再要「领域卡片 + 登录」那一屏（设计稿 5626-73454 已废弃），
+    // 直接进手机号表单（设计稿 5627-83678）
+    property bool showPhoneForm: imagingEdition
     property int resendSeconds: 0
     property bool initializing: false
     property int startupEllipsisCount: 0
+    // 深色 + 影像版：标题用 Aether.Imaging，领域卡片用设计稿（5626-73454）的深色组图。
+    readonly property bool darkImaging: Theme.dark && imagingEdition
     readonly property real contentWidth: Math.min(709, Math.max(280, width - 48))
-    readonly property real shortcutAreaWidth: Math.min(904, Math.max(280, width - 48))
+    readonly property real shortcutAreaWidth: darkImaging ? Math.min(1120, Math.max(280, width - 48))
+                                                          : Math.min(904, Math.max(280, width - 48))
     readonly property real formWidth: Math.min(400, Math.max(240, width - 48))
     readonly property bool useEnterpriseCredentials: authController.enterpriseCredentialLoginEnabled
     readonly property string welcomeTitle: governmentEdition
                                          ? qsTr("你好，欢迎来到 政务智能体")
-                                         : qsTr("你好，欢迎来到 汇小智 Aether study")
-    readonly property var shortcutImages: imagingEdition
-                                          ? ["loginShortcut1.png", "loginShortcut5.png"]
-                                          : governmentEdition
-                                            ? ["loginShortcut1.png", "loginShortcut3-sp.png", "loginShortcut6-sp.png"]
-                                            : ["loginShortcut1.png", "loginShortcut2.png", "loginShortcut3.png",
-                                               "loginShortcut4.png", "loginShortcut5.png", "loginShortcut6.png"]
+                                         : (imagingEdition ? qsTr("你好，欢迎来到 汇小智 Aether.Imaging")
+                                                           : qsTr("你好，欢迎来到 汇小智 Aether study"))
+    readonly property var shortcutImages: darkImaging
+                                          ? ["loginShortcut-dark-1.png", "loginShortcut-dark-2.png",
+                                             "loginShortcut-dark-3.png", "loginShortcut-dark-4.png",
+                                             "loginShortcut-dark-5.png"]
+                                          : imagingEdition
+                                            ? ["loginShortcut1.png", "loginShortcut5.png"]
+                                            : governmentEdition
+                                              ? ["loginShortcut1.png", "loginShortcut3-sp.png", "loginShortcut6-sp.png"]
+                                              : ["loginShortcut1.png", "loginShortcut2.png", "loginShortcut3.png",
+                                                 "loginShortcut4.png", "loginShortcut5.png", "loginShortcut6.png"]
 
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
     function submitLogin() {
@@ -38,7 +49,9 @@ Item {
         }
     }
 
-    Rectangle { anchors.fill: parent; color: "#FFFFFF" }
+    // 背景用窗口底色（深色 #14171A）：设计稿登录页的底色就是窗口底色，
+    // 之前用 Theme.surface（#242627）会整页偏亮。
+    Rectangle { anchors.fill: parent; color: Theme.windowBg }
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
@@ -67,7 +80,7 @@ Item {
                 }
                 Text {
                     text: loginPage.welcomeTitle
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                     font.family: "Alibaba PuHuiTi 3.0"
                     font.pixelSize: 40
                     font.bold: true
@@ -77,7 +90,7 @@ Item {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("开启你的智能探索之旅")
-                color: "#A6000000"
+                color: Theme.textSecondary
                 font.family: "Alibaba PuHuiTi 3.0"
                 font.pixelSize: 28
                 wrapMode: Text.Wrap
@@ -87,9 +100,13 @@ Item {
         Item {
             id: shortcutCarousel
             width: parent.width
-            readonly property real shortcutSpacing: Math.min(32, Math.max(8, width * 0.055))
-            readonly property real shortcutWidth: Math.min(202,
-                                                            Math.max(1, (width - shortcutSpacing * 4) / 5))
+            readonly property real shortcutSpacing: loginPage.darkImaging
+                                                    ? 32
+                                                    : Math.min(32, Math.max(8, width * 0.055))
+            readonly property real shortcutWidth: loginPage.darkImaging
+                                                  ? 202
+                                                  : Math.min(202,
+                                                             Math.max(1, (width - shortcutSpacing * 4) / 5))
             readonly property real cycleWidth: loginPage.shortcutImages.length
                                                   * (shortcutWidth + shortcutSpacing)
             height: shortcutWidth * 175 / 202
@@ -109,15 +126,17 @@ Item {
                     height: parent.height
                     spacing: shortcutCarousel.shortcutSpacing
 
-                    Repeater {
-                        model: loginPage.shortcutImages.length * 2
-                        Image {
-                            width: shortcutCarousel.shortcutWidth
-                            height: shortcutCarousel.height
-                            source: "qrc:/images/login/" + loginPage.shortcutImages[index % loginPage.shortcutImages.length]
-                            fillMode: Image.PreserveAspectFit
+                        Repeater {
+                            model: loginPage.shortcutImages.length * 2
+                            Image {
+                                width: shortcutCarousel.shortcutWidth
+                                height: shortcutCarousel.height
+                                source: "qrc:/images/login/" + loginPage.shortcutImages[index % loginPage.shortcutImages.length]
+                                // 深色卡片是 2 倍图（404x350），按 202x175 显示保持清晰
+                                sourceSize: loginPage.darkImaging ? Qt.size(404, 350) : Qt.size(0, 0)
+                                fillMode: Image.PreserveAspectFit
+                            }
                         }
-                    }
                 }
 
                 SequentialAnimation on contentX {
@@ -141,7 +160,7 @@ Item {
                 height: parent.height
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "#FFFFFF" }
+                    GradientStop { position: 0.0; color: Theme.windowBg }
                     GradientStop { position: 1.0; color: "#00FFFFFF" }
                 }
             }
@@ -152,7 +171,7 @@ Item {
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: "#00FFFFFF" }
-                    GradientStop { position: 1.0; color: "#FFFFFF" }
+                    GradientStop { position: 1.0; color: Theme.windowBg }
                 }
             }
         }
@@ -160,29 +179,39 @@ Item {
         Column {
             width: parent.width; spacing: 24; visible: loginPage.showPhoneForm && !loginPage.useEnterpriseCredentials; height: visible ? implicitHeight : 0
             Rectangle {
-                width: loginPage.formWidth; height: 56; radius: 7; color: "#F7F8FA"
+                width: loginPage.formWidth; height: 56; radius: 7; color: Theme.surfaceMuted
                 anchors.horizontalCenter: parent.horizontalCenter
                 Label {
                     text: "+86"
                     anchors.left: parent.left
-                    anchors.leftMargin: 12
+                    anchors.leftMargin: loginPage.darkImaging ? 17 : 12
                     anchors.verticalCenter: parent.verticalCenter
-                    color: "#595959"
+                    color: Theme.textMutedSolid
                     font.pixelSize: 16
+                }
+                // 设计稿（5627-83678）：+86 与手机号之间有一条 1px 分隔线
+                Rectangle {
+                    visible: loginPage.darkImaging
+                    width: 1
+                    height: 20
+                    color: Theme.divider
+                    anchors.left: parent.left
+                    anchors.leftMargin: 52
+                    anchors.verticalCenter: parent.verticalCenter
                 }
                 SingleLineTextInput {
                     id: phoneInput
                     anchors.left: parent.left
-                    anchors.leftMargin: 50
+                    anchors.leftMargin: loginPage.darkImaging ? 70 : 50
                     anchors.right: parent.right
-                    inputWidth: parent.width - 50
+                    inputWidth: parent.width - (loginPage.darkImaging ? 70 : 50)
                     inputHeight: parent.height
                     backgroundColor: "transparent"
                     borderWidth: 0
                     inputRadius: 0
                     fontSize: 16
-                    textColor: "#262626"
-                    placeholderColor: "#BFBFBF"
+                    textColor: Theme.textSolid
+                    placeholderColor: Theme.textFaint
                     placeholderText: "请输入手机号"
                     inputMethodHints: Qt.ImhDigitsOnly
                     maximumLength: 11
@@ -196,12 +225,12 @@ Item {
                     id: codeInput
                     inputWidth: parent.width - 84 - 12
                     inputHeight: parent.height
-                    backgroundColor: "#F7F8FA"
+                    backgroundColor: Theme.surfaceMuted
                     borderWidth: 0
                     inputRadius: 7
                     fontSize: 16
-                    textColor: "#262626"
-                    placeholderColor: "#BFBFBF"
+                    textColor: Theme.textSolid
+                    placeholderColor: Theme.textFaint
                     placeholderText: "请输入验证码"
                     inputMethodHints: Qt.ImhDigitsOnly
                     maximumLength: 6
@@ -223,7 +252,7 @@ Item {
                         padding: 0
                         contentItem: Text {
                             text: parent.text
-                            color: parent.enabled ? "#006BFF" : "#A6A6A6"
+                            color: parent.enabled ? Theme.accent : Theme.textFaint
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             font: parent.font
@@ -252,12 +281,12 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 inputWidth: loginPage.formWidth
                 inputHeight: 56
-                backgroundColor: "#F7F8FA"
+                backgroundColor: Theme.surfaceMuted
                 borderWidth: 0
                 inputRadius: 7
                 fontSize: 16
-                textColor: "#262626"
-                placeholderColor: "#BFBFBF"
+                textColor: Theme.textSolid
+                placeholderColor: Theme.textFaint
                 placeholderText: "请输入账号"
                 onTextChanged: authController.clearError()
             }
@@ -266,12 +295,12 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 inputWidth: loginPage.formWidth
                 inputHeight: 56
-                backgroundColor: "#F7F8FA"
+                backgroundColor: Theme.surfaceMuted
                 borderWidth: 0
                 inputRadius: 7
                 fontSize: 16
-                textColor: "#262626"
-                placeholderColor: "#BFBFBF"
+                textColor: Theme.textSolid
+                placeholderColor: Theme.textFaint
                 placeholderText: "请输入密码"
                 echoMode: TextInput.Password
                 onAccepted: loginPage.submitLogin()
@@ -282,12 +311,12 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 inputWidth: loginPage.formWidth
                 inputHeight: 56
-                backgroundColor: "#F7F8FA"
+                backgroundColor: Theme.surfaceMuted
                 borderWidth: 0
                 inputRadius: 7
                 fontSize: 16
-                textColor: "#262626"
-                placeholderColor: "#BFBFBF"
+                textColor: Theme.textSolid
+                placeholderColor: Theme.textFaint
                 placeholderText: "请输入内网IP地址"
                 text: authController.internalApiHost
                 maximumLength: 15
@@ -308,12 +337,12 @@ Item {
             enabled: !authController.busy
             text: authController.busy ? (loginPage.showPhoneForm ? "登录中" : "请稍候") : "登录"
             fontSize: 20
-            backgroundColor: "#006BFF"
-            hoverBackgroundColor: "#1677FF"
-            pressedBackgroundColor: "#0057D9"
-            disabledBackgroundColor: "#80AFFF"
-            textColor: "#FFFFFF"
-            disabledTextColor: "#FFFFFF"
+            backgroundColor: Theme.accent
+            hoverBackgroundColor: Theme.accentHover
+            pressedBackgroundColor: Theme.accentPressed
+            disabledBackgroundColor: Theme.accentSoftBg
+            textColor: Theme.textInverse
+            disabledTextColor: Theme.surface
             onClicked: {
                 if (!loginPage.showPhoneForm) {
                     loginPage.showPhoneForm = true
@@ -350,7 +379,7 @@ Item {
                 }
                 Text {
                     text: loginPage.welcomeTitle
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                     font.family: "Alibaba PuHuiTi 3.0"
                     font.pixelSize: 40
                     font.bold: true
@@ -360,7 +389,7 @@ Item {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: qsTr("开启你的智能探索之旅")
-                color: "#A6000000"
+                color: Theme.textSecondary
                 font.family: "Alibaba PuHuiTi 3.0"
                 font.pixelSize: 28
                 wrapMode: Text.Wrap
@@ -372,19 +401,43 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             source: "qrc:/images/waiting.gif"
             fillMode: Image.PreserveAspectFit
-            playing: loginPage.initializing
+            // 深色影像版用设计稿（5581-37634）的深色插画；waiting.gif 是白底的，深色下是一大块白
+            visible: !loginPage.darkImaging
+            playing: loginPage.initializing && !loginPage.darkImaging
+        }
+        // 深色影像版：设计稿（5581-37660）的 5 秒微动效 GIF；静帧先顶上，
+        // 动图加载好（frameCount>0）再叠上去，避免空白/闪烁。同一槽位，别拆成两个条目。
+        Item {
+            visible: loginPage.darkImaging
+            width: Math.min(450, loginPage.contentWidth)
+            height: width * 338 / 450
+            anchors.horizontalCenter: parent.horizontalCenter
+
+            Image {
+                anchors.fill: parent
+                source: "qrc:/images/imaging/splash-dark.png"
+                sourceSize: Qt.size(900, 676)
+                fillMode: Image.PreserveAspectFit
+            }
+            AnimatedImage {
+                anchors.fill: parent
+                source: "qrc:/images/imaging/splash-dark.gif"
+                fillMode: Image.PreserveAspectFit
+                visible: frameCount > 0
+                playing: loginPage.initializing
+            }
         }
         Label {
             width: parent.width
             text: qsTr("启动中") + Array(startupEllipsisCount + 1).join(".")
             horizontalAlignment: Text.AlignHCenter
-            color: "#A6000000"
+            color: Theme.textSecondary
             font.family: "Alibaba PuHuiTi 3.0"
             font.pixelSize: 18
         }
     }
 
-    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: "#73000000"; font.pixelSize: 16; visible: !loginPage.initializing}
+    Label { text: "隐私政策   服务条款"; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 40; color: Theme.textTertiary; font.pixelSize: 16; visible: !loginPage.initializing}
     Timer {
         interval: 450
         repeat: true
@@ -402,7 +455,8 @@ Item {
     }
     onVisibleChanged: {
         if (visible && !initializing) {
-            showPhoneForm = false
+            // 影像版直接停在表单页，其它版本仍从「欢迎 + 领域卡片」开始
+            showPhoneForm = imagingEdition
             resendSeconds = 0
             phoneInput.clear()
             codeInput.clear()

@@ -58,6 +58,7 @@
       outline: none;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      background: transparent;
       caret-color: #111827;
     }
 
@@ -170,6 +171,23 @@
       font: 15px/16px Arial, sans-serif;
       color: rgba(0, 0, 0, .45);
     }
+
+    /* ===== 深色主题（由宿主通过 window.MedClawComposer.setTheme('dark') 切换） ===== */
+    html[data-theme="dark"],
+    html[data-theme="dark"] body { background: #242627; }
+    html[data-theme="dark"] #editor,
+    html[data-theme="dark"] #editor * { background: transparent; }
+    html[data-theme="dark"] body { color: rgba(255, 255, 255, .86); }
+    html[data-theme="dark"] html::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .24); }
+    html[data-theme="dark"] html::-webkit-scrollbar-thumb:hover,
+    html[data-theme="dark"] body::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .4); }
+    html[data-theme="dark"] #editor { caret-color: #FFFFFF; }
+    html[data-theme="dark"] #editor:empty:before { color: rgba(255, 255, 255, .25); }
+    html[data-theme="dark"] .file-chip { background: #262B30; color: rgba(255, 255, 255, .85); }
+    html[data-theme="dark"] .file-remove { color: rgba(255, 255, 255, .52); }
+    html[data-theme="dark"] .file-remove:hover { background: rgba(255, 255, 255, .08); color: rgba(255, 255, 255, .82); }
+    html[data-theme="dark"] .file-chip .file-remove { color: rgba(255, 255, 255, .45); }
   </style>
 </head>
 <body>
@@ -550,6 +568,11 @@
       window.addEventListener('resize', reportState);
 
       window.MedClawComposer = {
+        setTheme: function (theme) {
+          var el = document.documentElement;
+          if (theme === 'dark') { el.setAttribute('data-theme', 'dark'); }
+          else { el.removeAttribute('data-theme'); }
+        },
         configure: function (text, placeholder, readOnly) {
           setPlaceholder(placeholder);
           setReadOnly(readOnly);

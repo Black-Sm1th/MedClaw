@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtWebEngine
 import QtQuick.Dialogs
+import MedClaw.Theme 1.0
 
 /**
  * 「输入文件」树：只含树本身，不带弹层外壳。
@@ -44,6 +45,19 @@ Item {
         treeLoader.item.runJavaScript(
                     "window.__fileTree && window.__fileTree.setZoom("
                     + Number(zoomScale) + ")")
+    }
+
+    function pushTheme() {
+        if (!treeLoader.item)
+            return
+        treeLoader.item.runJavaScript(
+                    "window.__fileTree && window.__fileTree.setTheme("
+                    + JSON.stringify(Theme.dark ? "dark" : "light") + ")")
+    }
+
+    Connections {
+        target: Theme
+        function onDarkChanged() { root.pushTheme() }
     }
 
     readonly property alias viewer: treeLoader.item
@@ -152,6 +166,7 @@ Item {
                 root.pageReady = true
                 // 去掉页面自带的头部/预览/底栏
                 runJavaScript("window.__fileTree && window.__fileTree.setEmbedMode(true)")
+                root.pushTheme()
                 root.applyZoom()
                 if (root.pendingPaths && root.pendingPaths.length > 0)
                     root.pushPaths()

@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import Qt5Compat.GraphicalEffects
+import MedClaw.Theme 1.0
 
 ToolTip {
     id: root
@@ -21,15 +22,15 @@ ToolTip {
        : targetY + targetHeight + 8
 
     background: Rectangle {
-        color: "#FFFFFF"
+        color: Theme.surface
         radius: 4
         border.width: 1
-        border.color: "#1F000000"
+        border.color: Theme.dividerTopbar
         layer.enabled: true
         layer.effect: DropShadow {
             radius: 8
             samples: 17
-            color: "#1A000000"
+            color: Theme.divider
             verticalOffset: 2
         }
     }
@@ -40,7 +41,7 @@ ToolTip {
         topPadding: 7
         bottomPadding: 7
         text: root.text
-        color: "#D9000000"
+        color: Theme.textPrimary
         font.family: "Alibaba PuHuiTi 3.0"
         font.pixelSize: 13
         wrapMode: Text.NoWrap

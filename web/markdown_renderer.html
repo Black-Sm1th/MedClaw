@@ -134,6 +134,21 @@
       color: inherit;
     }
     hr { height: 1px; border: 0; margin: 16px 0; background: rgba(15, 23, 42, .12); }
+
+    /* ===== 深色主题（由宿主通过 window.MedClawMarkdown.setTheme('dark') 切换） ===== */
+    html[data-theme="dark"] h1, html[data-theme="dark"] h2, html[data-theme="dark"] h3,
+    html[data-theme="dark"] h4, html[data-theme="dark"] h5, html[data-theme="dark"] h6 { color: rgba(255, 255, 255, .9); }
+    html[data-theme="dark"] blockquote { border-left-color: #4A5568; background: #1E1F21; color: rgba(255, 255, 255, .58); }
+    html[data-theme="dark"] pre { border-color: rgba(255, 255, 255, .12); background: #1E1F21; }
+    html[data-theme="dark"] :not(pre) > code,
+    html[data-theme="dark"] a.local-file-link code { background: #262B30; }
+    html[data-theme="dark"] a.local-file-link:hover code {
+      background: linear-gradient(currentColor, currentColor) left calc(100% - 2px) / 100% 1px repeat-x, #262B30;
+    }
+    html[data-theme="dark"] th, html[data-theme="dark"] td { border-color: rgba(255, 255, 255, .12); }
+    html[data-theme="dark"] th { background: #242627; }
+    html[data-theme="dark"] a { color: #55A4FF; }
+    html[data-theme="dark"] hr { background: rgba(255, 255, 255, .12); }
   </style>
 </head>
 <body>
@@ -382,6 +397,11 @@
       }
 
       window.MedClawMarkdown = {
+        setTheme: function (theme) {
+          var el = document.documentElement;
+          if (theme === 'dark') { el.setAttribute('data-theme', 'dark'); }
+          else { el.removeAttribute('data-theme'); }
+        },
         setContent: function (text, markdown, style) {
           applyStyle(style);
           var normalizedText = normalizeNumericSpacing(text);

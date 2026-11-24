@@ -1,5 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import MedClaw.Theme 1.0
+import Qt5Compat.GraphicalEffects
 
 Item {
     id: root
@@ -94,8 +96,8 @@ Item {
             width: parent.width
             height: visible ? 36 : 0
             radius: 8
-            color: emptyProjectMouse.pressed ? "#D9DCE1"
-                 : emptyProjectMouse.containsMouse ? "#E6E7EB"
+            color: emptyProjectMouse.pressed ? Theme.borderInput
+                 : emptyProjectMouse.containsMouse ? Theme.surfaceSelected
                  : "transparent"
 
             Row {
@@ -107,13 +109,13 @@ Item {
                 Label {
                     text: "+"
                     font.pixelSize: 16
-                    color: emptyProjectMouse.containsMouse ? "#D9000000" : "#73000000"
+                    color: emptyProjectMouse.containsMouse ? Theme.textPrimary : Theme.textTertiary
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Label {
                     text: qsTr("新建项目")
                     font.pixelSize: 14
-                    color: emptyProjectMouse.containsMouse ? "#D9000000" : "#73000000"
+                    color: emptyProjectMouse.containsMouse ? Theme.textPrimary : Theme.textTertiary
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
@@ -148,8 +150,8 @@ Item {
                     radius: 7
                     color: {
                         if (projectDelegate.hovered)
-                            return projectDelegate.pinned ? "#E2E5E9" : "#0A000000"
-                        return projectDelegate.pinned ? "#ECEEF1" : "transparent"
+                            return projectDelegate.pinned ? Theme.borderLight : Theme.surfaceHover
+                        return projectDelegate.pinned ? Theme.surfaceSelectedAlt : "transparent"
                     }
 
                     Label {
@@ -160,7 +162,7 @@ Item {
                         text: "\u203a"
                         rotation: projectDelegate.expanded ? 90 : 0
                         font.pixelSize: 18
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         Behavior on rotation { NumberAnimation { duration: 120 } }
                     }
 
@@ -173,7 +175,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.title || qsTr("未命名项目")
                         font.pixelSize: 14
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         elide: Text.ElideRight
 
                         ToolTip {
@@ -185,13 +187,13 @@ Item {
                             y: -height - 4
                             width: Math.min(implicitContentWidth + 20, 260)
                             background: Rectangle {
-                                color: "#A6000000"
+                                color: Theme.textSecondary
                                 radius: 4
                             }
                             contentItem: Text {
                                 text: projectTitleLabel.text
                                 font.pixelSize: 14
-                                color: "#FFFFFF"
+                                color: Theme.textInverse
                                 font.family: "Alibaba PuHuiTi 3.0"
                                 wrapMode: Text.Wrap
                             }
@@ -221,12 +223,14 @@ Item {
 
                         Rectangle {
                             width: 28; height: 28; radius: 6
-                            color: moreMouse.containsMouse ? "#10000000" : "transparent"
+                            color: moreMouse.containsMouse ? Theme.surfaceHover : "transparent"
                             Image {
                                 anchors.centerIn: parent
                                 width: 16; height: 16
                                 source: "qrc:/images/more.png"
                                 fillMode: Image.PreserveAspectFit
+                                layer.enabled: true
+                                layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                             }
                             MouseArea {
                                 id: moreMouse
@@ -247,12 +251,14 @@ Item {
 
                         Rectangle {
                             width: 28; height: 28; radius: 6
-                            color: newChatMouse.containsMouse ? "#10000000" : "transparent"
+                            color: newChatMouse.containsMouse ? Theme.surfaceHover : "transparent"
                             Image {
                                 anchors.centerIn: parent
                                 width: 16; height: 16
                                 source: "qrc:/images/chatNew.png"
                                 fillMode: Image.PreserveAspectFit
+                                layer.enabled: true
+                                layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                             }
                             MouseArea {
                                 id: newChatMouse
@@ -293,10 +299,10 @@ Item {
                                                === root.currentSessionKey
                                 var isPinned = modelData.pinned || false
                                 if (isActive)
-                                    return isPinned ? "#D5D9DF" : "#E6E7EB"
+                                    return isPinned ? Theme.borderInput : Theme.surfaceSelected
                                 if (projectSessionRow.hovered)
-                                    return isPinned ? "#E2E5E9" : "#0A000000"
-                                return isPinned ? "#ECEEF1" : "transparent"
+                                    return isPinned ? Theme.borderLight : Theme.surfaceHover
+                                return isPinned ? Theme.surfaceSelectedAlt : "transparent"
                             }
                             property bool hovered: sessionMouse.containsMouse
                                                    || projectSessionStatus.moreHovered
@@ -318,14 +324,14 @@ Item {
                                         visible: String(modelData.session_id || "").indexOf(":cron:") >= 0
                                         text: qsTr("[定时]")
                                         font.pixelSize: 14
-                                        color: "#73000000"
+                                        color: Theme.textTertiary
                                         height: 21
                                     }
 
                                     Label {
                                         text: root.sessionTitle(modelData)
                                         font.pixelSize: 14
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                         height: 21
                                         elide: Text.ElideRight
                                         width: projectSessionCronTag.visible
@@ -346,7 +352,7 @@ Item {
                                                                  "yyyy-MM-dd hh:mm")
                                     }
                                     font.pixelSize: 12
-                                    color: "#73000000"
+                                    color: Theme.textTertiary
                                 }
                             }
 

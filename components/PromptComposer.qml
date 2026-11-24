@@ -1,14 +1,15 @@
 import QtQuick 2.15
 import QtWebEngine
+import MedClaw.Theme 1.0
 
 Rectangle {
     id: root
 
-    property color borderColor: "#E6E7EB"
-    property color focusedBorderColor: "#006BFF"
-    property color backgroundColor: "#FFFFFF"
-    property color textColor: "#A6000000"
-    property color placeholderColor: "#40000000"
+    property color borderColor: Theme.surfaceSelected
+    property color focusedBorderColor: Theme.accent
+    property color backgroundColor: Theme.surface
+    property color textColor: Theme.textSecondary
+    property color placeholderColor: Theme.textFaint
     property int fontSize: 14
     property string placeholderText: qsTr("请输入...")
     property int borderWidth: 1
@@ -78,6 +79,15 @@ Rectangle {
         callEditor("submit", [])
     }
 
+    function pushTheme() {
+        callEditor("setTheme", [Theme.dark ? "dark" : "light"])
+    }
+
+    Connections {
+        target: Theme
+        function onDarkChanged() { root.pushTheme() }
+    }
+
     function importClipboardAttachments() {
         var now = Date.now()
         if (now - lastClipboardImportAt < 350)
@@ -125,7 +135,8 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: root.borderWidth
         url: "qrc:/web/prompt_composer.html"
-        backgroundColor: "transparent"
+        // 深色下 WebEngine 透明合成不稳会透出白底；直接用主题表面色兜底，和所在输入框同色
+        backgroundColor: Theme.surface
         settings.webGLEnabled: true
         settings.accelerated2dCanvasEnabled: true
 
@@ -142,6 +153,7 @@ Rectangle {
             if (!succeeded)
                 return
             root.webReady = true
+            root.pushTheme()
             root.callEditor("configure", [root.text, root.placeholderText, root.readOnly])
             for (var i = 0; i < root.pendingFiles.length; i++) {
                 var file = root.pendingFiles[i]

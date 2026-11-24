@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtWebEngine
+import MedClaw.Theme 1.0
 
 Item {
     id: root
@@ -75,10 +76,22 @@ Item {
         webView.runJavaScript("window.MedClawChat.scrollToBottom();")
     }
 
+    function pushTheme() {
+        if (!webReady)
+            return
+        webView.runJavaScript("window.MedClawChat && window.MedClawChat.setTheme("
+                              + JSON.stringify(Theme.dark ? "dark" : "light") + ");")
+    }
+
     Component.onCompleted: scheduleSyncMessages(true)
     onModelChanged: scheduleSyncMessages(true)
     onConversationRunningChanged: scheduleSyncMessages()
     onConversationEndLabelChanged: scheduleSyncMessages()
+
+    Connections {
+        target: Theme
+        function onDarkChanged() { root.pushTheme() }
+    }
 
     Timer {
         id: syncTimer
@@ -144,6 +157,7 @@ Item {
                 succeeded = status === WebEngineView.LoadSucceededStatus
             if (succeeded) {
                 root.webReady = true
+                root.pushTheme()
                 root.scheduleSyncMessages(true)
             }
         }

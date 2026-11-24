@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Dialogs
 import Qt5Compat.GraphicalEffects
+import MedClaw.Theme 1.0
 
 Item {
     id: root
@@ -199,7 +200,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#FFFFFF"
+        color: Theme.surface
 
         Column {
             anchors.fill: parent
@@ -221,12 +222,12 @@ Item {
                         text: qsTr("模板库")
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                     }
                     Label {
                         text: qsTr("探索真实工作案例，找到模板，一键开始")
                         font.pixelSize: 12
-                        color: "#A6000000"
+                        color: Theme.textSecondary
                     }
                 }
 
@@ -240,8 +241,8 @@ Item {
                         height: 38
                         radius: 8
                         border.width: 1
-                        border.color: templateSearch.activeFocus ? "#006BFF" : "#1F000000"
-                        color: "#FFFFFF"
+                        border.color: templateSearch.activeFocus ? Theme.accent : Theme.dividerTopbar
+                        color: Theme.surface
                         Image {
                             width: 16; height: 16
                             anchors.left: parent.left
@@ -249,6 +250,8 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             source: "qrc:/images/search.png"
                             opacity: 0.6
+                            layer.enabled: true
+                            layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                         }
                         TextField {
                             id: templateSearch
@@ -260,31 +263,31 @@ Item {
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.weight: Font.Normal
-                            color: "#A6000000"
+                            color: Theme.textSecondary
                             placeholderText: qsTr("搜索模板库...")
-                            placeholderTextColor: "#66000000"
+                            placeholderTextColor: Theme.textDim
                             selectByMouse: true
                             verticalAlignment: TextInput.AlignVCenter
                             background: Item {}
                             cursorDelegate: Rectangle {
                                 width: 1
-                                color: "#006BFF"
+                                color: Theme.accent
                             }
                             onTextChanged: root.searchText = text
                         }
                     }
                     CustomButton {
                         id: headerUploadButton
-                        backgroundColor: "#0F006BFF"
-                        hoverBackgroundColor: "#1A006BFF"
-                        pressedBackgroundColor: "#26006BFF"
+                        backgroundColor: Theme.accentTintBg
+                        hoverBackgroundColor: Theme.accentTintBg
+                        pressedBackgroundColor: Theme.accentTintBg
                         iconSource: "qrc:/images/uploadTemplate.png"
                         iconSize: 16
                         text: qsTr("上传")
                         fontSize: 14
-                        textColor: "#006BFF"
-                        hoverTextColor: "#006BFF"
-                        pressedTextColor: "#006BFF"
+                        textColor: Theme.accent
+                        hoverTextColor: Theme.accent
+                        pressedTextColor: Theme.accent
                         buttonWidth: 72
                         buttonHeight: 38
                         onClicked: root.openUploadDialog()
@@ -295,14 +298,14 @@ Item {
                             text: qsTr("支持 word，MD，html格式")
                             delay: 400
                             background: Rectangle {
-                                color: "#A6000000"
+                                color: Theme.textSecondary
                                 radius: 4
                             }
                             contentItem: Text {
                                 text: templateUploadTip.text
                                 font.pixelSize: 14
                                 font.family: "Alibaba PuHuiTi 3.0"
-                                color: "#FFFFFF"
+                                color: Theme.surface
                                 wrapMode: Text.NoWrap
                             }
                         }
@@ -319,14 +322,14 @@ Item {
                         width: categoryLabel.implicitWidth + 20
                         height: 30
                         radius: 8
-                        color: root.selectedCategory === modelData ? "#EAF2FF"
-                              : categoryMouse.containsMouse ? "#F0F1F3" : "#F6F7F8"
+                        color: root.selectedCategory === modelData ? Theme.accentSoftBg
+                              : categoryMouse.containsMouse ? Theme.surfaceAlt : Theme.surfaceMuted
                         Label {
                             id: categoryLabel
                             anchors.centerIn: parent
                             text: modelData
                             font.pixelSize: 14
-                            color: root.selectedCategory === modelData ? "#006BFF" : "#99000000"
+                            color: root.selectedCategory === modelData ? Theme.accent : Theme.textDim
                         }
                         MouseArea {
                             id: categoryMouse
@@ -373,7 +376,7 @@ Item {
                             anchors.topMargin: 8
                             height: 314
                             radius: 12
-                            color: "#FFFFFF"
+                            color: Theme.surface
                             clip: true
                             layer.enabled: hovered
                             layer.effect: DropShadow {
@@ -398,7 +401,7 @@ Item {
 
                                     Rectangle {
                                         anchors.fill: parent
-                                        color: "#F5F6F8"
+                                        color: Theme.surfaceMuted
                                     }
 
                                     Image {
@@ -421,7 +424,7 @@ Item {
                                         anchors.top: parent.top
                                         height: templateCard.radius * 2
                                         radius: templateCard.radius
-                                        color: "#FFFFFF"
+                                        color: Theme.surface
                                     }
 
                                     Rectangle {
@@ -429,7 +432,7 @@ Item {
                                         anchors.right: parent.right
                                         anchors.bottom: parent.bottom
                                         height: parent.height - templateCard.radius
-                                        color: "#FFFFFF"
+                                        color: Theme.surface
                                     }
                                 }
 
@@ -467,7 +470,7 @@ Item {
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: templateCard.radius
-                                    color: "#FFFFFF"
+                                    color: Theme.surface
                                 }
 
                                 Rectangle {
@@ -475,7 +478,7 @@ Item {
                                     anchors.right: parent.right
                                     anchors.top: parent.top
                                     height: templateCard.radius
-                                    color: "#FFFFFF"
+                                    color: Theme.surface
                                 }
 
                                 Column {
@@ -493,7 +496,7 @@ Item {
                                         text: root.templateTitle(cardCell.modelData)
                                         font.pixelSize: 20
                                         font.weight: Font.DemiBold
-                                        color: "#D9000000"
+                                        color: Theme.textPrimary
                                         elide: Text.ElideRight
                                     }
 
@@ -502,7 +505,7 @@ Item {
                                         text: root.templateDetail(cardCell.modelData)
                                         font.pixelSize: 14
                                         lineHeight: 1.25
-                                        color: "#73000000"
+                                        color: Theme.textTertiary
                                         wrapMode: Text.Wrap
                                         maximumLineCount: 1
                                         elide: Text.ElideRight
@@ -518,7 +521,7 @@ Item {
                                         height: templateCard.hovered ? 34 : 0
                                         radius: 6
                                         visible: height > 0
-                                        color: useTemplateMouse.pressed ? "#0056CC" : "#006BFF"
+                                        color: useTemplateMouse.pressed ? Theme.accentPressed : Theme.accent
 
                                         Behavior on height {
                                             NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
@@ -528,7 +531,7 @@ Item {
                                             anchors.centerIn: parent
                                             text: qsTr("使用")
                                             font.pixelSize: 14
-                                            color: "#FFFFFF"
+                                            color: Theme.textInverse
                                         }
                                         MouseArea {
                                             id: useTemplateMouse
@@ -544,10 +547,10 @@ Item {
                                         height: templateCard.hovered && cardCell.modelData.isUserTemplate ? 34 : 0
                                         radius: 6
                                         visible: height > 0
-                                        color: deleteTemplateMouse.pressed ? "#B52A31"
-                                              : deleteTemplateMouse.containsMouse ? "#E5484D" : "#D9363E"
+                                        color: deleteTemplateMouse.pressed ? Theme.danger
+                                              : deleteTemplateMouse.containsMouse ? Theme.danger : Theme.danger
                                         border.width: 1
-                                        border.color: "#D9363E"
+                                        border.color: Theme.danger
 
                                         Behavior on height {
                                             NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
@@ -557,7 +560,7 @@ Item {
                                             anchors.centerIn: parent
                                             text: qsTr("删除")
                                             font.pixelSize: 14
-                                            color: "#FFFFFF"
+                                            color: Theme.textInverse
                                         }
                                         MouseArea {
                                             id: deleteTemplateMouse
@@ -576,7 +579,7 @@ Item {
                                 radius: templateCard.radius
                                 color: "transparent"
                                 border.width: 1
-                                border.color: "#EBEDF0"
+                                border.color: Theme.surfaceSelectedAlt
                             }
                         }
                     }
@@ -604,7 +607,7 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: root.searchText ? qsTr("未找到匹配模板") : qsTr("暂无模板")
                         font.pixelSize: 15
-                        color: "#73000000"
+                        color: Theme.textTertiary
                     }
                 }
 
@@ -626,18 +629,18 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: qsTr("上传你的第一个自定义模板吧")
                         font.pixelSize: 15
-                        color: "#73000000"
+                        color: Theme.textTertiary
                     }
                     CustomButton {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        backgroundColor: "#006BFF"
-                        hoverBackgroundColor: "#1677FF"
-                        pressedBackgroundColor: "#0056CC"
+                        backgroundColor: Theme.accent
+                        hoverBackgroundColor: Theme.accentHover
+                        pressedBackgroundColor: Theme.accentPressed
                         iconSource: "qrc:/images/upload-white.png"
                         iconSize: 16
                         text: qsTr("上传")
                         fontSize: 14
-                        textColor: "#FFFFFF"
+                        textColor: Theme.textInverse
                         buttonWidth: 76
                         buttonHeight: 36
                         onClicked: root.openUploadDialog()
@@ -659,10 +662,10 @@ Item {
         focus: true
         closePolicy: Popup.NoAutoClose
 
-        Overlay.modal: Rectangle { color: "#66000000" }
+        Overlay.modal: Rectangle { color: Theme.scrimMedium }
 
         background: Rectangle {
-            color: "#FFFFFF"
+            color: Theme.surface
             radius: 16
         }
 
@@ -691,6 +694,8 @@ Item {
                     anchors.left: parent.left
                     anchors.leftMargin: 24
                     anchors.verticalCenter: dialogCloseButton.verticalCenter
+                    layer.enabled: true
+                    layer.effect: ColorOverlay { color: Theme.iconColor; cached: true }
                 }
 
                 Column {
@@ -706,14 +711,14 @@ Item {
                         text: root.templateTitle(root.activeTemplate)
                         font.pixelSize: 20
                         font.weight: Font.DemiBold
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         wrapMode: Text.Wrap
                     }
                     Label {
                         width: parent.width
                         text: qsTr("介绍 / 触发场景：") + root.templateIntroduction(root.activeTemplate)
                         font.pixelSize: 14
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         wrapMode: Text.Wrap
                         maximumLineCount: 3
                         lineHeight: 1.3
@@ -723,7 +728,7 @@ Item {
                         visible: root.templateStructure(root.activeTemplate).length > 0
                         text: qsTr("结构框架：") + root.templateStructure(root.activeTemplate)
                         font.pixelSize: 14
-                        color: "#73000000"
+                        color: Theme.textTertiary
                         wrapMode: Text.Wrap
                         maximumLineCount: 5
                         lineHeight: 1.3
@@ -735,7 +740,7 @@ Item {
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     width: 1
-                    color: "#EBEDF0"
+                    color: Theme.surfaceSelectedAlt
                 }
 
                 Rectangle {
@@ -745,12 +750,12 @@ Item {
                     anchors.rightMargin: 24
                     anchors.top: parent.top
                     anchors.topMargin: 24
-                    color: dialogCloseMouse.containsMouse ? "#F0F1F3" : "transparent"
+                    color: dialogCloseMouse.containsMouse ? Theme.surfaceAlt : "transparent"
                     Label {
                         anchors.centerIn: parent
                         text: "×"
                         font.pixelSize: 24
-                        color: "#A6000000"
+                        color: Theme.textSecondary
                     }
                     MouseArea {
                         id: dialogCloseMouse
@@ -769,7 +774,7 @@ Item {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 radius: 8
-                color: "#F5F7F9"
+                color: Theme.surfaceMuted
                 clip: true
 
                 Flickable {
@@ -805,7 +810,7 @@ Item {
                     visible: largeTemplatePreview.status === Image.Error
                     text: qsTr("模板预览加载失败")
                     font.pixelSize: 14
-                    color: "#99000000"
+                    color: Theme.textDim
                 }
             }
 
@@ -824,14 +829,14 @@ Item {
 
                     Rectangle {
                         width: 82; height: 36; radius: 6
-                        color: cancelDialogMouse.containsMouse ? "#F3F4F6" : "#FFFFFF"
+                        color: cancelDialogMouse.containsMouse ? Theme.surfaceAlt : Theme.surface
                         border.width: 1
-                        border.color: "#1A000000"
+                        border.color: Theme.divider
                         Label {
                             anchors.centerIn: parent
                             text: qsTr("取消")
                             font.pixelSize: 14
-                            color: "#A6000000"
+                            color: Theme.textSecondary
                         }
                         MouseArea {
                             id: cancelDialogMouse
@@ -844,12 +849,12 @@ Item {
 
                     Rectangle {
                         width: 96; height: 36; radius: 6
-                        color: confirmTemplateMouse.pressed ? "#0056CC" : "#006BFF"
+                        color: confirmTemplateMouse.pressed ? Theme.accentPressed : Theme.accent
                         Label {
                             anchors.centerIn: parent
                             text: qsTr("使用该模板")
                             font.pixelSize: 14
-                            color: "#FFFFFF"
+                            color: Theme.textInverse
                         }
                         MouseArea {
                             id: confirmTemplateMouse
@@ -880,8 +885,8 @@ Item {
         focus: true
         closePolicy: Popup.CloseOnEscape
         onClosed: root.pendingDeleteTemplate = ({})
-        Overlay.modal: Rectangle { color: "#66000000" }
-        background: Rectangle { color: "#FFFFFF"; radius: 12 }
+        Overlay.modal: Rectangle { color: Theme.scrimMedium }
+        background: Rectangle { color: Theme.surface; radius: 12 }
         contentItem: Column {
             anchors.fill: parent
             anchors.margins: 22
@@ -890,7 +895,7 @@ Item {
                 text: qsTr("删除模板")
                 font.pixelSize: 18
                 font.weight: Font.DemiBold
-                color: "#D9000000"
+                color: Theme.textPrimary
             }
             Label {
                 width: parent.width
@@ -898,7 +903,7 @@ Item {
                       .arg(root.templateTitle(root.pendingDeleteTemplate))
                 wrapMode: Text.Wrap
                 font.pixelSize: 14
-                color: "#73000000"
+                color: Theme.textTertiary
             }
             Item {
                 width: parent.width
@@ -908,15 +913,15 @@ Item {
                     spacing: 10
                     Rectangle {
                         width: 78; height: 34; radius: 6
-                        color: cancelDeleteMouse.containsMouse ? "#F3F4F6" : "#FFFFFF"
-                        border.width: 1; border.color: "#1A000000"
-                        Label { anchors.centerIn: parent; text: qsTr("取消"); font.pixelSize: 14; color: "#A6000000" }
+                        color: cancelDeleteMouse.containsMouse ? Theme.surfaceAlt : Theme.surface
+                        border.width: 1; border.color: Theme.divider
+                        Label { anchors.centerIn: parent; text: qsTr("取消"); font.pixelSize: 14; color: Theme.textSecondary }
                         MouseArea { id: cancelDeleteMouse; anchors.fill: parent; hoverEnabled: true; onClicked: deleteConfirmDialog.close();cursorShape: Qt.PointingHandCursor }
                     }
                     Rectangle {
                         width: 78; height: 34; radius: 6
-                        color: confirmDeleteMouse.containsMouse ? "#B52A31" : "#D9363E"
-                        Label { anchors.centerIn: parent; text: qsTr("删除"); font.pixelSize: 14; color: "#FFFFFF" }
+                        color: confirmDeleteMouse.containsMouse ? Theme.danger : Theme.danger
+                        Label { anchors.centerIn: parent; text: qsTr("删除"); font.pixelSize: 14; color: Theme.textInverse }
                         MouseArea {
                             id: confirmDeleteMouse
                             anchors.fill: parent
@@ -946,10 +951,10 @@ Item {
         focus: true
         closePolicy: Popup.NoAutoClose
 
-        Overlay.modal: Rectangle { color: "#66000000" }
+        Overlay.modal: Rectangle { color: Theme.scrimMedium }
 
         background: Rectangle {
-            color: "#FFFFFF"
+            color: Theme.surface
             radius: 12
         }
 
@@ -969,7 +974,7 @@ Item {
                     text: qsTr("上传自定义模板")
                     font.pixelSize: 20
                     font.weight: Font.DemiBold
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                 }
 
                 Rectangle {
@@ -979,12 +984,12 @@ Item {
                     anchors.right: parent.right
                     anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
-                    color: uploadCloseMouse.containsMouse ? "#F1F2F4" : "transparent"
+                    color: uploadCloseMouse.containsMouse ? Theme.surfaceAlt : "transparent"
                     Label {
                         anchors.centerIn: parent
                         text: "×"
                         font.pixelSize: 21
-                        color: "#A6000000"
+                        color: Theme.textSecondary
                     }
                     MouseArea {
                         id: uploadCloseMouse
@@ -1001,7 +1006,7 @@ Item {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     height: 1
-                    color: "#EBEDF0"
+                    color: Theme.surfaceSelectedAlt
                 }
             }
 
@@ -1030,7 +1035,7 @@ Item {
                         Label {
                             text: qsTr("模板名称")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         TextField {
                             id: uploadNameInput
@@ -1042,15 +1047,15 @@ Item {
                             bottomPadding: 0
                             verticalAlignment: TextInput.AlignVCenter
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                             placeholderText: qsTr("如：XX医院设备验收报告模板")
-                            placeholderTextColor: "#52000000"
+                            placeholderTextColor: Theme.textFaint
                             selectByMouse: true
                             background: Rectangle {
                                 radius: 8
-                                color: "#FFFFFF"
+                                color: Theme.surface
                                 border.width: 1
-                                border.color: uploadNameInput.activeFocus ? "#006BFF" : "#1F000000"
+                                border.color: uploadNameInput.activeFocus ? Theme.accent : Theme.dividerTopbar
                             }
                         }
                     }
@@ -1061,7 +1066,7 @@ Item {
                         Label {
                             text: qsTr("模板简介")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         TextArea {
                             id: uploadDescriptionInput
@@ -1072,16 +1077,16 @@ Item {
                             topPadding: 8
                             bottomPadding: 8
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                             placeholderText: qsTr("简要描述模板用途和适用场景，如：用于大型影像设备验收检测，包含外观检查、功能测试、性能指标等栏目")
-                            placeholderTextColor: "#52000000"
+                            placeholderTextColor: Theme.textFaint
                             wrapMode: TextEdit.Wrap
                             selectByMouse: true
                             background: Rectangle {
                                 radius: 8
-                                color: "#FFFFFF"
+                                color: Theme.surface
                                 border.width: 1
-                                border.color: uploadDescriptionInput.activeFocus ? "#006BFF" : "#1F000000"
+                                border.color: uploadDescriptionInput.activeFocus ? Theme.accent : Theme.dividerTopbar
                             }
                         }
                     }
@@ -1092,15 +1097,15 @@ Item {
                         Label {
                             text: qsTr("模板附件")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         Rectangle {
                             width: parent.width
                             height: root.pendingTemplateFileUrl ? 36 : 118
                             radius: 8
-                            color: root.pendingTemplateFileUrl ? "#F0F1F3" : "#F7F9FA"
+                            color: root.pendingTemplateFileUrl ? Theme.surfaceAlt : Theme.sidebarBg
                             border.width: root.pendingTemplateFileUrl ? 0 : 1
-                            border.color: "#DDE1E7"
+                            border.color: Theme.borderLight
 
                             Row {
                                 visible: root.pendingTemplateFileUrl.length > 0
@@ -1120,7 +1125,7 @@ Item {
                                     width: parent.width - 26
                                     text: root.pendingTemplateFileName
                                     font.pixelSize: 14
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                     elide: Text.ElideMiddle
                                 }
                             }
@@ -1133,7 +1138,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "×"
                                 font.pixelSize: 17
-                                color: "#73000000"
+                                color: Theme.textTertiary
                                 MouseArea {
                                     anchors.fill: parent
                                     anchors.margins: -8
@@ -1155,19 +1160,19 @@ Item {
                                     Label {
                                         text: qsTr("选择文件")
                                         font.pixelSize: 15
-                                        color: "#006BFF"
+                                        color: Theme.accent
                                     }
                                     Label {
                                         text: qsTr("或 拖拽文件至此")
                                         font.pixelSize: 15
-                                        color: "#A6000000"
+                                        color: Theme.textSecondary
                                     }
                                 }
                                 Label {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     text: qsTr("支持 word，MD，html格式")
                                     font.pixelSize: 14
-                                    color: "#66000000"
+                                    color: Theme.textDim
                                 }
                             }
 
@@ -1195,15 +1200,15 @@ Item {
                         Label {
                             text: qsTr("模板封面")
                             font.pixelSize: 14
-                            color: "#D9000000"
+                            color: Theme.textPrimary
                         }
                         Rectangle {
                             width: parent.width
                             height: root.pendingCoverFileUrl ? 36 : 118
                             radius: 8
-                            color: root.pendingCoverFileUrl ? "#F0F1F3" : "#F7F9FA"
+                            color: root.pendingCoverFileUrl ? Theme.surfaceAlt : Theme.sidebarBg
                             border.width: root.pendingCoverFileUrl ? 0 : 1
-                            border.color: "#DDE1E7"
+                            border.color: Theme.borderLight
 
                             Row {
                                 visible: root.pendingCoverFileUrl.length > 0
@@ -1223,7 +1228,7 @@ Item {
                                     width: parent.width - 26
                                     text: root.pendingCoverFileName
                                     font.pixelSize: 14
-                                    color: "#D9000000"
+                                    color: Theme.textPrimary
                                     elide: Text.ElideMiddle
                                 }
                             }
@@ -1236,7 +1241,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "×"
                                 font.pixelSize: 17
-                                color: "#73000000"
+                                color: Theme.textTertiary
                                 MouseArea {
                                     anchors.fill: parent
                                     anchors.margins: -8
@@ -1258,19 +1263,19 @@ Item {
                                     Label {
                                         text: qsTr("选择文件")
                                         font.pixelSize: 15
-                                        color: "#006BFF"
+                                        color: Theme.accent
                                     }
                                     Label {
                                         text: qsTr("或 拖拽文件至此")
                                         font.pixelSize: 15
-                                        color: "#A6000000"
+                                        color: Theme.textSecondary
                                     }
                                 }
                                 Label {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     text: qsTr("支持jpg，png，建议 400x300")
                                     font.pixelSize: 14
-                                    color: "#66000000"
+                                    color: Theme.textDim
                                 }
                             }
 
@@ -1308,30 +1313,30 @@ Item {
                     spacing: 12
 
                     CustomButton {
-                        backgroundColor: "#FFFFFF"
-                        hoverBackgroundColor: "#F5F6F8"
-                        pressedBackgroundColor: "#EBEDF0"
+                        backgroundColor: Theme.surface
+                        hoverBackgroundColor: Theme.surfaceMuted
+                        pressedBackgroundColor: Theme.surfaceSelectedAlt
                         borderWidth: 1
-                        borderColor: "#DDE1E7"
+                        borderColor: Theme.borderLight
                         text: qsTr("取消")
                         fontSize: 14
-                        textColor: "#73000000"
-                        hoverTextColor: "#73000000"
-                        pressedTextColor: "#73000000"
+                        textColor: Theme.textTertiary
+                        hoverTextColor: Theme.textTertiary
+                        pressedTextColor: Theme.textTertiary
                         buttonWidth: 92
                         buttonHeight: 38
                         enabled: !root.uploadBusy
                         onClicked: uploadDialog.close()
                     }
                     CustomButton {
-                        backgroundColor: "#006BFF"
-                        hoverBackgroundColor: "#1677FF"
-                        pressedBackgroundColor: "#0056CC"
-                        disabledBackgroundColor: "#A9CBFF"
+                        backgroundColor: Theme.accent
+                        hoverBackgroundColor: Theme.accentHover
+                        pressedBackgroundColor: Theme.accentPressed
+                        disabledBackgroundColor: Theme.accentSoftBg
                         text: root.uploadBusy ? qsTr("上传中...") : qsTr("上传")
                         fontSize: 14
-                        textColor: "#FFFFFF"
-                        disabledTextColor: "#FFFFFF"
+                        textColor: Theme.textInverse
+                        disabledTextColor: Theme.surface
                         buttonWidth: 92
                         buttonHeight: 38
                         enabled: root.uploadReady && !root.uploadBusy

@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Window 2.15
+import MedClaw.Theme 1.0
 
 Item {
     id: root
@@ -8,8 +9,8 @@ Item {
     property int selectedHour: 9
     property int selectedMinute: 0
     property string displayText: pad(selectedHour) + ":" + pad(selectedMinute)
-    property color borderColor: "#E6E7EB"
-    property color textColor: "#D9000000"
+    property color borderColor: Theme.surfaceSelected
+    property color textColor: Theme.textPrimary
     property int fontSize: 14
     property int minimumHour: -1
     property int minimumMinute: -1
@@ -59,8 +60,8 @@ Item {
         radius: 8
         border.color: root.borderColor
         border.width: 1
-        color: triggerMouse.pressed ? "#14000000"
-             : triggerMouse.containsMouse ? "#0A000000"
+        color: triggerMouse.pressed ? Theme.divider
+             : triggerMouse.containsMouse ? Theme.surfaceHover
              : "transparent"
 
         Behavior on color { ColorAnimation { duration: 100 } }
@@ -83,7 +84,7 @@ Item {
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
-                ctx.strokeStyle = "#80000000"
+                ctx.strokeStyle = Theme.textDim.toString()
                 ctx.lineWidth = 1.5
                 ctx.lineCap = "round"
                 ctx.lineJoin = "round"
@@ -127,8 +128,8 @@ Item {
 
         background: Rectangle {
             radius: 12
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
 
@@ -173,8 +174,8 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 2
                             radius: 6
-                            color: timeEnabled && hourList.currentIndex === index ? "#0A006BFF"
-                                 : timeEnabled && hourItemMouse.containsMouse ? "#0A000000"
+                            color: timeEnabled && hourList.currentIndex === index ? Theme.accentTintSoft
+                                 : timeEnabled && hourItemMouse.containsMouse ? Theme.surfaceHover
                                  : "transparent"
                         }
 
@@ -184,8 +185,8 @@ Item {
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.weight: hourList.currentIndex === index ? Font.DemiBold : Font.Normal
-                            color: !timeEnabled ? "#29000000"
-                                 : hourList.currentIndex === index ? "#006BFF" : "#D9000000"
+                            color: !timeEnabled ? Theme.textFaint
+                                 : hourList.currentIndex === index ? Theme.accent : Theme.textPrimary
                         }
 
                         MouseArea {
@@ -209,7 +210,7 @@ Item {
                 Rectangle {
                     width: 1
                     height: parent.height
-                    color: "#0A000000"
+                    color: Theme.surfaceHover
                 }
 
                 ListView {
@@ -234,8 +235,8 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 2
                             radius: 6
-                            color: timeEnabled && minuteList.currentIndex === index ? "#0A006BFF"
-                                 : timeEnabled && minItemMouse.containsMouse ? "#0A000000"
+                            color: timeEnabled && minuteList.currentIndex === index ? Theme.accentTintSoft
+                                 : timeEnabled && minItemMouse.containsMouse ? Theme.surfaceHover
                                  : "transparent"
                         }
 
@@ -245,8 +246,8 @@ Item {
                             font.pixelSize: 14
                             font.family: "Alibaba PuHuiTi 3.0"
                             font.weight: minuteList.currentIndex === index ? Font.DemiBold : Font.Normal
-                            color: !timeEnabled ? "#29000000"
-                                 : minuteList.currentIndex === index ? "#006BFF" : "#D9000000"
+                            color: !timeEnabled ? Theme.textFaint
+                                 : minuteList.currentIndex === index ? Theme.accent : Theme.textPrimary
                         }
 
                         MouseArea {
@@ -274,10 +275,10 @@ Item {
                 width: parent.width - 16
                 height: 32
                 radius: 6
-                color: !selectionEnabled ? "#D9DCE1"
-                     : confirmMouse.pressed ? "#005CE6"
-                     : confirmMouse.containsMouse ? "#1A7AFF"
-                     : "#006BFF"
+                color: !selectionEnabled ? Theme.borderInput
+                     : confirmMouse.pressed ? Theme.accentPressed
+                     : confirmMouse.containsMouse ? Theme.accentHover
+                     : Theme.accent
 
                 Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -286,7 +287,7 @@ Item {
                     text: "确定"
                     font.pixelSize: 13
                     font.family: "Alibaba PuHuiTi 3.0"
-                    color: "#FFFFFF"
+                    color: Theme.textInverse
                 }
 
                 MouseArea {

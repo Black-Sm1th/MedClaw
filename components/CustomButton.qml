@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.2
 import Qt5Compat.GraphicalEffects
+import MedClaw.Theme 1.0
 
 Rectangle {
     id: customButton
@@ -8,9 +9,9 @@ Rectangle {
     // 可配置属性
     property int buttonWidth: contentRow.width + 20
     property int buttonHeight: 40
-    property color borderColor: "#E0E0E0"
-    property color textColor: "#E5FFFFFF"
-    property color backgroundColor: "#3C7EFF"
+    property color borderColor: Theme.borderLight
+    property color textColor: Theme.textInverse
+    property color backgroundColor: Theme.accent
     property int fontSize: 16
     property string text: qsTr("按钮")
     property string iconSource: ""  // 图标路径，为空则不显示图标
@@ -21,7 +22,7 @@ Rectangle {
     property bool enabled: true
     // 渐变相关属性
     property bool useGradient: false  // 是否使用渐变背景
-    property color gradientStartColor: "#3C7EFF"
+    property color gradientStartColor: Theme.accent
     property color gradientEndColor: "#572499"
     property bool animateGradient: false  // 是否动画渐变
     // hover和pressed状态的颜色
@@ -31,8 +32,8 @@ Rectangle {
     property color pressedBorderColor: Qt.darker(borderColor, 1.4)
     property color hoverTextColor: textColor
     property color pressedTextColor: textColor
-    property color disabledBackgroundColor: "#EBEDF0"
-    property color disabledTextColor: "#73000000"
+    property color disabledBackgroundColor: Theme.surfaceSelectedAlt
+    property color disabledTextColor: Theme.textTertiary
     
     // 点击信号
     signal clicked()

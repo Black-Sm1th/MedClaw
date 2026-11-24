@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import Qt5Compat.GraphicalEffects
+import MedClaw.Theme 1.0
 
 /**
  * ask_user 提问卡（Figma 5305-58906）。
@@ -158,7 +159,7 @@ Item {
         verticalOffset: 10
         radius: 20
         samples: 41
-        color: "#0F000000"
+        color: Theme.surfaceHover
         transparentBorder: true
     }
 
@@ -167,9 +168,9 @@ Item {
 
         anchors.fill: parent
         radius: 8
-        color: "#FFFFFF"
+        color: Theme.surface
         border.width: 1
-        border.color: "#14000000"
+        border.color: Theme.divider
     }
 
     Column {
@@ -191,7 +192,7 @@ Item {
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.activeQuestion ? String(root.activeQuestion.questionText || "") : ""
-                color: "#D9000000"
+                color: Theme.textPrimary
                 font.family: "Alibaba PuHuiTi 3.0"
                 font.pixelSize: 16
                 font.weight: Font.Medium
@@ -219,7 +220,7 @@ Item {
                         onPaint: {
                             var ctx = getContext("2d")
                             ctx.reset()
-                            ctx.strokeStyle = "#73000000"
+                            ctx.strokeStyle = Theme.textTertiary.toString()
                             ctx.lineWidth = 1.5
                             ctx.lineCap = "round"
                             ctx.lineJoin = "round"
@@ -242,7 +243,7 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: (root.currentIndex + 1) + " / " + root.questions.length
-                    color: "#40000000"
+                    color: Theme.textFaint
                     font.family: "Alibaba PuHuiTi 3.0"
                     font.pixelSize: 14
                     font.weight: Font.Normal
@@ -259,7 +260,7 @@ Item {
                         onPaint: {
                             var ctx = getContext("2d")
                             ctx.reset()
-                            ctx.strokeStyle = "#73000000"
+                            ctx.strokeStyle = Theme.textTertiary.toString()
                             ctx.lineWidth = 1.5
                             ctx.lineCap = "round"
                             ctx.lineJoin = "round"
@@ -288,7 +289,7 @@ Item {
                 width: 32
                 height: 32
                 radius: 8
-                color: closeMouse.containsMouse ? "#0A000000" : "transparent"
+                color: closeMouse.containsMouse ? Theme.surfaceHover : "transparent"
 
                 Canvas {
                     anchors.centerIn: parent
@@ -298,7 +299,7 @@ Item {
                     onPaint: {
                         var ctx = getContext("2d")
                         ctx.reset()
-                        ctx.strokeStyle = "#D9000000"
+                        ctx.strokeStyle = Theme.textPrimary.toString()
                         ctx.lineWidth = 1.4
                         ctx.lineCap = "round"
                         ctx.beginPath()
@@ -351,9 +352,9 @@ Item {
                 width: optionList.width
                 height: 36
                 radius: 8
-                color: selected ? "#F2F7FF" : (optionMouse.containsMouse ? "#F7F9FA" : "#FFFFFF")
+                color: selected ? Theme.accentSoftBg : (optionMouse.containsMouse ? Theme.sidebarBg : Theme.surface)
                 border.width: 1
-                border.color: selected ? "#006BFF" : "#E6E7EB"
+                border.color: selected ? Theme.accent : Theme.surfaceSelected
 
                 // 单选：蓝序号（Poppins 14 w600 #006BFF）
                 Text {
@@ -363,7 +364,7 @@ Item {
                     x: 8
                     anchors.verticalCenter: parent.verticalCenter
                     text: String(optionRow.index + 1)
-                    color: "#006BFF"
+                    color: Theme.accent
                     font.family: "Poppins, Alibaba PuHuiTi 3.0"
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
@@ -385,9 +386,9 @@ Item {
                         width: 20
                         height: 20
                         radius: 5
-                        color: optionRow.selected ? "#006BFF" : "#FFFFFF"
+                        color: optionRow.selected ? Theme.accent : Theme.surface
                         border.width: optionRow.selected ? 0 : 1
-                        border.color: "#1F000000"
+                        border.color: Theme.dividerTopbar
 
                         Canvas {
                             anchors.centerIn: parent
@@ -398,7 +399,7 @@ Item {
                             onPaint: {
                                 var ctx = getContext("2d")
                                 ctx.reset()
-                                ctx.strokeStyle = "#FFFFFF"
+                                ctx.strokeStyle = Theme.textInverse.toString()
                                 ctx.lineWidth = 1.6
                                 ctx.lineCap = "round"
                                 ctx.lineJoin = "round"
@@ -420,7 +421,7 @@ Item {
                        : optionIndex.x + optionIndex.width + 8
                     width: parent.width - x - 8
                     text: optionRow.label
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                     font.family: "Alibaba PuHuiTi 3.0"
                     font.pixelSize: 16
                     elide: Text.ElideRight
@@ -455,9 +456,9 @@ Item {
                 width: parent.width - 32 - 8 - (root.skipVisible ? 56 + 8 : 0)
                 visible: root.activeAllowText
                 radius: 8
-                color: "#FFFFFF"
+                color: Theme.surface
                 border.width: 1
-                border.color: "#E6E7EB"
+                border.color: Theme.surfaceSelected
 
                 Canvas {
                     id: pencilIcon
@@ -470,7 +471,7 @@ Item {
                     onPaint: {
                         var ctx = getContext("2d")
                         ctx.reset()
-                        ctx.strokeStyle = "#006BFF"
+                        ctx.strokeStyle = Theme.accent.toString()
                         ctx.lineWidth = 1.4
                         ctx.lineJoin = "round"
                         ctx.beginPath()
@@ -495,7 +496,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.activeDraft.text || ""
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                     font.family: "Alibaba PuHuiTi 3.0"
                     font.pixelSize: 16
                     selectByMouse: true
@@ -510,7 +511,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: inputField.text.length === 0
                     text: root.activeOptions.length > 0 ? qsTr("其他 / 自己输入") : qsTr("输入你的回答")
-                    color: "#40000000"
+                    color: Theme.textFaint
                     font.family: inputField.font.family
                     font.pixelSize: inputField.font.pixelSize
                     elide: Text.ElideRight
@@ -528,15 +529,15 @@ Item {
                 width: 56
                 height: 32
                 radius: 111
-                color: skipMouse.containsMouse ? "#F7F9FA" : "transparent"
+                color: skipMouse.containsMouse ? Theme.sidebarBg : "transparent"
                 border.width: 1
-                border.color: "#EBEDF0"
+                border.color: Theme.surfaceSelectedAlt
                 visible: root.skipVisible
 
                 Text {
                     anchors.centerIn: parent
                     text: qsTr("跳过")
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                     font.family: "Alibaba PuHuiTi 3.0"
                     font.pixelSize: 14
                 }
@@ -559,7 +560,7 @@ Item {
                 width: 32
                 height: 32
                 radius: 16
-                color: "#006BFF"
+                color: Theme.accent
                 opacity: root.canSend ? 1 : 0.4
 
                 Canvas {
@@ -570,7 +571,7 @@ Item {
                     onPaint: {
                         var ctx = getContext("2d")
                         ctx.reset()
-                        ctx.strokeStyle = "#FFFFFF"
+                        ctx.strokeStyle = Theme.textInverse.toString()
                         ctx.lineWidth = 1.4
                         ctx.lineCap = "round"
                         ctx.lineJoin = "round"

@@ -599,6 +599,9 @@ int main(int argc, char *argv[])
 
     QQmlApplicationEngine engine;
     qmlRegisterType<ViewerHost>("MedClaw.Viewer", 1, 0, "ViewerHost");
+    // 全局浅色/深色主题单例（Theme.qml），QML 侧 `import MedClaw.Theme 1.0`
+    qmlRegisterSingletonType(QUrl(QStringLiteral("qrc:/Theme.qml")),
+                             "MedClaw.Theme", 1, 0, "Theme");
     QSize savedWindowSize = QSettings().value(QStringLiteral("ui/windowSize")).toSize();
     // Older versions could persist the screen-sized geometry while maximizing.
     // Treat that value as stale so it cannot make a windowed launch look full-screen.
@@ -818,6 +821,19 @@ int main(int argc, char *argv[])
             }
         },
         Qt::QueuedConnection);
+    // 启动首帧就用正确主题：QML 里要等 Component.onCompleted 才设 Theme.dark，
+    // 那之前会先按浅色渲染一帧，表现为开机闪一下白再变深色。
+    {
+        QSettings themeSettings;
+        const QString themePref = themeSettings.value(QStringLiteral("workspace/theme"),
+                                                      QStringLiteral("light")).toString();
+        bool dark = themePref == QStringLiteral("dark");
+        if (themePref == QStringLiteral("system"))
+            dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+        if (QObject *theme = engine.singletonInstance<QObject *>(
+                QStringLiteral("MedClaw.Theme"), QStringLiteral("Theme")))
+            theme->setProperty("dark", dark);
+    }
     engine.load(url);
 
     return app.exec();

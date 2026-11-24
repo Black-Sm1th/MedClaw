@@ -787,6 +787,84 @@
       border-radius: 5px;
       background: #737373;
     }
+
+    /* ===== 深色主题（由宿主通过 window.MedClawChat.setTheme('dark') 切换） ===== */
+    html[data-theme="dark"] body { color: rgba(255, 255, 255, .86); }
+    html[data-theme="dark"] .turn-nav-mark { background: #262B30; }
+    html[data-theme="dark"] .turn-nav-item:hover .turn-nav-mark { background: #3A434C; }
+    html[data-theme="dark"] .turn-nav-item.active .turn-nav-mark { background: #3A434C; }
+    html[data-theme="dark"] .scroll-to-bottom {
+      border-color: rgba(255, 255, 255, .08);
+      background: #242627;
+      color: rgba(255, 255, 255, .62);
+      box-shadow: 0 2px 4px 0 rgba(0, 0, 0, .4), 0 4px 12px 0 rgba(0, 0, 0, .4);
+    }
+    html[data-theme="dark"] .scroll-to-bottom:hover { background: #33363A; color: rgba(255, 255, 255, .86); }
+    html[data-theme="dark"] .scroll-to-bottom:active { background: #262B30; }
+    html[data-theme="dark"] #app:hover::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] #app.scrolling::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] pre:hover::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .table-wrap:hover::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .tool-detail-text:hover::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .orphan-tool:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .24); }
+    html[data-theme="dark"] #app:hover::-webkit-scrollbar-thumb:hover,
+    html[data-theme="dark"] #app.scrolling::-webkit-scrollbar-thumb:hover,
+    html[data-theme="dark"] pre:hover::-webkit-scrollbar-thumb:hover,
+    html[data-theme="dark"] .table-wrap:hover::-webkit-scrollbar-thumb:hover,
+    html[data-theme="dark"] .tool-detail-text:hover::-webkit-scrollbar-thumb:hover,
+    html[data-theme="dark"] .orphan-tool:hover::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .38); }
+    html[data-theme="dark"] .bubble.user { background: #262B30; color: rgba(255, 255, 255, .9); }
+    html[data-theme="dark"] .user-file-ref,
+    html[data-theme="dark"] .user-file-ref:hover {
+      border-color: rgba(150, 140, 235, .35);
+      background: rgba(116, 103, 214, .22);
+      color: rgba(255, 255, 255, .82);
+    }
+    html[data-theme="dark"] .bubble.assistant { color: rgba(255, 255, 255, .85); }
+    html[data-theme="dark"] .bubble.intermediate { color: rgba(255, 255, 255, .55); }
+    html[data-theme="dark"] .bubble.aside { color: rgba(255, 255, 255, .56); }
+    html[data-theme="dark"] h1, html[data-theme="dark"] h2, html[data-theme="dark"] h3,
+    html[data-theme="dark"] h4, html[data-theme="dark"] h5, html[data-theme="dark"] h6 { color: rgba(255, 255, 255, .9); }
+    html[data-theme="dark"] blockquote { border-left-color: #4A5568; background: #1E1F21; color: rgba(255, 255, 255, .58); }
+    html[data-theme="dark"] pre { border-color: rgba(255, 255, 255, .12); background: #1E1F21; }
+    html[data-theme="dark"] :not(pre) > code,
+    html[data-theme="dark"] a.local-file-link code { background: #262B30; }
+    html[data-theme="dark"] a.local-file-link:hover code {
+      background: linear-gradient(currentColor, currentColor) left calc(100% - 2px) / 100% 1px repeat-x, #262B30;
+    }
+    html[data-theme="dark"] th, html[data-theme="dark"] td { border-color: rgba(255, 255, 255, .12); }
+    html[data-theme="dark"] th { background: #242627; }
+    html[data-theme="dark"] a { color: #55A4FF; }
+    html[data-theme="dark"] hr { background: rgba(255, 255, 255, .12); }
+    html[data-theme="dark"] .artifact-section { border-top-color: #33363A; }
+    html[data-theme="dark"] .artifact-title { color: #FFFFFF; }
+    html[data-theme="dark"] .artifact-count { color: rgba(255, 255, 255, .45); }
+    html[data-theme="dark"] .artifact-card, html[data-theme="dark"] .artifact-card:hover { background: #1E1F21; color: #FFFFFF; }
+    html[data-theme="dark"] .artifact-card:hover { background: #262B30; }
+    html[data-theme="dark"] .artifact-name { color: #FFFFFF; }
+    html[data-theme="dark"] .artifact-more, html[data-theme="dark"] .artifact-more:hover { color: #55A4FF; }
+    html[data-theme="dark"] .compaction:before { background: rgba(255, 255, 255, .08); }
+    html[data-theme="dark"] .tool { color: rgba(255, 255, 255, .86); }
+    html[data-theme="dark"] .thought-header { color: rgba(255, 255, 255, .78); }
+    html[data-theme="dark"] .thought-arrow { color: rgba(255, 255, 255, .42); }
+    html[data-theme="dark"] .thought-body { border-left-color: #262B30; }
+    html[data-theme="dark"] .thought-text, html[data-theme="dark"] .thought-text.intermediate { color: rgba(255, 255, 255, .58); }
+    html[data-theme="dark"] .question-result { color: #A6B0BA; }
+    html[data-theme="dark"] .question-result.ok { color: #34D399; }
+    html[data-theme="dark"] .question-result.warn { color: #F59E0B; }
+    html[data-theme="dark"] .question-result.err { color: #F87171; }
+    html[data-theme="dark"] .tool-name { color: #FFFFFF; }
+    html[data-theme="dark"] .tool-meta { color: rgba(255, 255, 255, .45); }
+    html[data-theme="dark"] .tool-arrow { color: rgba(255, 255, 255, .55); }
+    html[data-theme="dark"] .spinner { border-color: rgba(85, 164, 255, .25); border-top-color: #55A4FF; }
+    html[data-theme="dark"] .dot.error { background: #FF5C5F; }
+    html[data-theme="dark"] .tool-detail-text,
+    html[data-theme="dark"] .orphan-tool { color: #FFFFFF; }
+    html[data-theme="dark"] .tool-detail-text.error,
+    html[data-theme="dark"] .orphan-tool.error { color: #FF5C5F; }
+    html[data-theme="dark"] .orphan-tool-title { color: #FFFFFF; }
+    html[data-theme="dark"] .task-complete { color: #FFFFFF; }
+    html[data-theme="dark"] .task-ended-icon { background: #8A939C; }
   </style>
 </head>
 <body>
@@ -2386,6 +2464,11 @@
       }
 
       window.MedClawChat = {
+        setTheme: function (theme) {
+          var el = document.documentElement;
+          if (theme === 'dark') { el.setAttribute('data-theme', 'dark'); }
+          else { el.removeAttribute('data-theme'); }
+        },
         debugRenderQuestion: function (msg) { return renderQuestion(msg, 1); },
         debugState: function () {
           return {

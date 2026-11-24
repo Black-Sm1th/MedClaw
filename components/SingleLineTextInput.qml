@@ -1,5 +1,6 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
+import MedClaw.Theme 1.0
 
 Rectangle {
     id: singleLineTextInput
@@ -7,11 +8,11 @@ Rectangle {
     // 可配置属性
     property int inputWidth: 300
     property int inputHeight: 30
-    property color borderColor: "#E6E7EB"
-    property color focusedBorderColor: "#006BFF"
-    property color backgroundColor: "#FFFFFF"
-    property color textColor: "#A6000000"
-    property color placeholderColor: "#40000000"
+    property color borderColor: Theme.surfaceSelected
+    property color focusedBorderColor: Theme.accent
+    property color backgroundColor: Theme.surface
+    property color textColor: Theme.textSecondary
+    property color placeholderColor: Theme.textFaint
     property int fontSize: 14
     property string placeholderText: qsTr("请输入...")
     property int borderWidth: 1

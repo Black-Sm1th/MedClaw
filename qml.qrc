@@ -10,12 +10,15 @@
     </qresource>
     <qresource prefix="/">
         <file>main.qml</file>
+        <file>Theme.qml</file>
         <file>TestChatClient.qml</file>
         <file>fonts/AlibabaPuHuiTi-3-55-Regular.ttf</file>
         <file>fonts/AlibabaPuHuiTi-3-65-Medium.ttf</file>
         <file>fonts/AlibabaPuHuiTi-3-85-Bold.ttf</file>
         <file>fonts/Poppins-SemiBold.ttf</file>
         <file>images/folder-orange.svg</file>
+        <file>images/theme-sun.svg</file>
+        <file>images/theme-moon.svg</file>
         <file>images/add-square.png</file>
         <file>images/close.png</file>
         <file>images/minus.png</file>
@@ -77,6 +80,13 @@
         <file>images/imaging/step-2.png</file>
         <file>images/imaging/step-3.png</file>
         <file>images/imaging/step-4.png</file>
+        <file>images/imaging/step-1-dark.png</file>
+        <file>images/imaging/step-2-dark.png</file>
+        <file>images/imaging/step-3-dark.png</file>
+        <file>images/imaging/step-4-dark.png</file>
+        <file>images/imaging/logo-dark.png</file>
+        <file>images/imaging/splash-dark.png</file>
+        <file>images/imaging/splash-dark.gif</file>
         <file>images/imaging/lung.png</file>
         <file>images/imaging/domain-neuro.png</file>
         <file>images/imaging/domain-headneck.png</file>
@@ -84,10 +94,17 @@
         <file>images/imaging/domain-abdomen.png</file>
         <file>images/imaging/domain-msk.png</file>
         <file>images/imaging/domain-breast.png</file>
+        <file>images/imaging/domain-neuro-dark.png</file>
+        <file>images/imaging/domain-headneck-dark.png</file>
+        <file>images/imaging/domain-chest-dark.png</file>
+        <file>images/imaging/domain-abdomen-dark.png</file>
+        <file>images/imaging/domain-msk-dark.png</file>
+        <file>images/imaging/domain-breast-dark.png</file>
         <file>images/imaging/chevron-right.svg</file>
         <file>images/imaging/category-spark.svg</file>
         <file>images/imaging/close-x.svg</file>
         <file>images/imaging/agent-badge.png</file>
+        <file>images/imaging/agent-badge-dark.png</file>
         <file>images/imaging/drag-drop-files.png</file>
         <file>images/imaging/trash-red.svg</file>
         <file>images/shortcut/1.png</file>
@@ -119,6 +136,11 @@
         <file>images/login/loginShortcut2.png</file>
         <file>images/login/loginShortcut3.png</file>
         <file>images/login/loginShortcut4.png</file>
+        <file>images/login/loginShortcut-dark-1.png</file>
+        <file>images/login/loginShortcut-dark-2.png</file>
+        <file>images/login/loginShortcut-dark-3.png</file>
+        <file>images/login/loginShortcut-dark-4.png</file>
+        <file>images/login/loginShortcut-dark-5.png</file>
         <file>images/knowledgeSelected.png</file>
         <file>images/alarm.png</file>
         <file>images/category.png</file>
@@ -143,7 +165,13 @@
         <file>images/cron/4-3.png</file>
         <file>images/cron/4-4.png</file>
         <file>images/cron/4-5.png</file>
+        <file>images/cron/4-1-icon-dark.png</file>
+        <file>images/cron/4-2-icon-dark.png</file>
+        <file>images/cron/4-3-icon-dark.png</file>
+        <file>images/cron/4-4-icon-dark.png</file>
+        <file>images/cron/4-5-icon-dark.png</file>
         <file>images/cron/mainImage.png</file>
+        <file>images/cron/mainImage-dark.png</file>
         <file>images/cron/1-1.png</file>
         <file>images/cron/1-2.png</file>
         <file>images/cron/1-3.png</file>
@@ -275,6 +303,8 @@
         <file>images/missonSuccess.png</file>
         <file>images/toolSuccess.png</file>
         <file>images/loading.gif</file>
+        <file>images/loading-dark.gif</file>
+        <file>images/loading-dark-surface.gif</file>
         <file>images/template/38.png</file>
         <file>images/template/39.png</file>
         <file>images/template/40.png</file>
@@ -301,6 +331,10 @@
         <file>images/bottomArrow.png</file>
         <file>images/waiting.gif</file>
         <file>images/updateImage.png</file>
+        <file>images/updateImage-dark.png</file>
+        <file>images/theme/theme-light.png</file>
+        <file>images/theme/theme-dark.png</file>
+        <file>images/theme/theme-system.png</file>
         <file>images/updateStar.png</file>
         <file>fonts/AlibabaPuHuiTi-3-95-ExtraBold.ttf</file>
         <file>images/template/46.png</file>

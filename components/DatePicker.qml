@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Window 2.15
+import MedClaw.Theme 1.0
 
 Item {
     id: root
@@ -9,9 +10,9 @@ Item {
     property int selectedMonth: new Date().getMonth() + 1
     property int selectedDay: new Date().getDate()
     property string displayText: selectedYear + "/" + selectedMonth + "/" + selectedDay
-    property color borderColor: "#E6E7EB"
-    property color textColor: "#D9000000"
-    property color placeholderColor: "#80000000"
+    property color borderColor: Theme.surfaceSelected
+    property color textColor: Theme.textPrimary
+    property color placeholderColor: Theme.textDim
     property string placeholder: "年/月/日"
     property int fontSize: 14
     property var minimumDate: null
@@ -27,8 +28,8 @@ Item {
         radius: 8
         border.color: root.borderColor
         border.width: 1
-        color: triggerMouse.pressed ? "#14000000"
-             : triggerMouse.containsMouse ? "#0A000000"
+        color: triggerMouse.pressed ? Theme.divider
+             : triggerMouse.containsMouse ? Theme.surfaceHover
              : "transparent"
 
         Behavior on color { ColorAnimation { duration: 100 } }
@@ -51,7 +52,7 @@ Item {
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
-                ctx.strokeStyle = "#80000000"
+                ctx.strokeStyle = Theme.textDim.toString()
                 ctx.lineWidth = 1.5
                 ctx.lineCap = "round"
                 ctx.lineJoin = "round"
@@ -164,8 +165,8 @@ Item {
 
         background: Rectangle {
             radius: 12
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
         }
 
@@ -192,12 +193,12 @@ Item {
                         property bool canNavigate: root.monthHasEnabledDate(root.viewYear - 1,
                                                                             root.viewMonth)
                         width: 28; height: 28; radius: 6
-                        color: canNavigate && prevYearMouse.containsMouse ? "#0A000000" : "transparent"
+                        color: canNavigate && prevYearMouse.containsMouse ? Theme.surfaceHover : "transparent"
                         Text {
                             anchors.centerIn: parent
                             text: "«"
                             font.pixelSize: 14
-                            color: parent.canNavigate ? "#80000000" : "#29000000"
+                            color: parent.canNavigate ? Theme.textDim : Theme.textFaint
                         }
                         MouseArea {
                             id: prevYearMouse; anchors.fill: parent; hoverEnabled: true
@@ -212,12 +213,12 @@ Item {
                         property int targetMonth: root.viewMonth === 1 ? 12 : root.viewMonth - 1
                         property bool canNavigate: root.monthHasEnabledDate(targetYear, targetMonth)
                         width: 28; height: 28; radius: 6
-                        color: canNavigate && prevMonthMouse.containsMouse ? "#0A000000" : "transparent"
+                        color: canNavigate && prevMonthMouse.containsMouse ? Theme.surfaceHover : "transparent"
                         Text {
                             anchors.centerIn: parent
                             text: "‹"
                             font.pixelSize: 16
-                            color: parent.canNavigate ? "#80000000" : "#29000000"
+                            color: parent.canNavigate ? Theme.textDim : Theme.textFaint
                         }
                         MouseArea {
                             id: prevMonthMouse; anchors.fill: parent; hoverEnabled: true
@@ -238,7 +239,7 @@ Item {
                     font.pixelSize: 14
                     font.family: "Alibaba PuHuiTi 3.0"
                     font.weight: Font.DemiBold
-                    color: "#D9000000"
+                    color: Theme.textPrimary
                 }
 
                 Row {
@@ -248,8 +249,8 @@ Item {
 
                     Rectangle {
                         width: 28; height: 28; radius: 6
-                        color: nextMonthMouse.containsMouse ? "#0A000000" : "transparent"
-                        Text { anchors.centerIn: parent; text: "›"; font.pixelSize: 16; color: "#80000000" }
+                        color: nextMonthMouse.containsMouse ? Theme.surfaceHover : "transparent"
+                        Text { anchors.centerIn: parent; text: "›"; font.pixelSize: 16; color: Theme.textDim }
                         MouseArea {
                             id: nextMonthMouse; anchors.fill: parent; hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -262,8 +263,8 @@ Item {
                     }
                     Rectangle {
                         width: 28; height: 28; radius: 6
-                        color: nextYearMouse.containsMouse ? "#0A000000" : "transparent"
-                        Text { anchors.centerIn: parent; text: "»"; font.pixelSize: 14; color: "#80000000" }
+                        color: nextYearMouse.containsMouse ? Theme.surfaceHover : "transparent"
+                        Text { anchors.centerIn: parent; text: "»"; font.pixelSize: 14; color: Theme.textDim }
                         MouseArea {
                             id: nextYearMouse; anchors.fill: parent; hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -288,7 +289,7 @@ Item {
                             text: modelData
                             font.pixelSize: 12
                             font.family: "Alibaba PuHuiTi 3.0"
-                            color: "#80000000"
+                            color: Theme.textDim
                         }
                     }
                 }
@@ -320,8 +321,8 @@ Item {
                             width: 28; height: 28
                             radius: 14
                             anchors.centerIn: parent
-                            color: isToday && dateEnabled ? "#006BFF"
-                                 : dayMouse.containsMouse && dateEnabled ? "#0A000000"
+                            color: isToday && dateEnabled ? Theme.accent
+                                 : dayMouse.containsMouse && dateEnabled ? Theme.surfaceHover
                                  : "transparent"
 
                             Behavior on color { ColorAnimation { duration: 100 } }
@@ -331,8 +332,8 @@ Item {
                                 text: modelData > 0 ? modelData : ""
                                 font.pixelSize: 13
                                 font.family: "Alibaba PuHuiTi 3.0"
-                                color: !dateEnabled ? "#29000000"
-                                     : isToday ? "#FFFFFF" : "#D9000000"
+                                color: !dateEnabled ? Theme.textFaint
+                                     : isToday ? Theme.surface : Theme.textPrimary
                             }
                         }
 

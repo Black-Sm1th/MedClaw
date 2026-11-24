@@ -185,6 +185,29 @@
     flex: 0 0 auto; height: 32px; display: flex; align-items: center; gap: 12px;
     padding: 0 14px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 11px;
   }
+
+  /* ===== 深色主题（由宿主通过 window.__fileTree.setTheme('dark') 切换） ===== */
+  html[data-theme="dark"] {
+    --accent: #55A4FF;
+    --border: #33363A;
+    --text: rgba(255, 255, 255, .9);
+    --text-2: rgba(255, 255, 255, .45);
+    --hover: #1E1F21;
+    --selected: #16283D;
+  }
+  html[data-theme="dark"] .panel { background: #14171A; }
+  html[data-theme="dark"] .btn { background: #242627; }
+  html[data-theme="dark"] .preview-pane { background: #14171A; }
+  html[data-theme="dark"] .card { background: #1E1F21; }
+  html[data-theme="dark"] .card:hover { background: #262B30; }
+  html[data-theme="dark"] .node-row.selected .card { background: #006BFF; }
+  html[data-theme="dark"] .row-menu:hover { background: rgba(255, 255, 255, .08); }
+  html[data-theme="dark"] .check::before { border-color: rgba(255, 255, 255, .18); background: #242627; }
+  html[data-theme="dark"] .check.checked::before { background: #006BFF; border-color: #006BFF; }
+  html[data-theme="dark"] .node-row.selected .check::before { border-color: #FFFFFF; background: #FFFFFF; }
+  html[data-theme="dark"] .thumb { background: #262B30; }
+  html[data-theme="dark"] .thumb.pending { background: linear-gradient(90deg,#262B30 25%,#33363A 37%,#262B30 63%); background-size: 400% 100%; }
+  html[data-theme="dark"] body.dragging .empty { background: #16283D; }
 </style>
 </head>
 <body>
@@ -1198,6 +1221,11 @@
   window.addEventListener('resize', scheduleRender);
 
   window.__fileTree = {
+    setTheme: function (theme) {
+      var el = document.documentElement;
+      if (theme === 'dark') { el.setAttribute('data-theme', 'dark'); }
+      else { el.removeAttribute('data-theme'); }
+    },
     /** 测试钩子：构造一棵树，走与真实拖拽相同的代码路径 */
     loadDemo: function (spec) {
       nodeIndex.clear();

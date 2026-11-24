@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import Qt5Compat.GraphicalEffects
+import MedClaw.Theme 1.0
 
 Item {
     id: root
@@ -113,8 +114,8 @@ Item {
         id: trigger
         anchors.fill: parent
         radius: 8
-        color: triggerMouse.pressed ? "#14000000"
-             : triggerMouse.containsMouse || participantPopup.visible ? "#0A000000"
+        color: triggerMouse.pressed ? Theme.divider
+             : triggerMouse.containsMouse || participantPopup.visible ? Theme.surfaceHover
              : "transparent"
 
         Behavior on color { ColorAnimation { duration: 100 } }
@@ -135,7 +136,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: 12
-                    color: "#EEF2F6"
+                    color: Theme.surfaceAlt
                     clip: true
 
                     Image {
@@ -161,7 +162,7 @@ Item {
                 elide: Text.ElideRight
                 font.pixelSize: 14
                 font.family: "Alibaba PuHuiTi 3.0"
-                color: "#D9000000"
+                color: Theme.textPrimary
                 anchors.verticalCenter: parent.verticalCenter
             }
 
@@ -181,7 +182,7 @@ Item {
                 onPaint: {
                     var ctx = getContext("2d")
                     ctx.reset()
-                    ctx.strokeStyle = "#73000000"
+                    ctx.strokeStyle = Theme.textTertiary.toString()
                     ctx.lineWidth = 1.4
                     ctx.lineCap = "round"
                     ctx.lineJoin = "round"
@@ -215,8 +216,8 @@ Item {
 
         background: Rectangle {
             radius: 8
-            color: "#FFFFFF"
-            border.color: "#14000000"
+            color: Theme.surface
+            border.color: Theme.divider
             border.width: 1
             layer.enabled: true
             layer.effect: DropShadow {
@@ -224,7 +225,7 @@ Item {
                 radius: 12
                 samples: 25
                 verticalOffset: 4
-                color: "#1A000000"
+                color: Theme.divider
             }
         }
 
@@ -245,9 +246,9 @@ Item {
                 width: participantList.width
                 height: 44
                 radius: 6
-                color: rowMouse.pressed ? "#14000000"
-                     : selected ? "#0A006BFF"
-                     : rowMouse.containsMouse ? "#0A000000"
+                color: rowMouse.pressed ? Theme.divider
+                     : selected ? Theme.accentTintSoft
+                     : rowMouse.containsMouse ? Theme.surfaceHover
                      : "transparent"
 
                 Behavior on color { ColorAnimation { duration: 100 } }
@@ -264,7 +265,7 @@ Item {
                         width: 26
                         height: 26
                         radius: 13
-                        color: "#EEF2F6"
+                        color: Theme.surfaceAlt
                         clip: true
                         anchors.verticalCenter: parent.verticalCenter
 
@@ -290,7 +291,7 @@ Item {
                         elide: Text.ElideRight
                         font.pixelSize: 14
                         font.family: "Alibaba PuHuiTi 3.0"
-                        color: "#D9000000"
+                        color: Theme.textPrimary
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
@@ -341,7 +342,7 @@ Item {
             height: 6
             radius: 3
             anchors.centerIn: parent
-            color: "#D8DADF"
+            color: Theme.borderLight
             visible: parent.status === "pending"
         }
 
@@ -352,7 +353,7 @@ Item {
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
-                ctx.strokeStyle = "#28B446"
+                ctx.strokeStyle = Theme.success.toString()
                 ctx.lineWidth = 2
                 ctx.lineCap = "round"
                 ctx.lineJoin = "round"
@@ -372,7 +373,7 @@ Item {
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
-                ctx.strokeStyle = "#3387FF"
+                ctx.strokeStyle = Theme.accent.toString()
                 ctx.lineWidth = 2
                 ctx.lineCap = "round"
                 ctx.beginPath()
