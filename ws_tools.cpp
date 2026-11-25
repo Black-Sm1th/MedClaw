@@ -78,6 +78,8 @@ void WsTools::parseToolsCatalogResponse(const QJsonObject &payload)
             if (entry[QStringLiteral("label")].toString().isEmpty())
                 entry[QStringLiteral("label")] = id;
             entry[QStringLiteral("description")] = t.value(QStringLiteral("description")).toString();
+            entry[QStringLiteral("userDescription")] =
+                t.value(QStringLiteral("userDescription")).toString();
             entry[QStringLiteral("source")] = t.value(QStringLiteral("source")).toString();
             entry[QStringLiteral("pluginId")] = t.value(QStringLiteral("pluginId")).toString();
             entry[QStringLiteral("groupId")] = groupId;

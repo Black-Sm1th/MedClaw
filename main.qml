@@ -14595,9 +14595,11 @@ ApplicationWindow {
 
                 function toolDetailsForTool(tool) {
                     var localized = ToolCategories.details(tool ? tool.toolId : "")
+                    var userDescription = String(tool ? tool.userDescription : "").trim()
                     return {
                         name: localized.name || (tool ? tool.label : "") || (tool ? tool.toolId : "") || "",
-                        description: localized.description || (tool ? tool.description : "") || ""
+                        description: userDescription || localized.description
+                                     || (tool ? tool.description : "") || ""
                     }
                 }
 
@@ -14706,7 +14708,8 @@ ApplicationWindow {
                         if (search) {
                             var localizedDetails = toolDetailsForTool(t)
                             var haystack = [
-                                t.label || "", t.toolId || "", t.description || "",
+                                t.label || "", t.toolId || "", t.userDescription || "",
+                                t.description || "",
                                 t.pluginId || "", localizedDetails.name || "",
                                 localizedDetails.description || "",
                                 classification.primary, classification.secondary
