@@ -14563,6 +14563,27 @@ ApplicationWindow {
                 // 设计稿 5506-41017：只有「医学影像处理」这个分类的 chip 用
                 // ✦ 星辉图标 + 浅蓝底 + 蓝字这一套，其它分类保持灰底
                 readonly property string imagingToolsCategoryLabel: "医学影像处理"
+                // 清单中标记为“盒子上才有”的工具仅供 B 端内网版本使用。
+                readonly property var desktopOnlyImagingToolIds: [
+                    "imaging_neurodesk_run", "imaging_nd_dcm2niix",
+                    "imaging_nd_dcm2bids", "imaging_nd_heudiconv",
+                    "imaging_nd_totalsegmentator", "imaging_nd_mrtrix3",
+                    "imaging_nd_amico", "imaging_nd_dwidenoise2",
+                    "imaging_nd_tractseg", "imaging_nd_mne",
+                    "imaging_nd_mneextended", "imaging_nd_romeo",
+                    "imaging_nd_clearswi", "imaging_nd_mritools",
+                    "imaging_nd_fitlins", "imaging_nd_glmsingle",
+                    "imaging_nd_rapidtide", "imaging_nd_panoptica",
+                    "imaging_nd_functionnectome", "imaging_nd_pydeface",
+                    "imaging_nd_quickshear", "imaging_nd_hdbet",
+                    "imaging_nd_fsl", "imaging_nd_synthstrip",
+                    "imaging_nd_niimath", "imaging_nd_ants",
+                    "imaging_nd_elastix", "imaging_nd_niftyreg",
+                    "imaging_nd_bart", "imaging_nd_skan",
+                    "imaging_nd_petu", "imaging_nd_fastsurfer",
+                    "imaging_nd_lung_nodules", "imaging_nd_kidney_cysts",
+                    "imaging_nd_liver_lesions", "imaging_nd_lung_vessels"
+                ]
                 property string selectedToolPrimaryCategory: allToolCategoriesLabel
                 property string selectedToolSecondaryCategory: "全部"
                 readonly property var toolCategoryTree: ToolCategories.categoryTree
@@ -14601,6 +14622,12 @@ ApplicationWindow {
                         description: userDescription || localized.description
                                      || (tool ? tool.description : "") || ""
                     }
+                }
+
+                function toolUnavailableInCurrentBuild(tool) {
+                    var toolId = String(tool ? tool.toolId : "")
+                    return desktopOnlyImagingToolIds.indexOf(toolId) >= 0
+                            && !(buildProductB && buildInternalNetwork)
                 }
 
                 function categoryNode(primaryCategory) {
@@ -14911,6 +14938,8 @@ ApplicationWindow {
 
                                     delegate: Rectangle {
                                         id: toolCard
+                                        readonly property bool unavailableInCurrentBuild:
+                                            toolsSettingRec.toolUnavailableInCurrentBuild(modelData)
                                         readonly property var toolClassification:
                                             toolsSettingRec.categoryForTool(modelData)
                                         readonly property var toolDetails:
@@ -14946,7 +14975,7 @@ ApplicationWindow {
                                                 Column {
                                                     anchors.left: toolIcon.right
                                                     anchors.leftMargin: 12
-                                                    anchors.right: toolEnabledSwitch.left
+                                                    anchors.right: toolSwitchArea.left
                                                     anchors.rightMargin: 16
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     spacing: 2
@@ -14972,45 +15001,82 @@ ApplicationWindow {
                                                     }
                                                 }
 
-                                                Switch {
-                                                    id: toolEnabledSwitch
-                                                    checked: modelData.enabled === true
+                                                Item {
+                                                    id: toolSwitchArea
+                                                    width: toolEnabledSwitch.implicitWidth
+                                                    height: toolEnabledSwitch.implicitHeight
                                                     anchors.right: parent.right
                                                     anchors.verticalCenter: parent.verticalCenter
-                                                    enabled: wsClient.connectionState === 3
-                                                             && !wsClient.toolInstallBusy
-                                                             && !wsClient.agentInstallBusy
-                                                    onToggled: {
-                                                        wsClient.setAgentToolEnabled(
-                                                            "main",
-                                                            modelData.toolId || "",
-                                                            checked,
-                                                            modelData.pluginId || "")
-                                                    }
+
                                                     HoverHandler {
-                                                        cursorShape: toolEnabledSwitch.enabled
-                                                                     ? Qt.PointingHandCursor
-                                                                     : Qt.ArrowCursor
+                                                        id: unavailableToolHover
                                                     }
-                                                    indicator: Rectangle {
-                                                        implicitWidth: 44
-                                                        implicitHeight: 22
-                                                        x: toolEnabledSwitch.leftPadding
-                                                        radius: 11
-                                                        color: toolEnabledSwitch.checked ? Theme.accent : Theme.disabledTrack
-                                                        opacity: toolEnabledSwitch.enabled ? 1 : 0.55
-                                                        Behavior on color { ColorAnimation { duration: 150 } }
-                                                        Rectangle {
-                                                            x: toolEnabledSwitch.checked ? parent.width - width - 3 : 3
-                                                            y: parent.height / 2 - height / 2
-                                                            width: 18
-                                                            height: 18
-                                                            radius: 9
+
+                                                    ToolTip {
+                                                        visible: toolCard.unavailableInCurrentBuild
+                                                                 && unavailableToolHover.hovered
+                                                        text: qsTr("该功能需搭配桌面一体机进行使用")
+                                                        delay: 300
+                                                        x: toolSwitchArea.width - width
+                                                        y: -height - 8
+                                                        width: implicitContentWidth + 24
+                                                        background: Rectangle {
+                                                            color: Theme.textSecondary
+                                                            radius: 8
+                                                        }
+                                                        contentItem: Text {
+                                                            text: qsTr("该功能需搭配桌面一体机进行使用")
+                                                            font.pixelSize: 14
                                                             color: Theme.textInverse
-                                                            Behavior on x {
-                                                                NumberAnimation {
-                                                                    duration: 150
-                                                                    easing.type: Easing.OutCubic
+                                                            font.family: "Alibaba PuHuiTi 3.0"
+                                                            wrapMode: Text.Wrap
+                                                            leftPadding: 12
+                                                            rightPadding: 12
+                                                            topPadding: 8
+                                                            bottomPadding: 8
+                                                        }
+                                                    }
+
+                                                    Switch {
+                                                        id: toolEnabledSwitch
+                                                        anchors.fill: parent
+                                                        checked: modelData.enabled === true
+                                                        enabled: !toolCard.unavailableInCurrentBuild
+                                                                 && wsClient.connectionState === 3
+                                                                 && !wsClient.toolInstallBusy
+                                                                 && !wsClient.agentInstallBusy
+                                                        onToggled: {
+                                                            wsClient.setAgentToolEnabled(
+                                                                "main",
+                                                                modelData.toolId || "",
+                                                                checked,
+                                                                modelData.pluginId || "")
+                                                        }
+                                                        HoverHandler {
+                                                            cursorShape: toolEnabledSwitch.enabled
+                                                                         ? Qt.PointingHandCursor
+                                                                         : Qt.ArrowCursor
+                                                        }
+                                                        indicator: Rectangle {
+                                                            implicitWidth: 44
+                                                            implicitHeight: 22
+                                                            x: toolEnabledSwitch.leftPadding
+                                                            radius: 11
+                                                            color: toolEnabledSwitch.checked ? Theme.accent : Theme.disabledTrack
+                                                            opacity: toolEnabledSwitch.enabled ? 1 : 0.55
+                                                            Behavior on color { ColorAnimation { duration: 150 } }
+                                                            Rectangle {
+                                                                x: toolEnabledSwitch.checked ? parent.width - width - 3 : 3
+                                                                y: parent.height / 2 - height / 2
+                                                                width: 18
+                                                                height: 18
+                                                                radius: 9
+                                                                color: Theme.textInverse
+                                                                Behavior on x {
+                                                                    NumberAnimation {
+                                                                        duration: 150
+                                                                        easing.type: Easing.OutCubic
+                                                                    }
                                                                 }
                                                             }
                                                         }
