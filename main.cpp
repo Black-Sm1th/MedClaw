@@ -697,11 +697,16 @@ int main(int argc, char *argv[])
     // --test 启动 WebSocket 测试页。
     const bool testMode = app.arguments().contains(QStringLiteral("--test"));
     const bool accountPreviewMode = app.arguments().contains(QStringLiteral("--account-preview"));
+    const QString appIconPath = ProductConfig::isImagingEdition()
+                                    ? QStringLiteral(":/images/icon-dark.ico")
+                                    : QStringLiteral(":/images/icon.ico");
+    const QIcon appIcon(appIconPath);
+    app.setWindowIcon(appIcon);
     QSystemTrayIcon *trayIcon = nullptr;
     QAction *trayShowAction = nullptr;
     if (!testMode && !accountPreviewMode) {
         app.setQuitOnLastWindowClosed(false);
-        trayIcon = new QSystemTrayIcon(QIcon(QStringLiteral(":/images/icon.ico")), &app);
+        trayIcon = new QSystemTrayIcon(appIcon, &app);
         trayIcon->setToolTip(QCoreApplication::applicationName());
 
         auto *trayMenu = new QMenu;
