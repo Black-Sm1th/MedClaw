@@ -147,7 +147,11 @@ win32 {
     QMAKE_POST_LINK += $$QMAKE_COPY_DIR $$shell_quote($$viewer_web_source) $$shell_quote($$viewer_web_target)
 }
 
-RC_ICONS = images/icon.ico
+contains(DEFINES, MEDCLAW_EDITION_IMAGING) {
+    RC_ICONS = images/icon-dark.ico
+} else {
+    RC_ICONS = images/icon.ico
+}
 
 win32:LIBS += -lShell32
 

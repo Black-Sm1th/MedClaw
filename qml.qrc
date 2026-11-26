@@ -360,5 +360,6 @@
         <file>images/template/66.png</file>
         <file>images/template/67.png</file>
         <file>images/icon.ico</file>
+        <file>images/icon-dark.ico</file>
     </qresource>
 </RCC>
