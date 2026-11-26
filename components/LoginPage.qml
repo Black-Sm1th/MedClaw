@@ -279,45 +279,6 @@ Item {
         }
         Column {
             width: parent.width; spacing: 16; visible: loginPage.showPhoneForm && loginPage.useEnterpriseCredentials; height: visible ? implicitHeight : 0
-            Row {
-                width: loginPage.formWidth
-                height: 48
-                spacing: 12
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: authController.networkSelectionEnabled
-                Repeater {
-                    model: [
-                        { label: "公网", value: "prod" },
-                        { label: "内网", value: "internal" }
-                    ]
-                    delegate: Rectangle {
-                        required property var modelData
-                        width: (loginPage.formWidth - 12) / 2
-                        height: 48
-                        radius: 7
-                        color: authController.apiEnvironment === modelData.value
-                               ? Theme.accentSoftBg : Theme.surfaceMuted
-                        border.width: authController.apiEnvironment === modelData.value ? 1 : 0
-                        border.color: Theme.accent
-                        Text {
-                            anchors.centerIn: parent
-                            text: modelData.label
-                            color: authController.apiEnvironment === modelData.value
-                                   ? Theme.accent : Theme.textSecondary
-                            font.family: "Alibaba PuHuiTi 3.0"
-                            font.pixelSize: 16
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            enabled: !authController.busy
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                authController.setNetworkEnvironment(modelData.value)
-                            }
-                        }
-                    }
-                }
-            }
             SingleLineTextInput {
                 id: usernameInput
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -347,6 +308,31 @@ Item {
                 echoMode: TextInput.Password
                 onAccepted: loginPage.submitLogin()
                 onTextChanged: authController.clearError()
+            }
+            Rectangle {
+                width: loginPage.formWidth
+                height: 56
+                radius: 7
+                color: Theme.surfaceMuted
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: authController.networkSelectionEnabled
+                DropdownSelect {
+                    anchors.fill: parent
+                    enabled: !authController.busy
+                    model: [qsTr("公网"), qsTr("内网")]
+                    currentIndex: authController.apiEnvironment === "internal" ? 1 : 0
+                    alignment: Qt.AlignLeft
+                    fontSize: 16
+                    dropdownRadius: 7
+                    textColor: Theme.textSolid
+                    popupMaxWidth: loginPage.formWidth
+                    onSelected: function(index, text) {
+                        authController.setNetworkEnvironment(index === 1 ? "internal" : "prod")
+                        currentIndex = Qt.binding(function() {
+                            return authController.apiEnvironment === "internal" ? 1 : 0
+                        })
+                    }
+                }
             }
             SingleLineTextInput {
                 id: internalIpInput
