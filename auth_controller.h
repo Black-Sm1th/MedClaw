@@ -18,11 +18,13 @@ class AuthController : public QObject
     Q_PROPERTY(QString phone READ phone NOTIFY userChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     Q_PROPERTY(QString apiBaseUrl READ apiBaseUrl NOTIFY apiBaseUrlChanged)
+    Q_PROPERTY(QString apiEnvironment READ apiEnvironment NOTIFY networkEnvironmentChanged)
     Q_PROPERTY(bool enterpriseCredentialLoginEnabled READ enterpriseCredentialLoginEnabled CONSTANT)
     Q_PROPERTY(bool businessProduct READ businessProduct CONSTANT)
     Q_PROPERTY(QString tenantDisplayName READ tenantDisplayName CONSTANT)
-    Q_PROPERTY(QString networkDisplayName READ networkDisplayName CONSTANT)
-    Q_PROPERTY(bool internalApiHostInputEnabled READ internalApiHostInputEnabled CONSTANT)
+    Q_PROPERTY(QString networkDisplayName READ networkDisplayName NOTIFY networkEnvironmentChanged)
+    Q_PROPERTY(bool networkSelectionEnabled READ networkSelectionEnabled CONSTANT)
+    Q_PROPERTY(bool internalApiHostInputEnabled READ internalApiHostInputEnabled NOTIFY networkEnvironmentChanged)
     Q_PROPERTY(QString internalApiHost READ internalApiHost NOTIFY internalApiHostChanged)
     Q_PROPERTY(QString creditsBalance READ creditsBalance NOTIFY creditsBalanceChanged)
     Q_PROPERTY(QVariantList creditLots READ creditLots NOTIFY creditDetailsChanged)
@@ -38,10 +40,12 @@ public:
     QString phone() const;
     QString errorMessage() const;
     QString apiBaseUrl() const;
+    QString apiEnvironment() const;
     bool enterpriseCredentialLoginEnabled() const;
     bool businessProduct() const;
     QString tenantDisplayName() const;
     QString networkDisplayName() const;
+    bool networkSelectionEnabled() const;
     bool internalApiHostInputEnabled() const;
     QString internalApiHost() const;
     QString creditsBalance() const;
@@ -54,6 +58,7 @@ public:
     Q_INVOKABLE void loginWithPhone(const QString &phone, const QString &smsCode);
     Q_INVOKABLE void loginWithCredentials(const QString &username, const QString &password);
     Q_INVOKABLE bool setInternalApiHost(const QString &host);
+    Q_INVOKABLE bool setNetworkEnvironment(const QString &environment);
     Q_INVOKABLE void requestWebLogin();
     Q_INVOKABLE void refreshCredits();
     Q_INVOKABLE void logout();
@@ -65,6 +70,7 @@ signals:
     void userChanged();
     void errorMessageChanged();
     void apiBaseUrlChanged();
+    void networkEnvironmentChanged();
     void internalApiHostChanged();
     void creditsBalanceChanged();
     void creditDetailsChanged();

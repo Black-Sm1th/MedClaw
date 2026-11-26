@@ -36,12 +36,19 @@ QString normalizedBaseUrl(QString url)
     return url;
 }
 
-QString apiEnvironmentFromEnvironment()
+QString apiEnvironmentFromEnvironment(const QString &selectedEnvironment)
 {
     const QString configuredEnvironment
         = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
     if (configuredEnvironment == QStringLiteral("test"))
         return configuredEnvironment;
+#ifdef MEDCLAW_NETWORK_CHOOSE
+    Q_UNUSED(configuredEnvironment);
+    if (selectedEnvironment == QStringLiteral("internal")
+        || selectedEnvironment == QStringLiteral("prod"))
+        return selectedEnvironment;
+    return QStringLiteral("prod");
+#else
     if (configuredEnvironment == QStringLiteral("prod")
         || configuredEnvironment == QStringLiteral("internal")) {
         const QString requiredEnvironment = ProductConfig::isInternalNetwork()
@@ -62,6 +69,7 @@ QString apiEnvironmentFromEnvironment()
                              << expectedEnvironment;
     }
     return expectedEnvironment;
+#endif
 }
 
 QString apiBaseUrlForEnvironment(const QString &environment)
@@ -365,12 +373,12 @@ bool writeOpenClawModelConfig(const QJsonArray &sourceModels,
     }
     agents[QStringLiteral("defaults")] = defaults;
     config[QStringLiteral("agents")] = agents;
-#if defined(MEDCLAW_TENANT_HOSPITAL_CHANG2) && defined(MEDCLAW_NETWORK_INTERNAL)
+#if defined(MEDCLAW_TENANT_HOSPITAL_CHANG2)
     // 内网版：影像工具的两个服务跟 API 在同一台盒子上，只是端口不同。
     // 以前这两个地址要人工改每台机器的 ~/.openclaw/openclaw.json，漏改就会
     // 退回插件内置的公网默认值（111.6.178.34:22301/22302），内网必然失败。
     const QString internalHost = QUrl(apiBaseUrl).host();
-    if (!internalHost.isEmpty()) {
+    if (apiEnvironment == QStringLiteral("internal") && !internalHost.isEmpty()) {
         QJsonObject plugins = config.value(QStringLiteral("plugins")).toObject();
         QJsonObject pluginEntries = plugins.value(QStringLiteral("entries")).toObject();
         QJsonObject imaging = pluginEntries.value(QStringLiteral("imaging-skills")).toObject();
@@ -473,15 +481,18 @@ AuthController::AuthController(QObject *parent)
         settings.setValue(migrationKey, true);
         settings.sync();
     }
-    // The network is a build property so a B package cannot silently switch between
-    // its public and internal deployments at runtime.
-    m_apiEnvironment = apiEnvironmentFromEnvironment();
+    const QString savedNetworkEnvironment
+        = settings.value(QStringLiteral("auth/networkEnvironment")).toString().trimmed().toLower();
+    m_apiEnvironment = apiEnvironmentFromEnvironment(savedNetworkEnvironment);
     m_apiBaseUrl = normalizedBaseUrl(apiBaseUrlForEnvironment(m_apiEnvironment));
-#ifdef MEDCLAW_NETWORK_INTERNAL
-    if (m_apiEnvironment == QStringLiteral("internal")) {
+    if (ProductConfig::isBusiness()
+        && (ProductConfig::isNetworkSelectable()
+            || m_apiEnvironment == QStringLiteral("internal"))) {
         const QString configuredHost = settings
                                            .value(QStringLiteral("auth/internalApiHost"),
-                                                  QString::fromLatin1(kDefaultInternalApiHost))
+                                                  ProductConfig::isNetworkSelectable()
+                                                      ? QString()
+                                                      : QString::fromLatin1(kDefaultInternalApiHost))
                                            .toString()
                                            .trimmed();
         QHostAddress address;
@@ -489,12 +500,15 @@ AuthController::AuthController(QObject *parent)
             && address.protocol() == QAbstractSocket::IPv4Protocol) {
             m_internalApiHost = address.toString();
         } else {
-            m_internalApiHost = QString::fromLatin1(kDefaultInternalApiHost);
-            settings.setValue(QStringLiteral("auth/internalApiHost"), m_internalApiHost);
+            m_internalApiHost = ProductConfig::isNetworkSelectable()
+                                    ? QString() : QString::fromLatin1(kDefaultInternalApiHost);
+            if (!ProductConfig::isNetworkSelectable())
+                settings.setValue(QStringLiteral("auth/internalApiHost"), m_internalApiHost);
         }
-        m_apiBaseUrl = internalApiBaseUrlForHost(m_internalApiHost);
+        if (m_apiEnvironment == QStringLiteral("internal"))
+            m_apiBaseUrl = m_internalApiHost.isEmpty()
+                               ? QString() : internalApiBaseUrlForHost(m_internalApiHost);
     }
-#endif
     settings.remove(QStringLiteral("auth/apiBaseUrl"));
     qInfo().noquote() << "[API] environment:" << m_apiEnvironment
                       << "baseUrl:" << m_apiBaseUrl;
@@ -581,6 +595,11 @@ QString AuthController::apiBaseUrl() const
 {
     return m_apiBaseUrl;
 }
+
+QString AuthController::apiEnvironment() const
+{
+    return m_apiEnvironment;
+}
 bool AuthController::enterpriseCredentialLoginEnabled() const
 {
     return ProductConfig::isBusiness();
@@ -598,14 +617,18 @@ QString AuthController::tenantDisplayName() const
 
 QString AuthController::networkDisplayName() const
 {
-    return ProductConfig::isInternalNetwork() ? QStringLiteral("内网")
-                                               : QStringLiteral("公网");
+    return m_apiEnvironment == QStringLiteral("internal") ? QStringLiteral("内网")
+                                                               : QStringLiteral("公网");
+}
+
+bool AuthController::networkSelectionEnabled() const
+{
+    return ProductConfig::isBusiness() && ProductConfig::isNetworkSelectable();
 }
 
 bool AuthController::internalApiHostInputEnabled() const
 {
-    return ProductConfig::isBusiness() && ProductConfig::isInternalNetwork()
-           && m_apiEnvironment == QStringLiteral("internal");
+    return ProductConfig::isBusiness() && m_apiEnvironment == QStringLiteral("internal");
 }
 
 QString AuthController::internalApiHost() const
@@ -615,7 +638,6 @@ QString AuthController::internalApiHost() const
 
 bool AuthController::setInternalApiHost(const QString &host)
 {
-#ifdef MEDCLAW_NETWORK_INTERNAL
     if (!internalApiHostInputEnabled())
         return false;
 
@@ -648,10 +670,64 @@ bool AuthController::setInternalApiHost(const QString &host)
     clearError();
     qInfo().noquote() << "[API] internal host updated to" << m_internalApiHost;
     return true;
-#else
-    Q_UNUSED(host);
-    return false;
-#endif
+}
+
+bool AuthController::setNetworkEnvironment(const QString &environment)
+{
+    if (!networkSelectionEnabled() || m_busy)
+        return false;
+    const QString normalized = environment.trimmed().toLower();
+    if (normalized != QStringLiteral("prod")
+        && normalized != QStringLiteral("internal"))
+        return false;
+
+    QSettings settings;
+    settings.setValue(QStringLiteral("auth/networkEnvironment"), normalized);
+    settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        setErrorMessage(QStringLiteral("无法保存网络环境设置"));
+        return false;
+    }
+
+    const QString previousEnvironment = m_apiEnvironment;
+    const QString previousBaseUrl = m_apiBaseUrl;
+    const QString previousInternalHost = m_internalApiHost;
+    m_apiEnvironment = normalized;
+    if (normalized == QStringLiteral("internal")) {
+        const QString configuredHost
+            = settings.value(QStringLiteral("auth/internalApiHost"),
+                             ProductConfig::isNetworkSelectable()
+                                 ? QString()
+                                 : QString::fromLatin1(kDefaultInternalApiHost))
+                  .toString()
+                  .trimmed();
+        QHostAddress address;
+        if (address.setAddress(configuredHost)
+            && address.protocol() == QAbstractSocket::IPv4Protocol) {
+            m_internalApiHost = address.toString();
+        } else {
+            m_internalApiHost = ProductConfig::isNetworkSelectable()
+                                    ? QString() : QString::fromLatin1(kDefaultInternalApiHost);
+            if (!ProductConfig::isNetworkSelectable())
+                settings.setValue(QStringLiteral("auth/internalApiHost"), m_internalApiHost);
+        }
+        m_apiBaseUrl = m_internalApiHost.isEmpty()
+                           ? QString() : internalApiBaseUrlForHost(m_internalApiHost);
+    } else {
+        m_apiBaseUrl = normalizedBaseUrl(apiBaseUrlForEnvironment(normalized));
+    }
+    if (previousEnvironment != m_apiEnvironment)
+        emit networkEnvironmentChanged();
+    if (previousInternalHost != m_internalApiHost)
+        emit internalApiHostChanged();
+    if (previousBaseUrl != m_apiBaseUrl)
+        emit apiBaseUrlChanged();
+    if (previousEnvironment != m_apiEnvironment && m_loggedIn)
+        clearSession();
+    clearError();
+    qInfo().noquote() << "[API] selected environment:" << m_apiEnvironment
+                      << "baseUrl:" << m_apiBaseUrl;
+    return true;
 }
 QString AuthController::creditsBalance() const
 {
@@ -909,6 +985,10 @@ void AuthController::loginWithCredentials(const QString &username, const QString
     }
     if (password.isEmpty()) {
         setErrorMessage(QStringLiteral("请输入密码"));
+        return;
+    }
+    if (internalApiHostInputEnabled() && m_internalApiHost.isEmpty()) {
+        setErrorMessage(QStringLiteral("请输入有效的内网IPv4地址"));
         return;
     }
 

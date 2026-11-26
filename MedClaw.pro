@@ -39,11 +39,14 @@ contains(CONFIG, product_b) {
         contains(CONFIG, tenant_hospital_chang2): error("B product can only have one tenant")
     }
     contains(CONFIG, tenant_imaging):contains(CONFIG, tenant_hospital_chang2): error("B product can only have one tenant")
-    !contains(CONFIG, network_public):!contains(CONFIG, network_internal): error("B product requires network_public or network_internal")
+    !contains(CONFIG, network_public):!contains(CONFIG, network_internal):!contains(CONFIG, network_choose): error("B product requires network_public, network_internal, or network_choose")
     contains(CONFIG, network_public):contains(CONFIG, network_internal): error("B product can only have one network mode")
+    contains(CONFIG, network_public):contains(CONFIG, network_choose): error("B product can only have one network mode")
+    contains(CONFIG, network_internal):contains(CONFIG, network_choose): error("B product can only have one network mode")
     DEFINES += MEDCLAW_PRODUCT_B
     contains(CONFIG, network_public): DEFINES += MEDCLAW_NETWORK_PUBLIC
     contains(CONFIG, network_internal): DEFINES += MEDCLAW_NETWORK_INTERNAL
+    contains(CONFIG, network_choose): DEFINES += MEDCLAW_NETWORK_CHOOSE
     contains(CONFIG, tenant_government) {
         DEFINES += MEDCLAW_TENANT_GOVERNMENT MEDCLAW_EDITION_GOVERNMENT
         message("MedClaw product: B, tenant: government, network: configured")
@@ -56,6 +59,7 @@ contains(CONFIG, product_b) {
         DEFINES += MEDCLAW_TENANT_HOSPITAL_CHANG2 MEDCLAW_EDITION_HOSPITAL_CHANG2
         message("MedClaw product: B, tenant: hospital-chang2, network: configured")
     }
+    contains(CONFIG, network_choose): message("MedClaw network selection: user chooses public or internal at login")
 } else {
     # Under product_c a tenant name carries no tenant code; tenant_imaging is
     # accepted as a shorthand for the imaging content edition so builds written
@@ -64,6 +68,7 @@ contains(CONFIG, product_b) {
     contains(CONFIG, tenant_government): error("A tenant can only be set for product_b; the C imaging build uses product_c edition_imaging")
     contains(CONFIG, tenant_hospital_chang2): error("A tenant can only be set for product_b")
     contains(CONFIG, network_internal): error("Network mode can only be set for product_b; C product is public")
+    contains(CONFIG, network_choose): error("Network selection can only be set for product_b")
     contains(CONFIG, edition_government): error("edition_government is a B target; use product_b tenant_government")
     contains(CONFIG, edition_hospital_chang2): error("edition_hospital_chang2 is a B target; use product_b tenant_hospital_chang2")
     DEFINES += MEDCLAW_PRODUCT_C MEDCLAW_NETWORK_PUBLIC

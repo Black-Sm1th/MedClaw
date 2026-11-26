@@ -46,6 +46,18 @@ QString apiEnvironment()
     const QString environment = qEnvironmentVariable("MEDCLAW_API_ENV").trimmed().toLower();
     if (environment == QStringLiteral("test"))
         return environment;
+#ifdef MEDCLAW_NETWORK_CHOOSE
+    Q_UNUSED(environment);
+    const QString selected = QSettings()
+                                 .value(QStringLiteral("auth/networkEnvironment"),
+                                        QStringLiteral("prod"))
+                                 .toString()
+                                 .trimmed()
+                                 .toLower();
+    if (selected == QStringLiteral("internal"))
+        return selected;
+    return QStringLiteral("prod");
+#else
     const QString requiredEnvironment = ProductConfig::isInternalNetwork()
                                             ? QStringLiteral("internal")
                                             : QStringLiteral("prod");
@@ -58,6 +70,7 @@ QString apiEnvironment()
     }
     return ProductConfig::isInternalNetwork() ? QStringLiteral("internal")
                                                : QStringLiteral("prod");
+#endif
 }
 
 QString apiBaseUrl()
@@ -66,18 +79,24 @@ QString apiBaseUrl()
     if (environment == QStringLiteral("test"))
         return QString::fromLatin1(testApiBaseUrl);
     if (environment == QStringLiteral("internal")) {
-#ifdef MEDCLAW_NETWORK_INTERNAL
         const QString configuredHost
             = QSettings().value(QStringLiteral("auth/internalApiHost"),
+#ifdef MEDCLAW_NETWORK_CHOOSE
+                                QString())
+#else
                                 QStringLiteral("192.168.0.83"))
+#endif
                   .toString()
                   .trimmed();
         QHostAddress address;
         if (address.setAddress(configuredHost)
             && address.protocol() == QAbstractSocket::IPv4Protocol)
             return QStringLiteral("http://%1:8002").arg(address.toString());
-#endif
+#ifdef MEDCLAW_NETWORK_CHOOSE
+        return QString();
+#else
         return QString::fromLatin1(internalApiBaseUrl);
+#endif
     }
     return QString::fromLatin1(productionApiBaseUrl);
 }

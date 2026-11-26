@@ -14627,7 +14627,9 @@ ApplicationWindow {
                 function toolUnavailableInCurrentBuild(tool) {
                     var toolId = String(tool ? tool.toolId : "")
                     return desktopOnlyImagingToolIds.indexOf(toolId) >= 0
-                            && !(buildProductB && buildInternalNetwork)
+                            && !(buildProductB
+                                 && (buildInternalNetwork
+                                     || authController.apiEnvironment === "internal"))
                 }
 
                 function categoryNode(primaryCategory) {

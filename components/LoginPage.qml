@@ -38,6 +38,9 @@ Item {
     function sendCode() { authController.sendSmsCode(phoneInput.text) }
     function submitLogin() {
         if (loginPage.useEnterpriseCredentials) {
+            if (authController.networkSelectionEnabled
+                    && !authController.setNetworkEnvironment(authController.apiEnvironment))
+                return
             if (authController.internalApiHostInputEnabled
                     && !authController.setInternalApiHost(internalIpInput.text)) {
                 internalIpInput.forceActiveFocus()
@@ -276,6 +279,45 @@ Item {
         }
         Column {
             width: parent.width; spacing: 16; visible: loginPage.showPhoneForm && loginPage.useEnterpriseCredentials; height: visible ? implicitHeight : 0
+            Row {
+                width: loginPage.formWidth
+                height: 48
+                spacing: 12
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: authController.networkSelectionEnabled
+                Repeater {
+                    model: [
+                        { label: "公网", value: "prod" },
+                        { label: "内网", value: "internal" }
+                    ]
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: (loginPage.formWidth - 12) / 2
+                        height: 48
+                        radius: 7
+                        color: authController.apiEnvironment === modelData.value
+                               ? Theme.accentSoftBg : Theme.surfaceMuted
+                        border.width: authController.apiEnvironment === modelData.value ? 1 : 0
+                        border.color: Theme.accent
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: authController.apiEnvironment === modelData.value
+                                   ? Theme.accent : Theme.textSecondary
+                            font.family: "Alibaba PuHuiTi 3.0"
+                            font.pixelSize: 16
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !authController.busy
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                authController.setNetworkEnvironment(modelData.value)
+                            }
+                        }
+                    }
+                }
+            }
             SingleLineTextInput {
                 id: usernameInput
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -322,6 +364,7 @@ Item {
                 maximumLength: 15
                 inputMethodHints: Qt.ImhFormattedNumbersOnly
                 visible: authController.internalApiHostInputEnabled
+                onTextChanged: authController.clearError()
                 onEditingFinished: {
                     if (!authController.setInternalApiHost(text))
                         text = authController.internalApiHost

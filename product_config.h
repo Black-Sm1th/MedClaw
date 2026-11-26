@@ -23,6 +23,15 @@ inline bool isInternalNetwork()
 #endif
 }
 
+inline bool isNetworkSelectable()
+{
+#ifdef MEDCLAW_NETWORK_CHOOSE
+    return true;
+#else
+    return false;
+#endif
+}
+
 // Content edition, independent of the product type: the imaging UI ships both
 // as B (tenant_imaging) and as C (product_c edition_imaging).
 inline bool isImagingEdition()
@@ -96,7 +105,11 @@ inline QString updateVersionSuffix()
 
 inline QString networkKey()
 {
+#ifdef MEDCLAW_NETWORK_CHOOSE
+    return QStringLiteral("choose");
+#else
     return isInternalNetwork() ? QStringLiteral("internal") : QStringLiteral("public");
+#endif
 }
 
 inline QString settingsOrganizationName()
