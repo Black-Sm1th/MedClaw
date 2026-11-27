@@ -300,7 +300,7 @@ QVariantList WsSession::parseHistoryResponse(const QJsonObject &payload)
 
     for (const QJsonValue &v : arr) {
         const QJsonObject m = v.toObject();
-        if (ChatMessageVisibility::isInternalMessage(m))
+        if (ChatMessageVisibility::shouldHideMessage(m))
             continue;
         const QString role = m.value(QStringLiteral("role")).toString();
         if (role.isEmpty())
@@ -574,10 +574,10 @@ WsEventResult WsSession::parseEvent(const QString &event, const QJsonObject &pay
     const QString subEvent = payload.value(QStringLiteral("event")).toString();
     const QJsonObject data = payload.value(QStringLiteral("data")).toObject();
 
-    if (ChatMessageVisibility::isInternalMessage(payload)
-        || ChatMessageVisibility::isInternalMessage(data)
-        || ChatMessageVisibility::isInternalMessage(payload.value(QStringLiteral("message")).toObject())
-        || ChatMessageVisibility::isInternalMessage(data.value(QStringLiteral("message")).toObject())) {
+    if (ChatMessageVisibility::shouldHideMessage(payload)
+        || ChatMessageVisibility::shouldHideMessage(data)
+        || ChatMessageVisibility::shouldHideMessage(payload.value(QStringLiteral("message")).toObject())
+        || ChatMessageVisibility::shouldHideMessage(data.value(QStringLiteral("message")).toObject())) {
         result.ignore = true;
         return result;
     }

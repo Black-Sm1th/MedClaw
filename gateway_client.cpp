@@ -8031,7 +8031,7 @@ bool GatewayClient::handleStructuredChatEvent(const QJsonObject &payload)
     }
 
     QString role = msg.value(QStringLiteral("role")).toString();
-    if (ChatMessageVisibility::isInternalMessage(msg))
+    if (ChatMessageVisibility::shouldHideMessage(msg))
         return true;
     const QString roleNorm = role.trimmed().toLower();
     if (roleNorm.isEmpty()) return false;

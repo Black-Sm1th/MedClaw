@@ -40,5 +40,21 @@ inline bool isInternalMessage(const QJsonObject &message)
         && text.contains(QLatin1String("<<<END_UNTRUSTED_CHILD_RESULT>>>"));
 }
 
+/// Message kinds used by the gateway transcript contract for non-user-facing
+/// system injections. Keep this list explicit: normal system-role messages,
+/// user text that resembles a System: event, and unknown kinds stay visible.
+inline bool isHiddenSystemMessage(const QJsonObject &message)
+{
+    const QString kind = message.value(QStringLiteral("kind")).toString()
+                             .trimmed().toLower();
+    return kind == QLatin1String("system-event")
+        || kind == QLatin1String("system-turn");
+}
+
+inline bool shouldHideMessage(const QJsonObject &message)
+{
+    return isInternalMessage(message) || isHiddenSystemMessage(message);
+}
+
 } // namespace ChatMessageVisibility
 #endif

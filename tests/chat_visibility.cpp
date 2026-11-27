@@ -28,6 +28,14 @@ int main(int argc, char **argv)
     const QJsonObject notice{{"role", "user"}, {"content", internal}};
     const QJsonObject forwarded{{"role", "user"}, {"content", "delegated instruction"},
         {"provenance", QJsonObject{{"kind", "inter_session"}, {"sourceTool", "sessions_send"}}}};
+    const QJsonObject systemEvent{{"role", "user"}, {"kind", "system-event"},
+        {"content", "System: [2026-11-26 10:09:07 GMT+8] Exec completed"}};
+    const QJsonObject systemTurn{{"role", "user"}, {"kind", "system-turn"},
+        {"content", "Pre-compaction memory flush. Store durable memories only..."}};
+    const QJsonObject visibleSystemLikeText{{"role", "user"},
+        {"content", "System: [2026-11-26 10:09:07 GMT+8] Please explain this log"}};
+    const QJsonObject unknownKind{{"role", "user"}, {"kind", "custom-notice"},
+        {"content", "Keep this message visible"}};
     const QJsonObject call{{"role", "assistant"}, {"content", QJsonArray{
         QJsonObject{{"type", "toolCall"}, {"id", "spawn-1"}, {"name", "sessions_spawn"},
                     {"arguments", QJsonObject{{"task", "review image"}}}}}}};
@@ -64,15 +72,20 @@ int main(int argc, char **argv)
     arrayNotice["content"] = QJsonArray{QJsonObject{{"type", "text"}, {"text", internal}}};
     check(ChatMessageVisibility::isInternalMessage(arrayNotice));
     check(!ChatMessageVisibility::isInternalMessage(user));
+    check(ChatMessageVisibility::shouldHideMessage(systemEvent));
+    check(ChatMessageVisibility::shouldHideMessage(systemTurn));
+    check(!ChatMessageVisibility::shouldHideMessage(visibleSystemLikeText));
+    check(!ChatMessageVisibility::shouldHideMessage(unknownKind));
     QJsonObject quoted = user;
     quoted["content"] = "Explain this log: " + internal;
     check(!ChatMessageVisibility::isInternalMessage(quoted));
     const QJsonArray messages{user, call, result, imageCall, imageResult,
                               abortedCall, abortedResult, pathologyCall, pathologyResult,
-                              notice, forwarded, answer};
+                              systemEvent, systemTurn, notice, forwarded, answer,
+                              visibleSystemLikeText};
     WsSession session;
     const auto history = session.parseHistoryResponse(QJsonObject{{"messages", messages}});
-    check(history.size() == 10);
+    check(history.size() == 11);
     check(history[1].toMap()["toolName"] == "sessions_spawn");
     check(history[2].toMap()["toolCallId"] == "spawn-1");
     check(history[4].toMap()["isError"].toBool());
@@ -84,7 +97,7 @@ int main(int argc, char **argv)
     ChatModel chatModel;
     chatModel.loadHistory(history);
     const QVariantList restored = chatModel.messages();
-    check(restored.size() == 6);
+    check(restored.size() == 7);
     check(restored[2].toMap()["isError"].toBool());
     check(restored[3].toMap()["isError"].toBool());
     check(restored[4].toMap()["isError"].toBool());
@@ -119,6 +132,8 @@ int main(int argc, char **argv)
     check(turnScopedCancellationModel.messages()[2].toMap()["isCancelled"].toBool());
     check(session.parseEvent("chat", QJsonObject{{"message", notice}}).ignore);
     check(session.parseEvent("agent", QJsonObject{{"data", forwarded}}).ignore);
+    check(session.parseEvent("chat", QJsonObject{{"data",
+        QJsonObject{{"message", systemEvent}}}}).ignore);
     QJsonObject inputForwarded = user;
     inputForwarded["inputProvenance"] = QJsonObject{{"kind", "inter_session"}};
     check(ChatMessageVisibility::isInternalMessage(inputForwarded));
@@ -139,7 +154,7 @@ int main(int argc, char **argv)
     SessionReader reader;
     // JSONL text entries use the content-block representation.
     const auto local = reader.readSessionMessages(jsonl.fileName());
-    check(local.size() == 10);
+    check(local.size() == 11);
     check(local[1].toMap()["toolName"] == "sessions_spawn");
     check(local[2].toMap()["toolCallId"] == "spawn-1");
     check(local[4].toMap()["isError"].toBool());
@@ -152,7 +167,7 @@ int main(int argc, char **argv)
     response.write(QJsonDocument(QJsonObject{{"messages", messages}}).toJson());
     response.flush();
     const auto responseHistory = reader.parseResponseFile(response.fileName());
-    check(responseHistory.size() == 10);
+    check(responseHistory.size() == 11);
     check(responseHistory[4].toMap()["isError"].toBool());
     check(responseHistory[6].toMap()["isError"].toBool());
     check(responseHistory[8].toMap()["isError"].toBool());

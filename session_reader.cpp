@@ -111,7 +111,7 @@ QVariantMap SessionReader::quickParseSummary(const QString &filePath)
         // 消息：统计并提取首条用户消息
         else if (type == QLatin1String("message")) {
             const QJsonObject msg = obj.value(QStringLiteral("message")).toObject();
-            if (ChatMessageVisibility::isInternalMessage(msg))
+            if (ChatMessageVisibility::shouldHideMessage(msg))
                 continue;
             const QString role = msg.value(QStringLiteral("role")).toString();
 
@@ -341,7 +341,7 @@ QVariantList SessionReader::readSessionMessages(const QString &filePath)
             continue;
 
         const QJsonObject msg = obj.value(QStringLiteral("message")).toObject();
-        if (ChatMessageVisibility::isInternalMessage(msg))
+        if (ChatMessageVisibility::shouldHideMessage(msg))
             continue;
         const QString role = msg.value(QStringLiteral("role")).toString();
         const QString ts = obj.value(QStringLiteral("timestamp")).toString();
@@ -556,7 +556,7 @@ QVariantList SessionReader::parseResponseFile(const QString &filePath)
     // 复用与 readSessionMessages 相同的解析逻辑
     for (const QJsonValue &v : messagesArr) {
         const QJsonObject m = v.toObject();
-        if (ChatMessageVisibility::isInternalMessage(m))
+        if (ChatMessageVisibility::shouldHideMessage(m))
             continue;
         const QString role = m.value(QStringLiteral("role")).toString();
         if (role.isEmpty())
