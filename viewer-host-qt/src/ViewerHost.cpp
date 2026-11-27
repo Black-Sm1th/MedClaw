@@ -338,10 +338,12 @@ bool isNiftiMaskName(const QString &fileName)
         QStringLiteral("(?:^|[_-])(?:mask|seg|label|labels|labelmap|pred|prediction)(?:[_-]|$)"));
     if (re.match(stem).hasMatch())
         return true;
-    // 影像工具产出常用中文后缀（如 lungs01_分割.nii.gz），不能只认下面三个固定短语。
-    return stem.contains(QStringLiteral("分割"))
-        || stem.contains(QStringLiteral("标签"))
-        || stem.contains(QStringLiteral("器官mask"));
+    // 影像工具产出的中文后缀（如 lungs01_分割.nii.gz）只认**结尾**：
+    // 早期用 contains("分割") 会把「肺结节分割模型_1」这类任务名误判成标签图，
+    // 结果是原始影像被当作 labelmap 逐灰度值拆成上千个 Mask。
+    static const QRegularExpression zhRe(
+        QStringLiteral("(?:分割|标签|器官mask)(?:[_-]?\\d+)?$"));
+    return zhRe.match(stem).hasMatch();
 }
 
 struct ByteRange {
