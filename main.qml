@@ -4160,6 +4160,19 @@ ApplicationWindow {
                     pendingQuestions = chatModel.pendingQuestions()
                 }
                 readonly property bool hasActiveTask: String(wsClient.currentTaskSessionKey || "").length > 0
+                /// 当前视图里是否真有任务在跑（主控任务或专家团子会话）。
+                /// 「等待模型响应」只能靠它判断，不能只看 hasActiveTask：打开一个
+                /// 没有消息的旧任务（或定时占位会话）时 sessionKey 仍在，但不会
+                /// 再有任何响应，之前的表现就是一直转圈（用户报「永远显示」）。
+                readonly property bool taskRunningNow: !!wsClient.chatRunning
+                                                       || !!wsClient.controllerRunning
+                /// 历史加载失败/被丢弃时 sessionHistoryLoading 会一直为 true，
+                /// 所以「打开会话 → 等历史」这段最多等 12 秒，之后不再转圈。
+                property bool emptyChatWaitExpired: false
+                readonly property bool emptyChatWaiting: hasActiveTask && !hasMessages
+                                                         && (taskRunningNow
+                                                             || (sessionHistoryLoading
+                                                                 && !emptyChatWaitExpired))
                 property bool isNewTaskWelcome: window.leftSelectedIndex === 0
                                                 && !hasActiveTask && !hasMessages
                 property var selectedCollaborationAgentIds: []
@@ -6009,17 +6022,18 @@ ApplicationWindow {
                         image: "qrc:/images/imaging/domain-headneck.png",
                         imageDark: "qrc:/images/imaging/domain-headneck-dark.png",
                         tilt: 1,
-                        note: "暂无专属工具，只能借全身器官结构分割与 CT 报告；颈部淋巴结、甲状腺、鼻窦、颞骨、喉未覆盖",
-                        toolIds: ["imaging_nd_totalsegmentator", "imaging_ct_report"]
+                        note: "甲状腺、腮腺、颌下腺、耳蜗、喉与口腔等结构可分割，另有全身器官分割与 CT 报告；颈部淋巴结、鼻窦、颞骨未覆盖",
+                        toolIds: ["imaging_nd_cads", "imaging_nd_totalsegmentator", "imaging_ct_report"]
                     },
                     {
                         name: "心胸学组",
                         image: "qrc:/images/imaging/domain-chest.png",
                         imageDark: "qrc:/images/imaging/domain-chest-dark.png",
                         tilt: -2,
-                        note: "肺/气道/骨分割、肺结节与肺血管掩膜、全身器官结构、胸部 CT 语言报告、胸片读取；无冠脉 CTA、肺气肿定量、Lung-RADS 随访、心功能",
+                        note: "肺/气道/骨分割、肺结节与肺血管掩膜、逐根肋骨与心腔结构、胸部 CT 语言报告、胸片读取；无冠脉 CTA、肺气肿定量、Lung-RADS 随访",
                         toolIds: ["imaging_seg_classic", "imaging_nd_lung_nodules",
-                                  "imaging_nd_lung_vessels", "imaging_nd_totalsegmentator",
+                                  "imaging_nd_lung_vessels", "imaging_nd_cads",
+                                  "imaging_nd_totalsegmentator",
                                   "imaging_ct_report", "imaging_xray_io", "imaging_case"]
                     },
                     {
@@ -6027,9 +6041,10 @@ ApplicationWindow {
                         image: "qrc:/images/imaging/domain-abdomen.png",
                         imageDark: "qrc:/images/imaging/domain-abdomen-dark.png",
                         tilt: 0,
-                        note: "腹部器官标签与疾病分数、肝病灶/肾囊肿掩膜、全身器官结构、器官体积与组学报告、腹部 CT 报告；无肿瘤分期与肝硬化分级",
+                        note: "腹部器官标签与疾病分数、肝病灶/肾囊肿掩膜、腹部器官细分结构、器官体积与组学报告、腹部 CT 报告；无肿瘤分期与肝硬化分级",
                         toolIds: ["imaging_seg_radar", "imaging_nd_liver_lesions",
-                                  "imaging_nd_kidney_cysts", "imaging_nd_totalsegmentator",
+                                  "imaging_nd_kidney_cysts", "imaging_nd_cads",
+                                  "imaging_nd_totalsegmentator",
                                   "imaging_case", "imaging_radiomics", "imaging_ct_report"]
                     },
                     {
@@ -6037,8 +6052,9 @@ ApplicationWindow {
                         image: "qrc:/images/imaging/domain-msk.png",
                         imageDark: "qrc:/images/imaging/domain-msk-dark.png",
                         tilt: 2,
-                        note: "仅骨/体轮廓分割、骨段结构清单、骨架形态；无骨折检测、关节软骨、骨密度",
-                        toolIds: ["imaging_seg_classic", "imaging_nd_totalsegmentator", "imaging_nd_skan"]
+                        note: "逐节椎体与逐根肋骨、四肢骨与髋周肌肉可分割，另有骨段结构清单与骨架形态；无骨折检测、关节软骨、骨密度",
+                        toolIds: ["imaging_seg_classic", "imaging_nd_cads",
+                                  "imaging_nd_totalsegmentator", "imaging_nd_skan"]
                     },
                     {
                         name: "乳腺学组",
@@ -8714,14 +8730,38 @@ ApplicationWindow {
                     }
                 }
 
+                // 「等待模型响应」的时间上限：历史请求可能永远不回来
+                // （切会话时响应被丢掉），不能让 loader 一直转。
+                Timer {
+                    id: emptyChatWaitGuard
+                    interval: 12000
+                    repeat: false
+                    onTriggered: newTaskRec.emptyChatWaitExpired = true
+                }
+
                 Item {
                     id: emptyChatState
-                    visible: newTaskRec.hasActiveTask && !newTaskRec.hasMessages
+                    // 只有确实在等（任务在跑，或刚打开会话在拉历史）时才显示 loading；
+                    // 打开一个没有消息的旧任务不应一直转圈。
+                    visible: newTaskRec.emptyChatWaiting
+                    onVisibleChanged: {
+                        if (visible) {
+                            newTaskRec.emptyChatWaitExpired = false
+                            emptyChatWaitGuard.restart()
+                        } else {
+                            emptyChatWaitGuard.stop()
+                        }
+                    }
                     anchors.top: parent.top
                     anchors.topMargin: 16
                     anchors.bottom: chatInputContainer.top
                     anchors.left: parent.left
-                    anchors.right: newTaskRec.splitMode ? artifactSidebar.left : parent.right
+                    // 和 chatWebView 一致：并排时对话列只到中栏左沿，
+                    // 否则 loader 会跑到「输入文件」栏上，压住那边的空状态文案。
+                    anchors.right: (newTaskRec.splitMode && !newTaskRec.splitMiddleCollapsed)
+                                   ? splitFilesPanel.left
+                                   : (newTaskRec.artifactPanelVisible
+                                      ? artifactSidebar.left : parent.right)
 
                     Column {
                         width: Math.max(0, Math.min(parent.width - 32, 440))
@@ -8761,6 +8801,26 @@ ApplicationWindow {
                             color: Theme.textSecondary
                         }
                     }
+                }
+
+                // 有任务、没有任何消息、也不在等：给一句静态说明，别转圈
+                Label {
+                    id: emptyChatHint
+                    visible: newTaskRec.hasActiveTask && !newTaskRec.hasMessages
+                             && !newTaskRec.emptyChatWaiting
+                    anchors.top: parent.top
+                    anchors.topMargin: 16
+                    anchors.bottom: chatInputContainer.top
+                    anchors.left: parent.left
+                    anchors.right: (newTaskRec.splitMode && !newTaskRec.splitMiddleCollapsed)
+                                   ? splitFilesPanel.left
+                                   : (newTaskRec.artifactPanelVisible
+                                      ? artifactSidebar.left : parent.right)
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("暂无聊天记录")
+                    font.pixelSize: 14
+                    color: Theme.textTertiary
                 }
 
                 // ListView {
